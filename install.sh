@@ -70,7 +70,7 @@ node "$ROOT/scripts/byoe/build-handoff-app.js" --target "$APP" \
   --profile "$HOME/Library/Application Support/Slack" --allow-non-tmp --force >/dev/null
 
 step "Installing icon"
-"$ROOT/scripts/byoe/set-icon.sh" >/dev/null
+"$ROOT/scripts/byoe/set-icon.sh" 2>&1 | while IFS= read -r line; do printf '    %s\n' "$line"; done
 
 step "Registering Slick as the slack:// handler"
 handler dev.slick.byoe.handoff || echo "    (could not set handler now; Slick claims it on first launch)"
