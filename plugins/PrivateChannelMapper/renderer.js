@@ -28,7 +28,9 @@
   }
 
   function fiberOf(el) {
-    const k = Object.keys(el).find((key) => key.startsWith('__reactFiber$') || key.startsWith('__reactInternalInstance$'));
+    const k = Object.keys(el).find(
+      (key) => key.startsWith('__reactFiber$') || key.startsWith('__reactInternalInstance$'),
+    );
     return k ? el[k] : null;
   }
   function fiberChannelId(el) {
