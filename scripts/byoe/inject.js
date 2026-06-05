@@ -10,8 +10,8 @@ const { buildSpec } = require('../theme');
 
 const THEMES_DIR = path.join(__dirname, '..', '..', 'themes');
 const PLUGINS_DIR = path.join(__dirname, '..', '..', 'plugins');
-let THEME = process.env.SLICK_THEME || settings.readActiveTheme(THEMES_DIR) || 'amoled';
-let THEME_FILE = path.join(THEMES_DIR, `${THEME}.json`);
+let THEME = process.env.SLICK_THEME || settings.readActiveTheme(THEMES_DIR) || '';
+let THEME_FILE = THEME ? path.join(THEMES_DIR, `${THEME}.json`) : null;
 
 function themeCss() {
   const spec = buildSpec(THEME_FILE);
@@ -22,8 +22,12 @@ function themeCss() {
   return { name: spec.name, css: (decls ? `${SEL}{${decls}}\n` : '') + (spec.css || '') };
 }
 
-let theme = { name: THEME, css: '' };
+let theme = { name: '', css: '' };
 function rebuild() {
+  if (!THEME_FILE) {
+    theme = { name: '', css: '' };
+    return;
+  }
   try {
     theme = themeCss();
   } catch (e) {
@@ -129,24 +133,25 @@ function onThemeFileChanged(curr, prev) {
   console.log(`[slick-byoe] hot-reloaded "${theme.name}" (${theme.css.length} bytes) -> ${live.size} window(s)`);
 }
 function watchTheme() {
+  if (!THEME_FILE) return;
   fs.watchFile(THEME_FILE, { interval: 300 }, onThemeFileChanged);
+  console.log(`[slick-byoe] watching ${path.basename(THEME_FILE)} for live edits`);
 }
 watchTheme();
-console.log(`[slick-byoe] watching ${path.basename(THEME_FILE)} for live edits`);
 
 function setTheme(name) {
-  const file = path.join(THEMES_DIR, `${name}.json`);
-  if (!fs.existsSync(file)) {
+  const file = name ? path.join(THEMES_DIR, `${name}.json`) : null;
+  if (file && !fs.existsSync(file)) {
     console.error(`[slick-byoe] theme not found: ${name}`);
     return;
   }
-  fs.unwatchFile(THEME_FILE, onThemeFileChanged);
-  THEME = name;
+  if (THEME_FILE) fs.unwatchFile(THEME_FILE, onThemeFileChanged);
+  THEME = name || '';
   THEME_FILE = file;
   rebuild();
   watchTheme();
   applyAllLive();
-  console.log(`[slick-byoe] theme switched -> "${theme.name}" -> ${live.size} window(s)`);
+  console.log(`[slick-byoe] theme switched -> "${theme.name || 'none'}" -> ${live.size} window(s)`);
 }
 
 if (plugins.block.length) {
@@ -156,7 +161,7 @@ if (plugins.block.length) {
 }
 
 console.log(
-  `[slick-byoe] armed: theme "${theme.name}" (${theme.css.length} bytes)` +
+  `[slick-byoe] armed: theme ${theme.name ? `"${theme.name}" (${theme.css.length} bytes)` : 'none'}` +
     ` + ${plugins.loaded.length} plugin(s): ${plugins.loaded.join(', ') || 'none'}` +
     (plugins.block.length ? ` | blocking ${plugins.block.length} URL pattern(s)` : ''),
 );

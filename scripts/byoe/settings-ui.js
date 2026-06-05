@@ -68,10 +68,17 @@ function buildManifest({ pluginsDir, themesDir, activeTheme }) {
       enabled: enabled ? enabled.includes(dir) : true,
     };
   });
+  const themes = themesDir ? listThemes(themesDir, activeTheme) : [];
+  themes.unshift({
+    file: '',
+    label: 'Default',
+    description: 'Stock Slack appearance (no theme)',
+    active: !themes.some((t) => t.active),
+  });
   return {
     controlUrl,
     theme: activeTheme || '',
-    themes: themesDir ? listThemes(themesDir, activeTheme) : [],
+    themes,
     plugins,
   };
 }
@@ -108,9 +115,9 @@ function handleControl(rawUrl, { pluginsDir, themesDir, app, onTheme }) {
     }
   } else if (op === 'theme') {
     const name = u.searchParams.get('name');
-    if (name && themesDir && listThemes(themesDir).some((t) => t.file === name)) {
+    if (name !== null && themesDir && (name === '' || listThemes(themesDir).some((t) => t.file === name))) {
       writeActiveTheme(themesDir, name);
-      console.log(`[slick-settings] theme -> ${name}`);
+      console.log(`[slick-settings] theme -> ${name || 'none'}`);
       if (onTheme) {
         try {
           onTheme(name);
