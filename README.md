@@ -39,8 +39,7 @@ Themes are defined in the `themes/` folder as JSON files exporting the following
 }
 ```
 
-`themes/amoled.json` (true black) and `themes/ultraviolet.json` (violet) are
-working examples. More documentation pending.
+No theme is applied by default, but you can pick one from the Slick tab in Preferences. `themes/amoled.json` (true black) and `themes/ultraviolet.json` (violet) are working examples. More documentation pending.
 
 ## Plugins
 
