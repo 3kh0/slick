@@ -3,7 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 const electron = require('electron');
-const { app, session } = electron;
+const { app, session, Notification } = electron;
 const { loadPlugins } = require('./plugins');
 const settings = require('./settings-ui');
 const { buildSpec } = require('../theme');
@@ -60,7 +60,27 @@ function armBlocking(sess) {
   });
 }
 let blockedCount = 0;
-app.whenReady().then(() => armBlocking(session.defaultSession));
+
+function requestNoti() {
+  try {
+    if (!Notification.isSupported()) return; // unlikely, but just in case
+    const marker = path.join(app.getPath('userData'), '.slick-notif-prompt');
+    if (fs.existsSync(marker)) return;
+    const n = new Notification({
+      title: 'Slick',
+      body: 'Notifications are enabled! Manage them in System Settings -> Notifications.',
+    });
+    n.show();
+    fs.writeFileSync(marker, '');
+  } catch (e) {
+    console.error('[slick-byoe] notification request fail:', e.message);
+  }
+}
+
+app.whenReady().then(() => {
+  armBlocking(session.defaultSession);
+  requestNoti();
+});
 
 const live = new Map();
 const applyQueue = new WeakMap();
