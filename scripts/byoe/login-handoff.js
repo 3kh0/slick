@@ -5,13 +5,12 @@ const { app } = require('electron');
 const PROTOCOL = 'slack';
 
 const isSlackUrl = (v) => typeof v === 'string' && /^slack:/i.test(v);
-const isEphemeralArg = (v) => isSlackUrl(v) || v === '--test-type=webdriver' || v === '--userAgent';
 
 function registerSlackProtocol(setter) {
   return setter(
     PROTOCOL,
     process.execPath,
-    [...process.execArgv, ...process.argv.slice(1)].filter((a) => !isEphemeralArg(a)),
+    [...process.execArgv, ...process.argv.slice(1)].filter((a) => !isSlackUrl(a)),
   );
 }
 
@@ -58,6 +57,35 @@ const helperOpenUrlListener = function captureOpenUrl(event, url) {
 };
 originalOn('open-url', helperOpenUrlListener);
 
-if (process.platform === 'darwin') {
+if (process.platform === 'linux') {
+  const gotLock = app.requestSingleInstanceLock();
+  if (!gotLock) {
+    app.quit();
+  } else {
+    app.on('second-instance', (_event, argv) => {
+      const { BrowserWindow } = require('electron');
+      const wins = BrowserWindow.getAllWindows();
+      for (const w of wins) {
+        if (!w.isDestroyed()) {
+          w.focus();
+          return;
+        }
+      }
+    });
+
+    app.on('open-url', (_event, url) => {
+      const { BrowserWindow } = require('electron');
+      const wins = BrowserWindow.getAllWindows();
+      for (const w of wins) {
+        if (!w.isDestroyed()) {
+          w.focus();
+          return;
+        }
+      }
+    });
+
+    registerSlackProtocol(originalSetDefault);
+  }
+} else if (process.platform === 'darwin') {
   registerSlackProtocol(originalSetDefault);
 }

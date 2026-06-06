@@ -4,6 +4,25 @@ const fs = require('fs');
 const path = require('path');
 const electron = require('electron');
 const { app, session, Notification } = electron;
+
+if (process.platform === 'linux') {
+  const authUrl = process.argv.find((a) => /^slack:/i.test(a));
+  if (authUrl) {
+    console.log(`[slick-byoe] intercepted auth callback: ${authUrl.slice(0, 60)}...`);
+    process.argv = process.argv.filter((a) => !/^slack:/i.test(a));
+  }
+
+  const { shell } = electron;
+  const origOpenExternal = shell.openExternal.bind(shell);
+  shell.openExternal = function patchedOpenExternal(url, ...rest) {
+    if (/^slack:/i.test(url)) {
+      console.log(`[slick-byoe] blocked shell.openExternal for: ${url.slice(0, 60)}...`);
+      return Promise.resolve();
+    }
+    return origOpenExternal(url, ...rest);
+  };
+}
+
 const { loadPlugins } = require('./plugins');
 const settings = require('./settings-ui');
 const { buildSpec } = require('../theme');
