@@ -8,5 +8,6 @@
   "PrivateChannelMapper",
   "Nicknames",
   "UserPronouns",
-  "SilentTyping"
+  "SilentTyping",
+  "QuietSpotify"
 ]
