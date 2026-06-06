@@ -1,12 +1,9 @@
 import AppKit
 
-let canvasSize = 1024.0
-// desktop.png has a few transparent edges, this gets a ~90px inset.
-let contentInset = 86.0
-let insetRatio = contentInset / canvasSize
+let insetRatio = 90.0 / 1024.0
 
 guard CommandLine.arguments.count == 3 else {
-  fputs("usage: gen-icon.swift <desktop.png> <output.icns>\n", stderr)
+  fputs("usage: gen-icon.swift <desktop.svg> <output.icns>\n", stderr)
   exit(2)
 }
 
@@ -22,11 +19,26 @@ func pngData(size: Int) -> Data {
   let side = Double(size)
   let inset = side * insetRatio
   let contentSize = side - (inset * 2)
-  let image = NSImage(size: NSSize(width: side, height: side))
 
-  image.lockFocus()
-  NSColor.clear.setFill()
-  NSRect(x: 0, y: 0, width: side, height: side).fill()
+  guard let rep = NSBitmapImageRep(
+    bitmapDataPlanes: nil,
+    pixelsWide: size,
+    pixelsHigh: size,
+    bitsPerSample: 8,
+    samplesPerPixel: 4,
+    hasAlpha: true,
+    isPlanar: false,
+    colorSpaceName: .deviceRGB,
+    bytesPerRow: 0,
+    bitsPerPixel: 0
+  ), let context = NSGraphicsContext(bitmapImageRep: rep) else {
+    fputs("could not create \(size)x\(size) bitmap\n", stderr)
+    exit(1)
+  }
+  rep.size = NSSize(width: side, height: side)
+
+  NSGraphicsContext.saveGraphicsState()
+  NSGraphicsContext.current = context
   source.draw(
     in: NSRect(x: inset, y: inset, width: contentSize, height: contentSize),
     from: NSRect(origin: .zero, size: source.size),
@@ -35,11 +47,9 @@ func pngData(size: Int) -> Data {
     respectFlipped: true,
     hints: [.interpolation: NSImageInterpolation.high]
   )
-  image.unlockFocus()
+  NSGraphicsContext.restoreGraphicsState()
 
-  guard let tiff = image.tiffRepresentation,
-        let rep = NSBitmapImageRep(data: tiff),
-        let png = rep.representation(using: .png, properties: [:]) else {
+  guard let png = rep.representation(using: .png, properties: [:]) else {
     fputs("could not render \(size)x\(size) icon\n", stderr)
     exit(1)
   }

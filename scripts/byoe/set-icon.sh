@@ -15,6 +15,13 @@ case "$ICONKEY" in *.icns) ;; *) ICONKEY="$ICONKEY.icns" ;; esac
 echo "installing pre-rendered icon..."
 cp "$ICNS" "$APP/Contents/Resources/$ICONKEY"
 
+CAR="$ROOT/assets/Assets.car"
+if [ -f "$CAR" ]; then
+  echo "installing macOS 26 icon variants..."
+  cp "$CAR" "$APP/Contents/Resources/Assets.car"
+  /usr/bin/plutil -replace CFBundleIconName -string desktop "$PL"
+fi
+
 echo "signing app bundle (slow on a fresh build, hang tight)..."
 /usr/bin/codesign --force --deep --sign - "$APP"
 touch "$APP"
