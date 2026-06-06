@@ -48,13 +48,30 @@ Plugins are defined in the `plugins/` folder as subfolders with an `index.js` fi
 ```js
 module.exports = {
   meta: { name, description, version },
+  settings: {}, // optional, user-configurable options (see below)
   main(ctx) {}, // optional, main process
-  css, // optional, CSS for every window
+  css, // optional, CSS for every window; a string, or a function of the plugin's settings
   renderer, // optional, JS run in every page
 };
 ```
 
-`ctx` provides `blockURLs`, `injectCSS`, `injectJS`, `onWindow`, `log`, and raw Electron access. `plugins/enabled.json` lists which load by default. More documentation about these pending.
+`ctx` provides `blockURLs`, `injectCSS`, `injectJS`, `onWindow`, `log`, `settings` (the plugin's current values), and raw Electron access. `plugins/enabled.json` lists which load by default. More documentation about these pending.
+
+### Plugin settings
+
+A plugin can also declare additional options that can further customize its behavior. These can be found in the UI as a settings cog next to the plugin in the Slick tab of Preferences. See the following example for the format of these:
+
+```js
+settings: {
+  someKey: {
+    type: 'color', // boolean | text | number | select | color
+    label: 'Some key',
+    description: 'Shown under the label',
+    default: '#e01e5a',
+    options: [{ value: 'a', label: 'A' }], // select only
+  },
+},
+```
 
 ## Credits
 
