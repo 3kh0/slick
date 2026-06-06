@@ -10,7 +10,12 @@ const { buildSpec } = require('../theme');
 
 const THEMES_DIR = path.join(__dirname, '..', '..', 'themes');
 const PLUGINS_DIR = path.join(__dirname, '..', '..', 'plugins');
-let THEME = process.env.SLICK_THEME || settings.readActiveTheme(THEMES_DIR) || '';
+const SETTINGS_DIR = path.join(app.getPath('userData'), 'slick');
+const ENABLED_FILE = path.join(SETTINGS_DIR, 'enabled-plugins.json');
+const DEFAULT_ENABLED_FILE = path.join(PLUGINS_DIR, 'enabled.json');
+const ACTIVE_THEME_FILE = path.join(SETTINGS_DIR, 'active-theme');
+const enabledPlugins = () => settings.readEnabled(ENABLED_FILE) || settings.readEnabled(DEFAULT_ENABLED_FILE);
+let THEME = process.env.SLICK_THEME || settings.readActiveTheme(ACTIVE_THEME_FILE) || '';
 let THEME_FILE = THEME ? path.join(THEMES_DIR, `${THEME}.json`) : null;
 
 function themeCss() {
@@ -36,7 +41,7 @@ function rebuild() {
 }
 rebuild();
 
-const plugins = loadPlugins({ pluginsDir: PLUGINS_DIR, electron });
+const plugins = loadPlugins({ pluginsDir: PLUGINS_DIR, enabled: enabledPlugins(), electron });
 const pluginCss = plugins.css.join('\n');
 
 function fullCss() {
@@ -50,7 +55,15 @@ function armBlocking(sess) {
   const urls = plugins.block.concat([settings.controlPattern]);
   sess.webRequest.onBeforeRequest({ urls }, (details, cb) => {
     if (
-      settings.handleControl(details.url, { pluginsDir: PLUGINS_DIR, themesDir: THEMES_DIR, app, onTheme: setTheme })
+      settings.handleControl(details.url, {
+        pluginsDir: PLUGINS_DIR,
+        themesDir: THEMES_DIR,
+        enabledFile: ENABLED_FILE,
+        defaultEnabledFile: DEFAULT_ENABLED_FILE,
+        activeThemeFile: ACTIVE_THEME_FILE,
+        app,
+        onTheme: setTheme,
+      })
     ) {
       cb({ cancel: true });
       return;
@@ -119,7 +132,12 @@ async function doApplyTo(wc) {
   }
   try {
     const boot = settings.bootstrapScript(
-      settings.buildManifest({ pluginsDir: PLUGINS_DIR, themesDir: THEMES_DIR, activeTheme: THEME }),
+      settings.buildManifest({
+        pluginsDir: PLUGINS_DIR,
+        themesDir: THEMES_DIR,
+        enabled: enabledPlugins(),
+        activeTheme: THEME,
+      }),
     );
     wc.executeJavaScript(boot, true).catch((e) => console.error('[slick-byoe] settings UI failed:', e.message));
   } catch (e) {

@@ -59,6 +59,39 @@ function packAsar(files, outPath) {
   fs.writeFileSync(outPath, Buffer.concat([head, ...blobs]));
 }
 
+function copyRuntime(resources) {
+  const runtime = path.join(resources, 'slick');
+  fs.rmSync(runtime, { recursive: true, force: true });
+  for (const file of [
+    'scripts/byoe/inject.js',
+    'scripts/byoe/login-handoff.js',
+    'scripts/byoe/plugins.js',
+    'scripts/byoe/settings-renderer.js',
+    'scripts/byoe/settings-ui.js',
+    'scripts/theme.js',
+  ]) {
+    const target = path.join(runtime, file);
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    fs.copyFileSync(path.join(ROOT, file), target);
+  }
+  fs.cpSync(path.join(ROOT, 'plugins'), path.join(runtime, 'plugins'), { recursive: true });
+  fs.cpSync(path.join(ROOT, 'themes'), path.join(runtime, 'themes'), {
+    recursive: true,
+    filter: (source) => path.basename(source) !== '.active',
+  });
+}
+
+function seedSettings(profile) {
+  const settings = path.join(profile, 'slick');
+  const enabled = path.join(settings, 'enabled-plugins.json');
+  const activeTheme = path.join(settings, 'active-theme');
+  fs.mkdirSync(settings, { recursive: true });
+  if (!fs.existsSync(enabled)) fs.copyFileSync(path.join(ROOT, 'plugins/enabled.json'), enabled);
+  if (!fs.existsSync(activeTheme) && fs.existsSync(path.join(ROOT, 'themes/.active'))) {
+    fs.copyFileSync(path.join(ROOT, 'themes/.active'), activeTheme);
+  }
+}
+
 function main() {
   const opts = parseArgs(process.argv.slice(2));
   const target = path.resolve(opts.target);
@@ -97,6 +130,8 @@ function main() {
     JSON.stringify([{ CFBundleURLName: 'Slack URL', CFBundleURLSchemes: ['slack'] }]),
     plist,
   );
+  copyRuntime(res);
+  seedSettings(profile);
 
   const files = [
     {
@@ -110,7 +145,7 @@ function main() {
 const path = require('path');
 const { app } = require('electron');
 
-const ROOT = ${JSON.stringify(ROOT)};
+const SLICK_ROOT = path.join(process.resourcesPath, 'slick');
 const PROFILE = process.env.SLICK_HANDOFF_PROFILE || ${JSON.stringify(profile)};
 const SLACK_RESOURCES = ${JSON.stringify(SLACK_RESOURCES)};
 const SLACK_ASAR = ${JSON.stringify(SLACK_ASAR)};
@@ -124,8 +159,8 @@ try {
 const getAppPath = app.getAppPath.bind(app);
 app.getAppPath = () => process.env.SLICK_HANDOFF_KEEP_WRAPPER_APP_PATH === '1' ? getAppPath() : SLACK_ASAR;
 
-require(path.join(ROOT, 'scripts/byoe/login-handoff.js'));
-require(path.join(ROOT, 'scripts/byoe/inject.js'));
+require(path.join(SLICK_ROOT, 'scripts/byoe/login-handoff.js'));
+require(path.join(SLICK_ROOT, 'scripts/byoe/inject.js'));
 require(SLACK_ASAR);
 `,
     },

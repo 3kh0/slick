@@ -14,13 +14,14 @@ function pluginDirs(dir) {
   }
 }
 
-function discover(dir) {
+function discover(dir, enabled) {
   const env = (process.env.SLICK_PLUGINS || '').trim();
   if (env)
     return env
       .split(',')
       .map((s) => s.trim())
       .filter(Boolean);
+  if (Array.isArray(enabled)) return enabled;
   try {
     const list = JSON.parse(fs.readFileSync(path.join(dir, 'enabled.json'), 'utf8'));
     if (Array.isArray(list)) return list;
@@ -30,10 +31,10 @@ function discover(dir) {
   return pluginDirs(dir);
 }
 
-function loadPlugins({ pluginsDir, electron }) {
+function loadPlugins({ pluginsDir, enabled, electron }) {
   const out = { block: [], css: [], js: [], windowHooks: [], loaded: [] };
 
-  for (const name of discover(pluginsDir)) {
+  for (const name of discover(pluginsDir, enabled)) {
     let mod;
     try {
       mod = require(path.join(pluginsDir, name, 'index.js'));
