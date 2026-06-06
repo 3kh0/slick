@@ -45,18 +45,31 @@ module.exports = {
     description: 'Flag users who have not completed identity verification',
     version: '1.0.0',
   },
-
+  settings: {
+    unverifiedColor: {
+      type: 'color',
+      label: 'Unverified color',
+      description: 'Underline color for users who have not verified',
+      default: '#e01e5a',
+    },
+    over18Color: {
+      type: 'color',
+      label: 'Over-18 color',
+      description: 'Underline color for users verified as over 18',
+      default: '#d97706',
+    },
+  },
   renderer: fs.readFileSync(path.join(__dirname, 'renderer.js'), 'utf8'),
 
-  css: `
+  css: (s) => `
     .slick-hca-unverified,
     .slick-hca-unverified .c-message__sender_button {
-      text-decoration: underline wavy #e01e5a !important;
+      text-decoration: underline wavy ${s.unverifiedColor} !important;
       text-decoration-thickness: 1px !important;
     }
     .slick-hca-over-18,
     .slick-hca-over-18 .c-message__sender_button {
-      text-decoration: underline wavy #d97706 !important;
+      text-decoration: underline wavy ${s.over18Color} !important;
       text-decoration-thickness: 1px !important;
     }
   `,
