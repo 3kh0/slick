@@ -9,6 +9,17 @@ const ROOT = path.join(__dirname, '..', '..');
 const errs = [];
 const fail = (f, msg) => errs.push(`${f}: ${msg}`);
 
+const BUILD_SCRIPT = path.join(ROOT, 'scripts/byoe/build-handoff-app.js');
+const buildSource = fs.readFileSync(BUILD_SCRIPT, 'utf8');
+const injectFile = path.join(ROOT, 'scripts/byoe/inject.js');
+const injectSource = fs.readFileSync(injectFile, 'utf8');
+for (const match of injectSource.matchAll(/require\(['"](\.\.?\/[^'"]+)['"]\)/g)) {
+  const dependency = path.relative(ROOT, require.resolve(path.resolve(path.dirname(injectFile), match[1])));
+  if (!buildSource.includes(`'${dependency}'`)) {
+    fail('scripts/byoe/build-handoff-app.js', `runtime copy list is missing "${dependency}" required by inject.js`);
+  }
+}
+
 const THEMES = path.join(ROOT, 'themes');
 const themes = fs.readdirSync(THEMES).filter((f) => f.endsWith('.json'));
 for (const f of themes) {
@@ -55,6 +66,11 @@ for (const d of dirs) {
     fail(`plugins/${d}`, '"settings" must be an object of { key: definition }');
   }
   const TYPES = ['boolean', 'text', 'number', 'select', 'color'];
+  for (const [key, raw] of Object.entries(m.settings || {})) {
+    if (raw.restartRequired !== undefined && typeof raw.restartRequired !== 'boolean') {
+      fail(`plugins/${d}`, `settings.${key}.restartRequired must be a boolean`);
+    }
+  }
   for (const def of settingsSchema(m)) {
     const at = `settings.${def.key}`;
     if (!TYPES.includes(def.type)) fail(`plugins/${d}`, `${at}: unknown type "${def.type}"`);

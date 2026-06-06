@@ -51,6 +51,7 @@
       '#slick-config-modal .slick-cfg-select{padding:4px 8px;border-radius:6px;border:1px solid rgba(127,127,127,.4);background:transparent;color:inherit}',
       '#slick-config-modal .slick-cfg-color{width:36px;height:24px;padding:0;border:1px solid rgba(127,127,127,.4);border-radius:6px;background:transparent;cursor:pointer}',
       '#slick-config-modal .slick-config-note{margin:14px 0 0;opacity:.55;font-size:12px}',
+      '#slick-config-modal .slick-restart-required{display:inline-block;margin-left:8px;padding:1px 6px;border-radius:999px;background:rgba(224,30,90,.14);color:#e01e5a;font-size:11px;font-weight:600}',
     ].join('\n');
     document.head.appendChild(st);
   }
@@ -101,7 +102,13 @@
     );
 
   function settingControl(dir, def, value) {
-    const data = ' data-cfg-plugin="' + esc(dir) + '" data-cfg-key="' + esc(def.key) + '"';
+    const data =
+      ' data-cfg-plugin="' +
+      esc(dir) +
+      '" data-cfg-key="' +
+      esc(def.key) +
+      '"' +
+      (def.restartRequired ? ' data-cfg-restart="1"' : '');
     if (def.type === 'boolean')
       return '<input class="c-input_checkbox" type="checkbox"' + data + (value ? ' checked' : '') + '>';
     if (def.type === 'select')
@@ -153,7 +160,14 @@
       '<button class="c-button-unstyled slick-config-close" type="button" aria-label="Close">&times;</button>' +
       '</div>' +
       p.settings
-        .map((def) => row(esc(def.label), def.description, settingControl(p.dir, def, p.values[def.key])))
+        .map((def) =>
+          row(
+            esc(def.label) +
+              (def.restartRequired ? '<span class="slick-restart-required">Restart required</span>' : ''),
+            def.description,
+            settingControl(p.dir, def, p.values[def.key]),
+          ),
+        )
         .join('') +
       '</div>';
     document.body.appendChild(bd);
@@ -180,6 +194,10 @@
       const value = t.type === 'checkbox' ? (t.checked ? '1' : '0') : t.value;
       ctl({ op: 'cfg', plugin, key, value });
       p.values[key] = t.type === 'checkbox' ? t.checked : t.value;
+      if (t.getAttribute('data-cfg-restart') === '1') {
+        const applybar = $('slick-applybar');
+        if (applybar) applybar.classList.remove('hidden');
+      }
     });
   }
 
@@ -216,7 +234,7 @@
       rows(S.plugins, pluginRow, 'plugins') +
       '</div>' +
       '<div id="slick-applybar" class="hidden">' +
-      '<span class="slick-msg">Plugin changes take effect after restarting Slick.</span>' +
+      '<span class="slick-msg">These changes take effect after restarting Slick.</span>' +
       '<button id="slick-restart" class="c-button c-button--primary c-button--medium" type="button">Apply &amp; Restart</button>' +
       '</div>';
     document.body.appendChild(ov);

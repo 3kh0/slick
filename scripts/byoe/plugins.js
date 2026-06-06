@@ -24,6 +24,7 @@ function settingsSchema(mod) {
     description: d.description || '',
     default: d.default !== undefined ? d.default : d.type === 'boolean' ? false : '',
     options: Array.isArray(d.options) ? d.options : undefined,
+    restartRequired: d.restartRequired === true,
   }));
 }
 
@@ -48,7 +49,49 @@ function coerceSetting(def, raw) {
   return raw;
 }
 
-function discover(dir, enabled) {
+function themeCatalog(themesDir) {
+  if (!themesDir) return [];
+  let files = [];
+  try {
+    files = fs.readdirSync(themesDir).filter((file) => file.endsWith('.json') && !file.startsWith('.'));
+  } catch {}
+  return files.map((filename) => {
+    const file = filename.replace(/\.json$/, '');
+    let theme = {};
+    try {
+      theme = JSON.parse(fs.readFileSync(path.join(themesDir, filename), 'utf8'));
+    } catch {}
+    return { file, label: theme.name || file, description: theme.description || '' };
+  });
+}
+
+function buildCatalog({ pluginsDir, themesDir }) {
+  const plugins = pluginDirs(pluginsDir).map((dir) => {
+    try {
+      const mod = require(path.join(pluginsDir, dir, 'index.js'));
+      return { dir, mod, meta: mod.meta || {}, schema: settingsSchema(mod), error: null };
+    } catch (error) {
+      return {
+        dir,
+        mod: null,
+        meta: { description: `(failed to load: ${error.message})` },
+        schema: [],
+        error,
+      };
+    }
+  });
+  return { plugins, themes: themeCatalog(themesDir) };
+}
+
+function allPluginSettings(catalog, stored) {
+  const out = {};
+  for (const plugin of catalog.plugins) {
+    if (plugin.schema.length) out[plugin.dir] = mergeSettings(plugin.schema, (stored || {})[plugin.dir]);
+  }
+  return out;
+}
+
+function discover(catalog, enabled) {
   const env = (process.env.SLICK_PLUGINS || '').trim();
   if (env)
     return env
@@ -56,29 +99,22 @@ function discover(dir, enabled) {
       .map((s) => s.trim())
       .filter(Boolean);
   if (Array.isArray(enabled)) return enabled;
-  try {
-    const list = JSON.parse(fs.readFileSync(path.join(dir, 'enabled.json'), 'utf8'));
-    if (Array.isArray(list)) return list;
-  } catch (e) {
-    if (e.code !== 'ENOENT') console.error('[plugins] enabled.json invalid:', e.message);
-  }
-  return pluginDirs(dir);
+  return catalog.plugins.map(({ dir }) => dir);
 }
 
-function loadPlugins({ pluginsDir, enabled, electron, settings }) {
+function loadPlugins({ catalog, enabled, electron, settings }) {
   const out = { block: [], css: [], cssFns: [], js: [], windowHooks: [], loaded: [], timings: [] };
+  const byDir = new Map(catalog.plugins.map((plugin) => [plugin.dir, plugin]));
 
-  for (const name of discover(pluginsDir, enabled)) {
+  for (const name of discover(catalog, enabled)) {
     const start = performance.now();
-    let mod;
-    try {
-      mod = require(path.join(pluginsDir, name, 'index.js'));
-    } catch (e) {
-      console.error(`[plugins] failed to load "${name}": ${e.message}`);
+    const plugin = byDir.get(name);
+    if (!plugin || !plugin.mod) {
+      const reason = plugin?.error?.message || 'plugin not found';
+      console.error(`[plugins] failed to load "${name}": ${reason}`);
       continue;
     }
-
-    const schema = settingsSchema(mod);
+    const { mod, schema } = plugin;
     const ctx = {
       name,
       electron,
@@ -112,4 +148,12 @@ function loadPlugins({ pluginsDir, enabled, electron, settings }) {
   return out;
 }
 
-module.exports = { loadPlugins, pluginDirs, settingsSchema, mergeSettings, coerceSetting };
+module.exports = {
+  allPluginSettings,
+  buildCatalog,
+  coerceSetting,
+  loadPlugins,
+  mergeSettings,
+  pluginDirs,
+  settingsSchema,
+};

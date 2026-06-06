@@ -2,12 +2,13 @@
 
 const fs = require('fs');
 const path = require('path');
-const { pluginDirs, settingsSchema, mergeSettings, coerceSetting } = require('./plugins');
+const { allPluginSettings, mergeSettings, coerceSetting } = require('./plugins');
 
 const CONTROL_HOST = 'slick.control';
 const controlPattern = `*://${CONTROL_HOST}/*`;
 const controlUrl = `https://${CONTROL_HOST}/`;
 const RENDERER_FILE = path.join(__dirname, 'settings-renderer.js');
+const RENDERER_SOURCE = fs.readFileSync(RENDERER_FILE, 'utf8');
 
 const readJson = (file) => JSON.parse(fs.readFileSync(file, 'utf8'));
 
@@ -42,18 +43,6 @@ function writePluginSetting(file, plugin, key, value) {
   return all;
 }
 
-function allPluginSettings(pluginsDir, stored) {
-  const out = {};
-  for (const dir of pluginDirs(pluginsDir)) {
-    let schema = [];
-    try {
-      schema = settingsSchema(require(path.join(pluginsDir, dir, 'index.js')));
-    } catch {}
-    if (schema.length) out[dir] = mergeSettings(schema, (stored || {})[dir]);
-  }
-  return out;
-}
-
 function readActiveTheme(file) {
   try {
     return fs.readFileSync(file, 'utf8').trim() || null;
@@ -66,32 +55,12 @@ function writeActiveTheme(file, name) {
   fs.writeFileSync(file, String(name).trim() + '\n');
 }
 
-function listThemes(themesDir, activeName) {
-  let files = [];
-  try {
-    files = fs.readdirSync(themesDir).filter((f) => f.endsWith('.json') && !f.startsWith('.'));
-  } catch {}
-  return files.map((f) => {
-    const file = f.replace(/\.json$/, '');
-    let t = {};
-    try {
-      t = readJson(path.join(themesDir, f));
-    } catch {}
-    return { file, label: t.name || file, description: t.description || '', active: file === activeName };
-  });
+function listThemes(catalog, activeName) {
+  return catalog.themes.map((theme) => ({ ...theme, active: theme.file === activeName }));
 }
 
-function buildManifest({ pluginsDir, themesDir, enabled, activeTheme, pluginSettings }) {
-  const plugins = pluginDirs(pluginsDir).map((dir) => {
-    let meta = {};
-    let schema = [];
-    try {
-      const mod = require(path.join(pluginsDir, dir, 'index.js'));
-      meta = mod.meta || {};
-      schema = settingsSchema(mod);
-    } catch (e) {
-      meta = { description: `(failed to load: ${e.message})` };
-    }
+function buildManifest({ catalog, enabled, activeTheme, pluginSettings }) {
+  const plugins = catalog.plugins.map(({ dir, meta, schema }) => {
     return {
       dir,
       name: meta.name || dir,
@@ -102,7 +71,7 @@ function buildManifest({ pluginsDir, themesDir, enabled, activeTheme, pluginSett
       values: mergeSettings(schema, (pluginSettings || {})[dir]),
     };
   });
-  const themes = themesDir ? listThemes(themesDir, activeTheme) : [];
+  const themes = listThemes(catalog, activeTheme);
   themes.unshift({
     file: '',
     label: 'Default',
@@ -118,13 +87,14 @@ function buildManifest({ pluginsDir, themesDir, enabled, activeTheme, pluginSett
 }
 
 function bootstrapScript(manifest) {
-  return `window.__slickSettings = ${JSON.stringify(manifest)};\n${fs.readFileSync(RENDERER_FILE, 'utf8')}`;
+  return `window.__slickSettings = Object.assign(window.__slickSettings || {}, ${JSON.stringify(manifest)});\n${RENDERER_SOURCE}`;
 }
 
-function setPluginEnabled(pluginsDir, enabledFile, defaultEnabledFile, dir, on) {
-  const set = new Set(readEnabled(enabledFile) || readEnabled(defaultEnabledFile) || pluginDirs(pluginsDir));
+function setPluginEnabled(catalog, enabledFile, defaultEnabledFile, dir, on) {
+  const dirs = catalog.plugins.map((plugin) => plugin.dir);
+  const set = new Set(readEnabled(enabledFile) || readEnabled(defaultEnabledFile) || dirs);
   on ? set.add(dir) : set.delete(dir);
-  const names = pluginDirs(pluginsDir).filter((n) => set.has(n));
+  const names = dirs.filter((name) => set.has(name));
   writeEnabled(enabledFile, names);
   return names;
 }
@@ -132,14 +102,14 @@ function setPluginEnabled(pluginsDir, enabledFile, defaultEnabledFile, dir, on) 
 function handleControl(
   rawUrl,
   {
-    pluginsDir,
-    themesDir,
+    catalog,
     enabledFile,
     defaultEnabledFile,
     activeThemeFile,
     pluginSettingsFile,
     app,
     onTheme,
+    onEnabled,
     onPluginSetting,
   },
 ) {
@@ -154,15 +124,16 @@ function handleControl(
   if (op === 'toggle') {
     const dir = u.searchParams.get('plugin');
     const on = u.searchParams.get('enabled') === '1';
-    if (dir) {
-      const names = setPluginEnabled(pluginsDir, enabledFile, defaultEnabledFile, dir, on);
+    if (dir && catalog.plugins.some((plugin) => plugin.dir === dir)) {
+      const names = setPluginEnabled(catalog, enabledFile, defaultEnabledFile, dir, on);
       console.log(
         `[slick-settings] ${dir} -> ${on ? 'enabled' : 'disabled'} (enabled now: ${names.join(', ') || 'none'})`,
       );
+      if (onEnabled) onEnabled(names);
     }
   } else if (op === 'theme') {
     const name = u.searchParams.get('name');
-    if (name !== null && themesDir && (name === '' || listThemes(themesDir).some((t) => t.file === name))) {
+    if (name !== null && (name === '' || catalog.themes.some((theme) => theme.file === name))) {
       writeActiveTheme(activeThemeFile, name);
       console.log(`[slick-settings] theme -> ${name || 'none'}`);
       if (onTheme) {
@@ -178,18 +149,15 @@ function handleControl(
     const key = u.searchParams.get('key');
     const raw = u.searchParams.get('value');
     if (dir && key && raw !== null && pluginSettingsFile) {
-      let schema = [];
-      try {
-        schema = settingsSchema(require(path.join(pluginsDir, dir, 'index.js')));
-      } catch {}
-      const def = schema.find((d) => d.key === key);
+      const plugin = catalog.plugins.find((entry) => entry.dir === dir);
+      const def = plugin?.schema.find((entry) => entry.key === key);
       if (def) {
         const value = coerceSetting(def, raw);
-        writePluginSetting(pluginSettingsFile, dir, key, value);
+        const all = writePluginSetting(pluginSettingsFile, dir, key, value);
         console.log(`[slick-settings] ${dir}.${key} -> ${JSON.stringify(value)}`);
         if (onPluginSetting) {
           try {
-            onPluginSetting(dir, key, value);
+            onPluginSetting(dir, key, value, all);
           } catch (e) {
             console.error('[slick-settings] onPluginSetting failed:', e.message);
           }
