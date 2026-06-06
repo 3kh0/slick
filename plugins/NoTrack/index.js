@@ -16,6 +16,16 @@ module.exports = {
       '*://*.slack.com/beacon/*',
       '*://slack.com/clog/*',
       '*://*.slack.com/clog/*',
+      '*://slack.com/api/*/beacon*',
+      '*://*.slack.com/api/*/beacon*',
+      '*://slack.com/api/*/clog*',
+      '*://*.slack.com/api/*/clog*',
+      '*://slack.com/api/*/science*',
+      '*://*.slack.com/api/*/science*',
+      '*://slack.com/api/*/metrics*',
+      '*://*.slack.com/api/*/metrics*',
+      '*://slack.com/api/*/typing*',
+      '*://*.slack.com/api/*/typing*',
       '*://*.slack-edge.com/*/slack_beacon.*',
     ];
     ctx.blockURLs(patterns);
