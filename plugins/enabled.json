@@ -7,5 +7,6 @@
   "oneko",
   "PrivateChannelMapper",
   "Nicknames",
-  "UserPronouns"
+  "UserPronouns",
+  "SilentTyping"
 ]
