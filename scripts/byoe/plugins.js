@@ -14,6 +14,40 @@ function pluginDirs(dir) {
   }
 }
 
+function settingsSchema(mod) {
+  const defs = mod && mod.settings;
+  if (!defs || typeof defs !== 'object') return [];
+  return Object.entries(defs).map(([key, d]) => ({
+    key,
+    type: d.type || 'text',
+    label: d.label || key,
+    description: d.description || '',
+    default: d.default !== undefined ? d.default : d.type === 'boolean' ? false : '',
+    options: Array.isArray(d.options) ? d.options : undefined,
+  }));
+}
+
+function mergeSettings(schema, stored) {
+  const out = {};
+  for (const def of schema) {
+    out[def.key] = stored && stored[def.key] !== undefined ? stored[def.key] : def.default;
+  }
+  return out;
+}
+
+function coerceSetting(def, raw) {
+  if (def.type === 'boolean') return raw === '1' || raw === 'true';
+  if (def.type === 'number') {
+    const n = Number(raw);
+    return Number.isFinite(n) ? n : def.default;
+  }
+  if (def.type === 'color') return /^#[0-9a-fA-F]{3,8}$/.test(raw) ? raw : def.default;
+  if (def.type === 'select' && def.options && !def.options.some((o) => String(o.value ?? o) === raw)) {
+    return def.default;
+  }
+  return raw;
+}
+
 function discover(dir, enabled) {
   const env = (process.env.SLICK_PLUGINS || '').trim();
   if (env)
@@ -31,8 +65,8 @@ function discover(dir, enabled) {
   return pluginDirs(dir);
 }
 
-function loadPlugins({ pluginsDir, enabled, electron }) {
-  const out = { block: [], css: [], js: [], windowHooks: [], loaded: [] };
+function loadPlugins({ pluginsDir, enabled, electron, settings }) {
+  const out = { block: [], css: [], cssFns: [], js: [], windowHooks: [], loaded: [] };
 
   for (const name of discover(pluginsDir, enabled)) {
     let mod;
@@ -43,9 +77,11 @@ function loadPlugins({ pluginsDir, enabled, electron }) {
       continue;
     }
 
+    const schema = settingsSchema(mod);
     const ctx = {
       name,
       electron,
+      settings: mergeSettings(schema, (settings || {})[name]),
       app: electron.app,
       log: (...a) => console.log(`[plugin:${name}]`, ...a),
       blockURLs: (pats) => out.block.push(...[].concat(pats)),
@@ -58,7 +94,8 @@ function loadPlugins({ pluginsDir, enabled, electron }) {
       },
     };
 
-    if (mod.css) ctx.injectCSS(mod.css);
+    if (typeof mod.css === 'function') out.cssFns.push({ name, schema, fn: mod.css });
+    else if (mod.css) ctx.injectCSS(mod.css);
     if (mod.renderer) ctx.injectJS(mod.renderer);
     if (typeof mod.main === 'function') {
       try {
@@ -73,4 +110,4 @@ function loadPlugins({ pluginsDir, enabled, electron }) {
   return out;
 }
 
-module.exports = { loadPlugins, pluginDirs };
+module.exports = { loadPlugins, pluginDirs, settingsSchema, mergeSettings, coerceSetting };

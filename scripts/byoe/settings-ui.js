@@ -2,7 +2,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { pluginDirs } = require('./plugins');
+const { pluginDirs, settingsSchema, mergeSettings, coerceSetting } = require('./plugins');
 
 const CONTROL_HOST = 'slick.control';
 const controlPattern = `*://${CONTROL_HOST}/*`;
@@ -23,6 +23,35 @@ function readEnabled(file) {
 function writeEnabled(file, names) {
   fs.mkdirSync(path.dirname(file), { recursive: true });
   fs.writeFileSync(file, JSON.stringify(names, null, 2) + '\n');
+}
+
+function readPluginSettings(file) {
+  try {
+    const o = readJson(file);
+    return o && typeof o === 'object' && !Array.isArray(o) ? o : {};
+  } catch {
+    return {};
+  }
+}
+
+function writePluginSetting(file, plugin, key, value) {
+  const all = readPluginSettings(file);
+  all[plugin] = { ...all[plugin], [key]: value };
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, JSON.stringify(all, null, 2) + '\n');
+  return all;
+}
+
+function allPluginSettings(pluginsDir, stored) {
+  const out = {};
+  for (const dir of pluginDirs(pluginsDir)) {
+    let schema = [];
+    try {
+      schema = settingsSchema(require(path.join(pluginsDir, dir, 'index.js')));
+    } catch {}
+    if (schema.length) out[dir] = mergeSettings(schema, (stored || {})[dir]);
+  }
+  return out;
 }
 
 function readActiveTheme(file) {
@@ -52,11 +81,14 @@ function listThemes(themesDir, activeName) {
   });
 }
 
-function buildManifest({ pluginsDir, themesDir, enabled, activeTheme }) {
+function buildManifest({ pluginsDir, themesDir, enabled, activeTheme, pluginSettings }) {
   const plugins = pluginDirs(pluginsDir).map((dir) => {
     let meta = {};
+    let schema = [];
     try {
-      meta = require(path.join(pluginsDir, dir, 'index.js')).meta || {};
+      const mod = require(path.join(pluginsDir, dir, 'index.js'));
+      meta = mod.meta || {};
+      schema = settingsSchema(mod);
     } catch (e) {
       meta = { description: `(failed to load: ${e.message})` };
     }
@@ -66,6 +98,8 @@ function buildManifest({ pluginsDir, themesDir, enabled, activeTheme }) {
       version: meta.version || '',
       description: meta.description || '',
       enabled: enabled ? enabled.includes(dir) : true,
+      settings: schema,
+      values: mergeSettings(schema, (pluginSettings || {})[dir]),
     };
   });
   const themes = themesDir ? listThemes(themesDir, activeTheme) : [];
@@ -97,7 +131,17 @@ function setPluginEnabled(pluginsDir, enabledFile, defaultEnabledFile, dir, on) 
 
 function handleControl(
   rawUrl,
-  { pluginsDir, themesDir, enabledFile, defaultEnabledFile, activeThemeFile, app, onTheme },
+  {
+    pluginsDir,
+    themesDir,
+    enabledFile,
+    defaultEnabledFile,
+    activeThemeFile,
+    pluginSettingsFile,
+    app,
+    onTheme,
+    onPluginSetting,
+  },
 ) {
   let u;
   try {
@@ -129,6 +173,29 @@ function handleControl(
         }
       }
     }
+  } else if (op === 'cfg') {
+    const dir = u.searchParams.get('plugin');
+    const key = u.searchParams.get('key');
+    const raw = u.searchParams.get('value');
+    if (dir && key && raw !== null && pluginSettingsFile) {
+      let schema = [];
+      try {
+        schema = settingsSchema(require(path.join(pluginsDir, dir, 'index.js')));
+      } catch {}
+      const def = schema.find((d) => d.key === key);
+      if (def) {
+        const value = coerceSetting(def, raw);
+        writePluginSetting(pluginSettingsFile, dir, key, value);
+        console.log(`[slick-settings] ${dir}.${key} -> ${JSON.stringify(value)}`);
+        if (onPluginSetting) {
+          try {
+            onPluginSetting(dir, key, value);
+          } catch (e) {
+            console.error('[slick-settings] onPluginSetting failed:', e.message);
+          }
+        }
+      }
+    }
   } else if (op === 'restart') {
     console.log('[slick-settings] relaunching to apply plugin changes');
     if (app) {
@@ -148,6 +215,9 @@ module.exports = {
   handleControl,
   readEnabled,
   writeEnabled,
+  readPluginSettings,
+  writePluginSetting,
+  allPluginSettings,
   listThemes,
   readActiveTheme,
   writeActiveTheme,

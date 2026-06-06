@@ -4,7 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const electron = require('electron');
 const { app, session, Notification } = electron;
-const { loadPlugins } = require('./plugins');
+const { loadPlugins, mergeSettings } = require('./plugins');
 const settings = require('./settings-ui');
 const { buildSpec } = require('../theme');
 
@@ -14,7 +14,9 @@ const SETTINGS_DIR = path.join(app.getPath('userData'), 'slick');
 const ENABLED_FILE = path.join(SETTINGS_DIR, 'enabled-plugins.json');
 const DEFAULT_ENABLED_FILE = path.join(PLUGINS_DIR, 'enabled.json');
 const ACTIVE_THEME_FILE = path.join(SETTINGS_DIR, 'active-theme');
+const PLUGIN_SETTINGS_FILE = path.join(SETTINGS_DIR, 'plugin-settings.json');
 const enabledPlugins = () => settings.readEnabled(ENABLED_FILE) || settings.readEnabled(DEFAULT_ENABLED_FILE);
+const pluginSettings = () => settings.readPluginSettings(PLUGIN_SETTINGS_FILE);
 let THEME = process.env.SLICK_THEME || settings.readActiveTheme(ACTIVE_THEME_FILE) || '';
 let THEME_FILE = THEME ? path.join(THEMES_DIR, `${THEME}.json`) : null;
 
@@ -41,11 +43,28 @@ function rebuild() {
 }
 rebuild();
 
-const plugins = loadPlugins({ pluginsDir: PLUGINS_DIR, enabled: enabledPlugins(), electron });
-const pluginCss = plugins.css.join('\n');
+const plugins = loadPlugins({
+  pluginsDir: PLUGINS_DIR,
+  enabled: enabledPlugins(),
+  electron,
+  settings: pluginSettings(),
+});
+
+function pluginCss() {
+  const stored = pluginSettings();
+  const dynamic = plugins.cssFns.map(({ name, schema, fn }) => {
+    try {
+      return fn(mergeSettings(schema, stored[name]));
+    } catch (e) {
+      console.error(`[slick-byoe] plugin "${name}" css() failed: ${e.message}`);
+      return '';
+    }
+  });
+  return plugins.css.concat(dynamic).filter(Boolean).join('\n');
+}
 
 function fullCss() {
-  return theme.css + (pluginCss ? '\n' + pluginCss : '');
+  return [theme.css, pluginCss()].filter(Boolean).join('\n');
 }
 
 const armedSessions = new WeakSet();
@@ -61,8 +80,10 @@ function armBlocking(sess) {
         enabledFile: ENABLED_FILE,
         defaultEnabledFile: DEFAULT_ENABLED_FILE,
         activeThemeFile: ACTIVE_THEME_FILE,
+        pluginSettingsFile: PLUGIN_SETTINGS_FILE,
         app,
         onTheme: setTheme,
+        onPluginSetting: applyAllLive,
       })
     ) {
       cb({ cancel: true });
@@ -127,6 +148,16 @@ async function doApplyTo(wc) {
       await wc.removeInsertedCSS(k);
     } catch (e) {}
   }
+  try {
+    const cfg = settings.allPluginSettings(PLUGINS_DIR, pluginSettings());
+    await wc.executeJavaScript(
+      `window.__slickPluginSettings = ${JSON.stringify(cfg)};` +
+        `window.dispatchEvent(new CustomEvent('slick:plugin-settings'));`,
+      true,
+    );
+  } catch (e) {
+    console.error('[slick-byoe] plugin settings push failed:', e.message);
+  }
   for (const js of plugins.js) {
     wc.executeJavaScript(js, true).catch((e) => console.error('[slick-byoe] plugin JS failed:', e.message));
   }
@@ -137,6 +168,7 @@ async function doApplyTo(wc) {
         themesDir: THEMES_DIR,
         enabled: enabledPlugins(),
         activeTheme: THEME,
+        pluginSettings: pluginSettings(),
       }),
     );
     wc.executeJavaScript(boot, true).catch((e) => console.error('[slick-byoe] settings UI failed:', e.message));
