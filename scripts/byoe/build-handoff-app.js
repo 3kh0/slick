@@ -69,6 +69,7 @@ function copyRuntime(resources) {
     'scripts/byoe/plugins.js',
     'scripts/byoe/settings-renderer.js',
     'scripts/byoe/settings-ui.js',
+    'scripts/byoe/switches.js',
     'scripts/theme.js',
   ]) {
     const target = path.join(runtime, file);
