@@ -15,9 +15,15 @@ This client is for MacOS only, but in theory the same method could work on Windo
 
 ## Installation
 
-You can grab the latest prebuilt app from the [releases page](https://github.com/3kh0/slick/releases/latest). You will need the official [Slack app](https://slack.com/downloads/mac) (not the App Store version) installed at `/Applications/Slack.app`, since Slick runs Slack's own code.
+You will need the official [Slack app](https://slack.com/downloads/mac) (not the App Store version) installed at `/Applications/Slack.app`, since Slick runs Slack's own code.
 
-Pick the build for your Mac (check > About This Mac > Chip if unsure):
+The fastest way in is to use the installer script. Re-run it any time to update.
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/3kh0/slick/main/install.sh | bash
+```
+
+Prefer doing it by hand? Grab the latest prebuilt app from the [releases page](https://github.com/3kh0/slick/releases/latest) and pick the build for your Mac (check > About This Mac > Chip if unsure):
 
 - `Slick-x.y.z-arm64` — **Apple Silicon** (if there is a M in the name)
 - `Slick-x.y.z-x64` — **Intel** Macs
