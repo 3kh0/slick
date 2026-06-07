@@ -13,15 +13,38 @@ Slick runs Slack's own `app.asar` with a custom Electron (with the handy BYOE ac
 
 This client is for MacOS only, but in theory the same method could work on Windows or Linux with some adjustments. However, I don't use those platforms, so PRs welcome if you want to add support for them!
 
-## Setup
+## Installation
 
-You can get up and running with a single script:
+You can grab the latest prebuilt app from the [releases page](https://github.com/3kh0/slick/releases/latest). You will need the official [Slack app](https://slack.com/downloads/mac) (not the App Store version) installed at `/Applications/Slack.app`, since Slick runs Slack's own code.
+
+Pick the build for your Mac (check > About This Mac > Chip if unsure):
+
+- `Slick-x.y.z-arm64` — **Apple Silicon** (if there is a M in the name)
+- `Slick-x.y.z-x64` — **Intel** Macs
+
+Each comes as a `.dmg` (open it and drag Slick to Applications) or a `.zip`.
+
+### But it says "Slick can't be opened!"
+
+If you run into this error, it means the app is not notarized, which is expected. Bypassing this is trivial:
+
+Double click the app to open it. You should see a warning that it can't be opened. Now, go to **System Settings > Privacy & Security**, scroll down to the Slick message, click **Open Anyway**, and launch it again. After that it opens normally.
+
+You can also use this terminal command to bypass the warning without opening the app first:
+
+```bash
+xattr -d com.apple.quarantine /Applications/Slick.app
+```
+
+## Build from source
+
+If you'd rather build it yourself (or hack on it), clone the repo and run:
 
 ```bash
 ./install.sh
 ```
 
-First launch shows a sign-in screen (a different code signature can't decrypt Slack's existing session); sign in once and you should be set! You can customize themes and plugins from the new Slick tab in Preferences.
+This downloads an Electron matching your installed Slack and builds `~/Applications/Slick.app` locally; re-run it any time to stay fresh. You'll need a modern version of Node.js.
 
 If you want to debug or poke around at things, you can find more manual scripts in the scripts/ folder, but the install script should be all you need for normal use.
 
