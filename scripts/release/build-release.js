@@ -15,6 +15,8 @@ const CACHE = path.join(BUILD, 'cache');
 const DIST = path.join(ROOT, 'dist');
 const ELECTRON_VERSION = require(path.join(ROOT, 'byoe/package.json')).dependencies.electron;
 const DEFAULTS = { version: '0.0.1', arch: ['arm64', 'x64'] };
+const SIGN_IDENTITY = process.env.SLICK_SIGN_IDENTITY || '';
+const NOTARY = ['APPLE_ID', 'APPLE_TEAM_ID', 'APPLE_APP_PASSWORD'].every((k) => process.env[k]);
 
 function usage() {
   console.error(`Usage:
@@ -62,6 +64,48 @@ function fetchElectron(arch) {
   return path.join(dist, 'Electron.app');
 }
 
+function signAndNotarize(app, arch) {
+  if (!SIGN_IDENTITY) {
+    step('SLICK_SIGN_IDENTITY not set, skipping notarization');
+    return;
+  }
+  step(`Signing ${arch}`);
+  run('/usr/bin/codesign', [
+    '--force',
+    '--deep',
+    '--options',
+    'runtime',
+    '--timestamp',
+    '--entitlements',
+    path.join(__dirname, 'entitlements.plist'),
+    '--sign',
+    SIGN_IDENTITY,
+    app,
+  ]);
+  if (!NOTARY) {
+    step('APPLE_ID/APPLE_TEAM_ID/APPLE_APP_PASSWORD not set, skipping notarization');
+    return;
+  }
+  step(`Notarizing ${arch}`);
+  const zip = `${app}.notarize.zip`;
+  fs.rmSync(zip, { force: true });
+  run('/usr/bin/ditto', ['-c', '-k', '--keepParent', app, zip]);
+  run('xcrun', [
+    'notarytool',
+    'submit',
+    zip,
+    '--wait',
+    '--apple-id',
+    process.env.APPLE_ID,
+    '--team-id',
+    process.env.APPLE_TEAM_ID,
+    '--password',
+    process.env.APPLE_APP_PASSWORD,
+  ]);
+  fs.rmSync(zip, { force: true });
+  run('xcrun', ['stapler', 'staple', app]);
+}
+
 function buildArch(arch, version) {
   const sourceApp = fetchElectron(arch);
   const app = path.join(BUILD, arch, 'Slick.app');
@@ -79,6 +123,7 @@ function buildArch(arch, version) {
     '--force',
   ]);
   run(path.join(ROOT, 'scripts/byoe/set-icon.sh'), [app, '--no-register']);
+  signAndNotarize(app, arch);
 
   step(`Packaging zip + dmg (${arch})`);
   fs.mkdirSync(DIST, { recursive: true });
