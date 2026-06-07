@@ -64,24 +64,29 @@ function fetchElectron(arch) {
   return path.join(dist, 'Electron.app');
 }
 
-function signAndNotarize(app, arch) {
+function signer() {
+  try {
+    return require('@electron/osx-sign');
+  } catch (e) {
+    if (e.code !== 'MODULE_NOT_FOUND') throw e;
+    step('Installing @electron/osx-sign');
+    run('bun', ['install', '--cwd', __dirname]);
+    return require('@electron/osx-sign');
+  }
+}
+
+async function signAndNotarize(app, arch) {
   if (!SIGN_IDENTITY) {
-    step('SLICK_SIGN_IDENTITY not set, skipping notarization');
+    step('SLICK_SIGN_IDENTITY not set, skipping signing + notarization');
     return;
   }
-  step(`Signing ${arch}`);
-  run('/usr/bin/codesign', [
-    '--force',
-    '--deep',
-    '--options',
-    'runtime',
-    '--timestamp',
-    '--entitlements',
-    path.join(__dirname, 'entitlements.plist'),
-    '--sign',
-    SIGN_IDENTITY,
+  step(`Signing ${arch} with Developer ID`);
+  const { sign } = signer();
+  await sign({
     app,
-  ]);
+    identity: SIGN_IDENTITY,
+    optionsForFile: () => ({ entitlements: path.join(__dirname, 'entitlements.plist') }),
+  });
   if (!NOTARY) {
     step('APPLE_ID/APPLE_TEAM_ID/APPLE_APP_PASSWORD not set, skipping notarization');
     return;
@@ -106,7 +111,7 @@ function signAndNotarize(app, arch) {
   run('xcrun', ['stapler', 'staple', app]);
 }
 
-function buildArch(arch, version) {
+async function buildArch(arch, version) {
   const sourceApp = fetchElectron(arch);
   const app = path.join(BUILD, arch, 'Slick.app');
 
@@ -123,7 +128,7 @@ function buildArch(arch, version) {
     '--force',
   ]);
   run(path.join(ROOT, 'scripts/byoe/set-icon.sh'), [app, '--no-register']);
-  signAndNotarize(app, arch);
+  await signAndNotarize(app, arch);
 
   step(`Packaging zip + dmg (${arch})`);
   fs.mkdirSync(DIST, { recursive: true });
@@ -141,10 +146,10 @@ function buildArch(arch, version) {
   run('/usr/bin/hdiutil', ['create', '-volname', 'Slick', '-srcfolder', staging, '-format', 'UDZO', dmg]);
 }
 
-function main() {
+async function main() {
   if (process.platform !== 'darwin') throw new Error('release builds need macOS');
   const opts = parseArgs(process.argv.slice(2));
-  for (const arch of opts.arch) buildArch(arch, opts.version);
+  for (const arch of opts.arch) await buildArch(arch, opts.version);
   step('Done');
   for (const f of fs.readdirSync(DIST).toSorted()) {
     const size = fs.statSync(path.join(DIST, f)).size;
@@ -152,9 +157,7 @@ function main() {
   }
 }
 
-try {
-  main();
-} catch (error) {
+main().catch((error) => {
   console.error(error && error.stack ? error.stack : error);
   process.exit(1);
-}
+});

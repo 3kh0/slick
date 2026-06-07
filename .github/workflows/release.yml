@@ -18,6 +18,9 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: latest
+      - uses: oven-sh/setup-bun@v2
+      - name: Install tools
+        run: bun install --cwd scripts/release --frozen-lockfile
       - name: Import signing cert
         if: env.MACOS_CERT_P12 != ''
         run: |
