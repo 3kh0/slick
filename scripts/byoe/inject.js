@@ -99,7 +99,10 @@ const armedSessions = new WeakSet();
 function armBlocking(sess) {
   if (!sess || armedSessions.has(sess)) return;
   armedSessions.add(sess);
-  const urls = plugins.block.concat([settings.controlPattern]);
+  const urls = plugins.block.concat(
+    plugins.requests.flatMap((request) => request.urls),
+    settings.controlPattern,
+  );
   sess.webRequest.onBeforeRequest({ urls }, (details, cb) => {
     if (details.url.startsWith('https://slick.control/') || details.url.startsWith('http://slick.control/')) {
       settings.handleControl(details.url, {
@@ -115,6 +118,20 @@ function armBlocking(sess) {
       });
       cb({ cancel: true });
       return;
+    }
+    for (const request of plugins.requests) {
+      try {
+        const response = request.handler(details);
+        if (!response) continue;
+        if (response.cancel) blockedCount++;
+        cb(response);
+        return;
+      } catch (e) {
+        console.error(`[slick-byoe] request interceptor "${request.name}" failed: ${e.message}`);
+        blockedCount++;
+        cb({ cancel: true });
+        return;
+      }
     }
     blockedCount++;
     cb({ cancel: true });
@@ -360,14 +377,15 @@ watchRuntimeFile(ENABLED_FILE, readEnabled, setEnabled);
 watchRuntimeFile(ACTIVE_THEME_FILE, () => settings.readActiveTheme(ACTIVE_THEME_FILE) || '', setTheme);
 watchRuntimeFile(PLUGIN_SETTINGS_FILE, () => settings.readPluginSettings(PLUGIN_SETTINGS_FILE), setPluginSettings);
 
-if (plugins.block.length) {
+const blockedPatternCount = plugins.block.length + plugins.requests.reduce((count, request) => count + request.urls.length, 0);
+if (blockedPatternCount) {
   setInterval(() => {
-    if (blockedCount) console.log(`[slick-byoe] blocked ${blockedCount} telemetry request(s) so far`);
+    if (blockedCount) console.log(`[slick-byoe] blocked ${blockedCount} network request(s) so far`);
   }, 30000).unref();
 }
 
 console.log(
-  `[slick-byoe] armed: theme ${theme.name ? `"${theme.name}" (${theme.css.length} bytes)` : 'none'}` +
+    `[slick-byoe] armed: theme ${theme.name ? `"${theme.name}" (${theme.css.length} bytes)` : 'none'}` +
     ` + ${plugins.loaded.length} plugin(s): ${plugins.loaded.join(', ') || 'none'}` +
-    (plugins.block.length ? ` | blocking ${plugins.block.length} URL pattern(s)` : ''),
+    (blockedPatternCount ? ` | blocking ${blockedPatternCount} URL pattern(s)` : ''),
 );

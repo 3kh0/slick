@@ -103,7 +103,7 @@ function discover(catalog, enabled) {
 }
 
 function loadPlugins({ catalog, enabled, electron, settings }) {
-  const out = { block: [], css: [], cssFns: [], js: [], windowHooks: [], loaded: [], timings: [] };
+  const out = { block: [], requests: [], css: [], cssFns: [], js: [], windowHooks: [], loaded: [], timings: [] };
   const byDir = new Map(catalog.plugins.map((plugin) => [plugin.dir, plugin]));
 
   for (const name of discover(catalog, enabled)) {
@@ -122,6 +122,10 @@ function loadPlugins({ catalog, enabled, electron, settings }) {
       app: electron.app,
       log: (...a) => console.log(`[plugin:${name}]`, ...a),
       blockURLs: (pats) => out.block.push(...[].concat(pats)),
+      interceptRequests: (pats, handler) => {
+        const urls = [].concat(pats).filter(Boolean);
+        if (urls.length && typeof handler === 'function') out.requests.push({ name, urls, handler });
+      },
       injectCSS: (css) => out.css.push([].concat(css).join('\n')),
       injectJS: (js) => {
         if (js) out.js.push(String(js));
