@@ -6,18 +6,28 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 
 const ROOT = path.resolve(__dirname, '..', '..');
-const SOURCE_APP = path.join(ROOT, 'byoe/node_modules/electron/dist/Electron.app');
+const DEFAULT_SOURCE_APP = path.join(ROOT, 'byoe/node_modules/electron/dist/Electron.app');
 const SLACK_RESOURCES = '/Applications/Slack.app/Contents/Resources';
 const SLACK_ASAR = path.join(SLACK_RESOURCES, 'app.asar');
-const DEFAULTS = { target: '/tmp/slick/Slick.app', profile: '/tmp/slick/profile', force: false, allowNonTmp: false };
+const DEFAULTS = {
+  target: '/tmp/slick/Slick.app',
+  profile: '/tmp/slick/profile',
+  appVersion: '0.0.1',
+  sourceApp: process.env.SLICK_SOURCE_APP || DEFAULT_SOURCE_APP,
+  force: false,
+  allowNonTmp: false,
+};
 
 function usage() {
   console.error(`Usage:
-  node scripts/byoe/build-handoff-app.js [--target <app>] [--profile <dir>] [--force] [--allow-non-tmp]
+  node scripts/byoe/build-handoff-app.js [--target <app>] [--profile <dir>] [--app-version <x.y.z>]
+                                         [--source-app <Electron.app>] [--force] [--allow-non-tmp]
 
 Defaults:
-  --target  ${DEFAULTS.target}
-  --profile ${DEFAULTS.profile}`);
+  --target      ${DEFAULTS.target}
+  --profile     ${DEFAULTS.profile}
+  --app-version ${DEFAULTS.appVersion}
+  --source-app  ${DEFAULTS.sourceApp}`);
   process.exit(2);
 }
 
@@ -26,6 +36,8 @@ function parseArgs(argv) {
   for (let i = 0; i < argv.length; i += 1) {
     if (argv[i] === '--target') o.target = argv[++i] || usage();
     else if (argv[i] === '--profile') o.profile = argv[++i] || usage();
+    else if (argv[i] === '--app-version') o.appVersion = argv[++i] || usage();
+    else if (argv[i] === '--source-app') o.sourceApp = argv[++i] || usage();
     else if (argv[i] === '--force') o.force = true;
     else if (argv[i] === '--allow-non-tmp') o.allowNonTmp = true;
     else usage();
@@ -98,9 +110,9 @@ function main() {
   const opts = parseArgs(process.argv.slice(2));
   const target = path.resolve(opts.target);
   const profile = path.resolve(opts.profile);
+  const sourceApp = path.resolve(opts.sourceApp);
 
-  if (!fs.existsSync(SOURCE_APP)) throw new Error(`BYOE Electron missing at ${SOURCE_APP}`);
-  if (!fs.existsSync(SLACK_ASAR)) throw new Error(`Slack ASAR missing at ${SLACK_ASAR}`);
+  if (!fs.existsSync(sourceApp)) throw new Error(`BYOE Electron missing at ${sourceApp}`);
   if (!opts.allowNonTmp && !target.startsWith('/tmp/') && !target.startsWith('/private/tmp/')) {
     throw new Error('prototype tg must be at under /tmp unless --allow-non-tmp is here, and its fucking not');
   }
@@ -110,7 +122,7 @@ function main() {
   }
 
   fs.mkdirSync(path.dirname(target), { recursive: true });
-  fs.cpSync(SOURCE_APP, target, { recursive: true, preserveTimestamps: true, verbatimSymlinks: true });
+  fs.cpSync(sourceApp, target, { recursive: true, preserveTimestamps: true, verbatimSymlinks: true });
 
   const res = path.join(target, 'Contents/Resources');
   const plist = path.join(target, 'Contents/Info.plist');
@@ -119,8 +131,8 @@ function main() {
     CFBundleName: 'Slick',
     CFBundleDisplayName: 'Slick',
     CFBundleExecutable: 'Electron',
-    CFBundleShortVersionString: '0.0.1',
-    CFBundleVersion: '0.0.1',
+    CFBundleShortVersionString: opts.appVersion,
+    CFBundleVersion: opts.appVersion,
   }))
     plutil('-replace', k, '-string', v, plist);
   for (const k of ['ElectronAsarIntegrity', 'CFBundleURLTypes'])
@@ -138,32 +150,89 @@ function main() {
   const files = [
     {
       name: 'package.json',
-      contents: `${JSON.stringify({ name: 'slick', productName: 'Slick', version: '0.0.1', main: 'index.js' }, null, 2)}\n`,
+      contents: `${JSON.stringify({ name: 'slick', productName: 'Slick', version: opts.appVersion, main: 'index.js' }, null, 2)}\n`,
     },
     {
       name: 'index.js',
       contents: `'use strict';
 
+const fs = require('fs');
 const path = require('path');
-const { app } = require('electron');
+const { app, dialog, shell } = require('electron');
 
 const SLICK_ROOT = path.join(process.resourcesPath, 'slick');
-const PROFILE = process.env.SLICK_HANDOFF_PROFILE || ${JSON.stringify(profile)};
+const PROFILE = process.env.SLICK_HANDOFF_PROFILE || path.join(app.getPath('appData'), 'Slack');
 const SLACK_RESOURCES = ${JSON.stringify(SLACK_RESOURCES)};
 const SLACK_ASAR = ${JSON.stringify(SLACK_ASAR)};
 
-app.setPath('userData', PROFILE);
+function slackElectronMajor() {
+  try {
+    const plist = '/Applications/Slack.app/Contents/Frameworks/Electron Framework.framework/Resources/Info.plist';
+    const raw = require('child_process').execFileSync(
+      '/usr/bin/plutil', ['-extract', 'CFBundleVersion', 'raw', '-o', '-', plist], { encoding: 'utf8' },
+    );
+    return parseInt(raw, 10) || 0;
+  } catch {
+    return 0;
+  }
+}
 
-try {
-  Object.defineProperty(process, 'resourcesPath', { configurable: true, value: SLACK_RESOURCES });
-} catch {}
+function preflight() {
+  if (!fs.existsSync(SLACK_ASAR)) {
+    dialog.showMessageBoxSync({
+      type: 'error',
+      title: 'Slick',
+      message: 'Slack is not installed',
+      detail: 'Slick needs the official Slack app at /Applications/Slack.app. Install it from slack.com, then open Slick again.',
+      buttons: ['Quit'],
+    });
+    return false;
+  }
+  const x = slackElectronMajor();
+  const y = parseInt(process.versions.electron, 10);
+  if (x && x !== y) {
+    const choice = dialog.showMessageBoxSync({
+      type: 'error',
+      title: 'Slick',
+      message: 'This Slick build no longer matches Slack',
+      detail: 'Slack now ships Electron ' + x + ', but this Slick build bundles Electron ' + y + '. Download the latest Slick release.',
+      buttons: ['Open Releases Page', 'Launch Anyway', 'Quit'],
+      defaultId: 0,
+      cancelId: 2,
+    });
+    if (choice === 0) shell.openExternal('https://github.com/3kh0/slick/releases');
+    return choice === 1;
+  }
+  return true;
+}
 
-const getAppPath = app.getAppPath.bind(app);
-app.getAppPath = () => process.env.SLICK_HANDOFF_KEEP_WRAPPER_APP_PATH === '1' ? getAppPath() : SLACK_ASAR;
+function seedSettings() {
+  try {
+    const enabled = path.join(PROFILE, 'slick', 'enabled-plugins.json');
+    if (!fs.existsSync(enabled)) {
+      fs.mkdirSync(path.dirname(enabled), { recursive: true });
+      fs.copyFileSync(path.join(SLICK_ROOT, 'plugins/enabled.json'), enabled);
+    }
+  } catch {}
+}
 
-require(path.join(SLICK_ROOT, 'scripts/byoe/login-handoff.js'));
-require(path.join(SLICK_ROOT, 'scripts/byoe/inject.js'));
-require(SLACK_ASAR);
+if (!preflight()) {
+  app.exit(1);
+} else {
+  app.setPath('userData', PROFILE);
+  seedSettings();
+
+  try {
+    Object.defineProperty(process, 'resourcesPath', { configurable: true, value: SLACK_RESOURCES });
+  } catch {}
+
+  const getAppPath = app.getAppPath.bind(app);
+  app.getAppPath = () => process.env.SLICK_HANDOFF_KEEP_WRAPPER_APP_PATH === '1' ? getAppPath() : SLACK_ASAR;
+
+  require(path.join(SLICK_ROOT, 'scripts/byoe/login-handoff.js'));
+  require(path.join(SLICK_ROOT, 'scripts/byoe/inject.js'));
+  require(SLACK_ASAR);
+}
 `,
     },
   ];
