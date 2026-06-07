@@ -6,7 +6,6 @@ module.exports = {
   meta: {
     name: 'CustomNameRecording',
     description: 'Upload custom audio as your Slack name recording',
-    version: '1.0.0',
   },
   css: `
     .slick-cnr-record-button,

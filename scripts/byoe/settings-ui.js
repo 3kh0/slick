@@ -64,7 +64,6 @@ function buildManifest({ catalog, enabled, activeTheme, pluginSettings }) {
     return {
       dir,
       name: meta.name || dir,
-      version: meta.version || '',
       description: meta.description || '',
       enabled: enabled ? enabled.includes(dir) : true,
       settings: schema,

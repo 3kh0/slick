@@ -58,7 +58,7 @@ for (const d of dirs) {
     continue;
   }
 
-  for (const k of ['name', 'description', 'version']) if (!m.meta?.[k]) fail(`plugins/${d}`, `missing meta.${k}`);
+  for (const k of ['name', 'description']) if (!m.meta?.[k]) fail(`plugins/${d}`, `missing meta.${k}`);
   if (m.main && typeof m.main !== 'function') fail(`plugins/${d}`, '"main" must be a function');
   if (!m.main && !m.css && !m.renderer) fail(`plugins/${d}`, 'exports none of main/css/renderer');
 

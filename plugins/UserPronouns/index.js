@@ -6,7 +6,6 @@ module.exports = {
   meta: {
     name: 'UserPronouns',
     description: "Display users' pronouns next to their messages",
-    version: '1.0.0',
   },
 
   renderer: fs.readFileSync(path.join(__dirname, 'renderer.js'), 'utf8'),

@@ -6,7 +6,6 @@ module.exports = {
   meta: {
     name: 'ClearURLs',
     description: 'Automatically removes tracking elements from URLs you send',
-    version: '1.0.0',
   },
 
   settings: {

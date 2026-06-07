@@ -7,7 +7,6 @@ module.exports = {
   meta: {
     name: 'Snappy',
     description: 'Make Slack feel more responsive by disabling animations and other slow features',
-    version: '1.0.0',
   },
 
   settings: {

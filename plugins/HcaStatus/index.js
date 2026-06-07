@@ -43,7 +43,6 @@ module.exports = {
   meta: {
     name: 'HcaStatus',
     description: 'Flag users who have not completed identity verification',
-    version: '1.0.0',
   },
   settings: {
     unverifiedColor: {

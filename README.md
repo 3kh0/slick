@@ -47,7 +47,7 @@ Plugins are defined in the `plugins/` folder as subfolders with an `index.js` fi
 
 ```js
 module.exports = {
-  meta: { name, description, version },
+  meta: { name, description }, // required, shown in the UI
   settings: {}, // optional, user-configurable options (see below)
   main(ctx) {}, // optional, main process
   css, // optional, CSS for every window; a string, or a function of the plugin's settings

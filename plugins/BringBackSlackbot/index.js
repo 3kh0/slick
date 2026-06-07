@@ -5,7 +5,6 @@ module.exports = {
   meta: {
     name: 'BringBackSlackbot',
     description: 'Bring back Slackbot on workspace custom responses',
-    version: '1.0.0',
   },
 
   css: `

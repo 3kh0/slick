@@ -35,7 +35,6 @@
       '#slick-panel-overlay .slick-plugin{padding:14px 0;border-top:1px solid rgba(127,127,127,.16)}',
       '#slick-panel-overlay .slick-plugin:last-of-type{border-bottom:1px solid rgba(127,127,127,.16)}',
       '#slick-panel-overlay .slick-plugin .c-label{margin:0}',
-      '#slick-panel-overlay .slick-ver{opacity:.5;font-weight:400;margin-left:8px}',
       '#slick-applybar{position:sticky;bottom:-20px;margin:20px -28px -20px;padding:14px 28px;display:flex;align-items:center;gap:14px;background:rgba(127,127,127,.10);border-top:1px solid rgba(127,127,127,.2);backdrop-filter:blur(8px)}',
       '#slick-applybar .slick-msg{flex:1;opacity:.85}',
       '#slick-applybar.hidden{display:none}',
@@ -83,7 +82,6 @@
   const pluginRow = (p) =>
     row(
       esc(p.name) +
-        (p.version ? '<span class="slick-ver">v' + esc(p.version) + '</span>' : '') +
         (p.settings && p.settings.length
           ? '<button class="c-button-unstyled slick-cog" type="button" data-cog="' +
             esc(p.dir) +

@@ -19,7 +19,6 @@ module.exports = {
   meta: {
     name: 'QuietSpotify',
     description: 'Customize the volume of Spotify embeds so they are not stupidly loud',
-    version: '1.0.0',
   },
 
   settings: {

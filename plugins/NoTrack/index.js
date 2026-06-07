@@ -4,7 +4,6 @@ module.exports = {
   meta: {
     name: 'NoTrack',
     description: "Disable Slack's built in tracking",
-    version: '1.0.0',
   },
 
   main(ctx) {
