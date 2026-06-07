@@ -41,7 +41,7 @@ function parseArgs(argv) {
 
 function run(cmd, args, opts = {}) {
   const r = spawnSync(cmd, args, { encoding: 'utf8', stdio: 'inherit', ...opts });
-  if (r.status !== 0) throw new Error(`${cmd} ${args.join(' ')} failed (exit ${r.status})`);
+  if (r.status !== 0) throw new Error(`${cmd} failed (exit ${r.status})`);
 }
 
 function step(msg) {
