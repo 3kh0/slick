@@ -162,7 +162,7 @@ app.whenReady().then(() => {
   armBlocking(session.defaultSession);
   if (process.env.SLICK_DBG) {
     session.defaultSession.cookies.on('changed', (_e, c, cause, removed) => {
-      if (/^d/.test(c.name))
+      if (c.name.startsWith('d'))
         console.log(`[slick-dbg] cookie ${c.name} ${removed ? 'REMOVED' : 'SET'} cause=${cause} domain=${c.domain}`);
     });
   }
