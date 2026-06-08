@@ -99,7 +99,7 @@
     const provider = providerFor(frame, source);
     if (!provider) {
       states.delete(frame);
-      iframeSrc.set.call(frame, value);
+      if (iframeSrc.get.call(frame) !== source) iframeSrc.set.call(frame, value);
       return;
     }
 
