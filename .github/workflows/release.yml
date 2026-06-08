@@ -2,14 +2,18 @@ name: Release
 
 on:
   push:
-    tags: ['v*']
+    tags: ["v*"]
 
 permissions:
   contents: write
 
 jobs:
-  release:
+  build:
     runs-on: macos-26
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [arm64, x64]
     env:
       MACOS_CERT_P12: ${{ secrets.MACOS_CERT_P12 }}
       MACOS_CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
@@ -39,7 +43,26 @@ jobs:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
-        run: node scripts/release/build-release.js --version "${GITHUB_REF_NAME#v}"
+        run: node scripts/release/build-release.js --version "${GITHUB_REF_NAME#v}" --arch "${{ matrix.arch }}"
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: slick-${{ matrix.arch }}
+          path: |
+            dist/Slick-*.zip
+            dist/Slick-*.dmg
+          if-no-files-found: error
+          retention-days: 1
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v8
+        with:
+          path: dist
+          merge-multiple: true
       - name: Create release
         uses: softprops/action-gh-release@v3
         with:
