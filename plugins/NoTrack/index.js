@@ -15,7 +15,6 @@ module.exports = {
       '*://*.slack.com/beacon/*',
       '*://slack.com/clog/*',
       '*://*.slack.com/clog/*',
-      '*://*.slack-edge.com/*/slack_beacon.*',
     ];
     ctx.blockURLs(patterns);
     ctx.log(`[notrack] blocking ${patterns.length} patterns`);
