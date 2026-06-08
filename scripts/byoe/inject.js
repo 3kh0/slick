@@ -104,6 +104,7 @@ function armBlocking(sess) {
     settings.controlPattern,
   );
   sess.webRequest.onBeforeRequest({ urls }, (details, cb) => {
+    if (process.env.SLICK_DBG) console.log('[slick-dbg] intercepted', details.url);
     if (details.url.startsWith('https://slick.control/') || details.url.startsWith('http://slick.control/')) {
       settings.handleControl(details.url, {
         catalog,
@@ -159,6 +160,12 @@ function requestNoti() {
 app.whenReady().then(() => {
   perf.mark('app ready');
   armBlocking(session.defaultSession);
+  if (process.env.SLICK_DBG) {
+    session.defaultSession.cookies.on('changed', (_e, c, cause, removed) => {
+      if (/^d/.test(c.name))
+        console.log(`[slick-dbg] cookie ${c.name} ${removed ? 'REMOVED' : 'SET'} cause=${cause} domain=${c.domain}`);
+    });
+  }
   for (const url of ['https://app.slack.com', 'https://a.slack-edge.com', 'https://wss-primary.slack.com']) {
     try {
       session.defaultSession.preconnect({ url, numSockets: 2 });
@@ -301,6 +308,15 @@ app.on('browser-window-created', (_event, win) => {
   }
   const wc = win.webContents;
   armBlocking(wc.session);
+  if (process.env.SLICK_DBG) {
+    wc.on('did-navigate', (_e, url) => console.log(`[slick-dbg] wc${wc.id} did-navigate ${url}`));
+    wc.on('did-frame-navigate', (_e, url, code, _s, isMain) => {
+      if (!isMain) console.log(`[slick-dbg] wc${wc.id} SUBFRAME ${code} ${url}`);
+    });
+    wc.on('did-navigate-in-page', (_e, url) => console.log(`[slick-dbg] wc${wc.id} in-page ${url}`));
+    wc.on('did-fail-load', (_e, code, desc, url) => console.log(`[slick-dbg] wc${wc.id} FAIL ${code} ${desc} ${url}`));
+    wc.on('destroyed', () => console.log(`[slick-dbg] wc${wc.id} destroyed`));
+  }
   for (const hook of plugins.windowHooks) {
     try {
       hook(win);
