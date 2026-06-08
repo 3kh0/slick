@@ -38,16 +38,20 @@
       '#slick-applybar{position:sticky;bottom:-20px;margin:20px -28px -20px;padding:14px 28px;display:flex;align-items:center;gap:14px;background:rgba(127,127,127,.10);border-top:1px solid rgba(127,127,127,.2);backdrop-filter:blur(8px)}',
       '#slick-applybar .slick-msg{flex:1;opacity:.85}',
       '#slick-applybar.hidden{display:none}',
-      '#slick-panel-overlay .slick-cog{display:inline-block;opacity:.55;padding:2px;margin-left:8px;vertical-align:text-bottom;border-radius:4px}',
-      '#slick-panel-overlay .slick-cog:hover{opacity:1;background:rgba(127,127,127,.2)}',
+      '#slick-panel-overlay .slick-cog{display:inline-block;opacity:.55;padding:2px;margin-left:8px;vertical-align:text-bottom;border-radius:4px;cursor:pointer}',
+      '#slick-panel-overlay .slick-cog:hover,#slick-panel-overlay .slick-cog:focus-visible{opacity:1;background:rgba(127,127,127,.2)}',
+      '#slick-panel-overlay .slick-cog:focus-visible{outline:2px solid rgba(29,155,209,.65);outline-offset:1px}',
       '#slick-config-backdrop{position:fixed;inset:0;z-index:1300;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center}',
-      '#slick-config-modal{width:460px;max-width:90vw;max-height:80vh;overflow-y:auto;border-radius:12px;padding:20px 28px;box-shadow:0 18px 48px rgba(0,0,0,.35)}',
+      '#slick-config-modal{width:560px;max-width:90vw;max-height:80vh;overflow-y:auto;border-radius:12px;padding:20px 28px;box-shadow:0 18px 48px rgba(0,0,0,.35)}',
       '#slick-config-modal .slick-config-head{display:flex;align-items:center;margin-bottom:4px}',
       '#slick-config-modal .slick-config-head .c-legend{flex:1;margin:0}',
       '#slick-config-modal .slick-config-close{opacity:.6;font-size:22px;line-height:1;padding:2px 8px;border-radius:4px}',
       '#slick-config-modal .slick-config-close:hover{opacity:1;background:rgba(127,127,127,.2)}',
-      '#slick-config-modal .slick-cfg-text{width:180px}',
-      '#slick-config-modal .slick-cfg-select{padding:4px 8px;border-radius:6px;border:1px solid rgba(127,127,127,.4);background:transparent;color:inherit}',
+      '#slick-config-modal .slick-plugin[data-cfg-kind="text"] .c-label,#slick-config-modal .slick-plugin[data-cfg-kind="number"] .c-label,#slick-config-modal .slick-plugin[data-cfg-kind="select"] .c-label{display:block;width:100%}',
+      '#slick-config-modal .slick-plugin[data-cfg-kind="text"] .c-label__text,#slick-config-modal .slick-plugin[data-cfg-kind="number"] .c-label__text,#slick-config-modal .slick-plugin[data-cfg-kind="select"] .c-label__text{display:block;margin-bottom:8px;width:100%}',
+      '#slick-config-modal .slick-plugin[data-cfg-kind="text"] .c-label__children,#slick-config-modal .slick-plugin[data-cfg-kind="number"] .c-label__children,#slick-config-modal .slick-plugin[data-cfg-kind="select"] .c-label__children{display:block;width:100%}',
+      '#slick-config-modal .slick-cfg-text{width:100%;box-sizing:border-box}',
+      '#slick-config-modal .slick-cfg-select{width:100%;box-sizing:border-box;padding:4px 8px;border-radius:6px;border:1px solid rgba(127,127,127,.4);background:transparent;color:inherit}',
       '#slick-config-modal .slick-cfg-color{width:36px;height:24px;padding:0;border:1px solid rgba(127,127,127,.4);border-radius:6px;background:transparent;cursor:pointer}',
       '#slick-config-modal .slick-config-note{margin:14px 0 0;opacity:.55;font-size:12px}',
       '#slick-config-modal .slick-restart-required{display:inline-block;margin-left:8px;padding:1px 6px;border-radius:999px;background:rgba(224,30,90,.14);color:#e01e5a;font-size:11px;font-weight:600}',
@@ -61,10 +65,12 @@
       (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c],
     );
 
-  function row(text, sub, control) {
+  function row(text, sub, control, attrs = '') {
     sub = sub ? '<span class="c-label__subtext" data-qa-label-subtext="true">' + esc(sub) + '</span>' : '';
     return (
-      '<div class="slick-plugin">' +
+      '<div class="slick-plugin"' +
+      attrs +
+      '>' +
       '<label class="c-label c-label--inline' +
       (sub ? ' c-label--with_subtext' : '') +
       ' c-label--pointer" data-qa-label="true">' +
@@ -83,13 +89,13 @@
     row(
       esc(p.name) +
         (p.settings && p.settings.length
-          ? '<button class="c-button-unstyled slick-cog" type="button" data-cog="' +
+          ? '<span class="c-button-unstyled slick-cog" role="button" tabindex="0" data-cog="' +
             esc(p.dir) +
-            '" aria-label="Configure ' +
+            '" aria-haspopup="dialog" aria-label="Configure ' +
             esc(p.name) +
             '">' +
             ICON +
-            '</button>'
+            '</span>'
           : ''),
       p.description,
       '<input class="c-input_checkbox" type="checkbox" data-plugin="' +
@@ -97,6 +103,7 @@
         '"' +
         (p.enabled ? ' checked' : '') +
         '>',
+      ' data-plugin-row="' + esc(p.dir) + '"',
     );
 
   function settingControl(dir, def, value) {
@@ -164,6 +171,7 @@
               (def.restartRequired ? '<span class="slick-restart-required">Restart required</span>' : ''),
             def.description,
             settingControl(p.dir, def, p.values[def.key]),
+            ' data-cfg-kind="' + esc(def.type) + '"',
           ),
         )
         .join('') +
@@ -244,12 +252,29 @@
         setTimeout(positionOverlay, 300);
       });
     });
-    ov.querySelectorAll('button[data-cog]').forEach((btn) => {
+    function openCog(btn, e) {
+      e.preventDefault();
+      e.stopPropagation();
+      const p = (S.plugins || []).find((x) => x.dir === btn.getAttribute('data-cog'));
+      if (p) openConfig(p);
+    }
+    ov.querySelectorAll('[data-cog]').forEach((btn) => {
       btn.addEventListener('click', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        const p = (S.plugins || []).find((x) => x.dir === btn.getAttribute('data-cog'));
-        if (p) openConfig(p);
+        openCog(btn, e);
+      });
+      btn.addEventListener('keydown', (e) => {
+        if (e.key !== 'Enter' && e.key !== ' ') return;
+        openCog(btn, e);
+      });
+    });
+    ov.querySelectorAll('[data-plugin-row]').forEach((pluginRowEl) => {
+      pluginRowEl.addEventListener('click', (e) => {
+        const target = e.target && e.target.nodeType === 1 ? e.target : e.target.parentElement;
+        if (target && target.closest('label,input,[data-cog]')) return;
+        const input = pluginRowEl.querySelector('input[data-plugin]');
+        if (!input) return;
+        input.checked = !input.checked;
+        input.dispatchEvent(new Event('change', { bubbles: true }));
       });
     });
     ov.querySelectorAll('input[data-plugin]').forEach((input) => {
