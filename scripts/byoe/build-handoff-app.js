@@ -12,7 +12,8 @@ const SLACK_ASAR = path.join(SLACK_RESOURCES, 'app.asar');
 const DEFAULTS = {
   target: '/tmp/slick/Slick.app',
   profile: '/tmp/slick/profile',
-  appVersion: '0.0.1',
+  appVersion: '1.0.0',
+  buildNumber: '0',
   sourceApp: process.env.SLICK_SOURCE_APP || DEFAULT_SOURCE_APP,
   force: false,
   allowNonTmp: false,
@@ -21,12 +22,14 @@ const DEFAULTS = {
 function usage() {
   console.error(`Usage:
   node scripts/byoe/build-handoff-app.js [--target <app>] [--profile <dir>] [--app-version <x.y.z>]
+                                         [--build-number <n>]
                                          [--source-app <Electron.app>] [--force] [--allow-non-tmp]
 
 Defaults:
   --target      ${DEFAULTS.target}
   --profile     ${DEFAULTS.profile}
   --app-version ${DEFAULTS.appVersion}
+  --build-number ${DEFAULTS.buildNumber}
   --source-app  ${DEFAULTS.sourceApp}`);
   process.exit(2);
 }
@@ -37,6 +40,7 @@ function parseArgs(argv) {
     if (argv[i] === '--target') o.target = argv[++i] || usage();
     else if (argv[i] === '--profile') o.profile = argv[++i] || usage();
     else if (argv[i] === '--app-version') o.appVersion = argv[++i] || usage();
+    else if (argv[i] === '--build-number') o.buildNumber = argv[++i] || usage();
     else if (argv[i] === '--source-app') o.sourceApp = argv[++i] || usage();
     else if (argv[i] === '--force') o.force = true;
     else if (argv[i] === '--allow-non-tmp') o.allowNonTmp = true;
@@ -114,6 +118,8 @@ function main() {
   const activeThemeFile = path.join(ROOT, 'themes/.active');
   const defaultTheme = fs.existsSync(activeThemeFile) ? fs.readFileSync(activeThemeFile, 'utf8').trim() : '';
 
+  if (!/^\d+\.\d+\.\d+$/.test(opts.appVersion)) throw new Error('--app-version must look like x.y.z');
+  if (!/^(0|[1-9]\d*)$/.test(opts.buildNumber)) throw new Error('--build-number must be a non-negative integer');
   if (!fs.existsSync(sourceApp)) throw new Error(`BYOE Electron missing at ${sourceApp}`);
   if (!opts.allowNonTmp && !target.startsWith('/tmp/') && !target.startsWith('/private/tmp/')) {
     throw new Error('prototype tg must be at under /tmp unless --allow-non-tmp is here, and its fucking not');
@@ -134,7 +140,7 @@ function main() {
     CFBundleDisplayName: 'Slick',
     CFBundleExecutable: 'Electron',
     CFBundleShortVersionString: opts.appVersion,
-    CFBundleVersion: opts.appVersion,
+    CFBundleVersion: opts.buildNumber,
   }))
     plutil('-replace', k, '-string', v, plist);
   for (const k of ['ElectronAsarIntegrity', 'CFBundleURLTypes'])
@@ -159,6 +165,7 @@ function main() {
       contents: `'use strict';
 
 const fs = require('fs');
+const https = require('https');
 const path = require('path');
 const { app, dialog, shell } = require('electron');
 
@@ -167,6 +174,12 @@ const PROFILE = process.env.SLICK_HANDOFF_PROFILE || path.join(app.getPath('appD
 const DEFAULT_THEME = ${JSON.stringify(defaultTheme)};
 const SLACK_RESOURCES = ${JSON.stringify(SLACK_RESOURCES)};
 const SLACK_ASAR = ${JSON.stringify(SLACK_ASAR)};
+const SLICK_VERSION = ${JSON.stringify(opts.appVersion)};
+const SLICK_BUILD = parseInt(${JSON.stringify(opts.buildNumber)}, 10) || 0;
+const RELEASES_URL = 'https://github.com/3kh0/slick/releases';
+const LATEST_RELEASE_API = 'https://api.github.com/repos/3kh0/slick/releases/latest';
+const UPDATE_CHECK_INTERVAL = 6 * 60 * 60 * 1000;
+const STARTUP_UPDATE_DELAY = 30 * 1000;
 
 function slackElectronMajor() {
   try {
@@ -203,7 +216,7 @@ function preflight() {
       defaultId: 0,
       cancelId: 2,
     });
-    if (choice === 0) shell.openExternal('https://github.com/3kh0/slick/releases');
+    if (choice === 0) shell.openExternal(RELEASES_URL);
     return choice === 1;
   }
   return true;
@@ -220,11 +233,130 @@ function seedSettings() {
   } catch {}
 }
 
+function updateStatePath() {
+  return path.join(PROFILE, 'slick', 'update-check.json');
+}
+
+function readUpdateState() {
+  try {
+    return JSON.parse(fs.readFileSync(updateStatePath(), 'utf8'));
+  } catch {
+    return {};
+  }
+}
+
+function writeUpdateState(state) {
+  try {
+    const file = updateStatePath();
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, JSON.stringify(state, null, 2) + '\\n');
+  } catch {}
+}
+
+function releaseBuild(release) {
+  const match = /^v([1-9]\\d*)$/.exec(String(release && release.tag_name || '').trim());
+  return match ? parseInt(match[1], 10) : 0;
+}
+
+function fetchLatestRelease() {
+  return new Promise((resolve, reject) => {
+    const req = https.get(
+      LATEST_RELEASE_API,
+      {
+        headers: {
+          Accept: 'application/vnd.github+json',
+          'User-Agent': 'Slick/' + SLICK_VERSION + ' Build ' + SLICK_BUILD,
+        },
+      },
+      (res) => {
+        if (res.statusCode !== 200) {
+          res.resume();
+          reject(new Error('update check returned HTTP ' + res.statusCode));
+          return;
+        }
+
+        let body = '';
+        res.setEncoding('utf8');
+        res.on('data', (chunk) => {
+          body += chunk;
+          if (body.length > 1024 * 1024) req.destroy(new Error('update response was too large'));
+        });
+        res.on('end', () => {
+          try {
+            resolve(JSON.parse(body));
+          } catch (e) {
+            reject(e);
+          }
+        });
+      },
+    );
+    req.setTimeout(15000, () => req.destroy(new Error('update check timed out')));
+    req.on('error', reject);
+  });
+}
+
+async function checkForUpdates() {
+  if (!SLICK_BUILD) return;
+  const now = Date.now();
+  const state = readUpdateState();
+  if (state.lastCheckedAt && now - state.lastCheckedAt < UPDATE_CHECK_INTERVAL) return;
+  writeUpdateState({ ...state, lastCheckedAt: now });
+
+  let release;
+  try {
+    release = await fetchLatestRelease();
+  } catch {
+    return;
+  }
+
+  const latestBuild = releaseBuild(release);
+  if (latestBuild <= SLICK_BUILD) return;
+
+  const promptState = readUpdateState();
+  if (
+    promptState.lastPromptedBuild === latestBuild &&
+    now - (promptState.lastPromptedAt || 0) < UPDATE_CHECK_INTERVAL
+  ) {
+    return;
+  }
+  writeUpdateState({ ...promptState, lastPromptedBuild: latestBuild, lastPromptedAt: Date.now() });
+
+  dialog.showMessageBox({
+    type: 'info',
+    title: 'Slick update available',
+    message: 'Slick Build ' + latestBuild + ' is available',
+    detail: 'You are running Build ' + SLICK_BUILD + '. Open the release page to download it, or rerun the installer when you are ready.',
+    buttons: ['Open Release Page', 'Later'],
+    defaultId: 0,
+    cancelId: 1,
+  }).then(({ response }) => {
+    if (response === 0) return shell.openExternal(release.html_url || RELEASES_URL);
+    return undefined;
+  }).catch(() => {});
+}
+
+function scheduleUpdateChecks() {
+  if (!SLICK_BUILD) return;
+  const run = () => {
+    checkForUpdates();
+    setTimeout(run, UPDATE_CHECK_INTERVAL);
+  };
+  app.whenReady().then(() => {
+    const state = readUpdateState();
+    const elapsed = Date.now() - (state.lastCheckedAt || 0);
+    const delay = state.lastCheckedAt
+      ? Math.max(STARTUP_UPDATE_DELAY, UPDATE_CHECK_INTERVAL - elapsed)
+      : STARTUP_UPDATE_DELAY;
+    setTimeout(run, delay);
+  }).catch(() => {});
+}
+
 if (!preflight()) {
   app.exit(1);
 } else {
   app.setPath('userData', PROFILE);
   seedSettings();
+  scheduleUpdateChecks();
 
   try {
     Object.defineProperty(process, 'resourcesPath', { configurable: true, value: SLACK_RESOURCES });
@@ -245,22 +377,12 @@ if (!preflight()) {
 
   run('/usr/bin/codesign', ['--force', '--deep', '--sign', '-', target]);
 
-  console.log(
-    JSON.stringify(
-      {
-        app: target,
-        profile,
-        note: 'Open this to register slack:// to Slick',
-      },
-      null,
-      2,
-    ),
-  );
+  console.log(JSON.stringify({ app: target, profile, note: 'Open this to register slack:// to Slick' }, null, 2));
 }
 
 try {
   main();
-} catch (error) {
-  console.error(error && error.stack ? error.stack : error);
+} catch (e) {
+  console.error(e?.stack || e);
   process.exit(1);
 }

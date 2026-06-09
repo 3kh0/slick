@@ -2,7 +2,7 @@
 // Build distributable Slick.app artifacts (zip + dmg per arch) into dist/.
 // Downloads stock Electron for each arch, so this works on a clean machine/CI runner
 // without Slack installed (the app checks for Slack at launch instead).
-//   node scripts/release/build-release.js [--version <x.y.z>] [--arch arm64,x64]
+//   node scripts/release/build-release.js [--build-number <n>] [--arch arm64,x64]
 'use strict';
 
 const fs = require('fs');
@@ -14,27 +14,47 @@ const BUILD = path.join(ROOT, 'build');
 const CACHE = path.join(BUILD, 'cache');
 const DIST = path.join(ROOT, 'dist');
 const ELECTRON_VERSION = require(path.join(ROOT, 'byoe/package.json')).dependencies.electron;
-const DEFAULTS = { version: '0.0.1', arch: ['arm64', 'x64'] };
+const DEFAULTS = { buildNumber: '0', arch: ['arm64', 'x64'] };
 const SIGN_IDENTITY = process.env.SLICK_SIGN_IDENTITY || '';
 const NOTARY = ['APPLE_ID', 'APPLE_TEAM_ID', 'APPLE_APP_PASSWORD'].every((k) => process.env[k]);
 
+function latest() {
+  const r = spawnSync('git', ['tag', '--list', 'v[0-9]*', '--sort=-v:refname'], { cwd: ROOT, encoding: 'utf8' });
+  if (r.status !== 0) return DEFAULTS.buildNumber;
+  const tag = r.stdout.split(/\r?\n/).find((t) => /^v[1-9]\d*$/.test(t));
+  return tag ? tag.slice(1) : DEFAULTS.buildNumber;
+}
+
 function usage() {
   console.error(`Usage:
-  node scripts/release/build-release.js [--version <x.y.z>] [--arch arm64,x64]
+  node scripts/release/build-release.js [--build-number <n>] [--app-version <x.y.z>] [--arch arm64,x64]
 
 Defaults:
-  --version ${DEFAULTS.version}
-  --arch    ${DEFAULTS.arch.join(',')}`);
+  --build-number ${latest()}
+  --app-version  1.0.<build-number>
+  --arch         ${DEFAULTS.arch.join(',')}`);
   process.exit(2);
 }
 
 function parseArgs(argv) {
-  const o = { ...DEFAULTS };
+  const o = { ...DEFAULTS, buildNumber: process.env.SLICK_BUILD_NUMBER || latest(), appVersion: '' };
   for (let i = 0; i < argv.length; i += 1) {
-    if (argv[i] === '--version') o.version = argv[++i] || usage();
-    else if (argv[i] === '--arch') o.arch = (argv[++i] || usage()).split(',');
+    if (argv[i] === '--build-number') o.buildNumber = argv[++i] || usage();
+    else if (argv[i] === '--app-version') o.appVersion = argv[++i] || usage();
+    else if (argv[i] === '--version') {
+      const version = argv[++i] || usage();
+      const legacy = /^(\d+)\.(\d+)\.(\d+)$/.exec(version);
+      if (/^\d+$/.test(version)) o.buildNumber = version;
+      else if (legacy) {
+        o.appVersion = version;
+        o.buildNumber = legacy[3];
+      } else usage();
+    } else if (argv[i] === '--arch') o.arch = (argv[++i] || usage()).split(',');
     else usage();
   }
+  if (!/^(0|[1-9]\d*)$/.test(o.buildNumber)) usage();
+  o.appVersion ||= `1.0.${o.buildNumber}`;
+  if (!/^\d+\.\d+\.\d+$/.test(o.appVersion)) usage();
   for (const a of o.arch) if (!['arm64', 'x64'].includes(a)) usage();
   return o;
 }
@@ -111,11 +131,11 @@ async function signAndNotarize(app, arch) {
   run('xcrun', ['stapler', 'staple', app]);
 }
 
-async function buildArch(arch, version) {
+async function buildArch(arch, opts) {
   const sourceApp = fetchElectron(arch);
   const app = path.join(BUILD, arch, 'Slick.app');
 
-  step(`Building Slick.app ${version} (${arch})`);
+  step(`Building Slick.app Build ${opts.buildNumber} (${opts.appVersion}, ${arch})`);
   run('node', [
     path.join(ROOT, 'scripts/byoe/build-handoff-app.js'),
     '--source-app',
@@ -123,7 +143,9 @@ async function buildArch(arch, version) {
     '--target',
     app,
     '--app-version',
-    version,
+    opts.appVersion,
+    '--build-number',
+    opts.buildNumber,
     '--allow-non-tmp',
     '--force',
   ]);
@@ -132,7 +154,7 @@ async function buildArch(arch, version) {
 
   step(`Packaging zip + dmg (${arch})`);
   fs.mkdirSync(DIST, { recursive: true });
-  const zip = path.join(DIST, `Slick-${version}-${arch}.zip`);
+  const zip = path.join(DIST, `Slick-build-${opts.buildNumber}-${arch}.zip`);
   fs.rmSync(zip, { force: true });
   run('/usr/bin/ditto', ['-c', '-k', '--keepParent', app, zip]);
 
@@ -141,7 +163,7 @@ async function buildArch(arch, version) {
   fs.mkdirSync(staging, { recursive: true });
   run('/usr/bin/ditto', [app, path.join(staging, 'Slick.app')]);
   fs.symlinkSync('/Applications', path.join(staging, 'Applications'));
-  const dmg = path.join(DIST, `Slick-${version}-${arch}.dmg`);
+  const dmg = path.join(DIST, `Slick-build-${opts.buildNumber}-${arch}.dmg`);
   fs.rmSync(dmg, { force: true });
   run('/usr/bin/hdiutil', ['create', '-volname', 'Slick', '-srcfolder', staging, '-format', 'UDZO', dmg]);
 }
@@ -149,7 +171,7 @@ async function buildArch(arch, version) {
 async function main() {
   if (process.platform !== 'darwin') throw new Error('release builds need macOS');
   const opts = parseArgs(process.argv.slice(2));
-  for (const arch of opts.arch) await buildArch(arch, opts.version);
+  for (const arch of opts.arch) await buildArch(arch, opts);
   step('Done');
   for (const f of fs.readdirSync(DIST).toSorted()) {
     const size = fs.statSync(path.join(DIST, f)).size;

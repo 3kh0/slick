@@ -65,9 +65,18 @@ if [ -f "$ROOT/scripts/byoe/build-handoff-app.js" ]; then
   pkill -f "$APP/Contents/MacOS/Electron" 2>/dev/null || true
   wait_gone -f "$APP/Contents/MacOS/Electron"
 
-  step "Building $APP"
+  BUILD=""
+  if command -v git >/dev/null 2>&1; then
+    BUILD="$(git -C "$ROOT" tag --list 'v[0-9]*' --sort=-v:refname 2>/dev/null \
+      | sed -nE 's/^v([1-9][0-9]*)$/\1/p' | head -1 || true)"
+  fi
+  BUILD="${BUILD:-0}"
+  VERSION="1.0.$BUILD"
+
+  step "Building $APP (Build $BUILD)"
   node "$ROOT/scripts/byoe/build-handoff-app.js" --target "$APP" \
-    --profile "$HOME/Library/Application Support/Slack" --allow-non-tmp --force >/dev/null
+    --profile "$HOME/Library/Application Support/Slack" \
+    --app-version "$VERSION" --build-number "$BUILD" --allow-non-tmp --force >/dev/null
 
   step "Installing icon"
   "$ROOT/scripts/byoe/set-icon.sh" 2>&1 | while IFS= read -r line; do printf '    %s\n' "$line"; done
