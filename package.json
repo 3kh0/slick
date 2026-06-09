@@ -11,7 +11,7 @@
     "check": "npm run fmt:check && npm run lint && npm run lint:sh && npm run validate"
   },
   "devDependencies": {
-    "oxfmt": "^0.53.0",
+    "oxfmt": "^0.54.0",
     "oxlint": "^1.0.0"
   }
 }
