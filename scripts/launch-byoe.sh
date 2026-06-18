@@ -8,6 +8,9 @@ ASAR="/Applications/Slack.app/Contents/Resources/app.asar"
 DEBUG=()
 [ "${1:-}" = "--debug" ] && DEBUG=(--remote-debugging-port="${2:-9223}")
 
+SLICK_LAUNCH_T0=$(perl -MTime::HiRes=time -e 'printf "%d", time*1000' 2>/dev/null || echo '')
+export SLICK_LAUNCH_T0
+
 [ -f "$EBIN" ] || { echo "BYO Electron missing, run ./install.sh"; exit 1; }
 [ -f "$ASAR" ] || { echo "Slack not found at /Applications/Slack.app"; exit 1; }
 

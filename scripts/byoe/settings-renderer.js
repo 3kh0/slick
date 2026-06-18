@@ -35,10 +35,26 @@
       '#slick-panel-overlay .slick-plugin{padding:14px 0;border-top:1px solid rgba(127,127,127,.16)}',
       '#slick-panel-overlay .slick-plugin:last-of-type{border-bottom:1px solid rgba(127,127,127,.16)}',
       '#slick-panel-overlay .slick-plugin .c-label{margin:0}',
-      '#slick-panel-overlay .slick-ver{opacity:.5;font-weight:400;margin-left:8px}',
       '#slick-applybar{position:sticky;bottom:-20px;margin:20px -28px -20px;padding:14px 28px;display:flex;align-items:center;gap:14px;background:rgba(127,127,127,.10);border-top:1px solid rgba(127,127,127,.2);backdrop-filter:blur(8px)}',
       '#slick-applybar .slick-msg{flex:1;opacity:.85}',
       '#slick-applybar.hidden{display:none}',
+      '#slick-panel-overlay .slick-cog{display:inline-block;opacity:.55;padding:2px;margin-left:8px;vertical-align:text-bottom;border-radius:4px;cursor:pointer}',
+      '#slick-panel-overlay .slick-cog:hover,#slick-panel-overlay .slick-cog:focus-visible{opacity:1;background:rgba(127,127,127,.2)}',
+      '#slick-panel-overlay .slick-cog:focus-visible{outline:2px solid rgba(29,155,209,.65);outline-offset:1px}',
+      '#slick-config-backdrop{position:fixed;inset:0;z-index:1300;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center}',
+      '#slick-config-modal{width:560px;max-width:90vw;max-height:80vh;overflow-y:auto;border-radius:12px;padding:20px 28px;box-shadow:0 18px 48px rgba(0,0,0,.35)}',
+      '#slick-config-modal .slick-config-head{display:flex;align-items:center;margin-bottom:4px}',
+      '#slick-config-modal .slick-config-head .c-legend{flex:1;margin:0}',
+      '#slick-config-modal .slick-config-close{opacity:.6;font-size:22px;line-height:1;padding:2px 8px;border-radius:4px}',
+      '#slick-config-modal .slick-config-close:hover{opacity:1;background:rgba(127,127,127,.2)}',
+      '#slick-config-modal .slick-plugin[data-cfg-kind="text"] .c-label,#slick-config-modal .slick-plugin[data-cfg-kind="number"] .c-label,#slick-config-modal .slick-plugin[data-cfg-kind="select"] .c-label{display:block;width:100%}',
+      '#slick-config-modal .slick-plugin[data-cfg-kind="text"] .c-label__text,#slick-config-modal .slick-plugin[data-cfg-kind="number"] .c-label__text,#slick-config-modal .slick-plugin[data-cfg-kind="select"] .c-label__text{display:block;margin-bottom:8px;width:100%}',
+      '#slick-config-modal .slick-plugin[data-cfg-kind="text"] .c-label__children,#slick-config-modal .slick-plugin[data-cfg-kind="number"] .c-label__children,#slick-config-modal .slick-plugin[data-cfg-kind="select"] .c-label__children{display:block;width:100%}',
+      '#slick-config-modal .slick-cfg-text{width:100%;box-sizing:border-box}',
+      '#slick-config-modal .slick-cfg-select{width:100%;box-sizing:border-box;padding:4px 8px;border-radius:6px;border:1px solid rgba(127,127,127,.4);background:transparent;color:inherit}',
+      '#slick-config-modal .slick-cfg-color{width:36px;height:24px;padding:0;border:1px solid rgba(127,127,127,.4);border-radius:6px;background:transparent;cursor:pointer}',
+      '#slick-config-modal .slick-config-note{margin:14px 0 0;opacity:.55;font-size:12px}',
+      '#slick-config-modal .slick-restart-required{display:inline-block;margin-left:8px;padding:1px 6px;border-radius:999px;background:rgba(224,30,90,.14);color:#e01e5a;font-size:11px;font-weight:600}',
     ].join('\n');
     document.head.appendChild(st);
   }
@@ -49,10 +65,12 @@
       (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c],
     );
 
-  function row(text, sub, control) {
+  function row(text, sub, control, attrs = '') {
     sub = sub ? '<span class="c-label__subtext" data-qa-label-subtext="true">' + esc(sub) + '</span>' : '';
     return (
-      '<div class="slick-plugin">' +
+      '<div class="slick-plugin"' +
+      attrs +
+      '>' +
       '<label class="c-label c-label--inline' +
       (sub ? ' c-label--with_subtext' : '') +
       ' c-label--pointer" data-qa-label="true">' +
@@ -69,14 +87,125 @@
 
   const pluginRow = (p) =>
     row(
-      esc(p.name) + (p.version ? '<span class="slick-ver">v' + esc(p.version) + '</span>' : ''),
+      esc(p.name) +
+        (p.settings && p.settings.length
+          ? '<span class="c-button-unstyled slick-cog" role="button" tabindex="0" data-cog="' +
+            esc(p.dir) +
+            '" aria-haspopup="dialog" aria-label="Configure ' +
+            esc(p.name) +
+            '">' +
+            ICON +
+            '</span>'
+          : ''),
       p.description,
       '<input class="c-input_checkbox" type="checkbox" data-plugin="' +
         esc(p.dir) +
         '"' +
         (p.enabled ? ' checked' : '') +
         '>',
+      ' data-plugin-row="' + esc(p.dir) + '"',
     );
+
+  function settingControl(dir, def, value) {
+    const data =
+      ' data-cfg-plugin="' +
+      esc(dir) +
+      '" data-cfg-key="' +
+      esc(def.key) +
+      '"' +
+      (def.restartRequired ? ' data-cfg-restart="1"' : '');
+    if (def.type === 'boolean')
+      return '<input class="c-input_checkbox" type="checkbox"' + data + (value ? ' checked' : '') + '>';
+    if (def.type === 'select')
+      return (
+        '<select class="slick-cfg-select"' +
+        data +
+        '>' +
+        (def.options || [])
+          .map((o) => {
+            const v = o && o.value !== undefined ? o.value : o;
+            const label = (o && o.label) || v;
+            return (
+              '<option value="' +
+              esc(v) +
+              '"' +
+              (String(v) === String(value) ? ' selected' : '') +
+              '>' +
+              esc(label) +
+              '</option>'
+            );
+          })
+          .join('') +
+        '</select>'
+      );
+    if (def.type === 'color')
+      return '<input class="slick-cfg-color" type="color"' + data + ' value="' + esc(value) + '">';
+    if (def.type === 'number')
+      return '<input class="c-input_text slick-cfg-text" type="number"' + data + ' value="' + esc(value) + '">';
+    return '<input class="c-input_text slick-cfg-text" type="text"' + data + ' value="' + esc(value) + '">';
+  }
+
+  function closeConfig() {
+    const bd = $('slick-config-backdrop');
+    if (!bd) return;
+    if (bd.__onKey) document.removeEventListener('keydown', bd.__onKey, true);
+    bd.remove();
+  }
+
+  function openConfig(p) {
+    closeConfig();
+    const bd = document.createElement('div');
+    bd.id = 'slick-config-backdrop';
+    bd.innerHTML =
+      '<div id="slick-config-modal" role="dialog" aria-modal="true">' +
+      '<div class="slick-config-head">' +
+      '<div class="c-legend">' +
+      esc(p.name) +
+      '</div>' +
+      '<button class="c-button-unstyled slick-config-close" type="button" aria-label="Close">&times;</button>' +
+      '</div>' +
+      p.settings
+        .map((def) =>
+          row(
+            esc(def.label) +
+              (def.restartRequired ? '<span class="slick-restart-required">Restart required</span>' : ''),
+            def.description,
+            settingControl(p.dir, def, p.values[def.key]),
+            ' data-cfg-kind="' + esc(def.type) + '"',
+          ),
+        )
+        .join('') +
+      '</div>';
+    document.body.appendChild(bd);
+
+    const modal = bd.firstChild;
+    const mref = q(SEL.modal);
+    if (mref) modal.style.background = getComputedStyle(mref).backgroundColor;
+
+    bd.addEventListener('click', (e) => {
+      if (e.target === bd || e.target.closest('.slick-config-close')) closeConfig();
+    });
+    bd.__onKey = (e) => {
+      if (e.key !== 'Escape') return;
+      e.stopPropagation();
+      closeConfig();
+    };
+    document.addEventListener('keydown', bd.__onKey, true);
+
+    modal.addEventListener('change', (e) => {
+      const t = e.target;
+      const plugin = t.getAttribute('data-cfg-plugin');
+      if (!plugin) return;
+      const key = t.getAttribute('data-cfg-key');
+      const value = t.type === 'checkbox' ? (t.checked ? '1' : '0') : t.value;
+      ctl({ op: 'cfg', plugin, key, value });
+      p.values[key] = t.type === 'checkbox' ? t.checked : t.value;
+      if (t.getAttribute('data-cfg-restart') === '1') {
+        const applybar = $('slick-applybar');
+        if (applybar) applybar.classList.remove('hidden');
+      }
+    });
+  }
 
   const themeRow = (t) =>
     row(
@@ -111,7 +240,7 @@
       rows(S.plugins, pluginRow, 'plugins') +
       '</div>' +
       '<div id="slick-applybar" class="hidden">' +
-      '<span class="slick-msg">Plugin changes take effect after restarting Slick.</span>' +
+      '<span class="slick-msg">These changes take effect after restarting Slick.</span>' +
       '<button id="slick-restart" class="c-button c-button--primary c-button--medium" type="button">Apply &amp; Restart</button>' +
       '</div>';
     document.body.appendChild(ov);
@@ -121,6 +250,31 @@
         if (!e.target.checked) return;
         ctl({ op: 'theme', name: e.target.value });
         setTimeout(positionOverlay, 300);
+      });
+    });
+    function openCog(btn, e) {
+      e.preventDefault();
+      e.stopPropagation();
+      const p = (S.plugins || []).find((x) => x.dir === btn.getAttribute('data-cog'));
+      if (p) openConfig(p);
+    }
+    ov.querySelectorAll('[data-cog]').forEach((btn) => {
+      btn.addEventListener('click', (e) => {
+        openCog(btn, e);
+      });
+      btn.addEventListener('keydown', (e) => {
+        if (e.key !== 'Enter' && e.key !== ' ') return;
+        openCog(btn, e);
+      });
+    });
+    ov.querySelectorAll('[data-plugin-row]').forEach((pluginRowEl) => {
+      pluginRowEl.addEventListener('click', (e) => {
+        const target = e.target && e.target.nodeType === 1 ? e.target : e.target.parentElement;
+        if (target && target.closest('label,input,[data-cog]')) return;
+        const input = pluginRowEl.querySelector('input[data-plugin]');
+        if (!input) return;
+        input.checked = !input.checked;
+        input.dispatchEvent(new Event('change', { bubbles: true }));
       });
     });
     ov.querySelectorAll('input[data-plugin]').forEach((input) => {
@@ -199,6 +353,7 @@
     if (q(SEL.overlay)) {
       injectTab();
     } else {
+      closeConfig();
       const ov = $('slick-panel-overlay');
       if (ov) ov.style.display = 'none';
       const tab = $(TAB_ID);

@@ -8,7 +8,6 @@ module.exports = {
   meta: {
     name: 'oneko',
     description: 'cat follow mouse (real)',
-    version: '1.0.0',
   },
 
   main(ctx) {

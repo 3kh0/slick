@@ -10,6 +10,11 @@ updates:
     schedule:
       interval: daily
 
+  - package-ecosystem: bun
+    directory: /scripts/release
+    schedule:
+      interval: daily
+
   - package-ecosystem: github-actions
     directory: /
     schedule:

@@ -6,10 +6,12 @@
     "fmt:check": "oxfmt --check",
     "lint": "oxlint",
     "lint:sh": "git ls-files '*.sh' | xargs shellcheck -S warning",
-    "validate": "node scripts/ci/validate.js"
+    "render": "scripts/byoe/render-icon.sh",
+    "validate": "node scripts/ci/validate.js",
+    "check": "npm run fmt:check && npm run lint && npm run lint:sh && npm run validate"
   },
   "devDependencies": {
-    "oxfmt": "^0.53.0",
-    "oxlint": "^1.0.0"
+    "oxfmt": "^0.55.0",
+    "oxlint": "^1.70.0"
   }
 }

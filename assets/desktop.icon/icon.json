@@ -1,0 +1,75 @@
+{
+  "fill-specializations": [
+    {
+      "value": "system-light"
+    },
+    {
+      "appearance": "dark",
+      "value": "system-dark"
+    }
+  ],
+  "groups": [
+    {
+      "layers": [
+        {
+          "fill-specializations": [
+            {
+              "value": "none"
+            },
+            {
+              "appearance": "dark",
+              "value": {
+                "linear-gradient": ["gray:1.00000,1.00000", "gray:0.85000,1.00000"]
+              }
+            },
+            {
+              "appearance": "tinted",
+              "value": {
+                "linear-gradient": ["gray:0.90000,1.00000", "extended-gray:0.75000,1.00000"]
+              }
+            }
+          ],
+          "glass-specializations": [
+            {
+              "value": false
+            },
+            {
+              "appearance": "dark",
+              "value": true
+            },
+            {
+              "appearance": "tinted",
+              "value": true
+            }
+          ],
+          "image-name": "desktop.svg",
+          "name": "desktop",
+          "position": {
+            "scale": 0.75,
+            "translation-in-points": [0, 0]
+          }
+        }
+      ],
+      "shadow": {
+        "kind": "neutral",
+        "opacity": 0.5
+      },
+      "specular-specializations": [
+        {
+          "value": false
+        },
+        {
+          "appearance": "dark",
+          "value": true
+        }
+      ],
+      "translucency": {
+        "enabled": true,
+        "value": 0.5
+      }
+    }
+  ],
+  "supported-platforms": {
+    "squares": ["macOS"]
+  }
+}

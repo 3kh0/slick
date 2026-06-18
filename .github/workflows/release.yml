@@ -1,0 +1,91 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-26
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [arm64, x64]
+    env:
+      MACOS_CERT_P12: ${{ secrets.MACOS_CERT_P12 }}
+      MACOS_CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: latest
+      - uses: oven-sh/setup-bun@v2
+      - name: Read build number
+        id: version
+        shell: bash
+        run: |
+          if [[ ! "$GITHUB_REF_NAME" =~ ^v[1-9][0-9]*$ ]]; then
+            echo "not understood" >&2
+            exit 1
+          fi
+          echo "build=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+      - name: Install tools
+        run: bun install --cwd scripts/release --frozen-lockfile
+      - name: Import signing cert
+        if: env.MACOS_CERT_P12 != ''
+        run: |
+          KEYCHAIN="$RUNNER_TEMP/build.keychain-db"
+          security create-keychain -p actions "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p actions "$KEYCHAIN"
+          echo "$MACOS_CERT_P12" | base64 -d > "$RUNNER_TEMP/cert.p12"
+          security import "$RUNNER_TEMP/cert.p12" -k "$KEYCHAIN" -P "$MACOS_CERT_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k actions "$KEYCHAIN"
+          security list-keychains -d user -s "$KEYCHAIN" login.keychain-db
+          rm "$RUNNER_TEMP/cert.p12"
+      - name: Build release artifacts
+        env:
+          SLICK_SIGN_IDENTITY: ${{ secrets.SLICK_SIGN_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+        run: node scripts/release/build-release.js --build-number "${{ steps.version.outputs.build }}" --arch "${{ matrix.arch }}"
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: slick-${{ matrix.arch }}
+          path: |
+            dist/Slick-*.zip
+            dist/Slick-*.dmg
+          if-no-files-found: error
+          retention-days: 1
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Read build number
+        id: version
+        shell: bash
+        run: |
+          if [[ ! "$GITHUB_REF_NAME" =~ ^v[1-9][0-9]*$ ]]; then
+            echo "not understood" >&2
+            exit 1
+          fi
+          echo "build=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+      - name: Download artifacts
+        uses: actions/download-artifact@v8
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Create release
+        uses: softprops/action-gh-release@v3
+        with:
+          name: Slick Build ${{ steps.version.outputs.build }}
+          files: |
+            dist/Slick-*.zip
+            dist/Slick-*.dmg
+          generate_release_notes: true
