@@ -20,6 +20,23 @@ for (const match of injectSource.matchAll(/require\(['"](\.\.?\/[^'"]+)['"]\)/g)
   }
 }
 
+try {
+  const internals = require('../byoe/internals');
+  if (typeof internals.enabled !== 'function') fail('scripts/byoe/internals', 'must export enabled() function');
+  if (typeof internals.source !== 'string' || !internals.source) {
+    fail('scripts/byoe/internals', 'must export a non-empty source string');
+  } else {
+    try {
+      const parsed = new Function(internals.source);
+      if (typeof parsed !== 'function') fail('scripts/byoe/internals', 'source did not compile');
+    } catch (e) {
+      fail('scripts/byoe/internals', `source is not valid JS: ${e.message}`);
+    }
+  }
+} catch (e) {
+  fail('scripts/byoe/internals', `failed to load: ${e.message}`);
+}
+
 const THEMES = path.join(ROOT, 'themes');
 const themes = fs.readdirSync(THEMES).filter((f) => f.endsWith('.json'));
 for (const f of themes) {
@@ -59,6 +76,12 @@ for (const d of dirs) {
   }
 
   for (const k of ['name', 'description']) if (!m.meta?.[k]) fail(`plugins/${d}`, `missing meta.${k}`);
+  if (m.capabilities !== undefined) {
+    const KNOWN = ['internals'];
+    if (!Array.isArray(m.capabilities)) fail(`plugins/${d}`, '"capabilities" must be an array');
+    else
+      for (const cap of m.capabilities) if (!KNOWN.includes(cap)) fail(`plugins/${d}`, `unknown capability "${cap}"`);
+  }
   if (m.main && typeof m.main !== 'function') fail(`plugins/${d}`, '"main" must be a function');
   if (!m.main && !m.css && !m.renderer) fail(`plugins/${d}`, 'exports none of main/css/renderer');
 

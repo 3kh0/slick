@@ -103,7 +103,17 @@ function discover(catalog, enabled) {
 }
 
 function loadPlugins({ catalog, enabled, electron, settings }) {
-  const out = { block: [], requests: [], css: [], cssFns: [], js: [], windowHooks: [], loaded: [], timings: [] };
+  const out = {
+    block: [],
+    requests: [],
+    css: [],
+    cssFns: [],
+    js: [],
+    windowHooks: [],
+    loaded: [],
+    timings: [],
+    needsInternals: false,
+  };
   const byDir = new Map(catalog.plugins.map((plugin) => [plugin.dir, plugin]));
 
   for (const name of discover(catalog, enabled)) {
@@ -135,6 +145,7 @@ function loadPlugins({ catalog, enabled, electron, settings }) {
       },
     };
 
+    if (Array.isArray(mod.capabilities) && mod.capabilities.includes('internals')) out.needsInternals = true;
     if (typeof mod.css === 'function') out.cssFns.push({ name, schema, fn: mod.css });
     else if (mod.css) ctx.injectCSS(mod.css);
     if (mod.renderer) ctx.injectJS(mod.renderer);

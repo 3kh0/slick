@@ -17,6 +17,7 @@ perf.mark('inject.js start');
 const fs = require('fs');
 const { isDeepStrictEqual } = require('util');
 const { allPluginSettings, buildCatalog, loadPlugins, mergeSettings } = require('./plugins');
+const internals = require('./internals');
 const settings = require('./settings-ui');
 const { buildSpec } = require('../theme');
 perf.mark('modules loaded');
@@ -280,6 +281,13 @@ async function doApplyTo(wc, { initialize = false, refreshCss = true } = {}) {
   }
   if (shouldInitialize) {
     const endJs = track && perf.span();
+    if (internals.enabled() || plugins.needsInternals) {
+      try {
+        await wc.mainFrame.executeJavaScript(internals.source, true);
+      } catch (e) {
+        console.error('[slick-byoe] internals init failed:', e.message);
+      }
+    }
     const jsDone = plugins.js.map((js) =>
       wc.mainFrame.executeJavaScript(js, true).catch((e) => console.error('[slick-byoe] plugin JS failed:', e.message)),
     );
