@@ -22,7 +22,7 @@ This client is for MacOS only, but in theory the same method could work on Windo
 
 You will need the official [Slack app](https://slack.com/downloads/mac) (not the App Store version) installed at `/Applications/Slack.app`, since Slick runs Slack's own code.
 
-The fastest way in is to use the installer script. Re-run it any time to update.
+The fastest way in is to use the installer script. Re-run it any time to update. Slick also checks for new GitHub Releases about every 6 hours and points you at the latest build when one is available.
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/3kh0/slick/main/install.sh | bash
@@ -30,8 +30,8 @@ curl -fsSL https://raw.githubusercontent.com/3kh0/slick/main/install.sh | bash
 
 Prefer doing it by hand? Grab the latest prebuilt app from the [releases page](https://github.com/3kh0/slick/releases/latest) and pick the build for your Mac (check > About This Mac > Chip if unsure):
 
-- `Slick-x.y.z-arm64` — **Apple Silicon** (if there is a M in the name)
-- `Slick-x.y.z-x64` — **Intel** Macs
+- `Slick-build-N-arm64` — **Apple Silicon** (if there is a M in the name)
+- `Slick-build-N-x64` — **Intel** Macs
 
 Each comes as a `.dmg` (open it and drag Slick to Applications) or a `.zip`.
 
@@ -58,6 +58,20 @@ If you'd rather build it yourself (or hack on it), clone the repo and run:
 This downloads an Electron matching your installed Slack and builds `~/Applications/Slick.app` locally; re-run it any time to stay fresh. You'll need a modern version of Node.js.
 
 If you want to debug or poke around at things, you can find more manual scripts in the scripts/ folder, but the install script should be all you need for normal use.
+
+## Release versioning
+
+Slick releases use integer build tags: `v13`, `v14`, `v15`, and so on. The GitHub Release title should read like `Slick Build 67`.
+
+Internally, release builds still use a normal macOS short version string (`1.0.13` for build 13), while the real bundle build number is just `67`.
+
+To ship the next build, tag and push the next integer:
+
+```bash
+BUILD=67 # replace with the next build number
+git tag "v$BUILD"
+git push origin "v$BUILD"
+```
 
 ## Themes
 
