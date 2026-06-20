@@ -19,10 +19,7 @@ for (const match of injectSource.matchAll(/require\(['"](\.\.?\/[^'"]+)['"]\)/g)
     .replace(/\\/g, '/');
 
   if (!buildSource.includes(`'${dependency}'`)) {
-    fail(
-      'scripts/byoe/build-handoff-app.js',
-      `runtime copy list is missing "${dependency}" required by inject.js`,
-    );
+    fail('scripts/byoe/build-handoff-app.js', `runtime copy list is missing "${dependency}" required by inject.js`);
   }
 }
 
