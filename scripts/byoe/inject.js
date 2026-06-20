@@ -248,7 +248,7 @@ async function doApplyTo(wc, { initialize = false, refreshCss = true } = {}) {
   const document = documents.get(wc) || { initialized: false };
   if (!documents.has(wc)) documents.set(wc, document);
   const shouldInitialize = initialize || !document.initialized;
-  const track = !perfApplied && wc.getURL().includes('app.slack.com');
+  const track = !perfApplied && URL.parse(wc.getURL())?.hostname === 'app.slack.com';
   if (track) perfApplied = true;
   if (refreshCss) {
     const css = fullCss();
@@ -334,7 +334,7 @@ app.on('browser-window-created', (_event, win) => {
   }
   wc.on('dom-ready', () => {
     documents.set(wc, { initialized: false });
-    if (!clientDomReady && wc.getURL().includes('app.slack.com')) {
+    if (!clientDomReady && URL.parse(wc.getURL())?.hostname === 'app.slack.com') {
       clientDomReady = true;
       perf.mark('client dom-ready');
     }
