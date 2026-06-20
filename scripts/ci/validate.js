@@ -14,9 +14,15 @@ const buildSource = fs.readFileSync(BUILD_SCRIPT, 'utf8');
 const injectFile = path.join(ROOT, 'scripts/byoe/inject.js');
 const injectSource = fs.readFileSync(injectFile, 'utf8');
 for (const match of injectSource.matchAll(/require\(['"](\.\.?\/[^'"]+)['"]\)/g)) {
-  const dependency = path.relative(ROOT, require.resolve(path.resolve(path.dirname(injectFile), match[1])));
+  const dependency = path
+    .relative(ROOT, require.resolve(path.resolve(path.dirname(injectFile), match[1])))
+    .replace(/\\/g, '/');
+
   if (!buildSource.includes(`'${dependency}'`)) {
-    fail('scripts/byoe/build-handoff-app.js', `runtime copy list is missing "${dependency}" required by inject.js`);
+    fail(
+      'scripts/byoe/build-handoff-app.js',
+      `runtime copy list is missing "${dependency}" required by inject.js`,
+    );
   }
 }
 
