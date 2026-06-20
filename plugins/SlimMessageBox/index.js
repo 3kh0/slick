@@ -63,6 +63,12 @@ module.exports = {
       description: 'Remove the run-shortcut / slash-commands button.',
       default: false,
     },
+    hideBroadcast: {
+      type: 'boolean',
+      label: "Hide 'Also send to #channel'",
+      description: 'Remove the broadcast-to-channel checkbox shown in thread replies.',
+      default: false,
+    },
   },
   css: (settings) => (settings.discordLayout ? CSS : ''),
   renderer: fs.readFileSync(path.join(__dirname, 'renderer.js'), 'utf8'),

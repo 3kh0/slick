@@ -1,13 +1,16 @@
 (() => {
   var DIR = 'SlimMessageBox';
   var SCOPE = '.p-message_input__input_container_unstyled';
-  var HIDE_MAP = {
-    hideFormatting: 'enableComposerButton',
-    hideEmoji: 'enableEmojiButton',
-    hideMention: 'enableMentionButton',
-    hideVideo: 'enableStoryButton',
-    hideAudio: 'enableAudioButton',
-    hideSlash: 'enableSlashCommandsButton',
+  var TEXTY_BUTTON_HIDE_MAP = {
+    hideFormatting: { prop: 'enableComposerButton', value: false },
+    hideEmoji: { prop: 'enableEmojiButton', value: false },
+    hideMention: { prop: 'enableMentionButton', value: false },
+    hideVideo: { prop: 'enableStoryButton', value: false },
+    hideAudio: { prop: 'enableAudioButton', value: false },
+    hideSlash: { prop: 'enableSlashCommandsButton', value: false },
+  };
+  var THREAD_FOOTER_HIDE_MAP = {
+    hideBroadcast: { prop: 'dontShowBroadcastControls', value: true },
   };
 
   function settings() {
@@ -60,13 +63,14 @@
   scanAll();
 
   // uses internals for button hiding
-  function overrides() {
+  function overrides(map) {
     var s = settings();
     var out = null;
-    for (var key in HIDE_MAP) {
+    for (var key in map) {
       if (s[key]) {
+        var rule = map[key];
         out = out || {};
-        out[HIDE_MAP[key]] = false;
+        out[rule.prop] = rule.value;
       }
     }
     return out;
@@ -76,7 +80,11 @@
     var internals = window.__slickInternals;
     if (internals && internals.react && internals.react.patchProps) {
       internals.react.patchProps('TextyButtons', function (props) {
-        var o = overrides();
+        var o = overrides(TEXTY_BUTTON_HIDE_MAP);
+        return o ? Object.assign({}, props, o) : props;
+      });
+      internals.react.patchProps('ThreadFooter', function (props) {
+        var o = overrides(THREAD_FOOTER_HIDE_MAP);
         return o ? Object.assign({}, props, o) : props;
       });
       window.addEventListener('slick:plugin-settings', function () {
