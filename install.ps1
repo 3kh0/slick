@@ -186,7 +186,7 @@ if ($FromSource) {
       --set-version-string InternalName 'Slick' `
       --set-version-string OriginalFilename 'Slick.exe' `
       --set-version-string CompanyName 'Slick' `
-      --set-version-string LegalCopyright 'Slick (Slack client mod, BYOE)' `
+      --set-version-string LegalCopyright 'Slick (Slack client mod) by @3kh0' `
       --set-file-version "1.0.$build.0" `
       --set-product-version "1.0.$build"
     if ($LASTEXITCODE -ne 0) { Write-Host "    warning: rcedit failed; keeping the default Electron icon." -ForegroundColor Yellow }
