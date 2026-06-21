@@ -16,7 +16,7 @@
 
 Slick runs Slack's own `app.asar` with a custom Electron (with the handy BYOE acronym, bring your own electron) preload that injects themes and plugins. This method allows us to modify Slack's interface and behavior without altering its files, so auto-updates still work and there's no open debug port or resident watcher.
 
-This client is for MacOS only, but in theory the same method could work on Windows or Linux with some adjustments. However, I don't use those platforms, so PRs welcome if you want to add support for them!
+This client targets MacOS, with a Windows beta (see below). The same method could also work on Linux with some adjustments. PRs welcome!
 
 ## Installation
 
@@ -58,6 +58,23 @@ If you'd rather build it yourself (or hack on it), clone the repo and run:
 This downloads an Electron matching your installed Slack and builds `~/Applications/Slick.app` locally; re-run it any time to stay fresh. You'll need a modern version of Node.js.
 
 If you want to debug or poke around at things, you can find more manual scripts in the scripts/ folder, but the install script should be all you need for normal use.
+
+## Windows (beta)
+
+> [!NOTE]
+> Windows support is new and somehow even more unstable and prone to jank than the Mac build. It only supports the **x64** standalone Slack from [slack.com/download](https://slack.com/download) (not the MS store version). On ARM PCs the x64 Slack runs via emulation magic and Slick works, but expect a big performance hit.
+
+Install Slack first, then run this in PowerShell:
+
+### Building Windows
+
+Clone the repo and run the following
+
+```powershell
+powershell -ExecutionPolicy Bypass -File install.ps1
+```
+
+You also have some nice flags to play around with locally: `-Uninstall`, `-Purge`, `-RestoreHandler`, and `-Force` to overwrite any existing install.
 
 ## Release versioning
 
