@@ -98,7 +98,7 @@ function seedSettings(profile) {
   }
 }
 
-function indexSource(opts, defaultTheme) {
+function indexSource(opts, defaultTheme, profile) {
   return `'use strict';
 
 const fs = require('fs');
@@ -107,7 +107,7 @@ const path = require('path');
 const { app, dialog, shell } = require('electron');
 
 const SLICK_ROOT = path.join(process.resourcesPath, 'slick');
-const PROFILE = process.env.SLICK_HANDOFF_PROFILE || path.join(app.getPath('appData'), 'Slick');
+const PROFILE = process.env.SLICK_HANDOFF_PROFILE || ${JSON.stringify(profile)};
 const DEFAULT_THEME = ${JSON.stringify(defaultTheme)};
 const SLICK_VERSION = ${JSON.stringify(opts.appVersion)};
 const SLICK_BUILD = parseInt(${JSON.stringify(opts.buildNumber)}, 10) || 0;
@@ -127,7 +127,7 @@ function cmpVersion(a, b) {
 
 // Resolve the official Slack's resources dir at runtime. Two distributions:
 //   - standalone Squirrel build -> %LOCALAPPDATA%\\slack\\app-<version>\\resources (x64)
-//   - Microsoft Store MSIX build -> %ProgramFiles%\\WindowsApps\\com.tinyspeck...\\app\\resources (arm64)
+//   - Microsoft Store MSIX build -> %ProgramFiles%\\WindowsApps\\com.tinyspeck...\\app\\resources
 // Both bump versions on update, so never hard-code a path.
 function findSlackStandalone() {
   const base = path.join(process.env.LOCALAPPDATA || '', 'slack');
@@ -204,6 +204,8 @@ function findSlackResources() {
 
 const SLACK_RESOURCES = process.env.SLICK_SLACK_RESOURCES || findSlackResources();
 const SLACK_ASAR = path.join(SLACK_RESOURCES, 'app.asar');
+const SLACK_UNPACKED = path.join(SLACK_RESOURCES, 'app.asar.unpacked');
+const SLACK_APP_DIR = path.dirname(SLACK_RESOURCES);
 
 // Slack's native (.node) modules depend on the VC++ runtime DLLs that ship next
 // to Slack's binaries (one dir up from resources). Running Slack's code under
@@ -211,9 +213,55 @@ const SLACK_ASAR = path.join(SLACK_RESOURCES, 'app.asar');
 // Store/MSIX build, whose DLLs live in the ACL-locked WindowsApps dir and whose
 // arm64 VC++ runtime isn't installed system-wide. Prepend Slack's app dir so
 // dlopen() can resolve them.
-try {
-  process.env.PATH = path.dirname(SLACK_RESOURCES) + path.delimiter + (process.env.PATH || '');
-} catch {}
+process.env.PATH = [SLACK_APP_DIR, process.env.PATH || ''].filter(Boolean).join(path.delimiter);
+
+function slackElectronVersion() {
+  try {
+    return fs.readFileSync(path.join(SLACK_APP_DIR, 'version'), 'utf8').trim();
+  } catch {
+    return '';
+  }
+}
+
+function nativeMirrorId() {
+  try {
+    const stat = fs.statSync(SLACK_ASAR);
+    return [stat.size, Math.trunc(stat.mtimeMs)].join('-');
+  } catch {
+    return 'unknown';
+  }
+}
+
+// Windows permits reading another MSIX package's app.asar but rejects loading
+// executable code from its WindowsApps directory with ERROR_ACCESS_DENIED.
+function installNativeModuleMirror() {
+  if (!fs.existsSync(SLACK_UNPACKED)) return;
+
+  const mirror = path.join(PROFILE, 'slick', 'native', nativeMirrorId(), 'app.asar.unpacked');
+  const ready = path.join(mirror, '.complete');
+  if (!fs.existsSync(ready)) {
+    const staging = mirror + '.tmp-' + process.pid;
+    fs.rmSync(staging, { recursive: true, force: true });
+    fs.mkdirSync(path.dirname(staging), { recursive: true });
+    fs.cpSync(SLACK_UNPACKED, staging, { recursive: true });
+    fs.writeFileSync(path.join(staging, '.complete'), '');
+    fs.rmSync(mirror, { recursive: true, force: true });
+    fs.renameSync(staging, mirror);
+  }
+
+  process.env.PATH = [SLACK_APP_DIR, mirror, process.env.PATH || ''].filter(Boolean).join(path.delimiter);
+
+  const namespacedUnpacked = path.toNamespacedPath(path.resolve(SLACK_UNPACKED));
+  const unpackedPrefix = namespacedUnpacked + path.sep;
+  const dlopen = process.dlopen;
+  process.dlopen = function slickDlopen(module, filename, flags) {
+    const resolved = path.toNamespacedPath(path.resolve(filename));
+    const mapped = resolved.toLowerCase().startsWith(unpackedPrefix.toLowerCase())
+      ? path.join(mirror, path.relative(namespacedUnpacked, resolved))
+      : filename;
+    return dlopen.call(this, module, mapped, flags);
+  };
+}
 
 function preflight() {
   if (!fs.existsSync(SLACK_ASAR)) {
@@ -226,8 +274,25 @@ function preflight() {
     });
     return false;
   }
-  // NOTE: Windows has no easy on-disk Electron-version marker for Slack, so the
-  // build-time electron pin is trusted instead of a runtime mismatch dialog.
+  const slackElectron = slackElectronVersion();
+  if (slackElectron && slackElectron !== process.versions.electron) {
+    const choice = dialog.showMessageBoxSync({
+      type: 'error',
+      title: 'Slick',
+      message: 'This Slick build no longer matches Slack',
+      detail:
+        'Slack ships Electron ' +
+        slackElectron +
+        ', but this Slick build bundles Electron ' +
+        process.versions.electron +
+        '. Download the latest Slick release.',
+      buttons: ['Open Releases Page', 'Launch Anyway', 'Quit'],
+      defaultId: 0,
+      cancelId: 2,
+    });
+    if (choice === 0) shell.openExternal(RELEASES_URL);
+    return choice === 1;
+  }
   return true;
 }
 
@@ -372,6 +437,7 @@ if (!preflight()) {
 
   const getAppPath = app.getAppPath.bind(app);
   app.getAppPath = () => (process.env.SLICK_HANDOFF_KEEP_WRAPPER_APP_PATH === '1' ? getAppPath() : SLACK_ASAR);
+  installNativeModuleMirror();
 
   require(path.join(SLICK_ROOT, 'scripts/byoe/login-handoff.js'));
   require(path.join(SLICK_ROOT, 'scripts/byoe/inject.js'));
@@ -415,7 +481,7 @@ function main() {
       name: 'package.json',
       contents: `${JSON.stringify({ name: 'slick', productName: 'Slick', version: opts.appVersion, main: 'index.js' }, null, 2)}\n`,
     },
-    { name: 'index.js', contents: indexSource(opts, defaultTheme) },
+    { name: 'index.js', contents: indexSource(opts, defaultTheme, profile) },
   ];
   fs.rmSync(path.join(res, 'app'), { recursive: true, force: true });
   for (const name of ['default_app.asar', 'app.asar']) packAsar(files, path.join(res, name));
