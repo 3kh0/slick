@@ -66,6 +66,16 @@ If you want to debug or poke around at things, you can find more manual scripts 
 
 Install Slack first, then run this in PowerShell:
 
+```powershell
+irm "https://raw.githubusercontent.com/3kh0/slick/main/install.ps1" | iex
+```
+
+To uninstall or pass other arguments to the script, try this:
+
+```powershell
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/3kh0/slick/main/install.ps1))) -Uninstall -Purge
+```
+
 ### Building Windows
 
 Clone the repo and run the following
