@@ -104,6 +104,7 @@ function indexSource(opts, defaultTheme, profile) {
 const fs = require('fs');
 const https = require('https');
 const path = require('path');
+const crypto = require('crypto');
 const { app, dialog, shell } = require('electron');
 
 const SLICK_ROOT = path.join(process.resourcesPath, 'slick');
@@ -224,12 +225,13 @@ function slackElectronVersion() {
 }
 
 function nativeMirrorId() {
-  try {
-    const stat = fs.statSync(SLACK_ASAR);
-    return [stat.size, Math.trunc(stat.mtimeMs)].join('-');
-  } catch {
-    return 'unknown';
-  }
+  const version = slackElectronVersion();
+  if (version) return version;
+
+  return (
+    'unknown-' +
+    crypto.createHash('sha256').update(SLACK_APP_DIR).digest('hex').slice(0, 12)
+  );
 }
 
 // Windows permits reading another MSIX package's app.asar but rejects loading
