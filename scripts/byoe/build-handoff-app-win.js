@@ -461,8 +461,19 @@ function main() {
     throw new Error(`BYOE Electron missing at ${sourceDist} (no electron.exe) — run \`bun install\` in byoe/ first`);
   }
   if (fs.existsSync(target)) {
-    if (!opts.force) throw new Error(`${target} already there; rerun with --force to replace it`);
-    fs.rmSync(target, { recursive: true, force: true });
+    if (!opts.force) {
+      throw new Error(`${target} already there; rerun with --force to replace it`);
+    }
+    try {
+      fs.rmSync(target, { recursive: true, force: true });
+    } catch (err) {
+      if (err?.code !== 'EPERM') throw err;
+
+      throw new Error(
+        `Unable to replace ${target}. Slick appears to be running. Close all Slick windows and try again.`,
+        { cause: err },
+      );
+    }
   }
 
   fs.mkdirSync(path.dirname(target), { recursive: true });
