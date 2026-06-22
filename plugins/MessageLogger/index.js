@@ -24,7 +24,7 @@ module.exports = {
       type: 'boolean',
       label: 'Ignore self',
       description: 'Ignore edits and deletes for messages sent by you.',
-      default: true,
+      default: false,
     },
   },
 
