@@ -25,10 +25,11 @@ $Protocol = 'slack'
 $ProgId = 'Slick.slack'
 $Shortcuts = @("$env:USERPROFILE\Desktop\Slick.lnk", "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Slick.lnk")
 
-function Register-SlackHandler($exe) {
+function Register-SlackHandler($exe, $iconFile) {
   $cmd = "`"$exe`" `"%1`""
+  $iconRes = if ($iconFile -and (Test-Path $iconFile)) { $iconFile } else { "$exe,0" }
   Reg "HKCU:\Software\Classes\$ProgId"                    @{ '(default)' = 'Slick'; 'FriendlyTypeName' = 'Slick'; 'URL Protocol' = '' }
-  Reg "HKCU:\Software\Classes\$ProgId\DefaultIcon"        @{ '(default)' = "$exe,0" }
+  Reg "HKCU:\Software\Classes\$ProgId\DefaultIcon"        @{ '(default)' = $iconRes }
   Reg "HKCU:\Software\Classes\$ProgId\shell\open\command" @{ '(default)' = $cmd }
   Reg "HKCU:\Software\Slick\Capabilities"                 @{ ApplicationName = 'Slick'; ApplicationDescription = 'Slack client mod (BYOE)' }
   Reg "HKCU:\Software\Slick\Capabilities\URLAssociations" @{ $Protocol = $ProgId }
@@ -55,7 +56,7 @@ function Get-PEArch($exe) {
   } catch { '' }
 }
 
-function Find-SlackResources {
+function Find-SlackStandalone {
   $base = Join-Path $env:LOCALAPPDATA 'slack'
   if (-not (Test-Path $base)) { return $null }
   Get-ChildItem $base -Directory -Filter 'app-*' -EA SilentlyContinue |
@@ -65,13 +66,43 @@ function Find-SlackResources {
     Select-Object -First 1
 }
 
+function Find-SlackMsix {
+  $base = 'HKLM:\SOFTWARE\Classes\Local Settings\Software\Microsoft\Windows\CurrentVersion\AppModel\PackageRepository\Packages'
+  try {
+    $pkgs = Get-ChildItem $base -EA Stop | Where-Object { $_.PSChildName -match '^com\.tinyspeck\.slackdesktop_' }
+    $pkgs = $pkgs | Sort-Object { try { [version](($_.PSChildName -split '_')[1]) } catch { [version]'0.0.0' } } -Descending
+    foreach ($pkg in $pkgs) {
+      try {
+        $installPath = (Get-ItemProperty $pkg.PSPath -Name Path -EA Stop).Path
+        $res = Join-Path $installPath 'app\resources'
+        if (Test-Path (Join-Path $res 'app.asar')) { return $res }
+      } catch {}
+    }
+  } catch {}
+  return $null
+}
+
+function Find-SlackResources {
+  $standalone = Find-SlackStandalone
+  $msix = Find-SlackMsix
+  $cands = @($standalone, $msix) | Where-Object { $_ }
+  if (-not $cands) { return $null }
+  $want = if ($env:PROCESSOR_ARCHITECTURE -eq 'ARM64') { 'arm64' } else { 'x64' }
+  foreach ($res in $cands) {
+    $exe = Get-ChildItem (Split-Path $res) -Filter 'slack.exe' -EA SilentlyContinue | Select-Object -First 1
+    if ($exe -and (Get-PEArch $exe.FullName) -eq $want) { return $res }
+  }
+  return $cands | Select-Object -First 1
+}
+
 function Slack-Exe($res) { if ($res) { Get-ChildItem (Split-Path $res) -Filter 'slack.exe' -EA SilentlyContinue | Select-Object -First 1 } }
 
-function New-Shortcuts($exe) {
+function New-Shortcuts($exe, $iconFile) {
   $ws = New-Object -ComObject WScript.Shell
   foreach ($lnk in $Shortcuts) {
     $sc = $ws.CreateShortcut($lnk)
     $sc.TargetPath = $exe; $sc.WorkingDirectory = (Split-Path $exe); $sc.Description = 'Slick (Slack mod)'
+    if ($iconFile -and (Test-Path $iconFile)) { $sc.IconLocation = "$iconFile,0" }
     $sc.Save()
   }
 }
@@ -119,14 +150,18 @@ if ($Uninstall) {
 
 Step "Checking prerequisites"
 $slackRes = Find-SlackResources
-if (-not $slackRes) { Die "Slack not found under %LOCALAPPDATA%\slack - install the standalone Slack from https://slack.com/download first!" }
+if (-not $slackRes) { Die "Slack not found. Install Slack from https://slack.com/download (standalone) or from the Microsoft Store, then rerun." }
 Write-Host "    Slack resources: $slackRes"
 
-$slackExe = Slack-Exe $slackRes
-if ($slackExe -and (Get-PEArch $slackExe.FullName) -eq 'arm64') {
-  Die "Slick doesn't support the ARM64 (aka Microsoft Store) Slack. Install the x64 Slack from https://slack.com/download instead (it runs okish on ARM via fancy emulation), then rerun. Otherwise Slick can't be used here."
+$slackExe  = Slack-Exe $slackRes
+$slackArch = if ($slackExe) { Get-PEArch $slackExe.FullName } else {
+  if ($slackRes -match '\\WindowsApps\\[^\\]+_arm64_') { 'arm64' }
+  elseif ($slackRes -match '\\WindowsApps\\[^\\]+_x64_') { 'x64' }
+  else { 'x64' }
 }
-if ($env:PROCESSOR_ARCHITECTURE -eq 'ARM64') {
+if ($slackArch -eq 'arm64') {
+  Write-Host "    Microsoft Store (MSIX) ARM64 Slack detected." -ForegroundColor Cyan
+} elseif ($env:PROCESSOR_ARCHITECTURE -eq 'ARM64') {
   Write-Host "    note: x64 Slack on an ARM64 PC runs emulated (a drop in performance is expected)." -ForegroundColor Yellow
 }
 
@@ -143,15 +178,16 @@ if ($FromSource) {
 
   $eVer = ((Get-Content (Join-Path $Root 'byoe\package.json') -Raw | ConvertFrom-Json).dependencies.electron -replace '[^\d.]', '')
   if (-not $eVer) { Die "could not get electron version from byoe/package.json" }
-  Write-Host "    BYOE Electron pin: $eVer (win32-x64)"
+  $electronArch = $slackArch
+  Write-Host "    BYOE Electron pin: $eVer (win32-$electronArch)"
 
-  $dist = Join-Path $env:LOCALAPPDATA "slick-byoe\electron-$eVer-win32-x64"
+  $dist = Join-Path $env:LOCALAPPDATA "slick-byoe\electron-$eVer-win32-$electronArch"
   if (Test-Path (Join-Path $dist 'electron.exe')) {
     Step "Found Electron $eVer in cache"
   } else {
-    Step "Downloading Electron $eVer (win32-x64, ~140MB)"
-    $zip = Join-Path $env:TEMP "electron-$eVer-win32-x64.zip"
-    Invoke-WebRequest "https://github.com/electron/electron/releases/download/v$eVer/electron-v$eVer-win32-x64.zip" -OutFile $zip -UseBasicParsing
+    Step "Downloading Electron $eVer (win32-$electronArch, ~140MB)"
+    $zip = Join-Path $env:TEMP "electron-$eVer-win32-$electronArch.zip"
+    Invoke-WebRequest "https://github.com/electron/electron/releases/download/v$eVer/electron-v$eVer-win32-$electronArch.zip" -OutFile $zip -UseBasicParsing
     New-Item -ItemType Directory -Force $dist | Out-Null
     Expand-Archive $zip -DestinationPath $dist -Force
     Remove-Item $zip -EA SilentlyContinue
@@ -219,11 +255,17 @@ if ($FromSource) {
 $exe = Join-Path $Target 'Slick.exe'
 if (-not (Test-Path $exe)) { Die "install incomplete: $exe is missing" }
 
+$iconFile = if ($FromSource) { Join-Path $Root 'assets\icon.ico' } else { $null }
+
+$muiCache = 'HKCU:\Software\Classes\Local Settings\Software\Microsoft\Windows\Shell\MuiCache'
+Remove-ItemProperty $muiCache -Name "$exe.FriendlyAppName" -EA SilentlyContinue
+Remove-ItemProperty $muiCache -Name "$exe.ApplicationCompany" -EA SilentlyContinue
+
 Step "Registering Slick as the slack:// handler"
-Register-SlackHandler $exe
+Register-SlackHandler $exe $iconFile
 
 Step "Creating shortcuts"
-New-Shortcuts $exe
+New-Shortcuts $exe $iconFile
 
 Step "Launching Slick"
 Start-Process $exe
