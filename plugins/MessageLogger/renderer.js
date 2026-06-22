@@ -58,9 +58,6 @@
     return text
       .replace(/<([^>|]+)\|([^>]+)>/g, '$2')
       .replace(/<([^>]+)>/g, '$1')
-      .replace(/&amp;/g, '&')
-      .replace(/&lt;/g, '<')
-      .replace(/&gt;/g, '>')
       .trim();
   }
 
