@@ -424,6 +424,7 @@ if (!preflight()) {
   app.exit(1);
 } else {
   app.setPath('userData', PROFILE);
+  app.setAppUserModelId('Slick');
   // Claim slack:// so browser login handoff opens Slick (writes HKCU on Windows).
   try {
     app.setAsDefaultProtocolClient('slack');
