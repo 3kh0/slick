@@ -168,7 +168,7 @@ function main() {
 const fs = require('fs');
 const https = require('https');
 const path = require('path');
-const { app, dialog, shell } = require('electron');
+const { app, dialog, shell, Menu } = require('electron');
 
 const SLICK_ROOT = path.join(process.resourcesPath, 'slick');
 const PROFILE = process.env.SLICK_HANDOFF_PROFILE || path.join(app.getPath('appData'), 'Slick');
@@ -252,6 +252,84 @@ function writeUpdateState(state) {
     fs.mkdirSync(path.dirname(file), { recursive: true });
     fs.writeFileSync(file, JSON.stringify(state, null, 2) + '\\n');
   } catch {}
+}
+
+function UpdateTime(value) {
+  const date = new Date(value || 0);
+  if (!value || Number.isNaN(date.getTime())) return 'Never';
+  return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(date);
+}
+
+function showAbout() {
+  const lastChecked = UpdateTime(readUpdateState().lastCheckedAt);
+  const build = SLICK_BUILD ? 'Build ' + SLICK_BUILD : 'Development build';
+
+  if (typeof app.setAboutPanelOptions === 'function' && typeof app.showAboutPanel === 'function') {
+    app.setAboutPanelOptions({
+      applicationName: 'Slick',
+      applicationVersion: SLICK_VERSION,
+      version: build,
+      copyright: 'Last checked for Slick updates: ' + lastChecked,
+      website: RELEASES_URL,
+    });
+    app.showAboutPanel();
+    return;
+  }
+
+  dialog.showMessageBox({
+    type: 'info',
+    title: 'About Slick',
+    message: 'Slick',
+    detail: 'Version ' + SLICK_VERSION + '\\n' + build + '\\nLast checked for Slick updates: ' + lastChecked,
+    buttons: ['OK'],
+  }).catch(() => {});
+}
+
+function isSlackAboutItem(item) {
+  const label = String((item && item.label) || '');
+  return item && (item.role === 'about' || /^About\\s+Slack$/i.test(label));
+}
+
+function patchMenuTemplate(template) {
+  if (process.platform !== 'darwin' || !Array.isArray(template)) return template;
+  const appMenu = template[0];
+  if (!appMenu || !Array.isArray(appMenu.submenu)) return template;
+
+  return template.map((item, index) => {
+    if (index !== 0) return item;
+    return {
+      ...item,
+      label: 'Slick',
+      submenu: item.submenu.map((child, childIndex) => {
+        if (childIndex !== 0 && !isSlackAboutItem(child)) return child;
+        if (!isSlackAboutItem(child)) return child;
+        const about = { ...child };
+        delete about.role;
+        return { ...about, label: 'About Slick', click: showAbout };
+      }),
+    };
+  });
+}
+
+function patchMenu(menu) {
+  if (process.platform !== 'darwin' || !menu) return menu;
+  const item = menu.items && menu.items[0];
+  const about = item && item.submenu && item.submenu.items && item.submenu.items.find(isSlackAboutItem);
+  if (about) {
+    about.label = 'About Slick';
+    about.click = showAbout;
+  }
+  return menu;
+}
+
+function installPatch() {
+  if (process.platform !== 'darwin' || !Menu) return;
+
+  const buildFromTemplate = Menu.buildFromTemplate.bind(Menu);
+  Menu.buildFromTemplate = (template) => buildFromTemplate(patchMenuTemplate(template));
+
+  const setApplicationMenu = Menu.setApplicationMenu.bind(Menu);
+  Menu.setApplicationMenu = (menu) => setApplicationMenu(patchMenu(menu));
 }
 
 function releaseBuild(release) {
@@ -356,6 +434,7 @@ if (!preflight()) {
   app.exit(1);
 } else {
   app.setPath('userData', PROFILE);
+  installPatch();
   seedSettings();
   scheduleUpdateChecks();
 
