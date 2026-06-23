@@ -5,6 +5,12 @@
   const ID_RE = /^[UW][A-Z0-9]{6,}$/;
   const SURF =
     '[data-qa="member_profile_pane"], .p-r_member_profile__container, .p-member_profile_hover_card__container';
+  const ROW_SEL = [
+    '.c-message_kit__message',
+    '.c-message',
+    '[data-qa="message_container"]',
+    '[id^="message-list_"][role="listitem"]',
+  ].join(',');
 
   const S = () => (window.__slickPluginSettings && window.__slickPluginSettings.LastSeen) || {};
   const ttl = () => {
@@ -40,6 +46,20 @@
   }
   const ent = (id) => C[id] || (C[id] = {});
 
+  function markMsg(id, ts) {
+    if (!ID_RE.test(id) || !ts) return;
+    const n = parseFloat(ts);
+    if (!n) return;
+    const e = ent(id);
+    const prev = parseFloat(e.lastMessageTs || '0');
+    if (prev && prev >= n) return;
+    const t = Date.now();
+    e.lastMessageTs = String(ts);
+    e.updatedAt = t;
+    save();
+    sched();
+  }
+
   function onP(u, p) {
     if (!ID_RE.test(u) || (p !== 'active' && p !== 'away')) return;
     const e = ent(u);
@@ -51,17 +71,33 @@
     save();
     sched();
   }
+  function msgTs(m) {
+    return m && typeof m === 'object' ? m.ts || m.event_ts || m.message_ts || '' : '';
+  }
+  function msgUser(m) {
+    return m && typeof m === 'object' ? m.user || m.user_id || m.sender || m.authorUserId || '' : '';
+  }
+  function msgFrame(o) {
+    if (!o || typeof o !== 'object') return;
+    const m =
+      o.message && typeof o.message === 'object' ? o.message : o.event && typeof o.event === 'object' ? o.event : o;
+    if (m.type && m.type !== 'message') return;
+    if (m.subtype === 'message_deleted') return;
+    markMsg(msgUser(m), msgTs(m));
+  }
   function frame(o) {
-    if (!o || typeof o !== 'object' || o.type !== 'presence_change') return;
-    const p = o.presence;
-    if (Array.isArray(o.users)) o.users.forEach((u) => onP(u, p));
-    else if (o.user) onP(o.user, p);
+    if (!o || typeof o !== 'object') return;
+    if (o.type === 'presence_change') {
+      const p = o.presence;
+      if (Array.isArray(o.users)) o.users.forEach((u) => onP(u, p));
+      else if (o.user) onP(o.user, p);
+    } else msgFrame(o);
   }
 
   const SK = [];
   function onMsg(ev) {
     const d = ev && ev.data;
-    if (typeof d !== 'string' || d.indexOf('presence_change') === -1) return;
+    if (typeof d !== 'string' || (d.indexOf('presence_change') === -1 && d.indexOf('"message"') === -1)) return;
     try {
       frame(JSON.parse(d));
     } catch {}
@@ -169,7 +205,7 @@
   async function fetchMsg(id) {
     if (!S().showLastMessage || !ID_RE.test(id)) return;
     const e = ent(id);
-    if (e.lastMessageAt && Date.now() - e.lastMessageAt < ttl()) return;
+    if (e.lastMessageAt && Date.now() - e.lastMessageAt < Math.min(ttl(), 5 * 60e3)) return;
     const tr = tried.get(id);
     if (tr && Date.now() - tr < 6e4) return;
     tried.set(id, Date.now());
@@ -186,12 +222,11 @@
       if (!r.ok) return;
       const d = await r.json();
       const ts = d && d.messages && d.messages.matches && d.messages.matches[0] && d.messages.matches[0].ts;
-      if (ts) {
-        e.lastMessageTs = String(ts);
-        e.lastMessageAt = e.updatedAt = Date.now();
-        save();
-        sched();
-      }
+      if (ts) markMsg(id, ts);
+      const now = Date.now();
+      const latest = ent(id);
+      latest.lastMessageAt = latest.updatedAt = now;
+      save();
     } catch {}
   }
 
@@ -253,6 +288,46 @@
         if (p.user || p.member || p.userId || p.user_id || p.memberId || p.member_id) return id;
       }
     return fb;
+  }
+  function msgFromProps(p) {
+    if (!p || typeof p !== 'object') return null;
+    const m = p.message || p.msg || p.event;
+    if (m && typeof m === 'object' && msgTs(m)) return { ts: msgTs(m), user: msgUser(m) };
+    if (p.ts || p.messageTs || p.message_ts) {
+      return { ts: p.ts || p.messageTs || p.message_ts, user: p.user || p.userId || p.user_id || '' };
+    }
+    return null;
+  }
+  function rowMsg(el) {
+    const scan = (node) => {
+      let f = fib(node);
+      for (let h = 0; f && h < 40; f = f.return, h++) {
+        const m = msgFromProps(f.memoizedProps) || msgFromProps(f.pendingProps);
+        if (m) return m;
+      }
+      return null;
+    };
+    let m = scan(el);
+    if (m) return m;
+    const nodes = el.querySelectorAll('*');
+    for (let i = 0; i < nodes.length && i < 80; i++) {
+      m = scan(nodes[i]);
+      if (m) return m;
+    }
+    const attr = el.getAttribute('data-ts') || el.getAttribute('data-message-ts') || el.id || '';
+    const ts = String(attr).match(/\d{10}\.\d{6}/);
+    if (!ts) return null;
+    const sender = el.querySelector(
+      '.c-message__sender, .c-message__sender_button, [data-qa="message_sender"], [data-qa="message_sender_name"]',
+    );
+    return { ts: ts[0], user: sender ? uid(sender) : uid(el) };
+  }
+  function scanMessages() {
+    if (!S().showLastMessage) return;
+    document.querySelectorAll(ROW_SEL).forEach((row) => {
+      const m = rowMsg(row);
+      if (m) markMsg(m.user, m.ts);
+    });
   }
   const aid = (el) => {
     for (const a of ['data-user-id', 'data-member-id', 'data-qa-user-id', 'data-qa-member-id', 'data-stringify-id']) {
@@ -477,6 +552,7 @@
   function pall() {
     style();
     try {
+      scanMessages();
       paint();
     } catch {}
   }
