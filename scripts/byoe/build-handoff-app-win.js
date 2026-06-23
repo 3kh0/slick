@@ -271,7 +271,7 @@ function preflight() {
       type: 'error',
       title: 'Slick',
       message: 'Slack is not installed',
-      detail: 'Slick needs the official Slack desktop app (the standalone download from slack.com, installed under %LOCALAPPDATA%\\\\slack). Install it, then open Slick again.',
+      detail: 'Slick requires Slack desktop to be installed. Both the standalone download and Microsoft Store version are supported. Install Slack, then open Slick again.',
       buttons: ['Quit'],
     });
     return false;

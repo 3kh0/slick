@@ -62,7 +62,7 @@ If you want to debug or poke around at things, you can find more manual scripts 
 ## Windows (beta)
 
 > [!NOTE]
-> Windows support is new and somehow even more unstable and prone to jank than the Mac build. It only supports the **x64** standalone Slack from [slack.com/download](https://slack.com/download) (not the MS store version). On ARM PCs the x64 Slack runs via emulation magic and Slick works, but expect a big performance hit.
+> Windows support is new and somehow even more unstable and prone to jank than the Mac build. Both the standalone Slack download and the Microsoft Store version are supported. On ARM PCs the x64 Slack runs via emulation magic and Slick works, but expect a big performance hit.
 
 Install Slack first, then run this in PowerShell:
 
