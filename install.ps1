@@ -150,7 +150,7 @@ if ($Uninstall) {
 
 Step "Checking prerequisites"
 $slackRes = Find-SlackResources
-if (-not $slackRes) { Die "Slack not found. Install Slack from https://slack.com/download (standalone) or from the Microsoft Store, then rerun." }
+if (-not $slackRes) { Die "Slack not found. Install Slack Desktop from https://slack.com/download or the Microsoft Store, then rerun." }
 Write-Host "    Slack resources: $slackRes"
 
 $slackExe  = Slack-Exe $slackRes
