@@ -10,9 +10,9 @@
 </div>
 
 > [!CAUTION]
-> This is in early alpha and may not be even allowed by Salesforce. Expect breakage, bugs, and random crashes. Information here may be inaccurate or incomplete, but the code is open source and you can inspect it yourself.
+> This is in early alpha and may not even be allowed by Salesforce. Expect breakage, bugs, and random crashes. The information here may be inaccurate or incomplete, but the code is open source and you can inspect it yourself.
 
-![screenshot](https://cdn.hackclub.com/019e981c-32d4-7312-9e7c-b6836219afb1/image.jpg)
+![screenshot](https://github.com/user-attachments/assets/a5cc6152-cd94-4894-9bc0-cd7c605c291c)
 
 Slick runs Slack's own `app.asar` with a custom Electron (with the handy BYOE acronym, bring your own electron) preload that injects themes and plugins. This method allows us to modify Slack's interface and behavior without altering its files, so auto-updates still work and there's no open debug port or resident watcher.
 
