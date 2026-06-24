@@ -7,10 +7,17 @@
     hideMention: { prop: 'enableMentionButton', value: false },
     hideVideo: { prop: 'enableStoryButton', value: false },
     hideAudio: { prop: 'enableAudioButton', value: false },
-    hideSlash: { prop: 'enableSlashCommandsButton', value: false },
+    hideSlash: [
+      { prop: 'enableSlashCommandsButton', value: false },
+      { prop: 'enableShortcutsButton', value: false },
+    ],
   };
   var THREAD_FOOTER_HIDE_MAP = {
     hideBroadcast: { prop: 'dontShowBroadcastControls', value: true },
+  };
+  var HIDE_DOM = {
+    hideSlash: 'button[aria-label="Run shortcut"],.c-texty_buttons--overflow',
+    hideBroadcast: '.p-threads_footer__input_container__broadcast_controls',
   };
 
   function settings() {
@@ -30,10 +37,20 @@
     if (enabled && isMultiline(editor)) scope.classList.add('slick-smb-stacked');
     else scope.classList.remove('slick-smb-stacked');
   }
+  function applyDomHides() {
+    var s = settings();
+    for (var key in HIDE_DOM) {
+      if (!s[key]) continue;
+      document.querySelectorAll(SCOPE + ' ' + HIDE_DOM[key]).forEach(function (el) {
+        el.style.setProperty('display', 'none', 'important');
+      });
+    }
+  }
   function scanAll() {
     document
       .querySelectorAll(SCOPE + ' .ql-editor, ' + SCOPE + ' [contenteditable="true"][role="textbox"]')
       .forEach(evaluate);
+    applyDomHides();
   }
   document.addEventListener(
     'input',
@@ -67,26 +84,34 @@
     var s = settings();
     var out = null;
     for (var key in map) {
-      if (s[key]) {
-        var rule = map[key];
+      if (!s[key]) continue;
+      var rules = map[key];
+      if (!Array.isArray(rules)) rules = [rules];
+      for (var i = 0; i < rules.length; i++) {
         out = out || {};
-        out[rule.prop] = rule.value;
+        out[rules[i].prop] = rules[i].value;
       }
     }
     return out;
   }
+  var PATCH_TARGETS = [
+    ['TextyButtons', TEXTY_BUTTON_HIDE_MAP],
+    ['WysiwygContainer', TEXTY_BUTTON_HIDE_MAP],
+    ['MessageInput', TEXTY_BUTTON_HIDE_MAP],
+    ['ThreadFooter', THREAD_FOOTER_HIDE_MAP],
+  ];
   var tries = 0;
   (function waitForInternals() {
     var internals = window.__slickInternals;
     if (internals && internals.react && internals.react.patchProps) {
-      internals.react.patchProps('TextyButtons', function (props) {
-        var o = overrides(TEXTY_BUTTON_HIDE_MAP);
-        return o ? Object.assign({}, props, o) : props;
-      });
-      internals.react.patchProps('ThreadFooter', function (props) {
-        var o = overrides(THREAD_FOOTER_HIDE_MAP);
-        return o ? Object.assign({}, props, o) : props;
-      });
+      for (var i = 0; i < PATCH_TARGETS.length; i++) {
+        (function (name, map) {
+          internals.react.patchProps(name, function (props) {
+            var o = overrides(map);
+            return o ? Object.assign({}, props, o) : props;
+          });
+        })(PATCH_TARGETS[i][0], PATCH_TARGETS[i][1]);
+      }
       window.addEventListener('slick:plugin-settings', function () {
         internals.react.refresh();
       });

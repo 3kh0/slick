@@ -3,16 +3,48 @@
 const fs = require('fs');
 const path = require('path');
 
-const CSS = `
+const LAYOUT_CSS = `
 .p-message_input__input_container_unstyled:not(.slick-smb-stacked) .c-basic_container__body{display:flex!important;flex-direction:row!important;flex-wrap:wrap;align-items:center!important;column-gap:6px;}
 .p-message_input__input_container_unstyled:not(.slick-smb-stacked) .c-wysiwyg_container__footer{display:contents!important;}
 .p-message_input__input_container_unstyled:not(.slick-smb-stacked) .c-basic_container__body>:first-child{order:1;flex:1 0 100%;}
 .p-message_input__input_container_unstyled:not(.slick-smb-stacked) .c-basic_container__body>:first-child:empty{display:none;}
-.p-message_input__input_container_unstyled:not(.slick-smb-stacked) .c-wysiwyg_container__prefix{order:2;}
+.p-message_input__input_container_unstyled:not(.slick-smb-stacked) .c-wysiwyg_container__prefix{order:2;flex:0 0 auto!important;}
 .p-message_input__input_container_unstyled:not(.slick-smb-stacked) .c-texty_input_unstyled__container{order:3;flex:1 1 0%!important;min-width:140px;}
-.p-message_input__input_container_unstyled:not(.slick-smb-stacked) .c-wysiwyg_container__toolbar_buttons{order:4;flex:0 0 auto!important;}
-.p-message_input__input_container_unstyled:not(.slick-smb-stacked) .c-wysiwyg_container__suffix{order:5;}
+.p-message_input__input_container_unstyled:not(.slick-smb-stacked) .c-wysiwyg_container__toolbar_buttons{order:4;flex:0 0 auto!important;display:inline-flex!important;width:max-content!important;min-width:0;max-width:100%;overflow:visible;}
+.p-message_input__input_container_unstyled:not(.slick-smb-stacked) .c-wysiwyg_container__toolbar_buttons .c-texty_buttons{display:inline-flex!important;flex:0 0 auto!important;width:max-content!important;min-width:0;max-width:100%;}
+.p-message_input__input_container_unstyled:not(.slick-smb-stacked) .c-wysiwyg_container__suffix{order:5;flex:0 0 auto!important;}
+.p-message_input__input_container_unstyled:not(.slick-smb-stacked) .c-wysiwyg_container__footer_divider{display:none!important;}
 `;
+
+const HIDE_SELECTORS = {
+  hideFormatting: 'button[aria-label="Show formatting"]',
+  hideEmoji: 'button[aria-label="Emoji"]',
+  hideMention: 'button[aria-label="Mention someone"]',
+  hideVideo: 'button[aria-label="Record video clip"]',
+  hideAudio: 'button[aria-label="Record audio clip"]',
+  hideSlash: 'button[aria-label="Run shortcut"],.c-texty_buttons--overflow',
+};
+
+const SCOPE = '.p-message_input__input_container_unstyled';
+
+function hideCss(settings) {
+  const rules = [];
+  for (const key in HIDE_SELECTORS) {
+    if (settings[key]) rules.push(`${SCOPE} ${HIDE_SELECTORS[key]}{display:none!important;}`);
+  }
+  if (settings.hideBroadcast) {
+    rules.push(
+      `${SCOPE} .p-threads_footer__input_container__broadcast_controls{display:none!important;}`,
+      `${SCOPE} .c-basic_container__body>.p-threads_footer__input_container__broadcast_controls{display:none!important;}`,
+    );
+  }
+  return rules.join('');
+}
+
+function css(settings) {
+  if (settings.discordLayout === false) return hideCss(settings);
+  return LAYOUT_CSS + hideCss(settings);
+}
 
 module.exports = {
   meta: {
@@ -70,6 +102,6 @@ module.exports = {
       default: false,
     },
   },
-  css: (settings) => (settings.discordLayout ? CSS : ''),
+  css,
   renderer: fs.readFileSync(path.join(__dirname, 'renderer.js'), 'utf8'),
 };
