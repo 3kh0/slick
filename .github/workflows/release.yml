@@ -68,7 +68,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        arch: [x64]
+        arch: [x64, arm64]
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v6

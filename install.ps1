@@ -232,15 +232,24 @@ if ($FromSource) {
 } else {
   Step "Finding the latest Slick release"
   $asset = $null; $tag = $null
+  $releaseArch = if ($env:PROCESSOR_ARCHITECTURE -eq 'ARM64') { 'arm64' } else { 'x64' }
+  
   try {
     $rel = Invoke-RestMethod "https://api.github.com/repos/$Repo/releases/latest" -Headers @{ 'User-Agent' = 'slick-install' }
     $tag = $rel.tag_name
-    $asset = $rel.assets | Where-Object { $_.name -match 'win32-x64\.zip$' } | Select-Object -First 1
-  } catch { Die "could not reach GitHub to find a release ($($_.Exception.Message))" }
-  if (-not $asset) { Die "the latest release ($tag) has no Windows (win32-x64) build yet. Clone the repo and run install.ps1 to build from source: git clone https://github.com/$Repo" }
-
-  Step "Downloading Slick $tag (win32-x64)"
-  $zip = Join-Path $env:TEMP "slick-$tag-win32-x64.zip"
+    $asset = $rel.assets |
+      Where-Object { $_.name -match "win32-$releaseArch\.zip$" } |
+      Select-Object -First 1
+  } catch {
+    Die "could not reach GitHub to find a release ($($_.Exception.Message))"
+  }
+  
+  if (-not $asset) {
+    Die "the latest release ($tag) has no Windows (win32-$releaseArch) build yet. Clone the repo and run install.ps1 to build from source: git clone https://github.com/$Repo"
+  }
+  
+  Step "Downloading Slick $tag (win32-$releaseArch)"
+  $zip = Join-Path $env:TEMP "slick-$tag-win32-$releaseArch.zip"
   Invoke-WebRequest $asset.browser_download_url -OutFile $zip -UseBasicParsing
   $stage = Join-Path $env:TEMP ("slick-stage-" + [Guid]::NewGuid().ToString('N'))
   Expand-Archive $zip -DestinationPath $stage -Force
