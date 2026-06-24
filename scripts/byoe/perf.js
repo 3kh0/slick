@@ -20,7 +20,7 @@ function span() {
   return (label) => push({ label, t: performance.now(), ms: performance.now() - start });
 }
 
-function report({ launcherMs = 0, pluginTimings = [] } = {}) {
+function report({ launcherMs = 0, pluginTimings = [], sink } = {}) {
   if (reported || !marks.length) return;
   reported = true;
   const ordered = marks.toSorted((a, b) => a.t - b.t);
@@ -37,6 +37,9 @@ function report({ launcherMs = 0, pluginTimings = [] } = {}) {
     lines.push(`  plugin load: ${byTime.map((p) => `${p.name} ${fmt(p.ms)}`).join(', ')}`);
   }
   for (const l of lines) console.log(`[slick-perf] ${l}`);
+  try {
+    sink?.(lines.join('\n'));
+  } catch {}
 }
 
 module.exports = { mark, span, report };
