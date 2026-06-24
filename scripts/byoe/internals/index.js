@@ -219,7 +219,14 @@ function slickInternalsMain() {
     var guard = 0;
     (function poison(n) {
       if (!n || guard++ > 50000) return;
-      if (n.memoizedProps && typeof n.memoizedProps === 'object') n.memoizedProps = Object.assign({}, n.memoizedProps);
+      if (n.memoizedProps && typeof n.memoizedProps === 'object') {
+        var patched = applyProps(n.type, n.memoizedProps);
+        n.memoizedProps = patched === n.memoizedProps ? Object.assign({}, n.memoizedProps) : patched;
+        if (n.pendingProps && typeof n.pendingProps === 'object') {
+          var pending = applyProps(n.type, n.pendingProps);
+          n.pendingProps = pending === n.pendingProps ? Object.assign({}, n.pendingProps) : pending;
+        }
+      }
       poison(n.child);
       poison(n.sibling);
     })(container[key]);
