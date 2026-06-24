@@ -77,8 +77,61 @@ const plugins = loadPlugins({
 });
 endPlugins(`${plugins.loaded.length} plugin(s) loaded`);
 
-const reportPerf = () => perf.report({ launcherMs: LAUNCHER_MS, pluginTimings: plugins.timings });
-setTimeout(reportPerf, 60000).unref();
+const BOOT_LOG_FILE = path.join(SETTINGS_DIR, 'boot.log');
+function bootLog(text) {
+  try {
+    fs.mkdirSync(SETTINGS_DIR, { recursive: true });
+    try {
+      if (fs.statSync(BOOT_LOG_FILE).size > 512 * 1024) fs.renameSync(BOOT_LOG_FILE, `${BOOT_LOG_FILE}.1`);
+    } catch {}
+    fs.appendFileSync(BOOT_LOG_FILE, `[${new Date().toISOString()}] ${text}\n`);
+  } catch {}
+}
+
+const reportPerf = () => perf.report({ launcherMs: LAUNCHER_MS, pluginTimings: plugins.timings, sink: bootLog });
+setTimeout(() => {
+  reportPerf();
+  if (!workspaceReady) bootLog('60s-timeout (workspace never rendered) ' + netSummary());
+}, 60000).unref();
+
+let nt = true;
+const netInflight = new Map();
+const netSlow = [];
+function trackNet(sess) {
+  try {
+    sess.webRequest.onSendHeaders({ urls: ['*://*/*'] }, (d) => {
+      if (nt) netInflight.set(d.id, { url: d.url, type: d.resourceType, start: performance.now() });
+    });
+    const done = (d, how) => {
+      const e = netInflight.get(d.id);
+      if (!e) return;
+      netInflight.delete(d.id);
+      const ms = Math.round(performance.now() - e.start);
+      if ((ms >= 1000 || how !== 'ok') && how !== 'net::ERR_ABORTED')
+        netSlow.push({ ms, startMs: Math.round(e.start), type: e.type, how, url: e.url });
+    };
+    sess.webRequest.onCompleted({ urls: ['*://*/*'] }, (d) => done(d, 'ok'));
+    sess.webRequest.onErrorOccurred({ urls: ['*://*/*'] }, (d) => done(d, d.error || 'error'));
+  } catch (e) {}
+}
+function netSummary() {
+  const now = performance.now();
+  const top = (a) => a.toSorted((x, y) => y.ms - x.ms).slice(0, 12);
+  const line = (r) =>
+    `    ${r.ms}ms  ${r.type}  ${r.how ? r.how + '  ' : ''}[start +${r.startMs}ms]  ${String(r.url).slice(0, 110)}`;
+  const pending = top(
+    [...netInflight.values()]
+      .map((e) => ({ ms: Math.round(now - e.start), startMs: Math.round(e.start), type: e.type, url: e.url }))
+      .filter((p) => p.ms >= 1000),
+  );
+  const slow = top(netSlow);
+  const L = ['network tap (ms since electron start in [..]):'];
+  if (slow.length) L.push('  slow/failed completed requests:', ...slow.map(line));
+  if (pending.length)
+    L.push('  STILL PENDING at workspace-ready (>1s; a websocket here is normal/expected):', ...pending.map(line));
+  if (!slow.length && !pending.length) L.push('  nothing >1s and nothing pending — boot was not network-blocked');
+  return L.join('\n');
+}
 
 function pluginCss() {
   const dynamic = plugins.cssFns.map(({ name, schema, fn }) => {
@@ -161,6 +214,7 @@ function requestNoti() {
 app.whenReady().then(() => {
   perf.mark('app ready');
   armBlocking(session.defaultSession);
+  trackNet(session.defaultSession);
   if (process.env.SLICK_DBG) {
     session.defaultSession.cookies.on('changed', (_e, c, cause, removed) => {
       if (c.name.startsWith('d'))
@@ -177,11 +231,66 @@ app.whenReady().then(() => {
   requestNoti();
 });
 
+const BOOT_PROBE_JS = `(() => {
+  if (window.__slickBootProbe) return;
+  const p = (window.__slickBootProbe = { longtasks: 0, longtaskMs: 0, maxLongtask: 0, sw: [] });
+  try {
+    new PerformanceObserver((list) => {
+      for (const e of list.getEntries()) {
+        p.longtasks++;
+        p.longtaskMs += e.duration;
+        p.maxLongtask = Math.max(p.maxLongtask, e.duration);
+      }
+    }).observe({ type: 'longtask', buffered: true });
+  } catch (e) {}
+  try {
+    const sw = navigator.serviceWorker;
+    if (sw) {
+      p.sw.push('start:' + (sw.controller ? sw.controller.state : 'none'));
+      sw.addEventListener('controllerchange', () =>
+        p.sw.push('change@' + Math.round(performance.now()) + 'ms:' + (sw.controller ? sw.controller.state : 'none')),
+      );
+    }
+  } catch (e) {}
+})()`;
+
 const WORKSPACE_READY_JS = `(() => {
   const SEL = '.p-client_workspace, .p-workspace__primary_view';
+  const host = (u) => { try { return new URL(u).host; } catch (e) { return '?'; } };
   const result = () => {
-    const nav = performance.getEntriesByType('navigation')[0];
-    return { readyMs: Math.round(performance.now()), dclMs: nav ? Math.round(nav.domContentLoadedEventEnd) : 0 };
+    const nav = performance.getEntriesByType('navigation')[0] || {};
+    const res = performance.getEntriesByType('resource') || [];
+    const slow = res
+      .filter((r) => r.duration > 1000)
+      .sort((a, b) => b.duration - a.duration)
+      .slice(0, 12)
+      .map((r) => ({
+        host: host(r.name),
+        name: (r.name.split('?')[0].split('/').pop() || host(r.name)).slice(0, 48),
+        ms: Math.round(r.duration),
+        start: Math.round(r.startTime),
+        type: r.initiatorType,
+      }));
+    const hostMs = {};
+    for (const r of res) { const h = host(r.name); hostMs[h] = (hostMs[h] || 0) + r.duration; }
+    const topHosts = Object.entries(hostMs).sort((a, b) => b[1] - a[1]).slice(0, 6).map(([h, ms]) => ({ host: h, ms: Math.round(ms) }));
+    const p = window.__slickBootProbe || {};
+    const sw = navigator.serviceWorker;
+    return {
+      readyMs: Math.round(performance.now()),
+      dclMs: nav.domContentLoadedEventEnd ? Math.round(nav.domContentLoadedEventEnd) : 0,
+      responseEnd: nav.responseEnd ? Math.round(nav.responseEnd) : 0,
+      domInteractive: nav.domInteractive ? Math.round(nav.domInteractive) : 0,
+      loadEnd: nav.loadEventEnd ? Math.round(nav.loadEventEnd) : 0,
+      resources: res.length,
+      slow,
+      topHosts,
+      longtasks: p.longtasks || 0,
+      longtaskMs: Math.round(p.longtaskMs || 0),
+      maxLongtask: Math.round(p.maxLongtask || 0),
+      swState: sw && sw.controller ? sw.controller.state : 'none',
+      swEvents: p.sw || [],
+    };
   };
   return new Promise((resolve) => {
     if (document.querySelector(SEL)) return resolve(result());
@@ -191,9 +300,42 @@ const WORKSPACE_READY_JS = `(() => {
       resolve(result());
     });
     mo.observe(document.documentElement, { childList: true, subtree: true });
-    setTimeout(() => { mo.disconnect(); resolve(null); }, 120000);
+    setTimeout(() => { mo.disconnect(); resolve(result()); }, 120000);
   });
 })()`;
+
+function formatBootDiag(r) {
+  const L = [
+    `boot diagnostics (workspace ${r.readyMs}ms after nav):`,
+    `  nav: responseEnd ${r.responseEnd}ms, domInteractive ${r.domInteractive}ms, dom-content-loaded ${r.dclMs}ms, load ${r.loadEnd}ms`,
+    `  service worker: controller=${r.swState}${r.swEvents.length ? ' [' + r.swEvents.join(', ') + ']' : ''}`,
+    `  main-thread long tasks: ${r.longtasks} totalling ${r.longtaskMs}ms (longest ${r.maxLongtask}ms)`,
+    `  ${r.resources} resources; busiest hosts: ${r.topHosts.map((h) => `${h.host} ${h.ms}ms`).join(', ') || 'none'}`,
+  ];
+  if (r.slow.length)
+    L.push(
+      '  slowest resources (>1s):',
+      ...r.slow.map((s) => `    ${s.ms}ms  ${s.host}  ${s.type}  ${s.name} (start +${s.start}ms)`),
+    );
+  else L.push('  no single resource took >1s -> stall is JS/render or service-worker bound, not a slow fetch');
+  return L.join('\n');
+}
+
+const consoleBuf = [];
+function captureConsole(e, level, message) {
+  const msg = message ?? e?.message;
+  if (workspaceReady || consoleBuf.length >= 1200 || msg == null) return;
+  consoleBuf.push({ t: Math.round(performance.now()), lvl: level ?? e?.level, msg: String(msg).slice(0, 240) });
+}
+function dumpConsole(reason) {
+  if (!consoleBuf.length) return;
+  const tail = consoleBuf.slice(-200);
+  const L = [
+    `renderer console trace (${reason}; last ${tail.length} of ${consoleBuf.length} lines, +ms since electron start):`,
+  ];
+  for (const c of tail) L.push(`  +${c.t}ms [${c.lvl}] ${c.msg}`);
+  bootLog(L.join('\n'));
+}
 
 let workspaceReady = false;
 function watchWorkspaceReady(wc) {
@@ -202,10 +344,41 @@ function watchWorkspaceReady(wc) {
     .then((r) => {
       if (!r || workspaceReady) return;
       workspaceReady = true;
+      clearTimeout(stallTimer);
       perf.mark(`workspace ready (page: dom-content-loaded ${r.dclMs}ms, workspace ${r.readyMs}ms after nav)`);
       reportPerf();
+      bootLog(formatBootDiag(r));
+      bootLog(netSummary());
+      if (r.readyMs > 5000) dumpConsole(`slow boot, workspace ${r.readyMs}ms`);
+      nt = false;
+      netInflight.clear();
+      consoleBuf.length = 0;
     })
     .catch(() => {});
+}
+
+let bootReloads = 0;
+let stallTimer = null;
+function armStallWatchdog(wc) {
+  if (workspaceReady) return;
+  const u = URL.parse(wc.getURL());
+  if (!u || u.hostname !== 'app.slack.com' || !u.pathname.startsWith('/client')) return;
+  clearTimeout(stallTimer);
+  stallTimer = setTimeout(() => {
+    if (workspaceReady || wc.isDestroyed()) return;
+    if (bootReloads >= 2) {
+      bootLog(`boot-stall watchdog: still not ready after ${bootReloads} reload(s); letting Slack's own fallback ride`);
+      return;
+    }
+    bootReloads++;
+    bootLog(
+      `boot-stall watchdog: workspace not ready 3000ms after dom-ready -> reload ${bootReloads}/${2} (url ${wc.getURL()})`,
+    );
+    dumpConsole(`boot stall, reload ${bootReloads}`);
+    try {
+      wc.reload();
+    } catch (e) {}
+  }, 3000);
 }
 
 const live = new Map();
@@ -316,6 +489,28 @@ app.on('browser-window-created', (_event, win) => {
   }
   const wc = win.webContents;
   armBlocking(wc.session);
+  wc.on('console-message', captureConsole);
+  let unresponsiveAt = 0;
+  wc.on('unresponsive', () => {
+    unresponsiveAt = performance.now();
+    bootLog(
+      `renderer UNRESPONSIVE (wc${wc.id}, +${Math.round(unresponsiveAt)}ms since electron start, url ${wc.getURL()})`,
+    );
+    bootLog('at-unresponsive ' + netSummary());
+    dumpConsole('at-unresponsive');
+  });
+  wc.on('responsive', () => {
+    const ms = unresponsiveAt ? Math.round(performance.now() - unresponsiveAt) : 0;
+    bootLog(`renderer responsive again (wc${wc.id}, was hung ~${ms}ms)`);
+    unresponsiveAt = 0;
+  });
+  wc.on('render-process-gone', (_e, details) =>
+    bootLog(`render-process-gone (wc${wc.id}, reason=${details.reason}, exitCode=${details.exitCode})`),
+  );
+  wc.on('did-fail-load', (_e, code, desc, url, isMainFrame) => {
+    if (code === -3) return;
+    bootLog(`did-fail-load (wc${wc.id}, code=${code} ${desc}, mainFrame=${isMainFrame}, ${String(url).slice(0, 140)})`);
+  });
   if (process.env.SLICK_DBG) {
     wc.on('did-navigate', (_e, url) => console.log(`[slick-dbg] wc${wc.id} did-navigate ${url}`));
     wc.on('did-frame-navigate', (_e, url, code, _s, isMain) => {
@@ -338,8 +533,12 @@ app.on('browser-window-created', (_event, win) => {
       clientDomReady = true;
       perf.mark('client dom-ready');
     }
+    if (!workspaceReady) wc.mainFrame.executeJavaScript(BOOT_PROBE_JS, true).catch(() => {});
     applyTo(wc, { initialize: true });
-    if (!workspaceReady) watchWorkspaceReady(wc);
+    if (!workspaceReady) {
+      watchWorkspaceReady(wc);
+      armStallWatchdog(wc);
+    }
   });
   wc.on('destroyed', () => live.delete(wc));
 });
