@@ -1,6 +1,7 @@
 'use strict';
 
 const path = require('path');
+const { execFile } = require('child_process');
 const electron = require('electron');
 const { app, session, Notification } = electron;
 const PLUGINS_DIR = path.join(__dirname, '..', '..', 'plugins');
@@ -195,6 +196,41 @@ function armBlocking(sess) {
 let blockedCount = 0;
 app.on('session-created', armBlocking);
 
+function installNotificationSounds() {
+  if (process.platform !== 'darwin') return;
+  const R = '/Applications/Slack.app/Contents/Resources';
+  const s = path.join(app.getPath('home'), 'Library', 'Sounds');
+  let names;
+  try {
+    names = fs.readdirSync(R).filter((f) => f.endsWith('.mp3'));
+  } catch {
+    return;
+  }
+  if (!names.length) return;
+  try {
+    fs.mkdirSync(s, { recursive: true });
+  } catch {
+    return;
+  }
+  for (const name of names) {
+    const src = path.join(R, name);
+    const dest = path.join(s, name.replace(/\.mp3$/, '.caf'));
+    try {
+      const srcStat = fs.statSync(src);
+      let destStat;
+      try {
+        destStat = fs.statSync(dest);
+      } catch {}
+      if (destStat && destStat.mtimeMs >= srcStat.mtimeMs) continue; // already current
+    } catch {
+      continue;
+    }
+    execFile('/usr/bin/afconvert', ['-f', 'caff', '-d', 'LEI16', src, dest], (e) => {
+      if (e) console.error(`[slick-byoe] notification sound convert failed (${name}): ${e.message}`);
+    });
+  }
+}
+
 function requestNoti() {
   try {
     if (!Notification.isSupported()) return; // unlikely, but just in case
@@ -229,6 +265,7 @@ app.whenReady().then(() => {
     }
   }
   requestNoti();
+  installNotificationSounds();
 });
 
 const BOOT_PROBE_JS = `(() => {

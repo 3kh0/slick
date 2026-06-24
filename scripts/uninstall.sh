@@ -98,6 +98,16 @@ for path in \
   remove_path "$path"
 done
 
+step "Removing notification sounds"
+if [ -d "$SLACK_APP/Contents/Resources" ] && [ -d "$HOME/Library/Sounds" ]; then
+  for mp3 in "$SLACK_APP/Contents/Resources/"*.mp3; do
+    [ -e "$mp3" ] || continue
+    base="$(basename "${mp3%.mp3}")"
+    /bin/rm -f "$HOME/Library/Sounds/$base.caf" 2>/dev/null || true
+  done
+  echo "    removed installed sounds from ~/Library/Sounds"
+fi
+
 BYHOST="$HOME/Library/Preferences/ByHost"
 if [ -d "$BYHOST" ]; then
   find "$BYHOST" -maxdepth 1 -type f -name "$BUNDLE_ID.*.plist" -exec /bin/rm -f {} + 2>/dev/null || true
