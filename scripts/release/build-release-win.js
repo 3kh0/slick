@@ -85,10 +85,9 @@ function fetchElectron(arch) {
   return dist;
 }
 
-function brand(exe, arch, opts) {
-  const rcArch = arch === 'arm64' ? 'arm64' : 'x64';
-  const rcedit = path.join(CACHE, `rcedit-${rcArch}.exe`);
-  fetchTo(`https://github.com/electron/rcedit/releases/download/${RCEDIT_VERSION}/rcedit-${rcArch}.exe`, rcedit);
+function brand(exe, opts) {
+  const rcedit = path.join(CACHE, 'rcedit-x64.exe');
+  fetchTo(`https://github.com/electron/rcedit/releases/download/${RCEDIT_VERSION}/rcedit-x64.exe`, rcedit);
   const icon = path.join(ROOT, 'assets', 'icon.ico');
   if (!fs.existsSync(icon)) {
     console.warn('    warning: assets/icon.ico missing - keeping the default Electron icon.');
@@ -142,7 +141,7 @@ function buildArch(arch, opts) {
     '--force',
   ]);
 
-  brand(path.join(app, 'Slick.exe'), arch, opts);
+  brand(path.join(app, 'Slick.exe'), opts);
 
   step(`Packaging zip (win32-${arch})`);
   fs.mkdirSync(DIST, { recursive: true });

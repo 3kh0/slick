@@ -232,7 +232,7 @@ if ($FromSource) {
 } else {
   Step "Finding the latest Slick release"
   $asset = $null; $tag = $null
-  $releaseArch = if ($env:PROCESSOR_ARCHITECTURE -eq 'ARM64') { 'arm64' } else { 'x64' }
+  $releaseArch = $slackArch
   
   try {
     $rel = Invoke-RestMethod "https://api.github.com/repos/$Repo/releases/latest" -Headers @{ 'User-Agent' = 'slick-install' }
