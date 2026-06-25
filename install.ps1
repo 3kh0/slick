@@ -200,7 +200,8 @@ if ($slackArch -eq 'arm64') {
 
 Stop-Slick
 if (Test-Path $Target) {
-  if (-not $Force) { Die "$Target already exists; rerun with -Force to replace it (or -Uninstall to remove it)." }
+  if ($Force) { Write-Host "    replacing existing install at $Target" }
+  else { Write-Host "    existing install found at $Target; updating it" }
   Remove-Item $Target -Recurse -Force
 }
 
