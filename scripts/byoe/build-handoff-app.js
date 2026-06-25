@@ -169,7 +169,7 @@ function main() {
 const fs = require('fs');
 const https = require('https');
 const path = require('path');
-const { app, dialog, shell, Menu, BrowserWindow } = require('electron');
+const { app, dialog, shell, Menu, MenuItem, BrowserWindow } = require('electron');
 
 const SLICK_ROOT = path.join(process.resourcesPath, 'slick');
 const PROFILE = process.env.SLICK_HANDOFF_PROFILE || path.join(app.getPath('appData'), 'Slick');
@@ -301,12 +301,14 @@ function patchMenuTemplate(template) {
     return {
       ...item,
       label: 'Slick',
-      submenu: item.submenu.map((child, childIndex) => {
-        if (childIndex !== 0 && !isSlackAboutItem(child)) return child;
-        if (!isSlackAboutItem(child)) return child;
+      submenu: item.submenu.flatMap((child) => {
+        if (!isSlackAboutItem(child)) return [child];
         const about = { ...child };
         delete about.role;
-        return { ...about, label: 'About Slick', click: showAbout };
+        return [
+          { ...about, label: 'About Slick', click: showAbout },
+          { label: 'Check for Updates…', click: () => manualCheckForUpdates() },
+        ];
       }),
     };
   });
@@ -315,10 +317,15 @@ function patchMenuTemplate(template) {
 function patchMenu(menu) {
   if (process.platform !== 'darwin' || !menu) return menu;
   const item = menu.items && menu.items[0];
-  const about = item && item.submenu && item.submenu.items && item.submenu.items.find(isSlackAboutItem);
+  const submenu = item && item.submenu;
+  const about = submenu && submenu.items && submenu.items.find(isSlackAboutItem);
   if (about) {
     about.label = 'About Slick';
     about.click = showAbout;
+    if (MenuItem && !submenu.items.some((i) => i.label === 'Check for Updates…')) {
+      const at = submenu.items.indexOf(about) + 1;
+      submenu.insert(at, new MenuItem({ label: 'Check for Updates…', click: () => manualCheckForUpdates() }));
+    }
   }
   return menu;
 }
@@ -495,7 +502,11 @@ async function checkForUpdates() {
   }
   writeUpdateState({ ...promptState, lastPromptedBuild: latestBuild, lastPromptedAt: Date.now() });
 
-  dialog.showMessageBox({
+  promptDownload(release, latestBuild);
+}
+
+function promptDownload(release, latestBuild) {
+  return dialog.showMessageBox({
     type: 'info',
     title: 'Slick update available',
     message: 'Slick Build ' + latestBuild + ' is available',
@@ -507,6 +518,49 @@ async function checkForUpdates() {
     if (response === 0) return perf(release);
     return undefined;
   }).catch(() => {});
+}
+
+async function manualCheckForUpdates() {
+  if (!SLICK_BUILD) {
+    dialog.showMessageBox({
+      type: 'info',
+      title: 'Slick updates',
+      message: 'Update checking is unavailable',
+      detail: 'This is a development build, so Slick cannot check for updates.',
+      buttons: ['OK'],
+    }).catch(() => {});
+    return;
+  }
+
+  let release;
+  try {
+    writeUpdateState({ ...readUpdateState(), lastCheckedAt: Date.now() });
+    release = await fetchLatestRelease();
+  } catch (err) {
+    dialog.showMessageBox({
+      type: 'error',
+      title: 'Slick update check failed',
+      message: 'Could not check for updates',
+      detail: String((err && err.message) || err) + '. Try again later.',
+      buttons: ['OK'],
+    }).catch(() => {});
+    return;
+  }
+
+  const latestBuild = releaseBuild(release);
+  if (latestBuild <= SLICK_BUILD) {
+    dialog.showMessageBox({
+      type: 'info',
+      title: 'Slick is up to date',
+      message: "You're running the latest version of Slick",
+      detail: 'Build ' + SLICK_BUILD + ' is the newest available.',
+      buttons: ['OK'],
+    }).catch(() => {});
+    return;
+  }
+
+  writeUpdateState({ ...readUpdateState(), lastPromptedBuild: latestBuild, lastPromptedAt: Date.now() });
+  promptDownload(release, latestBuild);
 }
 
 function scheduleUpdateChecks() {
