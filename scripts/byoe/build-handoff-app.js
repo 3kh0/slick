@@ -380,13 +380,12 @@ function appBundlePath() {
   return path.resolve(process.execPath, '..', '..', '..');
 }
 
-function pickUpdateAsset(release) {
-  // Shared GitHub release also carries the Windows zips; match this arch, skip those.
-  const suffix = process.arch === 'arm64' ? '-arm64.zip' : '-x64.zip';
-  return ((release && release.assets) || []).find((a) => a && typeof a.name === 'string' && a.name.indexOf('win32') === -1 && a.name.endsWith(suffix)) || null;
+function p(release) {
+  const s = process.arch === 'arm64' ? '-arm64.zip' : '-x64.zip';
+  return ((release && release.assets) || []).find((a) => a && typeof a.name === 'string' && a.name.indexOf('win32') === -1 && a.name.endsWith(s)) || null;
 }
 
-function downloadWithProgress(url, dest, onProgress) {
+function psq(url, dest, onProgress) {
   return new Promise((resolve, reject) => {
     const get = (u, redirects) => {
       https.get(u, { headers: { 'User-Agent': 'Slick/' + SLICK_VERSION } }, (res) => {
@@ -411,13 +410,12 @@ function downloadWithProgress(url, dest, onProgress) {
   });
 }
 
-// Show download progress on the native macOS Dock icon (via any live Slack window); -1 clears.
-function setDockProgress(frac) {
+function setp(frac) {
   const w = BrowserWindow.getAllWindows().find((x) => x && !x.isDestroyed());
   if (w) { try { w.setProgressBar(frac); } catch {} }
 }
 
-function installUpdateAndRelaunch(stageApp) {
+function ins(stageApp) {
   const appPath = appBundlePath();
   // Wait for this process to exit, swap the bundle in place, relaunch. Roll back on failure.
   const sh = 'APP="$1"; STAGE="$2"; PID="$3"; while kill -0 "$PID" 2>/dev/null; do sleep 0.2; done; rm -rf "$APP.old"; mv "$APP" "$APP.old" 2>/dev/null || true; if /usr/bin/ditto "$STAGE" "$APP"; then rm -rf "$APP.old"; else rm -rf "$APP"; mv "$APP.old" "$APP" 2>/dev/null || true; fi; rm -rf "$(dirname "$STAGE")"; open "$APP"';
@@ -425,22 +423,22 @@ function installUpdateAndRelaunch(stageApp) {
   child.unref();
 }
 
-async function performUpdate(release) {
-  const asset = pickUpdateAsset(release);
+async function perf(release) {
+  const asset = p(release);
   if (!asset || !asset.browser_download_url) return shell.openExternal(release.html_url || RELEASES_URL);
   const dir = fs.mkdtempSync(path.join(app.getPath('temp'), 'slick-update-'));
   const zip = path.join(dir, asset.name);
   let stageApp;
   try {
-    setDockProgress(0);
-    await downloadWithProgress(asset.browser_download_url, zip, (f) => setDockProgress(f * 0.9));
-    setDockProgress(0.95);
+    setp(0);
+    await psq(asset.browser_download_url, zip, (f) => setp(f * 0.9));
+    setp(0.95);
     require('child_process').execFileSync('/usr/bin/ditto', ['-x', '-k', zip, dir]);
     stageApp = path.join(dir, 'Slick.app');
     if (!fs.existsSync(stageApp)) throw new Error('update archive did not contain Slick.app');
-    setDockProgress(1);
+    setp(1);
   } catch (err) {
-    setDockProgress(-1);
+    setp(-1);
     try { fs.rmSync(dir, { recursive: true, force: true }); } catch {}
     return dialog.showMessageBox({
       type: 'error',
@@ -453,7 +451,7 @@ async function performUpdate(release) {
     }).then(({ response }) => { if (response === 0) shell.openExternal(release.html_url || RELEASES_URL); }).catch(() => {});
   }
 
-  setDockProgress(-1);
+  setp(-1);
   const { response } = await dialog.showMessageBox({
     type: 'info',
     title: 'Slick update ready',
@@ -464,11 +462,10 @@ async function performUpdate(release) {
     cancelId: 1,
   });
   if (response === 0) {
-    installUpdateAndRelaunch(stageApp);
+    ins(stageApp);
     app.quit();
     return;
   }
-  // "Later": discard the staged copy; it'll be re-downloaded on the next prompt.
   try { fs.rmSync(dir, { recursive: true, force: true }); } catch {}
 }
 
@@ -507,7 +504,7 @@ async function checkForUpdates() {
     defaultId: 0,
     cancelId: 1,
   }).then(({ response }) => {
-    if (response === 0) return performUpdate(release);
+    if (response === 0) return perf(release);
     return undefined;
   }).catch(() => {});
 }
