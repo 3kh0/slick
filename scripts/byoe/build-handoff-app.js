@@ -291,6 +291,10 @@ function isSlackAboutItem(item) {
   return item && (item.role === 'about' || /^About\\s+Slack$/i.test(label));
 }
 
+function isUpdateItem(item) {
+  return item && /check for updates/i.test(String(item.label || ''));
+}
+
 function patchMenuTemplate(template) {
   if (process.platform !== 'darwin' || !Array.isArray(template)) return template;
   const appMenu = template[0];
@@ -302,6 +306,7 @@ function patchMenuTemplate(template) {
       ...item,
       label: 'Slick',
       submenu: item.submenu.flatMap((child) => {
+        if (isUpdateItem(child)) return [];
         if (!isSlackAboutItem(child)) return [child];
         const about = { ...child };
         delete about.role;
@@ -318,14 +323,27 @@ function patchMenu(menu) {
   if (process.platform !== 'darwin' || !menu) return menu;
   const item = menu.items && menu.items[0];
   const submenu = item && item.submenu;
-  const about = submenu && submenu.items && submenu.items.find(isSlackAboutItem);
+  if (!submenu || !submenu.items) return menu;
+  const about = submenu.items.find(isSlackAboutItem);
   if (about) {
     about.label = 'About Slick';
     about.click = showAbout;
-    if (MenuItem && !submenu.items.some((i) => i.label === 'Check for Updates…')) {
-      const at = submenu.items.indexOf(about) + 1;
-      submenu.insert(at, new MenuItem({ label: 'Check for Updates…', click: () => manualCheckForUpdates() }));
+  }
+  const anchor = about || submenu.items.find(isUpdateItem);
+  let kept = false;
+  for (const i of submenu.items) {
+    if (!isUpdateItem(i)) continue;
+    if (!kept) {
+      i.label = 'Check for Updates…';
+      i.click = () => manualCheckForUpdates();
+      kept = true;
+    } else if (typeof i.visible === 'boolean') {
+      i.visible = false; // MenuItem has no remove(); hide the duplicate
     }
+  }
+  if (!kept && MenuItem && anchor) {
+    const at = submenu.items.indexOf(anchor) + 1;
+    submenu.insert(at, new MenuItem({ label: 'Check for Updates…', click: () => manualCheckForUpdates() }));
   }
   return menu;
 }
