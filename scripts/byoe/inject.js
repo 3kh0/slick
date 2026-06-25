@@ -194,7 +194,97 @@ function armBlocking(sess) {
   });
 }
 let blockedCount = 0;
+
+const HOSTS = ['slack.com', 'slack-edge.com', 'slackb.com'];
+const PERMS = new Set([
+  'display-capture',
+  'fullscreen',
+  'media',
+  'notifications',
+  'speaker-selection',
+  'window-management',
+]);
+
+function hfu(value) {
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === 'https:' ? parsed.hostname.toLowerCase() : '';
+  } catch {
+    return '';
+  }
+}
+
+function isSlack(host) {
+  return HOSTS.some((base) => host === base || host.endsWith(`.${base}`));
+}
+
+function po(webContents, requestingOrigin, details = {}) {
+  const origins = [requestingOrigin, details.securityOrigin, details.requestingUrl, details.embeddingOrigin].filter(
+    Boolean,
+  );
+  try {
+    if (webContents && !webContents.isDestroyed()) origins.push(webContents.getURL());
+  } catch {}
+  return origins;
+}
+
+function isPerm(webContents, requestingOrigin, details) {
+  return po(webContents, requestingOrigin, details).some((origin) => isSlack(hfu(origin)));
+}
+
+function isMedia(permission, details = {}) {
+  if (permission !== 'media') return true;
+  if (Array.isArray(details.mediaTypes))
+    return details.mediaTypes.every((type) => type === 'audio' || type === 'video');
+  return (
+    !details.mediaType ||
+    details.mediaType === 'audio' ||
+    details.mediaType === 'video' ||
+    details.mediaType === 'unknown'
+  );
+}
+
+function canGrant(webContents, permission, requestingOrigin, details) {
+  return PERMS.has(permission) && isMedia(permission, details) && isPerm(webContents, requestingOrigin, details);
+}
+
+function permD(webContents, requestingOrigin, details = {}) {
+  const origins = po(webContents, requestingOrigin, details);
+  return origins.find(Boolean) || 'unknown-origin';
+}
+
+function ap(sess) {
+  if (!sess) return;
+  sess.setPermissionRequestHandler((webContents, permission, callback, details) => {
+    const allowed = canGrant(webContents, permission, details?.securityOrigin || '', details);
+    if (process.env.SLICK_DBG) {
+      console.log(
+        `[slick-dbg] permission request ${permission} ${allowed ? 'allow' : 'deny'} ${permD(
+          webContents,
+          details?.securityOrigin || '',
+          details,
+        )}`,
+      );
+    }
+    callback(allowed);
+  });
+  sess.setPermissionCheckHandler((webContents, permission, requestingOrigin, details) => {
+    const allowed = canGrant(webContents, permission, requestingOrigin, details);
+    if (process.env.SLICK_DBG) {
+      console.log(
+        `[slick-dbg] permission check ${permission} ${allowed ? 'allow' : 'deny'} ${permD(
+          webContents,
+          requestingOrigin,
+          details,
+        )}`,
+      );
+    }
+    return allowed;
+  });
+}
+
 app.on('session-created', armBlocking);
+app.on('session-created', ap);
 
 function installNotificationSounds() {
   if (process.platform !== 'darwin') return;
@@ -250,6 +340,7 @@ function requestNoti() {
 app.whenReady().then(() => {
   perf.mark('app ready');
   armBlocking(session.defaultSession);
+  ap(session.defaultSession);
   trackNet(session.defaultSession);
   if (process.env.SLICK_DBG) {
     session.defaultSession.cookies.on('changed', (_e, c, cause, removed) => {
@@ -526,6 +617,8 @@ app.on('browser-window-created', (_event, win) => {
   }
   const wc = win.webContents;
   armBlocking(wc.session);
+  ap(wc.session);
+  setImmediate(() => ap(wc.session));
   wc.on('console-message', captureConsole);
   let unresponsiveAt = 0;
   wc.on('unresponsive', () => {

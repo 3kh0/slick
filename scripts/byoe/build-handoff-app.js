@@ -9,6 +9,7 @@ const ROOT = path.resolve(__dirname, '..', '..');
 const DEFAULT_SOURCE_APP = path.join(ROOT, 'byoe/node_modules/electron/dist/Electron.app');
 const SLACK_RESOURCES = '/Applications/Slack.app/Contents/Resources';
 const SLACK_ASAR = path.join(SLACK_RESOURCES, 'app.asar');
+const ENTITLEMENTS = path.join(ROOT, 'scripts/release/entitlements.plist');
 const DEFAULTS = {
   target: '/tmp/slick/Slick.app',
   profile: '/tmp/slick/profile',
@@ -455,7 +456,10 @@ if (!preflight()) {
   fs.rmSync(path.join(res, 'app'), { recursive: true, force: true });
   for (const name of ['default_app.asar', 'app.asar']) packAsar(files, path.join(res, name));
 
-  run('/usr/bin/codesign', ['--force', '--deep', '--sign', '-', target]);
+  const codesignArgs = ['--force', '--deep', '--sign', '-'];
+  if (fs.existsSync(ENTITLEMENTS)) codesignArgs.push('--entitlements', ENTITLEMENTS);
+  codesignArgs.push(target);
+  run('/usr/bin/codesign', codesignArgs);
 
   console.log(JSON.stringify({ app: target, profile, note: 'Open this to register slack:// to Slick' }, null, 2));
 }
