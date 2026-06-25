@@ -105,7 +105,7 @@ const fs = require('fs');
 const https = require('https');
 const path = require('path');
 const crypto = require('crypto');
-const { app, dialog, shell } = require('electron');
+const { app, dialog, shell, BrowserWindow } = require('electron');
 
 const SLICK_ROOT = path.join(process.resourcesPath, 'slick');
 const PROFILE = process.env.SLICK_HANDOFF_PROFILE || ${JSON.stringify(profile)};
@@ -365,6 +365,108 @@ function fetchLatestRelease() {
   });
 }
 
+function p(release) {
+  const s = process.arch === 'arm64' ? '-arm64.zip' : '-x64.zip';
+  return ((release && release.assets) || []).find((a) => a && typeof a.name === 'string' && a.name.indexOf('win32') !== -1 && a.name.endsWith(s)) || null;
+}
+
+function psq(s) {
+  return "'" + String(s).replace(/'/g, "''") + "'";
+}
+
+function dl(url, dest, onProgress) {
+  return new Promise((resolve, reject) => {
+    const get = (u, redirects) => {
+      https.get(u, { headers: { 'User-Agent': 'Slick/' + SLICK_VERSION } }, (res) => {
+        if (res.statusCode > 300 && res.statusCode < 400 && res.headers.location) {
+          res.resume();
+          if (redirects > 5) { reject(new Error('too many redirects')); return; }
+          get(res.headers.location, redirects + 1);
+          return;
+        }
+        if (res.statusCode !== 200) { res.resume(); reject(new Error('download returned HTTP ' + res.statusCode)); return; }
+        const total = parseInt(res.headers['content-length'] || '0', 10);
+        let received = 0;
+        const file = fs.createWriteStream(dest);
+        res.on('data', (chunk) => { received += chunk.length; if (total) onProgress(received / total); });
+        res.on('error', reject);
+        file.on('error', reject);
+        file.on('finish', () => file.close(() => resolve()));
+        res.pipe(file);
+      }).on('error', reject);
+    };
+    get(url, 0);
+  });
+}
+
+function setp(frac) {
+  const w = BrowserWindow.getAllWindows().find((x) => x && !x.isDestroyed());
+  if (w) { try { w.setProgressBar(frac); } catch {} }
+}
+
+function ins(stageRoot) {
+  const appDir = path.dirname(process.execPath);
+  const ps1 = path.join(path.dirname(stageRoot), 'slick-update.ps1');
+  const lines = [
+    'param([int]$ProcId,[string]$App,[string]$Stage)',
+    '$ErrorActionPreference = "SilentlyContinue"',
+    'while (Get-Process -Id $ProcId -ErrorAction SilentlyContinue) { Start-Sleep -Milliseconds 200 }',
+    'Start-Sleep -Milliseconds 500',
+    'robocopy $Stage $App /MIR /NFL /NDL /NJH /NJS /NP | Out-Null',
+    'Start-Process -FilePath (Join-Path $App "Slick.exe")',
+    'Remove-Item -Recurse -Force (Split-Path $Stage -Parent)',
+  ];
+  fs.writeFileSync(ps1, lines.join(String.fromCharCode(13, 10)));
+  const child = require('child_process').spawn('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-File', ps1, '-ProcId', String(process.pid), '-App', appDir, '-Stage', stageRoot], { detached: true, stdio: 'ignore' });
+  child.unref();
+}
+
+async function perf(release) {
+  const asset = p(release);
+  if (!asset || !asset.browser_download_url) return shell.openExternal(release.html_url || RELEASES_URL);
+  const dir = fs.mkdtempSync(path.join(app.getPath('temp'), 'slick-update-'));
+  const zip = path.join(dir, asset.name);
+  let stageRoot;
+  try {
+    setp(0);
+    await dl(asset.browser_download_url, zip, (f) => setp(f * 0.9));
+    setp(0.95);
+    require('child_process').execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', 'Expand-Archive -LiteralPath ' + psq(zip) + ' -DestinationPath ' + psq(dir) + ' -Force']);
+    stageRoot = path.join(dir, 'Slick');
+    if (!fs.existsSync(stageRoot)) throw new Error('update archive did not contain Slick');
+    setp(1);
+  } catch (err) {
+    setp(-1);
+    try { fs.rmSync(dir, { recursive: true, force: true }); } catch {}
+    return dialog.showMessageBox({
+      type: 'error',
+      title: 'Slick update failed',
+      message: 'Could not download the update',
+      detail: String((err && err.message) || err) + '. You can download it manually instead.',
+      buttons: ['Open Release Page', 'Later'],
+      defaultId: 0,
+      cancelId: 1,
+    }).then(({ response }) => { if (response === 0) shell.openExternal(release.html_url || RELEASES_URL); }).catch(() => {});
+  }
+
+  setp(-1);
+  const { response } = await dialog.showMessageBox({
+    type: 'info',
+    title: 'Slick update ready',
+    message: 'Slick Build ' + releaseBuild(release) + ' is ready to install',
+    detail: 'Slick will restart to finish updating.',
+    buttons: ['Restart Now', 'Later'],
+    defaultId: 0,
+    cancelId: 1,
+  });
+  if (response === 0) {
+    ins(stageRoot);
+    app.quit();
+    return;
+  }
+  try { fs.rmSync(dir, { recursive: true, force: true }); } catch {}
+}
+
 async function checkForUpdates() {
   if (!SLICK_BUILD) return;
   const now = Date.now();
@@ -393,13 +495,13 @@ async function checkForUpdates() {
       type: 'info',
       title: 'Slick update available',
       message: 'Slick Build ' + latestBuild + ' is available',
-      detail: 'You are running Build ' + SLICK_BUILD + '. Open the release page to download it, or rerun the installer when you are ready.',
-      buttons: ['Open Release Page', 'Later'],
+      detail: 'You are running Build ' + SLICK_BUILD + '. Download it now and Slick will install it on the next restart.',
+      buttons: ['Download', 'Later'],
       defaultId: 0,
       cancelId: 1,
     })
     .then(({ response }) => {
-      if (response === 0) return shell.openExternal(release.html_url || RELEASES_URL);
+      if (response === 0) return perf(release);
       return undefined;
     })
     .catch(() => {});
