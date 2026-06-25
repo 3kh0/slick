@@ -10,11 +10,44 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
+try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 } catch {}
 $Root = $PSScriptRoot
 $Repo = '3kh0/slick'
 
 function Step($m) { Write-Host "==> " -ForegroundColor Magenta -NoNewline; Write-Host $m -ForegroundColor White }
 function Die($m)  { Write-Host "error: " -ForegroundColor Red -NoNewline; Write-Host $m; exit 1 }
+
+function Get-File($url, $dest, $label) {
+  $ProgressPreference = 'Continue'
+  $resp = $null; $stream = $null; $out = $null
+  try {
+    $req = [System.Net.HttpWebRequest]::Create($url)
+    $req.UserAgent = 'slick-install'
+    $req.AllowAutoRedirect = $true
+    $resp = $req.GetResponse()
+    $total = $resp.ContentLength
+    $stream = $resp.GetResponseStream()
+    $out = [System.IO.File]::Create($dest)
+    $buffer = New-Object byte[] 1048576
+    $read = 0L
+    while (($n = $stream.Read($buffer, 0, $buffer.Length)) -gt 0) {
+      $out.Write($buffer, 0, $n)
+      $read += $n
+      if ($total -gt 0) {
+        Write-Progress -Activity $label `
+          -Status ('{0:N1} / {1:N1} MB' -f ($read / 1MB), ($total / 1MB)) `
+          -PercentComplete ([int](($read / $total) * 100))
+      } else {
+        Write-Progress -Activity $label -Status ('{0:N1} MB' -f ($read / 1MB))
+      }
+    }
+  } finally {
+    Write-Progress -Activity $label -Completed
+    if ($out) { $out.Close() }
+    if ($stream) { $stream.Close() }
+    if ($resp) { $resp.Close() }
+  }
+}
 
 function Reg($key, $vals) {
   New-Item $key -Force | Out-Null
@@ -187,7 +220,7 @@ if ($FromSource) {
   } else {
     Step "Downloading Electron $eVer (win32-$electronArch, ~140MB)"
     $zip = Join-Path $env:TEMP "electron-$eVer-win32-$electronArch.zip"
-    Invoke-WebRequest "https://github.com/electron/electron/releases/download/v$eVer/electron-v$eVer-win32-$electronArch.zip" -OutFile $zip -UseBasicParsing
+    Get-File "https://github.com/electron/electron/releases/download/v$eVer/electron-v$eVer-win32-$electronArch.zip" $zip "Downloading Electron $eVer (win32-$electronArch)"
     New-Item -ItemType Directory -Force $dist | Out-Null
     Expand-Archive $zip -DestinationPath $dist -Force
     Remove-Item $zip -EA SilentlyContinue
@@ -213,7 +246,7 @@ if ($FromSource) {
     $rcedit = Join-Path $env:LOCALAPPDATA 'slick-byoe\rcedit-x64.exe'
     if (-not (Test-Path $rcedit)) {
       New-Item -ItemType Directory -Force (Split-Path $rcedit) | Out-Null
-      Invoke-WebRequest 'https://github.com/electron/rcedit/releases/download/v2.0.0/rcedit-x64.exe' -OutFile $rcedit -UseBasicParsing
+      Get-File 'https://github.com/electron/rcedit/releases/download/v2.0.0/rcedit-x64.exe' $rcedit 'Downloading rcedit'
     }
     & $rcedit (Join-Path $Target 'Slick.exe') `
       --set-icon $icon `
@@ -250,7 +283,7 @@ if ($FromSource) {
   
   Step "Downloading Slick $tag (win32-$releaseArch)"
   $zip = Join-Path $env:TEMP "slick-$tag-win32-$releaseArch.zip"
-  Invoke-WebRequest $asset.browser_download_url -OutFile $zip -UseBasicParsing
+  Get-File $asset.browser_download_url $zip "Downloading Slick $tag (win32-$releaseArch)"
   $stage = Join-Path $env:TEMP ("slick-stage-" + [Guid]::NewGuid().ToString('N'))
   Expand-Archive $zip -DestinationPath $stage -Force
   Remove-Item $zip -EA SilentlyContinue
