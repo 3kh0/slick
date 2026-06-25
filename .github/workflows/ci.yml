@@ -15,7 +15,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        check: ["fmt:check", lint, "lint:sh", validate]
+        check: ['fmt:check', lint, 'lint:sh', validate]
     steps:
       - uses: actions/checkout@v7
       - uses: oven-sh/setup-bun@v2
