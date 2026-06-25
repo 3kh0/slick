@@ -222,8 +222,9 @@
         '.c-message__sender, .c-message__sender_button, [data-qa="message_sender"], [data-qa="message_sender_name"]',
       );
     if (!sender) return;
-    const sib = ts.nextElementSibling;
-    const tag = sib && sib.classList && sib.classList.contains('slick-pronouns') ? sib : null;
+    const compact = !!ts.closest('.p-message_pane_message__compact_timestamp');
+    const anchor = compact ? sender.closest('.c-message__sender') || sender : ts;
+    const tag = row.querySelector('.slick-pronouns');
     const id = userIdOf(sender);
     const p = id ? pronounsFor(id) : '';
     if (!p) {
@@ -234,8 +235,9 @@
     if (!el) {
       el = document.createElement('span');
       el.className = 'slick-pronouns';
-      ts.after(el);
     }
+    el.classList.toggle('slick-pronouns--compact', compact);
+    if (anchor.nextElementSibling !== el) anchor.after(el);
     if (el.textContent !== p) el.textContent = p;
   }
   let lastTsColor = '';

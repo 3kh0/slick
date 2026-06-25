@@ -21,5 +21,14 @@ module.exports = {
       content: '\\2022';
       margin: 0 4px;
     }
+    .slick-pronouns--compact {
+      font-size: 11px;
+      margin-left: 6px;
+      opacity: 0.6;
+      vertical-align: baseline;
+    }
+    .slick-pronouns--compact::before {
+      content: none;
+    }
   `,
 };
