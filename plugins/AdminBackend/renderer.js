@@ -64,6 +64,23 @@
     return wrapper && menu.contains(wrapper) ? wrapper : item;
   }
 
+  function stripHighlight(root) {
+    if (!root) return;
+    for (const element of [root, ...root.querySelectorAll('*')]) {
+      if (element.classList) {
+        const toRemove = [];
+        for (const cls of element.classList) {
+          if (/highlight|selected/i.test(cls)) toRemove.push(cls);
+        }
+        for (const cls of toRemove) element.classList.remove(cls);
+      }
+      if (element.getAttribute && element.getAttribute('aria-selected') === 'true') {
+        element.setAttribute('aria-selected', 'false');
+      }
+      if (element.removeAttribute) element.removeAttribute('aria-current');
+    }
+  }
+
   function injectMenu(menu, reference) {
     const id = userIdOf(menu) || userIdOf(reference) || profileId;
     if (!id) return;
@@ -82,6 +99,13 @@
       for (const attribute of ['data-qa', 'aria-controls', 'aria-describedby', 'aria-expanded', 'aria-haspopup']) {
         item.removeAttribute(attribute);
       }
+      stripHighlight(clone);
+
+      item.addEventListener('mouseenter', () => {
+        for (const other of menu.querySelectorAll('button,[role="menuitem"]')) {
+          if (other !== item) stripHighlight(itemRow(other, menu));
+        }
+      });
 
       const labelElement = item.querySelector('.c-menu_item__label');
       if (labelElement) labelElement.textContent = label;
