@@ -53,6 +53,9 @@
       '#slick-config-modal .slick-cfg-text{width:100%;box-sizing:border-box}',
       '#slick-config-modal .slick-cfg-select{width:100%;box-sizing:border-box;padding:4px 8px;border-radius:6px;border:1px solid rgba(127,127,127,.4);background:transparent;color:inherit}',
       '#slick-config-modal .slick-cfg-color{width:36px;height:24px;padding:0;border:1px solid rgba(127,127,127,.4);border-radius:6px;background:transparent;cursor:pointer}',
+      '#slick-config-modal .slick-cfg-file{display:flex;align-items:center;gap:8px;width:100%}',
+      '#slick-config-modal .slick-cfg-file .slick-cfg-text{flex:1;min-width:0}',
+      '#slick-config-modal .slick-cfg-file .slick-cfg-file-button{flex:none}',
       '#slick-config-modal .slick-config-note{margin:14px 0 0;opacity:.55;font-size:12px}',
       '#slick-config-modal .slick-restart-required{display:inline-block;margin-left:8px;padding:1px 6px;border-radius:999px;background:rgba(224,30,90,.14);color:#e01e5a;font-size:11px;font-weight:600}',
     ].join('\n');
@@ -140,6 +143,19 @@
       );
     if (def.type === 'color')
       return '<input class="slick-cfg-color" type="color"' + data + ' value="' + esc(value) + '">';
+    if (def.type === 'file')
+      return (
+        '<span class="slick-cfg-file">' +
+        '<input class="c-input_text slick-cfg-text" type="text"' +
+        data +
+        ' value="' +
+        esc(value) +
+        '">' +
+        '<button class="c-button c-button--outline c-button--small slick-cfg-file-button" type="button"' +
+        data +
+        ' data-cfg-file-pick="1">Browse</button>' +
+        '</span>'
+      );
     if (def.type === 'number')
       return '<input class="c-input_text slick-cfg-text" type="number"' + data + ' value="' + esc(value) + '">';
     return '<input class="c-input_text slick-cfg-text" type="text"' + data + ' value="' + esc(value) + '">';
@@ -150,6 +166,20 @@
     if (!bd) return;
     if (bd.__onKey) document.removeEventListener('keydown', bd.__onKey, true);
     bd.remove();
+  }
+
+  function refreshConfigFields() {
+    const modal = $('slick-config-modal');
+    if (!modal) return;
+    modal.querySelectorAll('[data-cfg-plugin][data-cfg-key]').forEach((input) => {
+      if (input.getAttribute('data-cfg-file-pick') === '1') return;
+      const plugin = input.getAttribute('data-cfg-plugin');
+      const key = input.getAttribute('data-cfg-key');
+      const p = (S.plugins || []).find((entry) => entry.dir === plugin);
+      if (!p || !p.values || p.values[key] === undefined) return;
+      if (input.type === 'checkbox') input.checked = !!p.values[key];
+      else input.value = p.values[key];
+    });
   }
 
   function openConfig(p) {
@@ -199,11 +229,17 @@
       const key = t.getAttribute('data-cfg-key');
       const value = t.type === 'checkbox' ? (t.checked ? '1' : '0') : t.value;
       ctl({ op: 'cfg', plugin, key, value });
-      p.values[key] = t.type === 'checkbox' ? t.checked : t.value;
+      p.values[key] = t.type === 'checkbox' ? t.checked : value;
       if (t.getAttribute('data-cfg-restart') === '1') {
         const applybar = $('slick-applybar');
         if (applybar) applybar.classList.remove('hidden');
       }
+    });
+    modal.addEventListener('click', (e) => {
+      const t = e.target.closest && e.target.closest('[data-cfg-file-pick]');
+      if (!t) return;
+      e.preventDefault();
+      ctl({ op: 'file', plugin: t.getAttribute('data-cfg-plugin'), key: t.getAttribute('data-cfg-key') });
     });
   }
 
@@ -365,6 +401,7 @@
     const ov = $('slick-panel-overlay');
     if (ov && ov.style.display === 'block') positionOverlay();
   });
+  window.addEventListener('slick:settings', refreshConfigFields);
 
   injectTab();
   return 'slick-settings-renderer ready';

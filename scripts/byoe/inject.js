@@ -171,6 +171,19 @@ function armBlocking(sess) {
         onTheme: setTheme,
         onEnabled: setEnabled,
         onPluginSetting: (_dir, _key, _value, all) => setPluginSettings(all),
+        onFileSetting: () =>
+          electron.dialog
+            .showOpenDialog({
+              title: 'Choose file',
+              properties: ['openFile'],
+              filters: [
+                {
+                  name: 'Audio',
+                  extensions: ['aac', 'aif', 'aiff', 'caf', 'flac', 'm4a', 'mp3', 'oga', 'ogg', 'opus', 'wav', 'webm'],
+                },
+              ],
+            })
+            .then((r) => (r.canceled ? '' : r.filePaths[0] || '')),
       });
       cb({ cancel: true });
       return;

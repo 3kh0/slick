@@ -24,6 +24,7 @@ function settingsSchema(mod) {
     description: d.description || '',
     default: d.default !== undefined ? d.default : d.type === 'boolean' ? false : '',
     options: Array.isArray(d.options) ? d.options : undefined,
+    accept: typeof d.accept === 'string' ? d.accept : undefined,
     restartRequired: d.restartRequired === true,
   }));
 }

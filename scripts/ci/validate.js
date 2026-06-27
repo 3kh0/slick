@@ -91,7 +91,7 @@ for (const d of dirs) {
   if (m.settings !== undefined && (typeof m.settings !== 'object' || Array.isArray(m.settings) || !m.settings)) {
     fail(`plugins/${d}`, '"settings" must be an object of { key: definition }');
   }
-  const TYPES = ['boolean', 'text', 'number', 'select', 'color'];
+  const TYPES = ['boolean', 'text', 'number', 'select', 'color', 'file'];
   for (const [key, raw] of Object.entries(m.settings || {})) {
     if (raw.restartRequired !== undefined && typeof raw.restartRequired !== 'boolean') {
       fail(`plugins/${d}`, `settings.${key}.restartRequired must be a boolean`);
@@ -114,6 +114,7 @@ for (const d of dirs) {
       fail(`plugins/${d}`, `${at}: default must be a #hex color, got: ${def.default}`);
     }
     if (def.type === 'text' && typeof def.default !== 'string') fail(`plugins/${d}`, `${at}: default must be a string`);
+    if (def.type === 'file' && typeof def.default !== 'string') fail(`plugins/${d}`, `${at}: default must be a string`);
   }
   if (typeof m.css === 'function') {
     try {

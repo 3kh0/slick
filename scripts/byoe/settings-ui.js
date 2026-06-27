@@ -110,6 +110,7 @@ function handleControl(
     onTheme,
     onEnabled,
     onPluginSetting,
+    onFileSetting,
   },
 ) {
   let u;
@@ -163,6 +164,19 @@ function handleControl(
         }
       }
     }
+  } else if (op === 'file') {
+    const dir = u.searchParams.get('plugin');
+    const key = u.searchParams.get('key');
+    const def = catalog.plugins.find((p) => p.dir === dir)?.schema.find((d) => d.key === key && d.type === 'file');
+    if (def && onFileSetting && pluginSettingsFile)
+      onFileSetting({ dir, key, def })
+        .then((value) => {
+          if (!value) return;
+          const all = writePluginSetting(pluginSettingsFile, dir, key, value);
+          console.log(`[slick-settings] ${dir}.${key} -> ${JSON.stringify(value)}`);
+          if (onPluginSetting) onPluginSetting(dir, key, value, all);
+        })
+        .catch((e) => console.error('[slick-settings] file picker failed:', e.message));
   } else if (op === 'restart') {
     console.log('[slick-settings] relaunching to apply plugin changes');
     if (app) {
