@@ -88,6 +88,7 @@ function copyRuntime(resources) {
     'scripts/byoe/settings-renderer.js',
     'scripts/byoe/settings-ui.js',
     'scripts/byoe/switches.js',
+    'scripts/byoe/updater.js',
     'scripts/theme.js',
   ]) {
     const target = path.join(runtime, file);
@@ -167,9 +168,8 @@ function main() {
       contents: `'use strict';
 
 const fs = require('fs');
-const https = require('https');
 const path = require('path');
-const { app, dialog, shell, Menu, MenuItem, BrowserWindow } = require('electron');
+const { app, dialog, shell, Menu, MenuItem } = require('electron');
 
 const SLICK_ROOT = path.join(process.resourcesPath, 'slick');
 const PROFILE = process.env.SLICK_HANDOFF_PROFILE || path.join(app.getPath('appData'), 'Slick');
@@ -178,10 +178,8 @@ const SLACK_RESOURCES = ${JSON.stringify(SLACK_RESOURCES)};
 const SLACK_ASAR = ${JSON.stringify(SLACK_ASAR)};
 const SLICK_VERSION = ${JSON.stringify(opts.appVersion)};
 const SLICK_BUILD = parseInt(${JSON.stringify(opts.buildNumber)}, 10) || 0;
-const RELEASES_URL = 'https://github.com/3kh0/slick/releases';
-const LATEST_RELEASE_API = 'https://api.github.com/repos/3kh0/slick/releases/latest';
-const UPDATE_CHECK_INTERVAL = 6 * 60 * 60 * 1000;
-const STARTUP_UPDATE_DELAY = 30 * 1000;
+const updater = require(path.join(SLICK_ROOT, 'scripts/byoe/updater.js')).create({ version: SLICK_VERSION, build: SLICK_BUILD, profile: PROFILE });
+const RELEASES_URL = updater.RELEASES_URL;
 
 function slackElectronMajor() {
   try {
@@ -235,26 +233,6 @@ function seedSettings() {
   } catch {}
 }
 
-function updateStatePath() {
-  return path.join(PROFILE, 'slick', 'update-check.json');
-}
-
-function readUpdateState() {
-  try {
-    return JSON.parse(fs.readFileSync(updateStatePath(), 'utf8'));
-  } catch {
-    return {};
-  }
-}
-
-function writeUpdateState(state) {
-  try {
-    const file = updateStatePath();
-    fs.mkdirSync(path.dirname(file), { recursive: true });
-    fs.writeFileSync(file, JSON.stringify(state, null, 2) + '\\n');
-  } catch {}
-}
-
 function UpdateTime(value) {
   const date = new Date(value || 0);
   if (!value || Number.isNaN(date.getTime())) return 'Never';
@@ -262,7 +240,7 @@ function UpdateTime(value) {
 }
 
 function showAbout() {
-  const lastChecked = UpdateTime(readUpdateState().lastCheckedAt);
+  const lastChecked = UpdateTime(updater.readState().lastCheckedAt);
   const build = SLICK_BUILD ? 'Build ' + SLICK_BUILD : 'Development build';
 
   if (typeof app.setAboutPanelOptions === 'function' && typeof app.showAboutPanel === 'function') {
@@ -312,7 +290,7 @@ function patchMenuTemplate(template) {
         delete about.role;
         return [
           { ...about, label: 'About Slick', click: showAbout },
-          { label: 'Check for Updates…', click: () => manualCheckForUpdates() },
+          { label: 'Check for Updates…', click: () => updater.manualCheckForUpdates() },
         ];
       }),
     };
@@ -335,7 +313,7 @@ function patchMenu(menu) {
     if (!isUpdateItem(i)) continue;
     if (!kept) {
       i.label = 'Check for Updates…';
-      i.click = () => manualCheckForUpdates();
+      i.click = () => updater.manualCheckForUpdates();
       kept = true;
     } else if (typeof i.visible === 'boolean') {
       i.visible = false; // MenuItem has no remove(); hide the duplicate
@@ -343,7 +321,7 @@ function patchMenu(menu) {
   }
   if (!kept && MenuItem && anchor) {
     const at = submenu.items.indexOf(anchor) + 1;
-    submenu.insert(at, new MenuItem({ label: 'Check for Updates…', click: () => manualCheckForUpdates() }));
+    submenu.insert(at, new MenuItem({ label: 'Check for Updates…', click: () => updater.manualCheckForUpdates() }));
   }
   return menu;
 }
@@ -358,252 +336,13 @@ function installPatch() {
   Menu.setApplicationMenu = (menu) => setApplicationMenu(patchMenu(menu));
 }
 
-function releaseBuild(release) {
-  const match = /^v([1-9]\\d*)$/.exec(String(release && release.tag_name || '').trim());
-  return match ? parseInt(match[1], 10) : 0;
-}
-
-function fetchLatestRelease() {
-  return new Promise((resolve, reject) => {
-    const req = https.get(
-      LATEST_RELEASE_API,
-      {
-        headers: {
-          Accept: 'application/vnd.github+json',
-          'User-Agent': 'Slick/' + SLICK_VERSION + ' Build ' + SLICK_BUILD,
-        },
-      },
-      (res) => {
-        if (res.statusCode !== 200) {
-          res.resume();
-          reject(new Error('update check returned HTTP ' + res.statusCode));
-          return;
-        }
-
-        let body = '';
-        res.setEncoding('utf8');
-        res.on('data', (chunk) => {
-          body += chunk;
-          if (body.length > 1024 * 1024) req.destroy(new Error('update response was too large'));
-        });
-        res.on('end', () => {
-          try {
-            resolve(JSON.parse(body));
-          } catch (e) {
-            reject(e);
-          }
-        });
-      },
-    );
-    req.setTimeout(15000, () => req.destroy(new Error('update check timed out')));
-    req.on('error', reject);
-  });
-}
-
-function appBundlePath() {
-  // .../Slick.app/Contents/MacOS/Electron -> .../Slick.app
-  return path.resolve(process.execPath, '..', '..', '..');
-}
-
-function p(release) {
-  const s = process.arch === 'arm64' ? '-arm64.zip' : '-x64.zip';
-  return ((release && release.assets) || []).find((a) => a && typeof a.name === 'string' && a.name.indexOf('win32') === -1 && a.name.endsWith(s)) || null;
-}
-
-function psq(url, dest, onProgress) {
-  return new Promise((resolve, reject) => {
-    const get = (u, redirects) => {
-      https.get(u, { headers: { 'User-Agent': 'Slick/' + SLICK_VERSION } }, (res) => {
-        if (res.statusCode > 300 && res.statusCode < 400 && res.headers.location) {
-          res.resume();
-          if (redirects > 5) { reject(new Error('too many redirects')); return; }
-          get(res.headers.location, redirects + 1);
-          return;
-        }
-        if (res.statusCode !== 200) { res.resume(); reject(new Error('download returned HTTP ' + res.statusCode)); return; }
-        const total = parseInt(res.headers['content-length'] || '0', 10);
-        let received = 0;
-        const file = fs.createWriteStream(dest);
-        res.on('data', (chunk) => { received += chunk.length; if (total) onProgress(received / total); });
-        res.on('error', reject);
-        file.on('error', reject);
-        file.on('finish', () => file.close(() => resolve()));
-        res.pipe(file);
-      }).on('error', reject);
-    };
-    get(url, 0);
-  });
-}
-
-function setp(frac) {
-  const w = BrowserWindow.getAllWindows().find((x) => x && !x.isDestroyed());
-  if (w) { try { w.setProgressBar(frac); } catch {} }
-}
-
-function ins(stageApp) {
-  const appPath = appBundlePath();
-  // Wait for this process to exit, swap the bundle in place, relaunch. Roll back on failure.
-  const sh = 'APP="$1"; STAGE="$2"; PID="$3"; while kill -0 "$PID" 2>/dev/null; do sleep 0.2; done; rm -rf "$APP.old"; mv "$APP" "$APP.old" 2>/dev/null || true; if /usr/bin/ditto "$STAGE" "$APP"; then rm -rf "$APP.old"; else rm -rf "$APP"; mv "$APP.old" "$APP" 2>/dev/null || true; fi; rm -rf "$(dirname "$STAGE")"; open "$APP"';
-  const child = require('child_process').spawn('/bin/sh', ['-c', sh, 'slick-updater', appPath, stageApp, String(process.pid)], { detached: true, stdio: 'ignore' });
-  child.unref();
-}
-
-async function perf(release) {
-  const asset = p(release);
-  if (!asset || !asset.browser_download_url) return shell.openExternal(release.html_url || RELEASES_URL);
-  const dir = fs.mkdtempSync(path.join(app.getPath('temp'), 'slick-update-'));
-  const zip = path.join(dir, asset.name);
-  let stageApp;
-  try {
-    setp(0);
-    await psq(asset.browser_download_url, zip, (f) => setp(f * 0.9));
-    setp(0.95);
-    require('child_process').execFileSync('/usr/bin/ditto', ['-x', '-k', zip, dir]);
-    stageApp = path.join(dir, 'Slick.app');
-    if (!fs.existsSync(stageApp)) throw new Error('update archive did not contain Slick.app');
-    setp(1);
-  } catch (err) {
-    setp(-1);
-    try { fs.rmSync(dir, { recursive: true, force: true }); } catch {}
-    return dialog.showMessageBox({
-      type: 'error',
-      title: 'Slick update failed',
-      message: 'Could not download the update',
-      detail: String((err && err.message) || err) + '. You can download it manually instead.',
-      buttons: ['Open Release Page', 'Later'],
-      defaultId: 0,
-      cancelId: 1,
-    }).then(({ response }) => { if (response === 0) shell.openExternal(release.html_url || RELEASES_URL); }).catch(() => {});
-  }
-
-  setp(-1);
-  const { response } = await dialog.showMessageBox({
-    type: 'info',
-    title: 'Slick update ready',
-    message: 'Slick Build ' + releaseBuild(release) + ' is ready to install',
-    detail: 'Slick will restart to finish updating.',
-    buttons: ['Restart Now', 'Later'],
-    defaultId: 0,
-    cancelId: 1,
-  });
-  if (response === 0) {
-    ins(stageApp);
-    app.quit();
-    return;
-  }
-  try { fs.rmSync(dir, { recursive: true, force: true }); } catch {}
-}
-
-async function checkForUpdates() {
-  if (!SLICK_BUILD) return;
-  const now = Date.now();
-  const state = readUpdateState();
-  if (state.lastCheckedAt && now - state.lastCheckedAt < UPDATE_CHECK_INTERVAL) return;
-  writeUpdateState({ ...state, lastCheckedAt: now });
-
-  let release;
-  try {
-    release = await fetchLatestRelease();
-  } catch {
-    return;
-  }
-
-  const latestBuild = releaseBuild(release);
-  if (latestBuild <= SLICK_BUILD) return;
-
-  const promptState = readUpdateState();
-  if (
-    promptState.lastPromptedBuild === latestBuild &&
-    now - (promptState.lastPromptedAt || 0) < UPDATE_CHECK_INTERVAL
-  ) {
-    return;
-  }
-  writeUpdateState({ ...promptState, lastPromptedBuild: latestBuild, lastPromptedAt: Date.now() });
-
-  promptDownload(release, latestBuild);
-}
-
-function promptDownload(release, latestBuild) {
-  return dialog.showMessageBox({
-    type: 'info',
-    title: 'Slick update available',
-    message: 'Slick Build ' + latestBuild + ' is available',
-    detail: 'You are running Build ' + SLICK_BUILD + '. Download it now and Slick will install it on the next restart.',
-    buttons: ['Download', 'Later'],
-    defaultId: 0,
-    cancelId: 1,
-  }).then(({ response }) => {
-    if (response === 0) return perf(release);
-    return undefined;
-  }).catch(() => {});
-}
-
-async function manualCheckForUpdates() {
-  if (!SLICK_BUILD) {
-    dialog.showMessageBox({
-      type: 'info',
-      title: 'Slick updates',
-      message: 'Update checking is unavailable',
-      detail: 'This is a development build, so Slick cannot check for updates.',
-      buttons: ['OK'],
-    }).catch(() => {});
-    return;
-  }
-
-  let release;
-  try {
-    writeUpdateState({ ...readUpdateState(), lastCheckedAt: Date.now() });
-    release = await fetchLatestRelease();
-  } catch (err) {
-    dialog.showMessageBox({
-      type: 'error',
-      title: 'Slick update check failed',
-      message: 'Could not check for updates',
-      detail: String((err && err.message) || err) + '. Try again later.',
-      buttons: ['OK'],
-    }).catch(() => {});
-    return;
-  }
-
-  const latestBuild = releaseBuild(release);
-  if (latestBuild <= SLICK_BUILD) {
-    dialog.showMessageBox({
-      type: 'info',
-      title: 'Slick is up to date',
-      message: "You're running the latest version of Slick",
-      detail: 'Build ' + SLICK_BUILD + ' is the newest available.',
-      buttons: ['OK'],
-    }).catch(() => {});
-    return;
-  }
-
-  writeUpdateState({ ...readUpdateState(), lastPromptedBuild: latestBuild, lastPromptedAt: Date.now() });
-  promptDownload(release, latestBuild);
-}
-
-function scheduleUpdateChecks() {
-  if (!SLICK_BUILD) return;
-  const run = () => {
-    checkForUpdates();
-    setTimeout(run, UPDATE_CHECK_INTERVAL);
-  };
-  app.whenReady().then(() => {
-    const state = readUpdateState();
-    const elapsed = Date.now() - (state.lastCheckedAt || 0);
-    const delay = state.lastCheckedAt
-      ? Math.max(STARTUP_UPDATE_DELAY, UPDATE_CHECK_INTERVAL - elapsed)
-      : STARTUP_UPDATE_DELAY;
-    setTimeout(run, delay);
-  }).catch(() => {});
-}
-
 if (!preflight()) {
   app.exit(1);
 } else {
   app.setPath('userData', PROFILE);
   installPatch();
   seedSettings();
-  scheduleUpdateChecks();
+  updater.scheduleUpdateChecks();
 
   try {
     Object.defineProperty(process, 'resourcesPath', { configurable: true, value: SLACK_RESOURCES });
