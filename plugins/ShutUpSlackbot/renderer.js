@@ -1,6 +1,6 @@
 (function () {
   'use strict';
-  
+
   if (window.__slickShutUpSlackbot) return;
 
   var SLACKBOT = 'USLACKBOT';
@@ -58,16 +58,17 @@
   }
 
   function isSlackbot(message) {
-    console.log("[ShutUpSlackbot] isSlackbot:", message.user, message.username);
-    
+    console.log('[ShutUpSlackbot] isSlackbot:', message.user, message.username);
+
     if (!message || typeof message !== 'object') return false;
     var user = message.user || message.user_id || message.bot_id || message.sender || '';
-    var name = message.username || message.bot_profile?.name || message.bot_profile?.app_name || message.display_name || '';
+    var name =
+      message.username || message.bot_profile?.name || message.bot_profile?.app_name || message.display_name || '';
     return user === SLACKBOT || /(^|\s)slackbot(\s|$)/i.test(String(name));
   }
 
   function isSlashCommandNotice(message) {
-    console.log("[ShutUpSlackbot] text:", textOf(message));
+    console.log('[ShutUpSlackbot] text:', textOf(message));
     var text = textOf(message);
     if (!text) return false;
     return (
@@ -116,10 +117,10 @@
       })
       .catch(function () {});
   }
-  
+
   function record(message, fallbackChannel) {
-    alert("record() called");
-    console.log("[ShutUpSlackbot] record()", message);
+    alert('record() called');
+    console.log('[ShutUpSlackbot] record()', message);
 
     if (!isSlackbot(message) || !isSlashCommandNotice(message)) return;
     var channel = message.channel || message.channel_id || message.channelId || fallbackChannel || '';
@@ -174,7 +175,8 @@
     console.warn('[ShutUpSlackbot DEBUG] onSocket() reached', event);
     var data = event && event.data;
     if (typeof Blob !== 'undefined' && data instanceof Blob) {
-      data.text()
+      data
+        .text()
         .then(function (text) {
           var parsed = parseSocketData(text);
           if (parsed) {
