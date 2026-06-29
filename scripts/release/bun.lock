@@ -5,12 +5,12 @@
     "": {
       "name": "slick-release-tools",
       "dependencies": {
-        "@electron/osx-sign": "^2.4.0",
+        "@electron/osx-sign": "^2.4.1",
       },
     },
   },
   "packages": {
-    "@electron/osx-sign": ["@electron/osx-sign@2.4.0", "", { "dependencies": { "debug": "^4.3.4", "isbinaryfile": "^4.0.8", "plist": "^3.0.5", "semver": "^7.7.1" }, "bin": { "electron-osx-flat": "bin/electron-osx-flat.mjs", "electron-osx-sign": "bin/electron-osx-sign.mjs" } }, "sha512-9mJiKF/yrn2FYt1Pd9hIN8bUWs6w6uhm8DJJ/tZtTPMVmqv9/NO1JvRh+NyOJp8kE2bfffK4YkU3ZyM+rHipUw=="],
+    "@electron/osx-sign": ["@electron/osx-sign@2.4.1", "", { "dependencies": { "debug": "^4.3.4", "isbinaryfile": "^4.0.8", "plist": "^3.0.5", "semver": "^7.7.1" }, "bin": { "electron-osx-flat": "bin/electron-osx-flat.mjs", "electron-osx-sign": "bin/electron-osx-sign.mjs" } }, "sha512-xBC6UtTB/F7BmByXRcNkm8KeC+fFPTXFq6bxvwJgB1WwdAN9qHXUc3V9Indo0cybQUwd+Sb2ZTmhoVkoDijicw=="],
 
     "@xmldom/xmldom": ["@xmldom/xmldom@0.9.10", "", {}, "sha512-A9gOqLdi6cV4ibazAjcQufGj0B1y/vDqYrcuP6d/6x8P27gRS8643Dj9o1dEKtB6O7fwxb2FgBmJS2mX7gpvdw=="],
 
