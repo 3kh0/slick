@@ -3,7 +3,6 @@
 
   if (window.__slickShutUpSlackbot) return;
 
-  var SLACKBOT = 'USLACKBOT';
   var PATCHED = '__slickShutUpSlackbotPatched';
   var recent = [];
   var marked = new Set();
@@ -11,6 +10,8 @@
   var NativeNotification = window.Notification;
   var NativeAudio = window.Audio;
   var nativePlay = HTMLMediaElement.prototype.play;
+  var nativeShowNotification =
+    typeof ServiceWorkerRegistration !== 'undefined' && ServiceWorkerRegistration.prototype.showNotification;
 
   function now() {
     return Date.now();
@@ -58,23 +59,19 @@
   }
 
   function isSlackbot(message) {
-    console.log('[ShutUpSlackbot] isSlackbot:', message.user, message.username);
-
     if (!message || typeof message !== 'object') return false;
     var user = message.user || message.user_id || message.bot_id || message.sender || '';
     var name =
       message.username || message.bot_profile?.name || message.bot_profile?.app_name || message.display_name || '';
-    return user === SLACKBOT || /(^|\s)slackbot(\s|$)/i.test(String(name));
+    return user === 'USLACKBOT' || user === 'USLACK' || /(^|\s)slackbot(\s|$)/i.test(String(name));
   }
 
   function isSlashCommandNotice(message) {
-    console.log('[ShutUpSlackbot] text:', textOf(message));
     var text = textOf(message);
     if (!text) return false;
-    return (
-      /slash[-_\s]+commands?/i.test(text) &&
-      /\b(new|added|created|registered|registration|installed|enabled|configured)\b/i.test(text)
-    );
+    var x = /slash[-_\s]+commands?/i.test(text);
+    var y = /(^|\s)`?\/[a-z0-9_-]+`?/i.test(text) && /\b(has been using|same command|when people enter)\b/i.test(text);
+    return (x || y) && /\b(new|added|created|registered|registration|installed|enabled|configured)\b/i.test(text);
   }
 
   function token() {
@@ -119,19 +116,33 @@
   }
 
   function record(message, fallbackChannel) {
-    console.log('[ShutUpSlackbot] record()', message);
-
-    if (!isSlackbot(message) || !isSlashCommandNotice(message)) return;
+    if (!isSlackbot(message) || !isSlashCommandNotice(message)) return false;
     var channel = message.channel || message.channel_id || message.channelId || fallbackChannel || '';
     var ts = message.ts || message.event_ts || message.message_ts || '';
     recent.push({ at: now(), channel: channel, ts: ts, text: textOf(message) });
     muteUntil = now() + 15000;
     clean();
     markRead(channel, ts);
+    return true;
+  }
+
+  function nmsg(value) {
+    if (!value || typeof value !== 'object' || value.type !== 'desktop_notification') return null;
+    return {
+      user: value.sender_id || value.user || '',
+      username: value.subtitle || value.title || '',
+      text: [value.content, value.title, value.subtitle].filter(Boolean).join(' '),
+      channel: value.channel,
+      ts: value.msg || value.ts || value.event_ts,
+    };
+  }
+
+  function suppressSocket(value) {
+    var message = nmsg(value);
+    return !!message && record(message, message.channel);
   }
 
   function visit(value, depth, fallbackChannel) {
-    console.warn('[ShutUpSlackbot DEBUG] visit() reached', { depth: depth, value: value });
     if (!value || depth > 8) return;
     if (typeof value === 'string') {
       var trimmed = value.trim();
@@ -170,17 +181,13 @@
   }
 
   function onSocket(event) {
-    console.warn('[ShutUpSlackbot DEBUG] onSocket() reached', event);
     var data = event && event.data;
     if (typeof Blob !== 'undefined' && data instanceof Blob) {
       data
         .text()
         .then(function (text) {
           var parsed = parseSocketData(text);
-          if (parsed) {
-            console.warn('[ShutUpSlackbot DEBUG] before visit() from Blob', parsed);
-            visit(parsed, 0, '');
-          }
+          if (parsed) visit(parsed, 0, '');
         })
         .catch(function () {});
       return;
@@ -192,13 +199,17 @@
     }
     var parsed = parseSocketData(data);
     if (parsed) {
-      console.warn('[ShutUpSlackbot DEBUG] before visit()', parsed);
       visit(parsed, 0, '');
+      if (suppressSocket(parsed)) {
+        try {
+          event.stopImmediatePropagation();
+          event.preventDefault();
+        } catch {}
+      }
     }
   }
 
   function patchSocket() {
-    console.warn('[ShutUpSlackbot DEBUG] patchSocket() reached');
     var Native = window.WebSocket;
     if (!Native || Native[PATCHED]) return;
     var armed = new WeakSet();
@@ -213,7 +224,6 @@
     }
 
     function SlickWebSocket(url, protocols) {
-      console.warn('[ShutUpSlackbot DEBUG] patched WebSocket constructor reached', url, protocols);
       var socket = protocols === undefined ? new Native(url) : new Native(url, protocols);
       arm(socket);
       return socket;
@@ -233,22 +243,6 @@
       if (type === 'message') arm(this);
       return nativeAdd.apply(this, arguments);
     };
-    try {
-      var desc = Object.getOwnPropertyDescriptor(Native.prototype, 'onmessage');
-      if (desc && desc.configurable) {
-        Object.defineProperty(Native.prototype, 'onmessage', {
-          configurable: true,
-          enumerable: desc.enumerable,
-          get: function () {
-            return desc.get ? desc.get.call(this) : undefined;
-          },
-          set: function (value) {
-            arm(this);
-            if (desc.set) desc.set.call(this, value);
-          },
-        });
-      }
-    } catch {}
 
     SlickWebSocket[PATCHED] = true;
     window.WebSocket = SlickWebSocket;
@@ -269,7 +263,7 @@
     clean();
     var body = options && (options.body || options.subtitle || options.message || '');
     var text = decode(String(title || '') + ' ' + String(body || ''));
-    if (isSlashCommandNotice({ text: text, user: SLACKBOT })) return true;
+    if (isSlashCommandNotice({ text: text, user: 'USLACKBOT' })) return true;
     return recent.length > 0 && now() < muteUntil && /slackbot|slash[-_\s]+command/i.test(text);
   }
 
@@ -293,6 +287,15 @@
     };
     Object.defineProperty(SlickNotification, PATCHED, { value: true });
     window.Notification = SlickNotification;
+  }
+
+  function patchNotify() {
+    if (!nativeShowNotification || nativeShowNotification[PATCHED]) return;
+    ServiceWorkerRegistration.prototype.showNotification = function (title, options) {
+      if (shouldSuppressNotification(title, options)) return Promise.resolve();
+      return nativeShowNotification.apply(this, arguments);
+    };
+    Object.defineProperty(ServiceWorkerRegistration.prototype.showNotification, PATCHED, { value: true });
   }
 
   function shouldMuteSound(src) {
@@ -345,5 +348,6 @@
 
   patchSocket();
   patchNotification();
+  patchNotify();
   patchAudio();
 })();
