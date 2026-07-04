@@ -119,7 +119,6 @@
   }
 
   function record(message, fallbackChannel) {
-    alert('record() called');
     console.log('[ShutUpSlackbot] record()', message);
 
     if (!isSlackbot(message) || !isSlashCommandNotice(message)) return;
@@ -171,7 +170,6 @@
   }
 
   function onSocket(event) {
-    alert('[ShutUpSlackbot DEBUG] onSocket() reached');
     console.warn('[ShutUpSlackbot DEBUG] onSocket() reached', event);
     var data = event && event.data;
     if (typeof Blob !== 'undefined' && data instanceof Blob) {
@@ -180,7 +178,6 @@
         .then(function (text) {
           var parsed = parseSocketData(text);
           if (parsed) {
-            alert('[ShutUpSlackbot DEBUG] before visit() from Blob');
             console.warn('[ShutUpSlackbot DEBUG] before visit() from Blob', parsed);
             visit(parsed, 0, '');
           }
@@ -195,14 +192,12 @@
     }
     var parsed = parseSocketData(data);
     if (parsed) {
-      alert('[ShutUpSlackbot DEBUG] before visit()');
       console.warn('[ShutUpSlackbot DEBUG] before visit()', parsed);
       visit(parsed, 0, '');
     }
   }
 
   function patchSocket() {
-    alert('[ShutUpSlackbot DEBUG] patchSocket() reached');
     console.warn('[ShutUpSlackbot DEBUG] patchSocket() reached');
     var Native = window.WebSocket;
     if (!Native || Native[PATCHED]) return;
@@ -218,7 +213,6 @@
     }
 
     function SlickWebSocket(url, protocols) {
-      alert('[ShutUpSlackbot DEBUG] patched WebSocket constructor reached');
       console.warn('[ShutUpSlackbot DEBUG] patched WebSocket constructor reached', url, protocols);
       var socket = protocols === undefined ? new Native(url) : new Native(url, protocols);
       arm(socket);
