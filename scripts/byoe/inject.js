@@ -20,6 +20,20 @@ if (process.platform === 'linux') {
 }
 
 const { app, session, Notification } = electron;
+
+if (process.platform === 'darwin') {
+  try {
+    const { autoUpdater } = electron;
+    for (const method of ['setFeedURL', 'checkForUpdates', 'quitAndInstall']) {
+      Object.defineProperty(autoUpdater, method, {
+        configurable: true,
+        writable: true,
+        value: () => {},
+      });
+    }
+  } catch {}
+}
+
 const PLUGINS_DIR = path.join(__dirname, '..', '..', 'plugins');
 require('./switches').applySwitches({
   app,

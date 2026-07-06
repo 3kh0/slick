@@ -87,6 +87,7 @@ function copyRuntime(resources) {
     'scripts/byoe/plugins.js',
     'scripts/byoe/settings-renderer.js',
     'scripts/byoe/settings-ui.js',
+    'scripts/byoe/slack-updater.js',
     'scripts/byoe/switches.js',
     'scripts/byoe/updater.js',
     'scripts/theme.js',
@@ -180,6 +181,7 @@ const SLICK_VERSION = ${JSON.stringify(opts.appVersion)};
 const SLICK_BUILD = parseInt(${JSON.stringify(opts.buildNumber)}, 10) || 0;
 const updater = require(path.join(SLICK_ROOT, 'scripts/byoe/updater.js')).create({ version: SLICK_VERSION, build: SLICK_BUILD, profile: PROFILE });
 const RELEASES_URL = updater.RELEASES_URL;
+const slackUpdater = require(path.join(SLICK_ROOT, 'scripts/byoe/slack-updater.js')).create({ version: SLICK_VERSION, profile: PROFILE });
 
 function slackElectronMajor() {
   try {
@@ -336,6 +338,12 @@ function installPatch() {
   Menu.setApplicationMenu = (menu) => setApplicationMenu(patchMenu(menu));
 }
 
+try {
+  slackUpdater.applyStagedIfAny();
+} catch (e) {
+  console.log('[slick-slack-updater] apply-staged failed: ' + ((e && e.message) || e));
+}
+
 if (!preflight()) {
   app.exit(1);
 } else {
@@ -343,6 +351,7 @@ if (!preflight()) {
   installPatch();
   seedSettings();
   updater.scheduleUpdateChecks();
+  slackUpdater.scheduleChecks();
 
   try {
     Object.defineProperty(process, 'resourcesPath', { configurable: true, value: SLACK_RESOURCES });
