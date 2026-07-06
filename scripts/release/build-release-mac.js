@@ -2,7 +2,7 @@
 // Build distributable Slick.app artifacts (zip + dmg per arch) into dist/.
 // Downloads stock Electron for each arch, so this works on a clean machine/CI runner
 // without Slack installed (the app checks for Slack at launch instead).
-//   node scripts/release/build-release.js [--build-number <n>] [--arch arm64,x64]
+//   node scripts/release/build-release-mac.js [--build-number <n>] [--arch arm64,x64]
 'use strict';
 
 const fs = require('fs');
@@ -27,7 +27,7 @@ function latest() {
 
 function usage() {
   console.error(`Usage:
-  node scripts/release/build-release.js [--build-number <n>] [--app-version <x.y.z>] [--arch arm64,x64]
+  node scripts/release/build-release-mac.js [--build-number <n>] [--app-version <x.y.z>] [--arch arm64,x64]
 
 Defaults:
   --build-number ${latest()}
@@ -154,7 +154,7 @@ async function buildArch(arch, opts) {
 
   step(`Packaging zip + dmg (${arch})`);
   fs.mkdirSync(DIST, { recursive: true });
-  const zip = path.join(DIST, `Slick-build-${opts.buildNumber}-${arch}.zip`);
+  const zip = path.join(DIST, `Slick-build-${opts.buildNumber}-mac-${arch}.zip`);
   fs.rmSync(zip, { force: true });
   run('/usr/bin/ditto', ['-c', '-k', '--keepParent', app, zip]);
 
@@ -163,7 +163,7 @@ async function buildArch(arch, opts) {
   fs.mkdirSync(staging, { recursive: true });
   run('/usr/bin/ditto', [app, path.join(staging, 'Slick.app')]);
   fs.symlinkSync('/Applications', path.join(staging, 'Applications'));
-  const dmg = path.join(DIST, `Slick-build-${opts.buildNumber}-${arch}.dmg`);
+  const dmg = path.join(DIST, `Slick-build-${opts.buildNumber}-mac-${arch}.dmg`);
   fs.rmSync(dmg, { force: true });
   run('/usr/bin/hdiutil', ['create', '-volname', 'Slick', '-srcfolder', staging, '-format', 'UDZO', dmg]);
 }

@@ -52,11 +52,11 @@ jobs:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
-        run: node scripts/release/build-release.js --build-number "${{ steps.version.outputs.build }}" --arch "${{ matrix.arch }}"
+        run: node scripts/release/build-release-mac.js --build-number "${{ steps.version.outputs.build }}" --arch "${{ matrix.arch }}"
       - name: Upload artifacts
         uses: actions/upload-artifact@v7
         with:
-          name: slick-${{ matrix.arch }}
+          name: slick-mac-${{ matrix.arch }}
           path: |
             dist/Slick-*.zip
             dist/Slick-*.dmg

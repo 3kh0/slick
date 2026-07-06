@@ -87,7 +87,7 @@ else
   JSON="$(curl -fsSL "https://api.github.com/repos/3kh0/slick/releases/latest")" \
     || die "could not reach the GitHub, check your internet connection?"
   TAG="$(printf '%s' "$JSON" | sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p' | head -1)"
-  URL="$(printf '%s' "$JSON" | grep -o "https://[^\"]*-$ARCH\.zip" | head -1 || true)"
+  URL="$(printf '%s' "$JSON" | grep -o "https://[^\"]*-mac-$ARCH\.zip" | head -1 || true)"
   [ -n "$URL" ] || die "the latest release (${TAG:-unknown}) has no $ARCH build."
   echo "    Slick $TAG for $ARCH it is!"
 

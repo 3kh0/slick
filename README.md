@@ -30,8 +30,8 @@ curl -fsSL https://raw.githubusercontent.com/3kh0/slick/main/install.sh | bash
 
 Prefer doing it by hand? Grab the latest prebuilt app from the [releases page](https://github.com/3kh0/slick/releases/latest) and pick the build for your Mac (check > About This Mac > Chip if unsure):
 
-- `Slick-build-N-arm64` — **Apple Silicon** (if there is a M in the name)
-- `Slick-build-N-x64` — **Intel** Macs
+- `Slick-build-N-mac-arm64` — **Apple Silicon** (if there is a M in the name)
+- `Slick-build-N-mac-x64` — **Intel** Macs
 
 Each comes as a `.dmg` (open it and drag Slick to Applications) or a `.zip`.
 
