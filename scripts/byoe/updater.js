@@ -4,7 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const https = require('https');
 const { execFile, spawn } = require('child_process');
-const { app, dialog, shell, BrowserWindow } = require('electron');
+const { app, dialog, shell, BrowserWindow, nativeTheme } = require('electron');
 
 const PLATFORM = process.platform === 'darwin' ? 'darwin' : process.platform === 'win32' ? 'win32' : 'linux';
 const MAC = PLATFORM === 'darwin';
@@ -53,9 +53,9 @@ function progressHtml() {
     '@keyframes slide{0%{left:-35%}100%{left:100%}}' +
     '.foot{display:flex;justify-content:space-between;gap:12px;margin-top:11px;font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums}';
   const theme = MAC
-    ? ':root{color-scheme:light dark;--fg:#1d1d1f;--muted:rgba(60,60,67,.6);--track:rgba(60,60,67,.13);--accent:#007aff}' +
-      '@media (prefers-color-scheme:dark){:root{--fg:#f5f5f7;--muted:rgba(235,235,245,.6);--track:rgba(235,235,245,.15);--accent:#0a84ff}}' +
-      'html,body{margin:0;height:100%;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text",sans-serif;background:transparent;color:var(--fg);-webkit-user-select:none;cursor:default}' +
+    ? ':root{color-scheme:light dark;--bg:#ececec;--fg:#1d1d1f;--muted:rgba(60,60,67,.6);--track:rgba(60,60,67,.13);--accent:#007aff}' +
+      '@media (prefers-color-scheme:dark){:root{--bg:#1e1e1e;--fg:#f5f5f7;--muted:rgba(235,235,245,.6);--track:rgba(235,235,245,.15);--accent:#0a84ff}}' +
+      'html,body{margin:0;height:100%;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text",sans-serif;background:var(--bg);color:var(--fg);-webkit-user-select:none;cursor:default}' +
       '.head{-webkit-app-region:drag}' +
       '#title{letter-spacing:-.01em}'
     : ':root{color-scheme:light dark;--bg:#f3f3f3;--fg:#1a1a1a;--muted:#5f5f5f;--track:rgba(0,0,0,.1);--accent:#0078d4}' +
@@ -299,11 +299,13 @@ function create({ version, build, profile }) {
     if (MAC)
       Object.assign(opts, {
         titleBarStyle: 'hiddenInset',
-        vibrancy: 'under-window',
-        visualEffectState: 'active',
-        backgroundColor: '#00000000',
+        backgroundColor: nativeTheme.shouldUseDarkColors ? '#1e1e1e' : '#ececec',
       });
-    else Object.assign(opts, { autoHideMenuBar: true, backgroundColor: '#f3f3f3' });
+    else
+      Object.assign(opts, {
+        autoHideMenuBar: true,
+        backgroundColor: nativeTheme.shouldUseDarkColors ? '#202020' : '#f3f3f3',
+      });
     progressWin = new BrowserWindow(opts);
     try {
       MAC ? progressWin.setMenu(null) : progressWin.setMenuBarVisibility(false);
