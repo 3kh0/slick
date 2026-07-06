@@ -16,38 +16,26 @@
 
 Slick runs Slack's own `app.asar` with a custom Electron (with the handy BYOE acronym, bring your own electron) preload that injects themes and plugins. This method allows us to modify Slack's interface and behavior without altering its files, so auto-updates still work and there's no open debug port or resident watcher.
 
-This client targets MacOS, with Windows and Linux beta support (see below).
-
 ## Installation
 
-You will need the official [Slack app](https://slack.com/downloads/mac) (not the App Store version) installed at `/Applications/Slack.app`, since Slick runs Slack's own code.
+Slick runs on MacOS, Windows, and Linux. Linux is still in beta.
 
-The fastest way in is to use the installer script. Re-run it any time to update. Slick also checks for new GitHub Releases about every 6 hours and points you at the latest build when one is available.
+Whatever platform you use, you'll need the official Slack app installed first, since Slick runs Slack's own code.
+
+### MacOS
+
+Install the official [Slack app](https://slack.com/downloads/mac) (not the App Store version) at `/Applications/Slack.app`, then use the installer script:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/3kh0/slick/main/install.sh | bash
 ```
 
-Prefer doing it by hand? Grab the latest prebuilt app from the [releases page](https://github.com/3kh0/slick/releases/latest) and pick the build for your Mac (check > About This Mac > Chip if unsure):
+If you prefer doing it by hand, grab the latest prebuilt app from the [releases page](https://github.com/3kh0/slick/releases/latest) and pick the build for your Mac (check > About This Mac > Chip if unsure):
 
 - `Slick-build-N-mac-arm64` — **Apple Silicon** (if there is a M in the name)
 - `Slick-build-N-mac-x64` — **Intel** Macs
 
 Each comes as a `.dmg` (open it and drag Slick to Applications) or a `.zip`.
-
-### But it says "Slick can't be opened!"
-
-If you run into this error, it means the app is not notarized, which is expected. Bypassing this is trivial:
-
-Double click the app to open it. You should see a warning that it can't be opened. Now, go to **System Settings > Privacy & Security**, scroll down to the Slick message, click **Open Anyway**, and launch it again. After that it opens normally.
-
-You can also use this terminal command to bypass the warning without opening the app first:
-
-```bash
-xattr -d com.apple.quarantine /Applications/Slick.app
-```
-
-## Build from source
 
 If you'd rather build it yourself (or hack on it), clone the repo and run:
 
@@ -55,16 +43,12 @@ If you'd rather build it yourself (or hack on it), clone the repo and run:
 ./install.sh
 ```
 
-This downloads an Electron matching your installed Slack and builds `~/Applications/Slick.app` locally; re-run it any time to stay fresh. You'll need a modern version of Node.js.
-
-If you want to debug or poke around at things, you can find more manual scripts in the scripts/ folder, but the install script should be all you need for normal use.
-
-## Windows (beta)
+### Windows
 
 > [!NOTE]
-> Windows support is new and somehow even more unstable and prone to jank than the Mac build. Both the standalone Slack download and the Microsoft Store version are supported. On ARM PCs the x64 Slack runs via emulation magic and Slick works, but expect a big performance hit.
+> Both the standalone Slack download and the Microsoft Store version are supported. On ARM PCs the x64 Slack runs via emulation magic and Slick works, but expect a big performance hit. Slick is primary for those on x64 Windows.
 
-Install Slack first, then run this in PowerShell:
+Install the official [Slack app](https://slack.com/downloads/windows) first, then run this in PowerShell:
 
 ```powershell
 irm "https://raw.githubusercontent.com/3kh0/slick/main/install.ps1" | iex
@@ -76,20 +60,16 @@ To uninstall or pass other arguments to the script, try this:
 & ([scriptblock]::Create((irm https://raw.githubusercontent.com/3kh0/slick/main/install.ps1))) -Uninstall -Purge
 ```
 
-### Building Windows
-
-Clone the repo and run the following
+If you'd rather build it yourself (or hack on it), clone the repo and run:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File install.ps1
 ```
 
-You also have some nice flags to play around with locally: `-Uninstall`, `-Purge`, `-RestoreHandler`, and `-Force` to overwrite any existing install.
-
-## Linux (beta)
+### Linux (beta)
 
 > [!NOTE]
-> Linux support is new and x86_64-only. Slack doesn't ship an official arm64 Linux build, so there's nothing for an arm64 machine to run Slick against.
+> Linux support is still in beta and x86_64-only. Slack doesn't ship an official arm64 Linux build, so there's nothing for an arm64 machine to run Slick against.
 
 Install Slack from your distro first (deb, rpm, AUR, whatever your package manager offers), then clone the repo and run:
 
