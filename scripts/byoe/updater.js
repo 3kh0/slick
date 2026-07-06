@@ -137,7 +137,11 @@ function create({ version, build, profile }) {
   function pickAsset(release) {
     const arch = process.arch === 'arm64' ? 'arm64' : 'x64';
     const suffix =
-      PLATFORM === 'darwin' ? `-mac-${arch}.zip` : PLATFORM === 'win32' ? `-win32-${arch}.zip` : `-linux-${arch}.tar.gz`;
+      PLATFORM === 'darwin'
+        ? `-mac-${arch}.zip`
+        : PLATFORM === 'win32'
+          ? `-win32-${arch}.zip`
+          : `-linux-${arch}.tar.gz`;
     return (
       ((release && release.assets) || []).find((a) => a && typeof a.name === 'string' && a.name.endsWith(suffix)) ||
       null
