@@ -240,6 +240,7 @@ let blockedCount = 0;
 
 const HOSTS = ['slack.com', 'slack-edge.com', 'slackb.com'];
 const PERMS = new Set([
+  'clipboard-sanitized-write',
   'display-capture',
   'fullscreen',
   'media',
