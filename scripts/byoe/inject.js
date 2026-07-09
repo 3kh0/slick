@@ -63,6 +63,7 @@ const ENABLED_FILE = path.join(SETTINGS_DIR, 'enabled-plugins.json');
 const DEFAULT_ENABLED_FILE = path.join(PLUGINS_DIR, 'enabled.json');
 const ACTIVE_THEME_FILE = path.join(SETTINGS_DIR, 'active-theme');
 const PLUGIN_SETTINGS_FILE = path.join(SETTINGS_DIR, 'plugin-settings.json');
+const CUSTOM_CSS_FILE = path.join(SETTINGS_DIR, 'custom.css');
 const catalog = buildCatalog({ pluginsDir: PLUGINS_DIR, themesDir: THEMES_DIR });
 const defaultEnabled = () => catalog.plugins.map((plugin) => plugin.dir);
 const readEnabled = () =>
@@ -71,8 +72,10 @@ const runtime = {
   enabled: readEnabled(),
   pluginSettings: settings.readPluginSettings(PLUGIN_SETTINGS_FILE),
   theme: process.env.SLICK_THEME || settings.readActiveTheme(ACTIVE_THEME_FILE) || '',
+  customCss: settings.readCustomCss(CUSTOM_CSS_FILE),
 };
-let THEME_FILE = runtime.theme ? path.join(THEMES_DIR, `${runtime.theme}.json`) : null;
+let THEME_FILE =
+  runtime.theme && runtime.theme !== settings.CUSTOM_THEME_ID ? path.join(THEMES_DIR, `${runtime.theme}.json`) : null;
 
 function themeCss() {
   const spec = buildSpec(THEME_FILE);
@@ -177,7 +180,8 @@ function pluginCss() {
 }
 
 function fullCss() {
-  return [theme.css, pluginCss()].filter(Boolean).join('\n');
+  const customActive = runtime.theme === settings.CUSTOM_THEME_ID;
+  return [theme.css, pluginCss(), customActive ? runtime.customCss : ''].filter(Boolean).join('\n');
 }
 
 const armedSessions = new WeakSet();
@@ -197,10 +201,12 @@ function armBlocking(sess) {
         defaultEnabledFile: DEFAULT_ENABLED_FILE,
         activeThemeFile: ACTIVE_THEME_FILE,
         pluginSettingsFile: PLUGIN_SETTINGS_FILE,
+        customCssFile: CUSTOM_CSS_FILE,
         app,
         onTheme: setTheme,
         onEnabled: setEnabled,
         onPluginSetting: (_dir, _key, _value, all) => setPluginSettings(all),
+        onCustomCss: setCustomCss,
         onFileSetting: () =>
           electron.dialog
             .showOpenDialog({
@@ -572,6 +578,7 @@ function runtimeManifest() {
     enabled: runtime.enabled,
     activeTheme: runtime.theme,
     pluginSettings: runtime.pluginSettings,
+    customCss: runtime.customCss,
   });
 }
 
@@ -737,8 +744,9 @@ watchTheme();
 function setTheme(name) {
   name = name || '';
   if (name === runtime.theme) return;
-  const file = name ? path.join(THEMES_DIR, `${name}.json`) : null;
-  if (file && !fs.existsSync(file)) {
+  const isCustom = name === settings.CUSTOM_THEME_ID;
+  const file = name && !isCustom ? path.join(THEMES_DIR, `${name}.json`) : null;
+  if (!isCustom && file && !fs.existsSync(file)) {
     console.error(`[slick-byoe] theme not found: ${name}`);
     return;
   }
@@ -763,6 +771,13 @@ function setPluginSettings(all) {
   applyAllLive({ refreshCss: true });
 }
 
+function setCustomCss(css) {
+  css = css || '';
+  if (css === runtime.customCss) return;
+  runtime.customCss = css;
+  applyAllLive({ refreshCss: true });
+}
+
 function watchRuntimeFile(file, read, update) {
   fs.watchFile(file, { interval: 300 }, (curr, prev) => {
     if (curr.mtimeMs === prev.mtimeMs) return;
@@ -772,6 +787,7 @@ function watchRuntimeFile(file, read, update) {
 
 watchRuntimeFile(ENABLED_FILE, readEnabled, setEnabled);
 watchRuntimeFile(ACTIVE_THEME_FILE, () => settings.readActiveTheme(ACTIVE_THEME_FILE) || '', setTheme);
+watchRuntimeFile(CUSTOM_CSS_FILE, () => settings.readCustomCss(CUSTOM_CSS_FILE), setCustomCss);
 watchRuntimeFile(PLUGIN_SETTINGS_FILE, () => settings.readPluginSettings(PLUGIN_SETTINGS_FILE), setPluginSettings);
 
 const blockedPatternCount =

@@ -7,6 +7,7 @@ const { allPluginSettings, mergeSettings, coerceSetting } = require('./plugins')
 const CONTROL_HOST = 'slick.control';
 const controlPattern = `*://${CONTROL_HOST}/*`;
 const controlUrl = `https://${CONTROL_HOST}/`;
+const CUSTOM_THEME_ID = '__custom__';
 const RENDERER_FILE = path.join(__dirname, 'settings-renderer.js');
 const RENDERER_SOURCE = fs.readFileSync(RENDERER_FILE, 'utf8');
 
@@ -55,11 +56,23 @@ function writeActiveTheme(file, name) {
   fs.writeFileSync(file, String(name).trim() + '\n');
 }
 
+function readCustomCss(file) {
+  try {
+    return fs.readFileSync(file, 'utf8');
+  } catch {
+    return '';
+  }
+}
+function writeCustomCss(file, css) {
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, String(css == null ? '' : css));
+}
+
 function listThemes(catalog, activeName) {
   return catalog.themes.map((theme) => ({ ...theme, active: theme.file === activeName }));
 }
 
-function buildManifest({ catalog, enabled, activeTheme, pluginSettings }) {
+function buildManifest({ catalog, enabled, activeTheme, pluginSettings, customCss }) {
   const plugins = catalog.plugins.map(({ dir, meta, schema }) => {
     return {
       dir,
@@ -71,17 +84,25 @@ function buildManifest({ catalog, enabled, activeTheme, pluginSettings }) {
     };
   });
   const themes = listThemes(catalog, activeTheme);
+  const customActive = activeTheme === CUSTOM_THEME_ID;
   themes.unshift({
     file: '',
     label: 'Default',
     description: 'Stock Slack appearance (no theme)',
-    active: !themes.some((t) => t.active),
+    active: !customActive && !themes.some((t) => t.active),
+  });
+  themes.unshift({
+    file: CUSTOM_THEME_ID,
+    label: 'Custom CSS',
+    description: 'Your own live-edited CSS',
+    active: customActive,
   });
   return {
     controlUrl,
     theme: activeTheme || '',
     themes,
     plugins,
+    customCss: customCss || '',
   };
 }
 
@@ -106,11 +127,13 @@ function handleControl(
     defaultEnabledFile,
     activeThemeFile,
     pluginSettingsFile,
+    customCssFile,
     app,
     onTheme,
     onEnabled,
     onPluginSetting,
     onFileSetting,
+    onCustomCss,
   },
 ) {
   let u;
@@ -133,7 +156,10 @@ function handleControl(
     }
   } else if (op === 'theme') {
     const name = u.searchParams.get('name');
-    if (name !== null && (name === '' || catalog.themes.some((theme) => theme.file === name))) {
+    if (
+      name !== null &&
+      (name === '' || name === CUSTOM_THEME_ID || catalog.themes.some((theme) => theme.file === name))
+    ) {
       writeActiveTheme(activeThemeFile, name);
       console.log(`[slick-settings] theme -> ${name || 'none'}`);
       if (onTheme) {
@@ -177,6 +203,19 @@ function handleControl(
           if (onPluginSetting) onPluginSetting(dir, key, value, all);
         })
         .catch((e) => console.error('[slick-settings] file picker failed:', e.message));
+  } else if (op === 'customcss') {
+    const css = u.searchParams.get('value');
+    if (css !== null && customCssFile) {
+      writeCustomCss(customCssFile, css);
+      console.log(`[slick-settings] custom css -> ${css.length} byte(s)`);
+      if (onCustomCss) {
+        try {
+          onCustomCss(css);
+        } catch (e) {
+          console.error('[slick-settings] onCustomCss failed:', e.message);
+        }
+      }
+    }
   } else if (op === 'restart') {
     console.log('[slick-settings] relaunching to apply plugin changes');
     if (app) {
@@ -191,6 +230,7 @@ module.exports = {
   CONTROL_HOST,
   controlPattern,
   controlUrl,
+  CUSTOM_THEME_ID,
   buildManifest,
   bootstrapScript,
   handleControl,
@@ -202,4 +242,6 @@ module.exports = {
   listThemes,
   readActiveTheme,
   writeActiveTheme,
+  readCustomCss,
+  writeCustomCss,
 };
