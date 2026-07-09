@@ -59,7 +59,8 @@
       '#slick-config-modal .slick-cfg-file .slick-cfg-file-button{flex:none}',
       '#slick-config-modal .slick-config-note{margin:14px 0 0;opacity:.55;font-size:12px}',
       '#slick-config-modal .slick-restart-required{display:inline-block;margin-left:8px;padding:1px 6px;border-radius:999px;background:rgba(224,30,90,.14);color:#e01e5a;font-size:11px;font-weight:600}',
-      '#slick-panel-overlay .slick-customcss-row{display:flex;align-items:center;gap:12px}',
+      '#slick-panel-overlay .slick-customcss-label{display:flex !important;flex-direction:row !important;align-items:center;gap:12px}',
+      '#slick-panel-overlay .slick-customcss-text{flex:1;min-width:0}',
       '#slick-panel-overlay .slick-editor-back{opacity:.7;padding:4px 0;font-size:13px}',
       '#slick-panel-overlay .slick-editor-back:hover{opacity:1}',
       '#slick-panel-overlay .slick-customcss-editor{width:100%;min-height:320px;box-sizing:border-box;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;line-height:1.5;padding:10px 12px;border-radius:8px;border:1px solid rgba(127,127,127,.3);background:rgba(127,127,127,.06);color:inherit;resize:vertical;tab-size:2}',
@@ -256,16 +257,26 @@
     (t.active ? ' checked' : '') +
     '>';
 
+  const customCssRow = (t) => {
+    const sub = t.description
+      ? '<span class="c-label__subtext" data-qa-label-subtext="true">' + esc(t.description) + '</span>'
+      : '';
+    return (
+      '<div class="slick-plugin">' +
+      '<label class="c-label c-label--pointer slick-customcss-label" data-qa-label="true">' +
+      themeRadio(t) +
+      '<span class="c-label__text slick-customcss-text" data-qa-label-text="true">' +
+      esc(t.label) +
+      sub +
+      '</span>' +
+      '<button class="c-button c-button--outline c-button--small" type="button" data-open-customcss>Edit Custom CSS</button>' +
+      '</label></div>'
+    );
+  };
+
   const themeRow = (t) => {
     if (t.file !== CUSTOM_THEME_ID) return row(esc(t.label), t.description, themeRadio(t));
-    return row(
-      esc(t.label),
-      t.description,
-      '<span class="slick-customcss-row">' +
-        '<button class="c-button c-button--outline c-button--small" type="button" data-open-customcss>Edit Custom CSS</button>' +
-        themeRadio(t) +
-        '</span>',
-    );
+    return customCssRow(t);
   };
 
   const rows = (items, render, dir) =>
