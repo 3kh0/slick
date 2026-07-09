@@ -118,6 +118,8 @@ Themes are defined in the `themes/` folder as JSON files exporting the following
 
 No theme is applied by default, but you can pick one from the Slick tab in Preferences. `themes/amoled.json` (true black) and `themes/ultraviolet.json` (violet) are working examples. More documentation pending.
 
+Prefer to write your own CSS instead? Slick also has a "Custom CSS" option at the top of the theme list.
+
 ## Plugins
 
 Please refer to [`plugins/README.md`](plugins/README.md) for the plugins documentation. I promise it is not boring.
