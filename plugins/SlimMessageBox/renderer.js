@@ -30,12 +30,21 @@
     var padding = parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom);
     return editor.scrollHeight - padding > lineHeight * 1.6;
   }
+
+  function hasAttachments(scope) {
+    return !!scope.querySelector(
+      '.c-wysiwyg_container__attachments, .p-message_input__attachments, .c-pending_files, .c-message__editor__composer_attachments',
+    );
+  }
   function evaluate(editor) {
     var scope = editor.closest(SCOPE);
     if (!scope) return;
     var enabled = settings().discordLayout !== false; // def on
-    if (enabled && isMultiline(editor)) scope.classList.add('slick-smb-stacked');
-    else scope.classList.remove('slick-smb-stacked');
+    if (enabled && (isMultiline(editor) || hasAttachments(scope))) {
+      scope.classList.add('slick-smb-stacked');
+    } else {
+      scope.classList.remove('slick-smb-stacked');
+    }
   }
   function applyDomHides() {
     var s = settings();

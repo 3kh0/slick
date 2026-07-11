@@ -3,17 +3,20 @@
 const fs = require('fs');
 const path = require('path');
 
+const ONELINE =
+  '.p-message_input__input_container_unstyled:not(.slick-smb-stacked):not(:has(.c-wysiwyg_container__attachments,.p-message_input__attachments,.c-pending_files,.c-message__editor__composer_attachments))';
+
 const LAYOUT_CSS = `
-.p-message_input__input_container_unstyled:not(.slick-smb-stacked) .c-basic_container__body{display:flex!important;flex-direction:row!important;flex-wrap:wrap;align-items:center!important;column-gap:6px;}
-.p-message_input__input_container_unstyled:not(.slick-smb-stacked) .c-wysiwyg_container__footer{display:contents!important;}
-.p-message_input__input_container_unstyled:not(.slick-smb-stacked) .c-basic_container__body>:first-child{order:1;flex:1 0 100%;}
-.p-message_input__input_container_unstyled:not(.slick-smb-stacked) .c-basic_container__body>:first-child:empty{display:none;}
-.p-message_input__input_container_unstyled:not(.slick-smb-stacked) .c-wysiwyg_container__prefix{order:2;flex:0 0 auto!important;}
-.p-message_input__input_container_unstyled:not(.slick-smb-stacked) .c-texty_input_unstyled__container{order:3;flex:1 1 0%!important;min-width:140px;}
-.p-message_input__input_container_unstyled:not(.slick-smb-stacked) .c-wysiwyg_container__toolbar_buttons{order:4;flex:0 0 auto!important;display:inline-flex!important;width:max-content!important;min-width:0;max-width:100%;overflow:visible;}
-.p-message_input__input_container_unstyled:not(.slick-smb-stacked) .c-wysiwyg_container__toolbar_buttons .c-texty_buttons{display:inline-flex!important;flex:0 0 auto!important;width:max-content!important;min-width:0;max-width:100%;}
-.p-message_input__input_container_unstyled:not(.slick-smb-stacked) .c-wysiwyg_container__suffix{order:5;flex:0 0 auto!important;}
-.p-message_input__input_container_unstyled:not(.slick-smb-stacked) .c-wysiwyg_container__footer_divider{display:none!important;}
+${ONELINE} .c-basic_container__body{display:flex!important;flex-direction:row!important;flex-wrap:wrap;align-items:center!important;column-gap:6px;}
+${ONELINE} .c-wysiwyg_container__footer{display:contents!important;}
+${ONELINE} .c-basic_container__body>:first-child{order:1;flex:1 0 100%;}
+${ONELINE} .c-basic_container__body>:first-child:empty{display:none;}
+${ONELINE} .c-wysiwyg_container__prefix{order:2;flex:0 0 auto!important;}
+${ONELINE} .c-texty_input_unstyled__container{order:3;flex:1 1 0%!important;min-width:140px;}
+${ONELINE} .c-wysiwyg_container__toolbar_buttons{order:4;flex:0 0 auto!important;display:inline-flex!important;width:max-content!important;min-width:0;max-width:100%;overflow:visible;}
+${ONELINE} .c-wysiwyg_container__toolbar_buttons .c-texty_buttons{display:inline-flex!important;flex:0 0 auto!important;width:max-content!important;min-width:0;max-width:100%;}
+${ONELINE} .c-wysiwyg_container__suffix{order:5;flex:0 0 auto!important;}
+${ONELINE} .c-wysiwyg_container__footer_divider{display:none!important;}
 `;
 
 const HIDE_SELECTORS = {
@@ -56,7 +59,7 @@ module.exports = {
     discordLayout: {
       type: 'boolean',
       label: 'Discord-style one-line layout',
-      description: 'File button left, message box middle, other buttons right. Reverts to stacked when multi-line.',
+      description: 'Cleaner and more streamlined message input.',
       default: true,
     },
     hideFormatting: {
