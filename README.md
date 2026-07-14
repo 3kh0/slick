@@ -86,7 +86,13 @@ This builds `byoe/slick-linux`, installs a desktop entry, registers `slack://`, 
 
 You also have some nice flags to play around with: `--restore-handler` on `install-linux.sh` to give `slack://` back to the official Slack app, and `./scripts/uninstall-linux.sh` to remove Slick entirely.
 
-Prebuilt `x86_64` tarballs are published on the [releases page](https://github.com/3kh0/slick/releases/latest) too. Extract one and run `Slick/electron` directly; desktop integration is only wired up by the source build (`install-linux.sh`) for now.
+Prebuilt `x86_64` tarballs are published on the [releases page](https://github.com/3kh0/slick/releases/latest) too. To install one (with optional provenance verification if `gh` is installed):
+
+```bash
+./install-linux.sh --from-release
+```
+
+Or extract a tarball by hand and run `Slick/electron` directly.
 
 ## Release versioning
 
@@ -106,7 +112,9 @@ git push origin "v$BUILD"
 
 All builds published from this repo include [GitHub artifact attestations](https://docs.github.com/en/actions/concepts/security/artifact-attestations) (SLSA build provenance). These prove a given zip, dmg, or tarball was built by this repository's release workflow, not swapped in after the fact.
 
-With the [GitHub CLI](https://cli.github.com/) installed, run:
+The install scripts check this automatically when they download a prebuilt release **and** if the [GitHub CLI](https://cli.github.com/) (`gh`) is on your `PATH`. If `gh` is not installed, the check is skipped and install continues as before.
+
+You can also verify a download by hand:
 
 ```bash
 gh attestation verify path/to/Slick-build-N-….zip -R 3kh0/slick

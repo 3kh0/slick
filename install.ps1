@@ -17,6 +17,31 @@ $Repo = '3kh0/slick'
 function Step($m) { Write-Host "==> " -ForegroundColor Magenta -NoNewline; Write-Host $m -ForegroundColor White }
 function Die($m)  { Write-Host "error: " -ForegroundColor Red -NoNewline; Write-Host $m; exit 1 }
 
+function Assert-ReleaseAttestation([string]$Path) {
+  if (-not (Get-Command gh -ErrorAction SilentlyContinue)) {
+    Write-Host "    (gh CLI not found; skipping provenance check — https://cli.github.com)" -ForegroundColor DarkGray
+    return
+  }
+  Step "Verifying build provenance"
+  $prevEap = $ErrorActionPreference
+  $ErrorActionPreference = 'Continue'
+  $out = & gh attestation verify $Path -R $Repo 2>&1 | Out-String
+  $code = $LASTEXITCODE
+  $ErrorActionPreference = $prevEap
+  if ($code -eq 0) {
+    Write-Host "    attestation OK (signed by $Repo)"
+    return
+  }
+  Write-Host ""
+  Write-Host "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!" -ForegroundColor Red
+  Write-Host "  BUILD PROVENANCE VERIFICATION FAILED" -ForegroundColor Red
+  Write-Host "  This download may have been tampered with." -ForegroundColor Red
+  Write-Host "  Refusing to install." -ForegroundColor Red
+  Write-Host "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!" -ForegroundColor Red
+  if ($out) { Write-Host $out }
+  Die "refusing to install an unattested or mismatched build"
+}
+
 function Get-File($url, $dest, $label) {
   $ProgressPreference = 'Continue'
   $resp = $null; $stream = $null; $out = $null
@@ -285,6 +310,7 @@ if ($FromSource) {
   Step "Downloading Slick $tag (win32-$releaseArch)"
   $zip = Join-Path $env:TEMP "slick-$tag-win32-$releaseArch.zip"
   Get-File $asset.browser_download_url $zip "Downloading Slick $tag (win32-$releaseArch)"
+  Assert-ReleaseAttestation $zip
   $stage = Join-Path $env:TEMP ("slick-stage-" + [Guid]::NewGuid().ToString('N'))
   Expand-Archive $zip -DestinationPath $stage -Force
   Remove-Item $zip -EA SilentlyContinue

@@ -6,9 +6,32 @@ APP="$HOME/Applications/Slick.app"
 SLACK="/Applications/Slack.app"
 EDIST="$ROOT/byoe/node_modules/electron/dist"
 EBIN="$EDIST/Electron.app/Contents/MacOS/Electron"
+REPO="3kh0/slick"
 
 step() { printf '\033[1;35m==>\033[0m \033[1m%s\033[0m\n' "$*"; }
 die()  { printf '\033[1;31merror:\033[0m %s\n' "$*" >&2; exit 1; }
+
+verify_release_artifact() {
+  local file="$1"
+  if ! command -v gh >/dev/null 2>&1; then
+    printf '    (gh CLI not found; skipping provenance check - https://cli.github.com)\n'
+    return 0
+  fi
+  step "Verifying build provenance"
+  local out
+  if out="$(gh attestation verify "$file" -R "$REPO" 2>&1)"; then
+    echo "    attestation OK (signed by $REPO)"
+    return 0
+  fi
+  printf '\n' >&2
+  printf '\033[1;31m!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\033[0m\n' >&2
+  printf '\033[1;31m  BUILD PROVENANCE VERIFICATION FAILED\033[0m\n' >&2
+  printf '\033[1;31m  This download may have been tampered with.\033[0m\n' >&2
+  printf '\033[1;31m  Refusing to install.\033[0m\n' >&2
+  printf '\033[1;31m!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\033[0m\n' >&2
+  printf '\n%s\n\n' "$out" >&2
+  die "refusing to install an unattested or mismatched build"
+}
 wait_gone() { for _ in {1..20}; do pgrep "$@" >/dev/null 2>&1 || return 0; sleep 0.25; done; }
 handler() { # handler <bundle-id> — make that app the slack:// URL handler
   xcode-select -p >/dev/null 2>&1 || return 1
@@ -84,7 +107,7 @@ else
   if [ "$(sysctl -n hw.optional.arm64 2>/dev/null || true)" = "1" ]; then ARCH=arm64; else ARCH=x64; fi
 
   step "Finding the latest release"
-  JSON="$(curl -fsSL "https://api.github.com/repos/3kh0/slick/releases/latest")" \
+  JSON="$(curl -fsSL "https://api.github.com/repos/$REPO/releases/latest")" \
     || die "could not reach the GitHub, check your internet connection?"
   TAG="$(printf '%s' "$JSON" | sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p' | head -1)"
   URL="$(printf '%s' "$JSON" | grep -o "https://[^\"]*-mac-$ARCH\.zip" | head -1 || true)"
@@ -95,6 +118,8 @@ else
   TMP="$(mktemp -d /tmp/slick-install.XXXXXX)"
   trap 'rm -rf "$TMP"' EXIT
   curl --fail --location --progress-bar -o "$TMP/Slick.zip" "$URL"
+
+  verify_release_artifact "$TMP/Slick.zip"
 
   pkill -f "$APP/Contents/MacOS/Electron" 2>/dev/null || true
   wait_gone -f "$APP/Contents/MacOS/Electron"
