@@ -112,7 +112,7 @@ git push origin "v$BUILD"
 
 All builds published from this repo include [GitHub artifact attestations](https://docs.github.com/en/actions/concepts/security/artifact-attestations) (SLSA build provenance). These prove a given zip, dmg, or tarball was built by this repository's release workflow, not swapped in after the fact.
 
-The install scripts check this automatically when they download a prebuilt release **and** if the [GitHub CLI](https://cli.github.com/) (`gh`) is on your `PATH`. If `gh` is not installed, the check is skipped and install continues as before.
+Install scripts check this automatically when they download a prebuilt release **and** the [GitHub CLI](https://cli.github.com/) (`gh`) is on your `PATH`. If `gh` is not installed, the check is skipped and install continues as before. In-app updates always verify builds after download.
 
 You can also verify a download by hand:
 

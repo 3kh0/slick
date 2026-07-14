@@ -3,12 +3,139 @@
 const fs = require('fs');
 const path = require('path');
 const https = require('https');
+const crypto = require('crypto');
 const { execFile, spawn } = require('child_process');
 const { app, dialog, shell, BrowserWindow, nativeTheme } = require('electron');
 
 const PLATFORM = process.platform === 'darwin' ? 'darwin' : process.platform === 'win32' ? 'win32' : 'linux';
 const MAC = PLATFORM === 'darwin';
 const CINT = 6 * 60 * 60 * 1000;
+const REPO = '3kh0/slick';
+const WORKFLOW_URI = 'https://github.com/' + REPO + '/.github/workflows/release.yml';
+const SLSA_PROVENANCE = 'https://slsa.dev/provenance/v1';
+// Public-good Fulcio roots  from sigstore.dev
+const FULCIO_INTERMEDIATE_PEM = `-----BEGIN CERTIFICATE-----
+MIICGjCCAaGgAwIBAgIUALnViVfnU0brJasmRkHrn/UnfaQwCgYIKoZIzj0EAwMw
+KjEVMBMGA1UEChMMc2lnc3RvcmUuZGV2MREwDwYDVQQDEwhzaWdzdG9yZTAeFw0y
+MjA0MTMyMDA2MTVaFw0zMTEwMDUxMzU2NThaMDcxFTATBgNVBAoTDHNpZ3N0b3Jl
+LmRldjEeMBwGA1UEAxMVc2lnc3RvcmUtaW50ZXJtZWRpYXRlMHYwEAYHKoZIzj0C
+AQYFK4EEACIDYgAE8RVS/ysH+NOvuDZyPIZtilgUF9NlarYpAd9HP1vBBH1U5CV7
+7LSS7s0ZiH4nE7Hv7ptS6LvvR/STk798LVgMzLlJ4HeIfF3tHSaexLcYpSASr1kS
+0N/RgBJz/9jWCiXno3sweTAOBgNVHQ8BAf8EBAMCAQYwEwYDVR0lBAwwCgYIKwYB
+BQUHAwMwEgYDVR0TAQH/BAgwBgEB/wIBADAdBgNVHQ4EFgQU39Ppz1YkEZb5qNjp
+KFWixi4YZD8wHwYDVR0jBBgwFoAUWMAeX5FFpWapesyQoZMi0CrFxfowCgYIKoZI
+zj0EAwMDZwAwZAIwPCsQK4DYiZYDPIaDi5HFKnfxXx6ASSVmERfsynYBiX2X6SJR
+nZU84/9DZdnFvvxmAjBOt6QpBlc4J/0DxvkTCqpclvziL6BCCPnjdlIB3Pu3BxsP
+mygUY7Ii2zbdCdliiow=
+-----END CERTIFICATE-----
+`;
+const FULCIO_ROOT_PEM = `-----BEGIN CERTIFICATE-----
+MIIB9zCCAXygAwIBAgIUALZNAPFdxHPwjeDloDwyYChAO/4wCgYIKoZIzj0EAwMw
+KjEVMBMGA1UEChMMc2lnc3RvcmUuZGV2MREwDwYDVQQDEwhzaWdzdG9yZTAeFw0y
+MTEwMDcxMzU2NTlaFw0zMTEwMDUxMzU2NThaMCoxFTATBgNVBAoTDHNpZ3N0b3Jl
+LmRldjERMA8GA1UEAxMIc2lnc3RvcmUwdjAQBgcqhkjOPQIBBgUrgQQAIgNiAAT7
+XeFT4rb3PQGwS4IajtLk3/OlnpgangaBclYpsYBr5i+4ynB07ceb3LP0OIOZdxex
+X69c5iVuyJRQ+Hz05yi+UF3uBWAlHpiS5sh0+H2GHE7SXrk1EC5m1Tr19L9gg92j
+YzBhMA4GA1UdDwEB/wQEAwIBBjAPBgNVHRMBAf8EBTADAQH/MB0GA1UdDgQWBBRY
+wB5fkUWlZql6zJChkyLQKsXF+jAfBgNVHSMEGDAWgBRYwB5fkUWlZql6zJChkyLQ
+KsXF+jAKBggqhkjOPQQDAwNpADBmAjEAj1nHeXZp+13NWBNa+EDsDP8G1WWg1tCM
+WP/WHPqpaVo0jhsweNFZgSs0eE7wYI4qAjEA2WB9ot98sIkoF3vZYdd3/VtWB5b9
+TNMea7Ix/stJ5TfcLLeABLE4BNJOsQ4vnBHJ
+-----END CERTIFICATE-----
+`;
+
+function attestationError(message) {
+  const err = new Error(message);
+  err.code = 'ATTESTATION';
+  return err;
+}
+
+function derToPem(der) {
+  const b64 = Buffer.from(der).toString('base64');
+  const lines = b64.match(/.{1,64}/g) || [];
+  return '-----BEGIN CERTIFICATE-----\n' + lines.join('\n') + '\n-----END CERTIFICATE-----\n';
+}
+
+function dssePae(payloadType, payload) {
+  const type = Buffer.from(payloadType);
+  const body = Buffer.from(payload);
+  return Buffer.concat([Buffer.from('DSSEv1 ' + type.length + ' '), type, Buffer.from(' ' + body.length + ' '), body]);
+}
+
+function sha256File(file) {
+  return new Promise((resolve, reject) => {
+    const hash = crypto.createHash('sha256');
+    const stream = fs.createReadStream(file);
+    stream.on('data', (chunk) => hash.update(chunk));
+    stream.on('error', reject);
+    stream.on('end', () => resolve(hash.digest('hex')));
+  });
+}
+
+function verifyBundle(bundle, digestHex) {
+  if (!bundle || !bundle.dsseEnvelope || !bundle.verificationMaterial) {
+    throw attestationError('attestation bundle is missing required fields');
+  }
+  const env = bundle.dsseEnvelope;
+  const payload = Buffer.from(env.payload, 'base64');
+  const payloadType = env.payloadType || '';
+  if (payloadType !== 'application/vnd.in-toto+json') {
+    throw attestationError('unexpected attestation payload type');
+  }
+  const sigEntry = (env.signatures && env.signatures[0]) || null;
+  if (!sigEntry || !sigEntry.sig) throw attestationError('attestation has no signature');
+  const sig = Buffer.from(sigEntry.sig, 'base64');
+
+  const certRaw = bundle.verificationMaterial.certificate && bundle.verificationMaterial.certificate.rawBytes;
+  if (!certRaw) throw attestationError('attestation is missing signing certificate');
+  const leaf = new crypto.X509Certificate(derToPem(Buffer.from(certRaw, 'base64')));
+  const intermediate = new crypto.X509Certificate(FULCIO_INTERMEDIATE_PEM);
+  const root = new crypto.X509Certificate(FULCIO_ROOT_PEM);
+  if (!leaf.verify(intermediate.publicKey)) {
+    throw attestationError('signing certificate is not trusted (Fulcio intermediate)');
+  }
+  if (!intermediate.verify(root.publicKey)) {
+    throw attestationError('Fulcio intermediate is not trusted');
+  }
+
+  const san = String(leaf.subjectAltName || '');
+  const sanOk = san
+    .split(/,\s*/)
+    .some((part) => part === 'URI:' + WORKFLOW_URI || part.startsWith('URI:' + WORKFLOW_URI + '@'));
+  if (!sanOk) {
+    throw attestationError('attestation was not signed by the Slick release workflow');
+  }
+
+  const msg = dssePae(payloadType, payload);
+  if (!crypto.verify('sha256', msg, { key: leaf.publicKey, dsaEncoding: 'der' }, sig)) {
+    throw attestationError('attestation signature is invalid');
+  }
+
+  let statement;
+  try {
+    statement = JSON.parse(payload.toString('utf8'));
+  } catch {
+    throw attestationError('attestation payload is not valid JSON');
+  }
+  if (statement.predicateType !== SLSA_PROVENANCE) {
+    throw attestationError('attestation is not SLSA build provenance');
+  }
+  const subjects = Array.isArray(statement.subject) ? statement.subject : [];
+  const digest = String(digestHex).toLowerCase();
+  const subjectOk = subjects.some((s) => s && s.digest && String(s.digest.sha256 || '').toLowerCase() === digest);
+  if (!subjectOk) {
+    throw attestationError('attestation subject does not match the downloaded file');
+  }
+  const builderId =
+    (statement.predicate &&
+      statement.predicate.runDetails &&
+      statement.predicate.runDetails.builder &&
+      statement.predicate.runDetails.builder.id) ||
+    '';
+  if (!String(builderId).startsWith(WORKFLOW_URI + '@')) {
+    throw attestationError('attestation builder identity is unexpected');
+  }
+}
 
 function fmtBytes(n) {
   if (typeof n !== 'number' || !isFinite(n) || n < 0) return '--';
@@ -103,22 +230,35 @@ function create({ version, build, profile }) {
     } catch {}
   }
 
-  function fetchLatestRelease() {
+  function fetchJson(url, opts) {
+    const maxBytes = (opts && opts.maxBytes) || 1024 * 1024;
+    const timeout = (opts && opts.timeout) || 15000;
+    const notFoundMessage = (opts && opts.notFoundMessage) || null;
     return new Promise((resolve, reject) => {
       const req = https.get(
-        'https://api.github.com/repos/3kh0/slick/releases/latest',
-        { headers: { Accept: 'application/vnd.github+json', 'User-Agent': ua + ' Build ' + build } },
+        url,
+        {
+          headers: {
+            Accept: 'application/vnd.github+json',
+            'User-Agent': ua + ' Build ' + build,
+          },
+        },
         (res) => {
+          if (res.statusCode === 404 && notFoundMessage) {
+            res.resume();
+            reject(attestationError(notFoundMessage));
+            return;
+          }
           if (res.statusCode !== 200) {
             res.resume();
-            reject(new Error('update check returned HTTP ' + res.statusCode));
+            reject(new Error('GitHub API returned HTTP ' + res.statusCode));
             return;
           }
           let body = '';
           res.setEncoding('utf8');
           res.on('data', (chunk) => {
             body += chunk;
-            if (body.length > 1024 * 1024) req.destroy(new Error('update response was too large'));
+            if (body.length > maxBytes) req.destroy(new Error('GitHub API response was too large'));
           });
           res.on('end', () => {
             try {
@@ -129,9 +269,36 @@ function create({ version, build, profile }) {
           });
         },
       );
-      req.setTimeout(15000, () => req.destroy(new Error('update check timed out')));
+      req.setTimeout(timeout, () => req.destroy(new Error('GitHub API request timed out')));
       req.on('error', reject);
     });
+  }
+
+  function fetchLatestRelease() {
+    return fetchJson('https://api.github.com/repos/' + REPO + '/releases/latest');
+  }
+
+  async function verifyReleaseArtifact(file) {
+    const digest = await sha256File(file);
+    const data = await fetchJson('https://api.github.com/repos/' + REPO + '/attestations/sha256:' + digest, {
+      maxBytes: 4 * 1024 * 1024,
+      timeout: 30000,
+      notFoundMessage: 'no build provenance attestation found for this download',
+    });
+    const attestations = (data && data.attestations) || [];
+    if (!attestations.length) {
+      throw attestationError('no build provenance attestation found for this download');
+    }
+    let lastErr = null;
+    for (const att of attestations) {
+      try {
+        verifyBundle(att.bundle, digest);
+        return digest;
+      } catch (e) {
+        lastErr = e;
+      }
+    }
+    throw lastErr || attestationError('build provenance verification failed');
   }
 
   function pickAsset(release) {
@@ -355,7 +522,7 @@ function create({ version, build, profile }) {
         const frac = total ? received / total : 0;
         const pct = Math.round(frac * 100);
         const rate = fmtBytes(speed) + '/s';
-        setp(frac * 0.9);
+        setp(frac * 0.85);
         setProgress(
           total
             ? {
@@ -382,6 +549,15 @@ function create({ version, build, profile }) {
               },
         );
       });
+      setp(0.9);
+      setProgress({
+        title: 'Verifying update',
+        status,
+        indeterminate: true,
+        pctText: '',
+        detail: 'Checking build provenance…',
+      });
+      await verifyReleaseArtifact(zip);
       setp(0.95);
       setProgress({ title: 'Installing update', status, indeterminate: true, pctText: '', detail: 'Extracting…' });
       await extract(zip, dir);
@@ -395,18 +571,22 @@ function create({ version, build, profile }) {
       try {
         fs.rmSync(dir, { recursive: true, force: true });
       } catch {}
+      const attestFail = err && err.code === 'ATTESTATION';
       return dialog
         .showMessageBox({
           type: 'error',
-          title: 'Slick update failed',
-          message: 'Could not download the update',
-          detail: String((err && err.message) || err) + '. You can download it manually instead.',
+          title: attestFail ? 'Slick update blocked' : 'Slick update failed',
+          message: attestFail ? 'Build provenance verification failed' : 'Could not download the update',
+          detail: attestFail
+            ? String((err && err.message) || err) +
+              '. The download may have been tampered with, so Slick refused to install it. You can download it manually from the release page if you want to inspect it.'
+            : String((err && err.message) || err) + '. You can download it manually instead.',
           buttons: ['Open Release Page', 'Later'],
           defaultId: 0,
           cancelId: 1,
         })
         .then(({ response }) => {
-          if (response === 0) shell.openExternal(release.html_url || 'https://github.com/3kh0/slick/releases');
+          if (response === 0) shell.openExternal(release.html_url || 'https://github.com/' + REPO + '/releases');
         })
         .catch(() => {});
     }
@@ -544,4 +724,4 @@ function create({ version, build, profile }) {
   return { readState, scheduleUpdateChecks, manualCheckForUpdates };
 }
 
-module.exports = { create };
+module.exports = { create, verifyBundle, sha256File };
