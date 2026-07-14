@@ -125,19 +125,24 @@ function slickInternalsMain() {
     return null;
   }
 
+  var isReact = function (exp) {
+    return exp && typeof exp.createElement === 'function' && typeof exp.useState === 'function'
+      ? exp
+      : exp &&
+          exp.default &&
+          typeof exp.default.createElement === 'function' &&
+          typeof exp.default.useState === 'function'
+        ? exp.default
+        : null;
+  };
+  var isJsxRuntime = function (e) {
+    return e && typeof e === 'object' && typeof e.jsx === 'function' && typeof e.jsxs === 'function' && 'Fragment' in e;
+  };
+
   var reactCache = null;
   function getReact() {
     if (reactCache) return reactCache;
-    var R = findExport(function (exp) {
-      return exp && typeof exp.createElement === 'function' && typeof exp.useState === 'function'
-        ? exp
-        : exp &&
-            exp.default &&
-            typeof exp.default.createElement === 'function' &&
-            typeof exp.default.useState === 'function'
-          ? exp.default
-          : null;
-    });
+    var R = findExport(isReact);
     if (R && R.default && typeof R.default.createElement === 'function') R = R.default;
     if (R) {
       reactCache = R;
@@ -149,17 +154,33 @@ function slickInternalsMain() {
   var jsxCache = null;
   function getJsxRuntime() {
     if (jsxCache) return jsxCache;
-    var isRt = function (e) {
-      return (
-        e && typeof e === 'object' && typeof e.jsx === 'function' && typeof e.jsxs === 'function' && 'Fragment' in e
-      );
-    };
-    var found = findExport(isRt);
+    var found = findExport(isJsxRuntime);
     if (found) {
       jsxCache = found;
       return found;
     }
     return null;
+  }
+
+  function probeExport(exp) {
+    var candidates = [exp];
+    if (exp && (typeof exp === 'object' || typeof exp === 'function')) {
+      for (var k in exp) {
+        try {
+          candidates.push(exp[k]);
+        } catch (e) {}
+      }
+    }
+    for (var i = 0; i < candidates.length; i++) {
+      var c = candidates[i];
+      try {
+        if (!reactCache) {
+          var R = isReact(c);
+          if (R) reactCache = R;
+        }
+        if (!jsxCache && isJsxRuntime(c)) jsxCache = c;
+      } catch (e) {}
+    }
   }
 
   function componentName(type) {
@@ -171,7 +192,6 @@ function slickInternalsMain() {
   var propPatchers = []; // { matcher, transform }
   var replacers = new Map(); // matcher -> replacer
   var resolveCache = new WeakMap();
-  var renderHookInstalled = false;
 
   var ORIGINAL = Symbol.for('slick.originalComponent');
   var markerCache = new WeakMap();
@@ -231,21 +251,23 @@ function slickInternalsMain() {
       poison(n.sibling);
     })(container[key]);
   }
-  function installRenderHook() {
-    if (renderHookInstalled) return true;
-    var hooked = false;
-    var React = getReact();
-    if (React && React.createElement) {
+  var ceHooked = false;
+  var jsxHooked = false;
+  function wrapTargets() {
+    var changed = false;
+    var React = reactCache;
+    if (!ceHooked && React && React.createElement) {
       var oce = React.createElement;
       React.createElement = function (type, props) {
         arguments[0] = resolveType(type);
         arguments[1] = applyProps(type, props);
         return oce.apply(this, arguments);
       };
-      hooked = true;
+      ceHooked = true;
+      changed = true;
     }
-    var rt = getJsxRuntime();
-    if (rt) {
+    var rt = jsxCache;
+    if (!jsxHooked && rt) {
       var wrap = function (orig) {
         return function (type, props) {
           arguments[0] = resolveType(type);
@@ -255,14 +277,31 @@ function slickInternalsMain() {
       };
       rt.jsx = wrap(rt.jsx);
       rt.jsxs = wrap(rt.jsxs);
-      hooked = true;
+      jsxHooked = true;
+      changed = true;
     }
-    renderHookInstalled = hooked;
-    return hooked;
+    if (changed && (propPatchers.length || replacers.size)) refresh();
+    return ceHooked && jsxHooked;
+  }
+  function installRenderHook() {
+    getReact();
+    getJsxRuntime();
+    return wrapTargets();
+  }
+
+  var sigTried = false;
+  function recoverBySignature() {
+    if (sigTried || (reactCache && jsxCache)) return;
+    sigTried = true;
+    try {
+      var ids = findFactoryIds('react.transitional.element');
+      if (!ids.length || ids.length > 8) return;
+      for (var i = 0; i < ids.length; i++) probeExport(requireById(ids[i]));
+    } catch (e) {}
   }
   var hookPending = false;
   function ensureRenderHook() {
-    if (renderHookInstalled || installRenderHook()) return;
+    if ((ceHooked && jsxHooked) || installRenderHook()) return;
     if (hookPending) return;
     hookPending = true;
     var off = function () {};
@@ -270,21 +309,32 @@ function slickInternalsMain() {
       if (installRenderHook()) {
         hookPending = false;
         off();
-        refresh();
+        return true;
+      }
+      return false;
+    };
+
+    var onChunkModule = function (exports) {
+      probeExport(exports);
+      if (!reactCache && !jsxCache) return false;
+      if (wrapTargets()) {
+        hookPending = false;
+        off();
         return true;
       }
       return false;
     };
     off = (function () {
-      chunkCbs.push(settle);
+      chunkCbs.push(onChunkModule);
       return function () {
-        var i = chunkCbs.indexOf(settle);
+        var i = chunkCbs.indexOf(onChunkModule);
         if (i >= 0) chunkCbs.splice(i, 1);
       };
     })();
     var tries = 0;
     var timer = setInterval(function () {
-      if (settle() || tries++ > 300) clearInterval(timer);
+      if (++tries === 20) recoverBySignature();
+      if (settle() || tries > 300) clearInterval(timer);
     }, 100);
   }
 

@@ -537,6 +537,7 @@ function watchWorkspaceReady(wc) {
 
 let bootReloads = 0;
 let stallTimer = null;
+const hungRenderers = new WeakSet();
 function armStallWatchdog(wc) {
   if (workspaceReady) return;
   const u = URL.parse(wc.getURL());
@@ -544,19 +545,24 @@ function armStallWatchdog(wc) {
   clearTimeout(stallTimer);
   stallTimer = setTimeout(() => {
     if (workspaceReady || wc.isDestroyed()) return;
+    if (hungRenderers.has(wc)) {
+      bootLog('boot-stall watchdog: renderer is hung, not reloading; re-arming');
+      armStallWatchdog(wc);
+      return;
+    }
     if (bootReloads >= 2) {
       bootLog(`boot-stall watchdog: still not ready after ${bootReloads} reload(s); letting Slack's own fallback ride`);
       return;
     }
     bootReloads++;
     bootLog(
-      `boot-stall watchdog: workspace not ready 3000ms after dom-ready -> reload ${bootReloads}/${2} (url ${wc.getURL()})`,
+      `boot-stall watchdog: workspace not ready 10000ms after dom-ready -> reload ${bootReloads}/${2} (url ${wc.getURL()})`,
     );
     dumpConsole(`boot stall, reload ${bootReloads}`);
     try {
       wc.reload();
     } catch (e) {}
-  }, 3000);
+  }, 10000);
 }
 
 const live = new Map();
@@ -674,6 +680,7 @@ app.on('browser-window-created', (_event, win) => {
   let unresponsiveAt = 0;
   wc.on('unresponsive', () => {
     unresponsiveAt = performance.now();
+    hungRenderers.add(wc);
     bootLog(
       `renderer UNRESPONSIVE (wc${wc.id}, +${Math.round(unresponsiveAt)}ms since electron start, url ${wc.getURL()})`,
     );
@@ -682,6 +689,7 @@ app.on('browser-window-created', (_event, win) => {
   });
   wc.on('responsive', () => {
     const ms = unresponsiveAt ? Math.round(performance.now() - unresponsiveAt) : 0;
+    hungRenderers.delete(wc);
     bootLog(`renderer responsive again (wc${wc.id}, was hung ~${ms}ms)`);
     unresponsiveAt = 0;
   });
