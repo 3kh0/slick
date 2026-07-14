@@ -4,12 +4,13 @@ on:
   push:
     tags: ['v*']
 
-permissions:
-  contents: write
-
 jobs:
   build-mac:
     runs-on: macos-26
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
     strategy:
       fail-fast: false
       matrix:
@@ -53,6 +54,12 @@ jobs:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
         run: node scripts/release/build-release-mac.js --build-number "${{ steps.version.outputs.build }}" --arch "${{ matrix.arch }}"
+      - name: Attest build provenance
+        uses: actions/attest@v4
+        with:
+          subject-path: |
+            dist/Slick-*.zip
+            dist/Slick-*.dmg
       - name: Upload artifacts
         uses: actions/upload-artifact@v7
         with:
@@ -65,6 +72,10 @@ jobs:
 
   build-win:
     runs-on: windows-latest
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
     strategy:
       fail-fast: false
       matrix:
@@ -85,6 +96,10 @@ jobs:
           echo "build=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
       - name: Build release artifact
         run: node scripts/release/build-release-win.js --build-number "${{ steps.version.outputs.build }}" --arch "${{ matrix.arch }}"
+      - name: Attest build provenance
+        uses: actions/attest@v4
+        with:
+          subject-path: dist/Slick-*-win32-*.zip
       - name: Upload artifacts
         uses: actions/upload-artifact@v7
         with:
@@ -95,6 +110,10 @@ jobs:
 
   build-linux:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
     strategy:
       fail-fast: false
       matrix:
@@ -115,6 +134,10 @@ jobs:
           echo "build=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
       - name: Build release artifact
         run: node scripts/release/build-release-linux.js --build-number "${{ steps.version.outputs.build }}" --arch "${{ matrix.arch }}"
+      - name: Attest build provenance
+        uses: actions/attest@v4
+        with:
+          subject-path: dist/Slick-*-linux-*.tar.gz
       - name: Upload artifacts
         uses: actions/upload-artifact@v7
         with:
@@ -126,6 +149,8 @@ jobs:
   release:
     needs: [build-mac, build-win, build-linux]
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - name: Read build number
         id: version

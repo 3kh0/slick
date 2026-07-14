@@ -102,6 +102,19 @@ git tag "v$BUILD"
 git push origin "v$BUILD"
 ```
 
+## Verifying builds
+
+All builds published from this repo include [GitHub artifact attestations](https://docs.github.com/en/actions/concepts/security/artifact-attestations) (SLSA build provenance). These prove a given zip, dmg, or tarball was built by this repository's release workflow, not swapped in after the fact.
+
+With the [GitHub CLI](https://cli.github.com/) installed, run:
+
+```bash
+gh attestation verify path/to/Slick-build-N-….zip -R 3kh0/slick
+# same idea for .dmg or .tar.gz
+```
+
+A successful check confirms the file digest matches a signed attestation from this repo.
+
 ## Themes
 
 Themes are defined in the `themes/` folder as JSON files exporting the following:
