@@ -337,7 +337,10 @@ Step "Creating shortcuts"
 New-Shortcuts $exe $iconFile
 
 Step "Launching Slick"
+$prevNoAttach = $env:ELECTRON_NO_ATTACH_CONSOLE
+$env:ELECTRON_NO_ATTACH_CONSOLE = '1'
 Start-Process $exe
+$env:ELECTRON_NO_ATTACH_CONSOLE = $prevNoAttach
 
 Write-Host ""
 Write-Host "Yippee! " -ForegroundColor Green -NoNewline

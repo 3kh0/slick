@@ -401,6 +401,7 @@ function create({ version, build, profile }) {
       'while (Get-Process -Id $ProcId -ErrorAction SilentlyContinue) { Start-Sleep -Milliseconds 200 }',
       'Start-Sleep -Milliseconds 500',
       'robocopy $Stage $App /MIR /NFL /NDL /NJH /NJS /NP | Out-Null',
+      '$env:ELECTRON_NO_ATTACH_CONSOLE = "1"',
       'Start-Process -FilePath (Join-Path $App "Slick.exe")',
       'Remove-Item -Recurse -Force (Split-Path $Stage -Parent)',
     ];
