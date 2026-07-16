@@ -122,25 +122,45 @@
     itemRow(reference, menu).after(...rows);
   }
 
-  function x() {
-    for (const root of document.querySelectorAll(SELECTOR)) {
-      const id = visible(root) && userIdOf(root);
+  function within(root, selector) {
+    const found = [];
+    if (root.nodeType === Node.ELEMENT_NODE && root.matches(selector)) found.push(root);
+    if (root.querySelectorAll) found.push(...root.querySelectorAll(selector));
+    return found;
+  }
+
+  function x(root = document) {
+    for (const profile of within(root, SELECTOR)) {
+      const id = visible(profile) && userIdOf(profile);
       if (id) profileId = id;
     }
-    for (const item of document.querySelectorAll('button,[role="menuitem"]')) {
-      if (!visible(item) || item.textContent.replace(/\s+/g, ' ').trim() !== 'Copy link to profile') continue;
+    for (const item of within(root, 'button,[role="menuitem"]')) {
+      if (item.textContent.replace(/\s+/g, ' ').trim() !== 'Copy link to profile' || !visible(item)) continue;
       const menu = item.closest('[role="menu"],.c-menu');
       if (menu) injectMenu(menu, item);
     }
   }
 
   let timer = null;
-  const observer = new MutationObserver(() => {
+  const pendingRoots = new Set();
+  function queue(root) {
+    if (root.nodeType !== Node.ELEMENT_NODE) return;
+    for (const pending of pendingRoots) {
+      if (pending.contains(root)) return;
+      if (root.contains(pending)) pendingRoots.delete(pending);
+    }
+    pendingRoots.add(root);
+  }
+  const observer = new MutationObserver((mutations) => {
+    mutations.forEach((mutation) => mutation.addedNodes.forEach(queue));
+    if (!pendingRoots.size) return;
     if (timer) return;
     timer = setTimeout(() => {
       timer = null;
-      x();
-    }, 50);
+      const roots = [...pendingRoots];
+      pendingRoots.clear();
+      roots.forEach(x);
+    }, 100);
   });
 
   function boot() {

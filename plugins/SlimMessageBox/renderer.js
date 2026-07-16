@@ -46,20 +46,32 @@
       scope.classList.remove('slick-smb-stacked');
     }
   }
-  function applyDomHides() {
+  function applyDomHides(root) {
     var s = settings();
     for (var key in HIDE_DOM) {
       if (!s[key]) continue;
-      document.querySelectorAll(SCOPE + ' ' + HIDE_DOM[key]).forEach(function (el) {
+      var insideScope = root.nodeType === Node.ELEMENT_NODE && root.closest(SCOPE);
+      var selector = insideScope ? HIDE_DOM[key] : SCOPE + ' ' + HIDE_DOM[key];
+      var elements = [];
+      if (root.nodeType === Node.ELEMENT_NODE && root.matches(selector)) elements.push(root);
+      if (root.querySelectorAll) elements.push.apply(elements, root.querySelectorAll(selector));
+      elements.forEach(function (el) {
         el.style.setProperty('display', 'none', 'important');
       });
     }
   }
+  function scan(root) {
+    var selector = SCOPE + ' .ql-editor, ' + SCOPE + ' [contenteditable="true"][role="textbox"]';
+    var editors = [];
+    if (root.nodeType === Node.ELEMENT_NODE && root.matches(selector)) editors.push(root);
+    if (root.querySelectorAll) editors.push.apply(editors, root.querySelectorAll(selector));
+    editors.forEach(evaluate);
+    var scope = root.nodeType === Node.ELEMENT_NODE && root.closest(SCOPE);
+    if (scope) scope.querySelectorAll('.ql-editor,[contenteditable="true"][role="textbox"]').forEach(evaluate);
+    applyDomHides(root);
+  }
   function scanAll() {
-    document
-      .querySelectorAll(SCOPE + ' .ql-editor, ' + SCOPE + ' [contenteditable="true"][role="textbox"]')
-      .forEach(evaluate);
-    applyDomHides();
+    scan(document);
   }
   document.addEventListener(
     'input',
@@ -78,12 +90,28 @@
   window.addEventListener('resize', scanAll);
   window.addEventListener('slick:plugin-settings', scanAll);
   var pending = false;
-  new MutationObserver(function () {
+  var pendingRoots = new Set();
+  function queue(root) {
+    if (!root || root.nodeType !== Node.ELEMENT_NODE) return;
+    for (var existing of pendingRoots) {
+      if (existing.contains(root)) return;
+      if (root.contains(existing)) pendingRoots.delete(existing);
+    }
+    pendingRoots.add(root);
+  }
+  new MutationObserver(function (mutations) {
+    mutations.forEach(function (mutation) {
+      queue(mutation.target.closest && mutation.target.closest(SCOPE));
+      mutation.addedNodes.forEach(queue);
+    });
+    if (!pendingRoots.size) return;
     if (pending) return;
     pending = true;
     setTimeout(function () {
       pending = false;
-      scanAll();
+      var roots = Array.from(pendingRoots);
+      pendingRoots.clear();
+      roots.forEach(scan);
     }, 150);
   }).observe(document.documentElement, { childList: true, subtree: true });
   scanAll();

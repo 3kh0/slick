@@ -242,7 +242,11 @@
     if (el.textContent !== p) el.textContent = p;
   }
   let lastTsColor = '';
-  function syncColor() {
+  let lastColorSync = 0;
+  function syncColor(force = false) {
+    const now = Date.now();
+    if (!force && now - lastColorSync < 5000) return;
+    lastColorSync = now;
     const label = document.querySelector('.c-timestamp__label');
     if (!label) return;
     const color = getComputedStyle(label).color;
@@ -267,7 +271,7 @@
   }
 
   function paintAll() {
-    syncColor();
+    syncColor(true);
     paintWithin(document);
   }
 
@@ -278,10 +282,17 @@
 
   let t = null;
   const pendingRoots = new Set();
+  function queue(root) {
+    for (const pending of pendingRoots) {
+      if (pending.contains(root)) return;
+      if (root.contains(pending)) pendingRoots.delete(pending);
+    }
+    pendingRoots.add(root);
+  }
   const obs = new MutationObserver((mutations) => {
     mutations.forEach((mutation) => {
       mutation.addedNodes.forEach((node) => {
-        if (node.nodeType === Node.ELEMENT_NODE) pendingRoots.add(node);
+        if (node.nodeType === Node.ELEMENT_NODE) queue(node);
       });
     });
     if (!pendingRoots.size) return;

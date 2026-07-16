@@ -135,6 +135,11 @@
     document.querySelectorAll(SEL).forEach(apply);
   }
 
+  function applyWithin(root) {
+    if (root.nodeType === Node.ELEMENT_NODE && root.matches(SEL)) apply(root);
+    if (root.querySelectorAll) root.querySelectorAll(SEL).forEach(apply);
+  }
+
   let overlay = null;
   function closeEditor() {
     if (overlay) {
@@ -185,11 +190,27 @@
   });
 
   let t = null;
-  const obs = new MutationObserver(() => {
+  const pendingRoots = new Set();
+  function queue(root) {
+    if (!root || root.nodeType !== Node.ELEMENT_NODE) return;
+    for (const pending of pendingRoots) {
+      if (pending.contains(root)) return;
+      if (root.contains(pending)) pendingRoots.delete(pending);
+    }
+    pendingRoots.add(root);
+  }
+  const obs = new MutationObserver((mutations) => {
+    mutations.forEach((mutation) => {
+      if (mutation.type === 'characterData') queue(mutation.target.parentElement?.closest(SEL));
+      mutation.addedNodes.forEach(queue);
+    });
+    if (!pendingRoots.size) return;
     if (t) return;
     t = setTimeout(() => {
       t = null;
-      applyAll();
+      const roots = [...pendingRoots];
+      pendingRoots.clear();
+      roots.forEach(applyWithin);
     }, 150);
   });
   function boot() {

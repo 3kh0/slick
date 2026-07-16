@@ -175,8 +175,8 @@
     if (el && el.nodeType === Node.ELEMENT_NODE) el.classList.add(className || 'slick-streamer-redact');
   }
 
-  function clearMarks() {
-    document
+  function clearMarks(root) {
+    root
       .querySelectorAll(
         '.slick-streamer-redact,.slick-streamer-hide,.slick-streamer-avatar,.slick-streamer-private-label,.slick-streamer-private-row',
       )
@@ -191,6 +191,13 @@
       });
   }
 
+  function within(root, selector) {
+    var found = [];
+    if (root.nodeType === Node.ELEMENT_NODE && root.matches(selector)) found.push(root);
+    if (root.querySelectorAll) found.push.apply(found, root.querySelectorAll(selector));
+    return found;
+  }
+
   function bestTextParent(node) {
     var el = node && node.parentElement;
     var hops = 0;
@@ -202,9 +209,9 @@
     return node && node.parentElement;
   }
 
-  function markPrivateChannels() {
+  function markPrivateChannels(root) {
     if (settings().privateChannelNames === false) return;
-    document.querySelectorAll(PRIV_CONTAIN).forEach(function (container) {
+    within(root, PRIV_CONTAIN).forEach(function (container) {
       var names = container.querySelectorAll(PRIV_NAME);
       if (names.length)
         names.forEach(function (name) {
@@ -212,7 +219,7 @@
         });
       else mark(container);
     });
-    document.querySelectorAll(LOCK_ICON).forEach(function (icon) {
+    within(root, LOCK_ICON).forEach(function (icon) {
       if (!icon.closest(CHANNEL)) return;
       var row = icon.closest(LOCK_ROW);
       if (!row || row.closest('#slick-panel-overlay,#slick-config-backdrop')) return;
@@ -233,9 +240,9 @@
     });
   }
 
-  function markDmPreviews() {
+  function markDmPreviews(root) {
     var mode = settings().dmPreviewBlur || 'all';
-    document.querySelectorAll(DM_CONTAIN).forEach(function (container) {
+    within(root, DM_CONTAIN).forEach(function (container) {
       if (mode === 'all') {
         container
           .querySelectorAll('.c-avatar,img,[class*="avatar" i],[data-qa*="avatar" i],[style*="background-image" i]')
@@ -254,12 +261,12 @@
     });
   }
 
-  function markVipStatus() {
+  function markVipStatus(root) {
     if (settings().vipStatus === false) return;
-    document.querySelectorAll(VIP).forEach(function (el) {
+    within(root, VIP).forEach(function (el) {
       mark(el, 'slick-streamer-hide');
     });
-    document.querySelectorAll(VIP_SCOPE).forEach(function (scope) {
+    within(root, VIP_SCOPE).forEach(function (scope) {
       var walker = document.createTreeWalker(scope, NodeFilter.SHOW_TEXT, {
         acceptNode: function (node) {
           if (!VIP_RE.test(node.nodeValue || '')) return NodeFilter.FILTER_REJECT;
@@ -273,17 +280,30 @@
     });
   }
 
-  function scan() {
+  function scan(root) {
+    var scopes = new Set([root]);
+    if (root.nodeType === Node.ELEMENT_NODE) {
+      [PRIV_CONTAIN, LOCK_ROW, DM_CONTAIN, VIP_SCOPE].forEach(function (selector) {
+        var parent = root.closest(selector);
+        if (parent) scopes.add(parent);
+      });
+    }
+    scopes.forEach(function (scope) {
+      markPrivateChannels(scope);
+      markDmPreviews(scope);
+      markVipStatus(scope);
+    });
+  }
+
+  function scanAll() {
     scanTimer = null;
-    clearMarks();
-    markPrivateChannels();
-    markDmPreviews();
-    markVipStatus();
+    clearMarks(document);
+    scan(document);
   }
 
   function ss() {
     if (scanTimer) return;
-    scanTimer = setTimeout(scan, 0);
+    scanTimer = setTimeout(scanAll, 50);
   }
 
   function trackStream(stream) {
@@ -365,11 +385,32 @@
     pn();
     if (document.body) resetRootClasses(document.body);
     refr();
-    scan();
-    new MutationObserver(scan).observe(document.documentElement, { childList: true, subtree: true });
+    scan(document);
+    var pendingRoots = new Set();
+    var rootsTimer = null;
+    function queue(root) {
+      if (root.nodeType !== Node.ELEMENT_NODE) return;
+      for (var pending of pendingRoots) {
+        if (pending.contains(root)) return;
+        if (root.contains(pending)) pendingRoots.delete(pending);
+      }
+      pendingRoots.add(root);
+    }
+    new MutationObserver(function (mutations) {
+      mutations.forEach(function (mutation) {
+        mutation.addedNodes.forEach(queue);
+      });
+      if (!pendingRoots.size || rootsTimer) return;
+      rootsTimer = setTimeout(function () {
+        rootsTimer = null;
+        var roots = Array.from(pendingRoots);
+        pendingRoots.clear();
+        roots.forEach(scan);
+      }, 100);
+    }).observe(document.documentElement, { childList: true, subtree: true });
     window.addEventListener('slick:plugin-settings', function () {
       refr();
-      scan();
+      ss();
     });
   }
 

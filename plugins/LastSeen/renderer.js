@@ -322,9 +322,12 @@
     );
     return { ts: ts[0], user: sender ? uid(sender) : uid(el) };
   }
-  function scanMessages() {
+  function scanMessages(root = document) {
     if (!S().showLastMessage) return;
-    document.querySelectorAll(ROW_SEL).forEach((row) => {
+    const rows = [];
+    if (root.nodeType === Node.ELEMENT_NODE && root.matches(ROW_SEL)) rows.push(root);
+    if (root.querySelectorAll) rows.push(...root.querySelectorAll(ROW_SEL));
+    rows.forEach((row) => {
       const m = rowMsg(row);
       if (m) markMsg(m.user, m.ts);
     });
@@ -345,7 +348,7 @@
     return null;
   }
 
-  function roots() {
+  function roots(scope = document) {
     const r = new Set();
     for (const sel of [
       '[data-qa="member_profile_pane"]',
@@ -365,7 +368,9 @@
     ]) {
       let f;
       try {
-        f = document.querySelectorAll(sel);
+        f = [];
+        if (scope.nodeType === Node.ELEMENT_NODE && scope.matches(sel)) f.push(scope);
+        if (scope.querySelectorAll) f.push(...scope.querySelectorAll(sel));
       } catch {
         continue;
       }
@@ -531,9 +536,9 @@
       (orig.trim() || 'Away');
   }
 
-  function paint() {
+  function paint(scope = document) {
     const s = S();
-    roots().forEach((root) => {
+    roots(scope).forEach((root) => {
       const id = uid(root);
       if (!id || id === 'USLACKBOT') return;
       if (s.trackWatchlist) watch(id);
@@ -560,11 +565,18 @@
     } catch {}
   }
   let pT = 0;
-  const sched = () => {
+  let fullScan = false;
+  const sched = (full = false) => {
+    fullScan ||= full;
     if (pT) return;
     pT = setTimeout(() => {
       pT = 0;
-      pall();
+      if (fullScan) pall();
+      else {
+        style();
+        paint();
+      }
+      fullScan = false;
     }, 200);
   };
 
@@ -574,14 +586,34 @@
     if (!document.body) return setTimeout(boot, 200);
     patchWS();
     pall();
+    const pendingRoots = new Set();
+    let mutationTimer = 0;
+    function queue(root) {
+      if (!root || root.nodeType !== Node.ELEMENT_NODE || root.closest('[data-slick-ls]')) return;
+      for (const pending of pendingRoots) {
+        if (pending.contains(root)) return;
+        if (root.contains(pending)) pendingRoots.delete(pending);
+      }
+      pendingRoots.add(root);
+    }
     new MutationObserver((mutations) => {
-      const external = mutations.some((mutation) => {
-        const target = mutation.target;
-        return target.nodeType !== Node.ELEMENT_NODE || !target.closest('[data-slick-ls]');
+      mutations.forEach((mutation) => {
+        mutation.addedNodes.forEach((node) => {
+          if (node.nodeType === Node.ELEMENT_NODE) queue(node.closest(SURF) || node);
+        });
       });
-      if (external) sched();
+      if (!pendingRoots.size || mutationTimer) return;
+      mutationTimer = setTimeout(() => {
+        mutationTimer = 0;
+        const scopes = [...pendingRoots];
+        pendingRoots.clear();
+        scopes.forEach((scope) => {
+          scanMessages(scope);
+          paint(scope);
+        });
+      }, 150);
     }).observe(document.body, { subtree: true, childList: true });
-    addEventListener('slick:plugin-settings', sched);
+    addEventListener('slick:plugin-settings', () => sched(true));
     addEventListener('storage', (e) => {
       if (e.key === 'slick:lastseen:cache') {
         C = load();
