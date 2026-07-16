@@ -3,6 +3,7 @@
   if (window.__slickPronouns) return;
 
   const ID_RE = /^[UW][A-Z0-9]{6,}$/;
+  const ROW_SEL = '.c-message_kit__message, .c-message, [data-qa="message_container"], [role="listitem"]';
 
   let cache = loadCache();
   let dirty = false;
@@ -215,7 +216,7 @@
   }
 
   function paint(ts) {
-    const row = ts.closest('.c-message_kit__message, .c-message, [data-qa="message_container"], [role="listitem"]');
+    const row = ts.closest(ROW_SEL);
     const sender =
       row &&
       row.querySelector(
@@ -251,10 +252,23 @@
     }
   }
 
+  function paintWithin(root) {
+    const timestamps = [];
+    if (root.nodeType === Node.ELEMENT_NODE && root.matches('.c-timestamp')) timestamps.push(root);
+    if (root.querySelectorAll) timestamps.push(...root.querySelectorAll('.c-timestamp'));
+    const rows = new Set();
+    timestamps.forEach((timestamp) => {
+      const row = timestamp.closest(ROW_SEL);
+      if (!row || rows.has(row)) return;
+      rows.add(row);
+      paint(timestamp);
+    });
+    if (dirty) saveCache();
+  }
+
   function paintAll() {
     syncColor();
-    document.querySelectorAll('.c-timestamp').forEach(paint);
-    if (dirty) saveCache();
+    paintWithin(document);
   }
 
   window.__slickPronouns = {
@@ -263,11 +277,21 @@
   };
 
   let t = null;
-  const obs = new MutationObserver(() => {
+  const pendingRoots = new Set();
+  const obs = new MutationObserver((mutations) => {
+    mutations.forEach((mutation) => {
+      mutation.addedNodes.forEach((node) => {
+        if (node.nodeType === Node.ELEMENT_NODE) pendingRoots.add(node);
+      });
+    });
+    if (!pendingRoots.size) return;
     if (t) return;
     t = setTimeout(() => {
       t = null;
-      paintAll();
+      const roots = [...pendingRoots];
+      pendingRoots.clear();
+      syncColor();
+      roots.forEach(paintWithin);
     }, 200);
   });
   function boot() {

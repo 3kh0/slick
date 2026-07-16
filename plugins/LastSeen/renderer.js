@@ -418,8 +418,11 @@
   function updBlk(b, id) {
     const data = lines(id);
     if (!data) return b.remove();
+    const signature = JSON.stringify(data);
+    if (b.dataset.slickLs === id && b.dataset.slickLsSignature === signature) return;
     b.textContent = '';
     b.dataset.slickLs = id;
+    b.dataset.slickLsSignature = signature;
     for (const ln of data) {
       const line = document.createElement('span');
       line.className = 'slick-ls-line';
@@ -571,7 +574,13 @@
     if (!document.body) return setTimeout(boot, 200);
     patchWS();
     pall();
-    new MutationObserver(sched).observe(document.body, { subtree: true, childList: true });
+    new MutationObserver((mutations) => {
+      const external = mutations.some((mutation) => {
+        const target = mutation.target;
+        return target.nodeType !== Node.ELEMENT_NODE || !target.closest('[data-slick-ls]');
+      });
+      if (external) sched();
+    }).observe(document.body, { subtree: true, childList: true });
     addEventListener('slick:plugin-settings', sched);
     addEventListener('storage', (e) => {
       if (e.key === 'slick:lastseen:cache') {
