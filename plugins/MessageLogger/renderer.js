@@ -70,6 +70,7 @@
       '[data-slick-ml-hide]{cursor:pointer}',
       '[data-slick-ml-hide]:hover,[data-slick-ml-hide]:focus-within{background:var(--p-focus-ring-color,#1264a3)!important;color:#fff!important}',
       '[data-slick-ml-hide]:hover *,[data-slick-ml-hide]:focus-within *{color:#fff!important}',
+      '.slick-ml-row-vanished{display:none!important}',
     ].join('\n');
     document.head.appendChild(style);
   }
@@ -370,8 +371,10 @@
     if (isHidden(message.channel, message.ts)) {
       removeEditOverlay(row);
       removeDeleteOverlay(row);
+      row.classList.toggle('slick-ml-row-vanished', !!logFor(message, 'deleted'));
       return;
     }
+    row.classList.remove('slick-ml-row-vanished');
     const edited = logFor(message, 'edited');
     if (edited) aedit(row, edited);
     const deleted = logFor(message, 'deleted');
@@ -806,6 +809,7 @@
       if (snapshot && snapshot.row) {
         removeEditOverlay(snapshot.row);
         removeDeleteOverlay(snapshot.row);
+        snapshot.row.classList.toggle('slick-ml-row-vanished', !!deleted);
       }
       document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
     });
