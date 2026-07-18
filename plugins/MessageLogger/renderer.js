@@ -29,6 +29,29 @@
   const keyOf = (channel, ts) => (channel || '*') + ':' + ts;
   const logKey = (type, channel, ts) => type + ':' + keyOf(channel, ts);
 
+  const HIDDEN_STORAGE_KEY = 'slick:ml:hidden';
+  function loadHidden() {
+    try {
+      return new Set(JSON.parse(localStorage.getItem(HIDDEN_STORAGE_KEY)) || []);
+    } catch (e) {
+      return new Set();
+    }
+  }
+  const hidden = loadHidden();
+  function saveHidden() {
+    try {
+      localStorage.setItem(HIDDEN_STORAGE_KEY, JSON.stringify(Array.from(hidden)));
+    } catch (e) {}
+  }
+  function isHidden(channel, ts) {
+    return hidden.has(keyOf(channel, ts));
+  }
+  function hideLog(channel, ts) {
+    hidden.add(keyOf(channel, ts));
+    while (hidden.size > 1000) hidden.delete(hidden.values().next().value);
+    saveHidden();
+  }
+
   function set() {
     return (window.__slickPluginSettings && window.__slickPluginSettings['MessageLogger']) || {};
   }
@@ -310,6 +333,22 @@
     return true;
   }
 
+  function removeEditOverlay(row) {
+    const el = row.querySelector('.slick-ml-edited-original');
+    if (el) el.remove();
+  }
+
+  function removeDeleteOverlay(row) {
+    row.classList.remove('slick-ml-row-deleted');
+    delete row.dataset.slickMlDeletedKey;
+    const host = row.querySelector('[data-slick-ml-delete-host]');
+    if (host) {
+      delete host.dataset.slickMlDeleteHost;
+      delete host.dataset.slickMlDeletedKey;
+      delete host.dataset.slickMlDeletedStyle;
+    }
+  }
+
   function ispn(node) {
     if (!node || node.nodeType !== Node.ELEMENT_NODE) return false;
     return !!(
@@ -325,6 +364,11 @@
     const message = msgrow(row);
     if (!message || !message.ts) return;
     remember(row, message);
+    if (isHidden(message.channel, message.ts)) {
+      removeEditOverlay(row);
+      removeDeleteOverlay(row);
+      return;
+    }
     const edited = logFor(message, 'edited');
     if (edited) aedit(row, edited);
     const deleted = logFor(message, 'deleted');
