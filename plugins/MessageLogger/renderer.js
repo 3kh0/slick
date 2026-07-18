@@ -44,7 +44,10 @@
     } catch (e) {}
   }
   function isHidden(channel, ts) {
-    return hidden.has(keyOf(channel, ts));
+    if (hidden.has(keyOf(channel, ts)) || hidden.has(keyOf('', ts))) return true;
+    if (channel) return false;
+    const suffix = ':' + ts;
+    return Array.from(hidden).some((key) => key.endsWith(suffix));
   }
   function hideLog(channel, ts) {
     hidden.add(keyOf(channel, ts));
