@@ -771,7 +771,6 @@
   }
 
   function hideItemLabel(edited, deleted) {
-    if (edited && deleted) return 'Hide edit & deletion log';
     if (deleted) return 'Hide deletion notice';
     return 'Hide edit history';
   }
