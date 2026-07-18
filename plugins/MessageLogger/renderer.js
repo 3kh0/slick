@@ -67,6 +67,9 @@
       '.slick-ml-edited-marker{margin-left:4px;font-size:.85em;opacity:.72}',
       '.slick-ml-row-deleted [data-slick-ml-delete-host][data-slick-ml-deleted-style="red"],.slick-ml-row-deleted [data-slick-ml-delete-host][data-slick-ml-deleted-style="red"] *{color:#e01e5a!important}',
       '.slick-ml-row-deleted [data-slick-ml-delete-host][data-slick-ml-deleted-style="opacity"]{opacity:.5!important}',
+      '[data-slick-ml-hide]{cursor:pointer}',
+      '[data-slick-ml-hide]:hover,[data-slick-ml-hide]:focus-within{background:var(--p-focus-ring-color,#1264a3)!important;color:#fff!important}',
+      '[data-slick-ml-hide]:hover *,[data-slick-ml-hide]:focus-within *{color:#fff!important}',
     ].join('\n');
     document.head.appendChild(style);
   }
@@ -744,6 +747,92 @@
     }
   }
 
+  function menuItemRow(item, menu) {
+    const wrapper = item.closest('li,.c-menu_item__li');
+    return wrapper && menu.contains(wrapper) ? wrapper : item;
+  }
+
+  function stripHighlight(root) {
+    if (!root) return;
+    for (const el of [root, ...root.querySelectorAll('*')]) {
+      if (el.classList) {
+        const toRemove = [];
+        for (const cls of el.classList) {
+          if (/highlight|selected/i.test(cls)) toRemove.push(cls);
+        }
+        for (const cls of toRemove) el.classList.remove(cls);
+      }
+      if (el.getAttribute && el.getAttribute('aria-selected') === 'true') el.setAttribute('aria-selected', 'false');
+      if (el.removeAttribute) el.removeAttribute('aria-current');
+    }
+  }
+
+  function hideItemLabel(edited, deleted) {
+    if (edited && deleted) return 'Hide edit & deletion log';
+    if (deleted) return 'Hide deletion notice';
+    return 'Hide edit history';
+  }
+
+  function injectHideItem(menu, reference, message, edited, deleted) {
+    const key = keyOf(message.channel, message.ts);
+    const existing = menu.querySelector('[data-slick-ml-hide]');
+    if (existing) {
+      if (existing.dataset.slickMlHideKey === key) return;
+      menuItemRow(existing, menu).remove();
+    }
+
+    const wrapper = menuItemRow(reference, menu);
+    const clone = wrapper.cloneNode(true);
+    const item = clone.matches('button,[role="menuitem"]') ? clone : clone.querySelector('button,[role="menuitem"]');
+    if (!item) return;
+
+    clone.dataset.slickMlHide = 'true';
+    clone.dataset.slickMlHideKey = key;
+    clone.querySelectorAll('[id]').forEach((el) => el.removeAttribute('id'));
+    ['data-qa', 'aria-controls', 'aria-describedby', 'aria-expanded', 'aria-haspopup'].forEach((attr) =>
+      item.removeAttribute(attr),
+    );
+    stripHighlight(clone);
+
+    const label = clone.querySelector('.c-menu_item__label');
+    if (label) label.textContent = hideItemLabel(edited, deleted);
+    else item.textContent = hideItemLabel(edited, deleted);
+
+    item.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      hideLog(message.channel, message.ts);
+      const snapshot = kmsg(message.channel, message.ts);
+      if (snapshot && snapshot.row) {
+        removeEditOverlay(snapshot.row);
+        removeDeleteOverlay(snapshot.row);
+      }
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    });
+
+    wrapper.after(clone);
+  }
+
+  function xmenu(root) {
+    const scope = root || document;
+    if (scope.nodeType !== Node.ELEMENT_NODE && scope.nodeType !== Node.DOCUMENT_NODE) return;
+    const menus = [];
+    if (scope.matches && scope.matches('[role="menu"],.c-menu')) menus.push(scope);
+    if (scope.querySelectorAll) menus.push(...scope.querySelectorAll('[role="menu"],.c-menu'));
+    menus.forEach((menu) => {
+      const message = msgFiber(menu);
+      if (!message || !message.ts) return;
+      if (!message.channel) message.channel = cur();
+      if (isHidden(message.channel, message.ts)) return;
+      const edited = logFor(message, 'edited');
+      const deleted = logFor(message, 'deleted');
+      if (!edited && !deleted) return;
+      const items = menu.querySelectorAll('button,[role="menuitem"]');
+      const reference = items[items.length - 1];
+      if (reference) injectHideItem(menu, reference, message, edited, deleted);
+    });
+  }
+
   window.__slickMessageLogger = {
     logs: logs,
     apply: function () {
@@ -755,11 +844,14 @@
   papi();
   istyle();
   scan(document.body || document);
+  xmenu(document.body || document);
   new MutationObserver((mutations) => {
     mutations.forEach((mutation) => {
       if (ispn(mutation.target)) return;
       mutation.addedNodes.forEach((node) => {
-        if (!ispn(node)) scan(node);
+        if (ispn(node)) return;
+        scan(node);
+        xmenu(node);
       });
     });
   }).observe(document.documentElement, { childList: true, subtree: true });
