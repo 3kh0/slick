@@ -7,16 +7,23 @@
     return Math.max(1, Math.min(50, Number(s.maxAvatars) || 8));
   }
 
+  const OK_TTL = 24 * 60 * 60 * 1000;
+  const MISS_TTL = 10 * 60 * 1000;
+
   const avatars = lc();
   const queued = new Set();
   const inflight = new Set();
 
   function lc() {
     try {
-      const ts = localStorage.getItem('slick:wr:ts');
-      if (ts && Date.now() - parseInt(ts, 10) < 24 * 60 * 60 * 1000) {
-        return JSON.parse(localStorage.getItem('slick:wr:avatars')) || {};
+      localStorage.removeItem('slick:wr:ts');
+      const raw = JSON.parse(localStorage.getItem('slick:wr:avatars')) || {};
+      const now = Date.now();
+      const out = {};
+      for (const [id, e] of Object.entries(raw)) {
+        if (e && typeof e === 'object' && typeof e.t === 'number' && e.u && now - e.t < OK_TTL) out[id] = e;
       }
+      return out;
     } catch {}
     return {};
   }
@@ -26,10 +33,11 @@
     saveTimer = setTimeout(() => {
       saveTimer = null;
       try {
-        const keys = Object.keys(avatars);
-        if (keys.length > 5000) for (const k of keys.slice(0, keys.length - 5000)) delete avatars[k];
-        localStorage.setItem('slick:wr:avatars', JSON.stringify(avatars));
-        localStorage.setItem('slick:wr:ts', String(Date.now()));
+        const persistable = {};
+        for (const [id, e] of Object.entries(avatars)) if (e && e.u) persistable[id] = e;
+        const keys = Object.keys(persistable);
+        if (keys.length > 5000) for (const k of keys.slice(0, keys.length - 5000)) delete persistable[k];
+        localStorage.setItem('slick:wr:avatars', JSON.stringify(persistable));
       } catch {}
     }, 1000);
   }
@@ -174,13 +182,17 @@
   }
 
   function resolve(id) {
-    if (id in avatars) return avatars[id];
     const fromStore = sa(id);
     if (fromStore) {
-      avatars[id] = fromStore;
-      sc();
+      const e = avatars[id];
+      if (!e || e.u !== fromStore) {
+        avatars[id] = { u: fromStore, t: Date.now() };
+        sc();
+      }
       return fromStore;
     }
+    const e = avatars[id];
+    if (e && Date.now() - e.t < (e.u ? OK_TTL : MISS_TTL)) return e.u;
     if (!inflight.has(id)) queued.add(id);
     return undefined;
   }
@@ -196,7 +208,7 @@
     });
     Promise.all(
       ids.map(async (id) => {
-        avatars[id] = (await fa(id)) || null;
+        avatars[id] = { u: (await fa(id)) || null, t: Date.now() };
         inflight.delete(id);
       }),
     ).then(() => {
