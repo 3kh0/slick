@@ -235,12 +235,22 @@
     if (rb.nextElementSibling !== uploadButton) rb.after(uploadButton);
   }
 
+  function syncField(field) {
+    const button = field.querySelector('[data-slick-cnr-upload]');
+    if (button) button.hidden = !!field.querySelector('.p-audio_file, .p-audio_file__pending_file');
+  }
+
   function pa() {
     document.querySelectorAll('.p-edit_profile__audio_recorder_icon:not([data-slick-cnr-upload])').forEach(pb);
-    document.querySelectorAll('.p-edit_profile__audio_recorder_component').forEach((field) => {
-      const button = field.querySelector('[data-slick-cnr-upload]');
-      if (button) button.hidden = !!field.querySelector('.p-audio_file, .p-audio_file__pending_file');
-    });
+    document.querySelectorAll('.p-edit_profile__audio_recorder_component').forEach(syncField);
+  }
+
+  function paintWithin(root) {
+    if (!root.querySelectorAll) return;
+    root.querySelectorAll('.p-edit_profile__audio_recorder_icon:not([data-slick-cnr-upload])').forEach(pb);
+    const enclosing = root.closest && root.closest('.p-edit_profile__audio_recorder_component');
+    if (enclosing) syncField(enclosing);
+    root.querySelectorAll('.p-edit_profile__audio_recorder_component').forEach(syncField);
   }
 
   document.addEventListener(
@@ -261,14 +271,7 @@
   function boot() {
     if (!document.body) return setTimeout(boot, 200);
     pa();
-    let timer;
-    new MutationObserver(() => {
-      if (!timer)
-        timer = setTimeout(() => {
-          timer = null;
-          pa();
-        }, 100);
-    }).observe(document.body, { childList: true, subtree: true });
+    window.__slickDOM.onRoots((roots) => roots.forEach(paintWithin));
   }
   boot();
 })();

@@ -586,33 +586,17 @@
     if (!document.body) return setTimeout(boot, 200);
     patchWS();
     pall();
-    const pendingRoots = new Set();
-    let mutationTimer = 0;
-    function queue(root) {
-      if (!root || root.nodeType !== Node.ELEMENT_NODE || root.closest('[data-slick-ls]')) return;
-      for (const pending of pendingRoots) {
-        if (pending.contains(root)) return;
-        if (root.contains(pending)) pendingRoots.delete(pending);
+    window.__slickDOM.onRoots((added) => {
+      const scopes = new Set();
+      for (const node of added) {
+        const scope = node.closest(SURF) || node;
+        if (!scope.closest('[data-slick-ls]')) scopes.add(scope);
       }
-      pendingRoots.add(root);
-    }
-    new MutationObserver((mutations) => {
-      mutations.forEach((mutation) => {
-        mutation.addedNodes.forEach((node) => {
-          if (node.nodeType === Node.ELEMENT_NODE) queue(node.closest(SURF) || node);
-        });
+      scopes.forEach((scope) => {
+        scanMessages(scope);
+        paint(scope);
       });
-      if (!pendingRoots.size || mutationTimer) return;
-      mutationTimer = setTimeout(() => {
-        mutationTimer = 0;
-        const scopes = [...pendingRoots];
-        pendingRoots.clear();
-        scopes.forEach((scope) => {
-          scanMessages(scope);
-          paint(scope);
-        });
-      }, 150);
-    }).observe(document.body, { subtree: true, childList: true });
+    });
     addEventListener('slick:plugin-settings', () => sched(true));
     addEventListener('storage', (e) => {
       if (e.key === 'slick:lastseen:cache') {

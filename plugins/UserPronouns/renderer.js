@@ -284,35 +284,13 @@
     get: (id) => cache[id] ?? null,
   };
 
-  let t = null;
-  const pendingRoots = new Set();
-  function queue(root) {
-    for (const pending of pendingRoots) {
-      if (pending.contains(root)) return;
-      if (root.contains(pending)) pendingRoots.delete(pending);
-    }
-    pendingRoots.add(root);
-  }
-  const obs = new MutationObserver((mutations) => {
-    mutations.forEach((mutation) => {
-      mutation.addedNodes.forEach((node) => {
-        if (node.nodeType === Node.ELEMENT_NODE) queue(node);
-      });
-    });
-    if (!pendingRoots.size) return;
-    if (t) return;
-    t = setTimeout(() => {
-      t = null;
-      const roots = [...pendingRoots];
-      pendingRoots.clear();
-      syncColor();
-      roots.forEach(paintWithin);
-    }, 200);
-  });
   function boot() {
     if (!document.body) return setTimeout(boot, 200);
     paintAll();
-    obs.observe(document.body, { subtree: true, childList: true });
+    window.__slickDOM.onRoots((roots) => {
+      syncColor();
+      roots.forEach(paintWithin);
+    });
   }
   boot();
 })();

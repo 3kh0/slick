@@ -189,37 +189,13 @@
     }
   });
 
-  let t = null;
-  const pendingRoots = new Set();
-  function queue(root) {
-    if (!root || root.nodeType !== Node.ELEMENT_NODE) return;
-    for (const pending of pendingRoots) {
-      if (pending.contains(root)) return;
-      if (root.contains(pending)) pendingRoots.delete(pending);
-    }
-    pendingRoots.add(root);
-  }
-  const obs = new MutationObserver((mutations) => {
-    mutations.forEach((mutation) => {
-      if (mutation.type === 'characterData') queue(mutation.target.parentElement?.closest(SEL));
-      mutation.addedNodes.forEach(queue);
-    });
-    if (!pendingRoots.size) return;
-    if (t) return;
-    t = setTimeout(() => {
-      t = null;
-      const roots = [...pendingRoots];
-      pendingRoots.clear();
-      roots.forEach(applyWithin);
-    }, 150);
-  });
   function boot() {
     if (!document.body) {
       setTimeout(boot, 200);
       return;
     }
     applyAll();
-    obs.observe(document.body, { subtree: true, childList: true, characterData: true });
+    window.__slickDOM.onRoots((roots) => roots.forEach(applyWithin), { charData: true });
     window.addEventListener('slick:plugin-settings', applyAll);
   }
   boot();

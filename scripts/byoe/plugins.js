@@ -3,6 +3,13 @@
 const fs = require('fs');
 const path = require('path');
 
+let domHubSource = '';
+try {
+  domHubSource = fs.readFileSync(path.join(__dirname, 'dom-hub.js'), 'utf8');
+} catch (e) {
+  console.error('[plugins] dom-hub.js missing:', e.message);
+}
+
 function pluginDirs(dir) {
   try {
     return fs
@@ -160,6 +167,8 @@ function loadPlugins({ catalog, enabled, electron, settings }) {
     out.loaded.push((mod.meta && mod.meta.name) || name);
     out.timings.push({ name, ms: performance.now() - start });
   }
+
+  if (out.js.length && domHubSource) out.js.unshift(domHubSource);
 
   return out;
 }

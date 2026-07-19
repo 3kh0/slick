@@ -89,31 +89,13 @@
   );
   window.addEventListener('resize', scanAll);
   window.addEventListener('slick:plugin-settings', scanAll);
-  var pending = false;
-  var pendingRoots = new Set();
-  function queue(root) {
-    if (!root || root.nodeType !== Node.ELEMENT_NODE) return;
-    for (var existing of pendingRoots) {
-      if (existing.contains(root)) return;
-      if (root.contains(existing)) pendingRoots.delete(existing);
-    }
-    pendingRoots.add(root);
-  }
-  new MutationObserver(function (mutations) {
-    mutations.forEach(function (mutation) {
-      queue(mutation.target.closest && mutation.target.closest(SCOPE));
-      mutation.addedNodes.forEach(queue);
+  window.__slickDOM.onRoots(function (roots) {
+    var scopes = new Set();
+    roots.forEach(function (root) {
+      scopes.add((root.closest && root.closest(SCOPE)) || root);
     });
-    if (!pendingRoots.size) return;
-    if (pending) return;
-    pending = true;
-    setTimeout(function () {
-      pending = false;
-      var roots = Array.from(pendingRoots);
-      pendingRoots.clear();
-      roots.forEach(scan);
-    }, 150);
-  }).observe(document.documentElement, { childList: true, subtree: true });
+    scopes.forEach(scan);
+  });
   scanAll();
 
   // uses internals for button hiding
