@@ -178,8 +178,21 @@
     });
   }
 
-  function shig(user) {
+  function shigu(user) {
     return set().ignoreSelf !== false && !!user && curusrs().has(user);
+  }
+
+  function shigm(prev) {
+    switch (set().ignoreAnchors) {
+      case 'off':
+        return false;
+      case 'lax':
+        return !!prev && !!prev?.app_id;
+      case 'strict':
+        return !!prev && prev?.metadata?.event_type === 'anchor' && !!prev?.app_id;
+      default:
+        return false;
+    }
   }
 
   function fiberOf(el) {
@@ -412,7 +425,7 @@
     if (!ts) return;
     const channel = msgc(message, msgc(previous, event.channel));
     const user = msgu(message) || msgu(previous);
-    if (shig(user)) return;
+    if (shigu(user)) return;
     const oldText = msgt(previous);
     const newText = msgt(message);
     if (!oldText || oldText === newText) return;
@@ -447,13 +460,14 @@
 
   function redel(event) {
     if (!event || event.subtype !== 'message_deleted') return event;
-    const previous = event.previous_message || event.previous || {};
+    const previous = event.previous_message || {};
     const ts = event.deleted_ts || messageTs(previous) || messageTs(event);
     if (!ts) return event;
     const channel = msgc(previous, event.channel);
     const snapshot = smsg(channel, ts);
     const user = msgu(previous) || (snapshot && snapshot.user) || event.previous_user || event.user || '';
-    if (shig(user)) return event;
+    if (shigm(previous)) return event;
+    if (shigu(user)) return event;
     const oldText = msgt(previous) || (snapshot && snapshot.text) || '';
     const id = 'deleted:' + keyOf(channel, ts) + ':' + oldText;
     if (!seenEvents.has(id)) {
