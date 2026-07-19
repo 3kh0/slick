@@ -140,25 +140,18 @@
     };
   }
 
-  const observer = new MutationObserver((records) => {
-    for (const record of records) {
-      if (record.type === 'attributes') {
-        if (record.target instanceof HTMLIFrameElement) sync(record.target);
-        continue;
-      }
-      for (const node of record.addedNodes) {
-        if (!(node instanceof Element)) continue;
-        if (node instanceof HTMLIFrameElement) sync(node);
-        node.querySelectorAll('iframe').forEach(sync);
-      }
+  window.__slickDOM.onRoots((roots) => {
+    for (const root of roots) {
+      if (root instanceof HTMLIFrameElement) sync(root);
+      root.querySelectorAll('iframe').forEach(sync);
     }
   });
-  observer.observe(document.documentElement, {
-    childList: true,
-    subtree: true,
-    attributes: true,
-    attributeFilter: ['src'],
-  });
+  window.__slickDOM.onAttr(
+    (targets) => {
+      for (const target of targets) if (target instanceof HTMLIFrameElement) sync(target);
+    },
+    ['src'],
+  );
 
   document.querySelectorAll('iframe').forEach(sync);
   window.addEventListener('slick:plugin-settings', () =>

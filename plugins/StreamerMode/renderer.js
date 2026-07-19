@@ -386,28 +386,9 @@
     if (document.body) resetRootClasses(document.body);
     refr();
     scan(document);
-    var pendingRoots = new Set();
-    var rootsTimer = null;
-    function queue(root) {
-      if (root.nodeType !== Node.ELEMENT_NODE) return;
-      for (var pending of pendingRoots) {
-        if (pending.contains(root)) return;
-        if (root.contains(pending)) pendingRoots.delete(pending);
-      }
-      pendingRoots.add(root);
-    }
-    new MutationObserver(function (mutations) {
-      mutations.forEach(function (mutation) {
-        mutation.addedNodes.forEach(queue);
-      });
-      if (!pendingRoots.size || rootsTimer) return;
-      rootsTimer = setTimeout(function () {
-        rootsTimer = null;
-        var roots = Array.from(pendingRoots);
-        pendingRoots.clear();
-        roots.forEach(scan);
-      }, 100);
-    }).observe(document.documentElement, { childList: true, subtree: true });
+    window.__slickDOM.onRoots(function (roots) {
+      roots.forEach(scan);
+    });
     window.addEventListener('slick:plugin-settings', function () {
       refr();
       ss();

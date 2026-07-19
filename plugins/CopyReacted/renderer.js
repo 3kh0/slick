@@ -365,6 +365,17 @@
     barsOf().forEach(paintBar);
   }
 
+  function paintWithin(root) {
+    if (!root.querySelectorAll) return;
+    const bars = new Set();
+    const near = root.closest && root.closest('.c-reaction');
+    if (near && near.parentElement) bars.add(near.parentElement);
+    root.querySelectorAll('.c-reaction').forEach((r) => {
+      if (r.parentElement) bars.add(r.parentElement);
+    });
+    bars.forEach(paintBar);
+  }
+
   let paintTimer = null;
   function schedulePaint() {
     if (paintTimer) return;
@@ -376,11 +387,10 @@
 
   window.__slickCopyReacted = { pa, users, reactionsForBar };
 
-  const obs = new MutationObserver(schedulePaint);
   function boot() {
     if (!document.body) return setTimeout(boot, 200);
     pa();
-    obs.observe(document.body, { subtree: true, childList: true });
+    window.__slickDOM.onRoots((roots) => roots.forEach(paintWithin));
     window.addEventListener('slick:plugin-settings', schedulePaint);
     window.addEventListener('scroll', closeMenu, true);
   }

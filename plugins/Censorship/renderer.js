@@ -63,8 +63,12 @@
     return pattern;
   }
 
+  var compiledFor = null;
   function compile() {
     var cfg = settings();
+    var sig = String(cfg.terms) + '\u0000' + String(cfg.style) + '\u0000' + String(cfg.replacement);
+    if (sig === compiledFor) return;
+    compiledFor = sig;
     var terms = splitTerms(cfg.terms);
     style = String(cfg.style);
     replacement = String(cfg.replacement) || 'uwu';
@@ -183,28 +187,24 @@
     walk(root || document.body || document);
   }
 
-  var observer = new MutationObserver(function (mutations) {
-    if (applying) return;
-    compile();
-    if (!matcher) {
-      changed.forEach(restore);
-      return;
-    }
-    prune();
-    mutations.forEach(function (mutation) {
-      if (mutation.type === 'characterData') applyText(mutation.target);
-      mutation.addedNodes.forEach(walk);
-    });
-  });
-
-  var root = document.body || document.documentElement;
-  if (root) observer.observe(root, { childList: true, subtree: true, characterData: true });
+  window.__slickDOM.onRoots(
+    function (roots) {
+      if (applying) return;
+      compile();
+      if (!matcher) {
+        changed.forEach(restore);
+        return;
+      }
+      prune();
+      roots.forEach(walk);
+    },
+    { charData: true },
+  );
 
   var state = (window.__slickCensorship = {
     apply: function () {
       apply(document.body || document);
     },
-    observer: observer,
   });
   window.addEventListener('slick:plugin-settings', state.apply);
   state.apply();

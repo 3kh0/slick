@@ -74,6 +74,7 @@ function copyRuntime(resources) {
   fs.rmSync(runtime, { recursive: true, force: true });
   for (const file of [
     'scripts/byoe/inject.js',
+    'scripts/byoe/dom-hub.js',
     'scripts/byoe/internals/index.js',
     'scripts/byoe/login-handoff.js',
     'scripts/byoe/perf.js',

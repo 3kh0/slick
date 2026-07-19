@@ -286,33 +286,10 @@
 
   window.__slickWhoReacted = { pa, avatars };
 
-  let rootsTimer = null;
-  const pendingRoots = new Set();
-  function queue(root) {
-    for (const pending of pendingRoots) {
-      if (pending.contains(root)) return;
-      if (root.contains(pending)) pendingRoots.delete(pending);
-    }
-    pendingRoots.add(root);
-  }
-  const obs = new MutationObserver((mutations) => {
-    mutations.forEach((mutation) => {
-      mutation.addedNodes.forEach((node) => {
-        if (node.nodeType === Node.ELEMENT_NODE) queue(node);
-      });
-    });
-    if (!pendingRoots.size || rootsTimer) return;
-    rootsTimer = setTimeout(() => {
-      rootsTimer = null;
-      const roots = [...pendingRoots];
-      pendingRoots.clear();
-      roots.forEach(paintWithin);
-    }, 150);
-  });
   function boot() {
     if (!document.body) return setTimeout(boot, 200);
     pa();
-    obs.observe(document.body, { subtree: true, childList: true });
+    window.__slickDOM.onRoots((roots) => roots.forEach(paintWithin));
     window.addEventListener('slick:plugin-settings', schedulePaint);
   }
   boot();

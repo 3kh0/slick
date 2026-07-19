@@ -277,10 +277,13 @@
     setNicknameTitle(el, original);
   }
 
-  function profileRoots() {
+  function profileRoots(scope) {
+    const from = scope || document;
     const roots = new Set();
     for (const sel of PROFILE) {
-      for (const el of document.querySelectorAll(sel)) {
+      const els = [...from.querySelectorAll(sel)];
+      if (from !== document && from.matches && from.matches(sel)) els.push(from);
+      for (const el of els) {
         const surface = el.closest(SURFACE);
         if (surface) {
           roots.add(surface);
@@ -436,24 +439,33 @@
     });
   }
 
-  function applyAll() {
-    ensureStyle();
-    for (const sel of NAME) document.querySelectorAll(sel).forEach(applyName);
-    profileRoots().forEach(injectProfileAction);
-    document.querySelectorAll('[data-slick-fn-action]').forEach((btn) => {
+  const NAME_SEL = NAME.join(',');
+
+  function labelButtons(scope) {
+    scope.querySelectorAll('[data-slick-fn-action]').forEach((btn) => {
       const id = userIdOf(btn);
       if (id) setButtonLabel(btn, id);
     });
   }
 
-  let t = null;
-  const obs = new MutationObserver(() => {
-    if (t) return;
-    t = setTimeout(() => {
-      t = null;
-      applyAll();
-    }, 150);
-  });
+  function applyAll() {
+    ensureStyle();
+    document.querySelectorAll(NAME_SEL).forEach(applyName);
+    profileRoots().forEach(injectProfileAction);
+    labelButtons(document);
+  }
+
+  function applyWithin(root) {
+    if (!root.querySelectorAll) return;
+    ensureStyle();
+    // charData mutations deliver the text node's parent — it may sit inside a name element
+    const host = root.closest && root.closest(NAME_SEL);
+    if (host) applyName(host);
+    root.querySelectorAll(NAME_SEL).forEach(applyName);
+    const surface = root.closest && root.closest(SURFACE);
+    profileRoots(surface || root).forEach(injectProfileAction);
+    labelButtons(root);
+  }
 
   window.addEventListener('storage', (e) => {
     if (e.key !== KEY) return;
@@ -467,7 +479,7 @@
       return;
     }
     applyAll();
-    obs.observe(document.body, { subtree: true, childList: true, characterData: true });
+    window.__slickDOM.onRoots((roots) => roots.forEach(applyWithin), { charData: true });
   }
   boot();
 })();

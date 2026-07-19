@@ -865,16 +865,13 @@
   istyle();
   scan(document.body || document);
   xmenu(document.body || document);
-  new MutationObserver((mutations) => {
-    mutations.forEach((mutation) => {
-      if (ispn(mutation.target)) return;
-      mutation.addedNodes.forEach((node) => {
-        if (ispn(node)) return;
-        scan(node);
-        xmenu(node);
-      });
+  window.__slickDOM.onRoots((roots) => {
+    roots.forEach((node) => {
+      if (ispn(node)) return;
+      scan(node);
+      xmenu(node);
     });
-  }).observe(document.documentElement, { childList: true, subtree: true });
+  });
   window.addEventListener('slick:plugin-settings', sscan);
   console.log('[MessageLogger] active');
 })();
