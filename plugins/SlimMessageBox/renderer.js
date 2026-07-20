@@ -40,11 +40,8 @@
     var scope = editor.closest(SCOPE);
     if (!scope) return;
     var enabled = settings().discordLayout !== false; // def on
-    if (enabled && (isMultiline(editor) || hasAttachments(scope))) {
-      scope.classList.add('slick-smb-stacked');
-    } else {
-      scope.classList.remove('slick-smb-stacked');
-    }
+    scope.classList.remove('slick-smb-stacked');
+    scope.classList.toggle('slick-smb-stacked', enabled && (hasAttachments(scope) || isMultiline(editor)));
   }
   function applyDomHides(root) {
     var s = settings();
