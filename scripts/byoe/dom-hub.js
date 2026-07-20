@@ -126,6 +126,17 @@
     observer.observe(document.documentElement, opts);
   }
 
+  function stopIfIdle() {
+    if (rootSubs.length || tickSubs.length || syncSubs.length || attrSubs.length) return;
+    observer?.disconnect();
+    clearTimeout(timer);
+    timer = 0;
+    addedRoots.clear();
+    charRoots.clear();
+    attrHits = [];
+    sawChildList = sawCharData = false;
+  }
+
   window.__slickDOM = {
     onRoots(fn, opts) {
       rootSubs.push({ fn, charData: !!(opts && opts.charData) });
@@ -140,6 +151,14 @@
     onRootsSync(fn) {
       syncSubs.push(fn);
       observe();
+      let active = true;
+      return () => {
+        if (!active) return;
+        active = false;
+        const index = syncSubs.indexOf(fn);
+        if (index !== -1) syncSubs.splice(index, 1);
+        stopIfIdle();
+      };
     },
     onAttr(fn, filter) {
       attrSubs.push({ fn, filter: new Set(filter) });

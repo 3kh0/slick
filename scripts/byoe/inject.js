@@ -137,6 +137,7 @@ function trackNet(sess) {
       if (nt) netInflight.set(d.id, { url: d.url, type: d.resourceType, start: performance.now() });
     });
     const done = (d, how) => {
+      if (!nt) return;
       const e = netInflight.get(d.id);
       if (!e) return;
       netInflight.delete(d.id);
@@ -421,23 +422,28 @@ const BOOT_PROBE_JS = `(() => {
   if (window.__slickBootProbe) return;
   const p = (window.__slickBootProbe = { longtasks: 0, longtaskMs: 0, maxLongtask: 0, sw: [] });
   try {
-    new PerformanceObserver((list) => {
+    p.longtaskObserver = new PerformanceObserver((list) => {
       for (const e of list.getEntries()) {
         p.longtasks++;
         p.longtaskMs += e.duration;
         p.maxLongtask = Math.max(p.maxLongtask, e.duration);
       }
-    }).observe({ type: 'longtask', buffered: true });
+    });
+    p.longtaskObserver.observe({ type: 'longtask', buffered: true });
   } catch (e) {}
   try {
     const sw = navigator.serviceWorker;
     if (sw) {
       p.sw.push('start:' + (sw.controller ? sw.controller.state : 'none'));
-      sw.addEventListener('controllerchange', () =>
-        p.sw.push('change@' + Math.round(performance.now()) + 'ms:' + (sw.controller ? sw.controller.state : 'none')),
-      );
+      p.onControllerChange = () =>
+        p.sw.push('change@' + Math.round(performance.now()) + 'ms:' + (sw.controller ? sw.controller.state : 'none'));
+      sw.addEventListener('controllerchange', p.onControllerChange);
     }
   } catch (e) {}
+  p.stop = () => {
+    p.longtaskObserver?.disconnect();
+    if (p.onControllerChange) navigator.serviceWorker?.removeEventListener('controllerchange', p.onControllerChange);
+  };
 })()`;
 
 const WORKSPACE_READY_JS = `(() => {
@@ -462,6 +468,7 @@ const WORKSPACE_READY_JS = `(() => {
     const topHosts = Object.entries(hostMs).sort((a, b) => b[1] - a[1]).slice(0, 6).map(([h, ms]) => ({ host: h, ms: Math.round(ms) }));
     const p = window.__slickBootProbe || {};
     const sw = navigator.serviceWorker;
+    p.stop?.();
     return {
       readyMs: Math.round(performance.now()),
       dclMs: nav.domContentLoadedEventEnd ? Math.round(nav.domContentLoadedEventEnd) : 0,
@@ -480,13 +487,25 @@ const WORKSPACE_READY_JS = `(() => {
   };
   return new Promise((resolve) => {
     if (document.querySelector(SEL)) return resolve(result());
-    const mo = new MutationObserver(() => {
-      if (!document.querySelector(SEL)) return;
+    const containsWorkspace = (node) =>
+      node.nodeType === Node.ELEMENT_NODE && (node.matches(SEL) || node.closest(SEL) || node.querySelector(SEL));
+    let timeout;
+    const finish = () => {
       mo.disconnect();
+      clearTimeout(timeout);
       resolve(result());
+    };
+    const mo = new MutationObserver((records) => {
+      for (const record of records) {
+        for (const node of record.addedNodes) {
+          if (!containsWorkspace(node)) continue;
+          finish();
+          return;
+        }
+      }
     });
     mo.observe(document.documentElement, { childList: true, subtree: true });
-    setTimeout(() => { mo.disconnect(); resolve(result()); }, 120000);
+    timeout = setTimeout(finish, 120000);
   });
 })()`;
 
@@ -508,10 +527,17 @@ function formatBootDiag(r) {
 }
 
 const consoleBuf = [];
+const consoleContents = new Set();
 function captureConsole(e, level, message) {
   const msg = message ?? e?.message;
   if (workspaceReady || consoleBuf.length >= 1200 || msg == null) return;
   consoleBuf.push({ t: Math.round(performance.now()), lvl: level ?? e?.level, msg: String(msg).slice(0, 240) });
+}
+function stopConsoleCapture() {
+  for (const wc of consoleContents) {
+    if (!wc.isDestroyed()) wc.removeListener('console-message', captureConsole);
+  }
+  consoleContents.clear();
 }
 function dumpConsole(reason) {
   if (!consoleBuf.length) return;
@@ -537,6 +563,7 @@ function watchWorkspaceReady(wc) {
       bootLog(netSummary());
       if (r.readyMs > 5000) dumpConsole(`slow boot, workspace ${r.readyMs}ms`);
       nt = false;
+      stopConsoleCapture();
       netInflight.clear();
       consoleBuf.length = 0;
     })
@@ -546,6 +573,7 @@ function watchWorkspaceReady(wc) {
 let bootReloads = 0;
 let stallTimer = null;
 const hungRenderers = new WeakSet();
+const BOOT_STALL_MS = 30000;
 function armStallWatchdog(wc) {
   if (workspaceReady) return;
   const u = URL.parse(wc.getURL());
@@ -564,13 +592,13 @@ function armStallWatchdog(wc) {
     }
     bootReloads++;
     bootLog(
-      `boot-stall watchdog: workspace not ready 10000ms after dom-ready -> reload ${bootReloads}/${2} (url ${wc.getURL()})`,
+      `boot-stall watchdog: workspace not ready ${BOOT_STALL_MS}ms after dom-ready -> reload ${bootReloads}/${2} (url ${wc.getURL()})`,
     );
     dumpConsole(`boot stall, reload ${bootReloads}`);
     try {
       wc.reload();
     } catch (e) {}
-  }, 10000);
+  }, BOOT_STALL_MS);
 }
 
 const live = new Map();
@@ -684,7 +712,10 @@ app.on('browser-window-created', (_event, win) => {
   armBlocking(wc.session);
   ap(wc.session);
   setImmediate(() => ap(wc.session));
-  wc.on('console-message', captureConsole);
+  if (!workspaceReady) {
+    wc.on('console-message', captureConsole);
+    consoleContents.add(wc);
+  }
   let unresponsiveAt = 0;
   wc.on('unresponsive', () => {
     unresponsiveAt = performance.now();
@@ -738,7 +769,10 @@ app.on('browser-window-created', (_event, win) => {
       armStallWatchdog(wc);
     }
   });
-  wc.on('destroyed', () => live.delete(wc));
+  wc.on('destroyed', () => {
+    live.delete(wc);
+    consoleContents.delete(wc);
+  });
 });
 
 function applyAllLive(options) {
