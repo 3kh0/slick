@@ -488,7 +488,7 @@ const WORKSPACE_READY_JS = `(() => {
   return new Promise((resolve) => {
     if (document.querySelector(SEL)) return resolve(result());
     const containsWorkspace = (node) =>
-      node.nodeType === Node.ELEMENT_NODE && (node.matches(SEL) || node.querySelector(SEL));
+      node.nodeType === Node.ELEMENT_NODE && (node.matches(SEL) || node.closest(SEL) || node.querySelector(SEL));
     let timeout;
     const finish = () => {
       mo.disconnect();
