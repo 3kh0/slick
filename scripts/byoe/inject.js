@@ -207,19 +207,26 @@ function armBlocking(sess) {
         onEnabled: setEnabled,
         onPluginSetting: (_dir, _key, _value, all) => setPluginSettings(all),
         onCustomCss: setCustomCss,
-        onFileSetting: () =>
-          electron.dialog
+        onFileSetting: ({ def }) => {
+          const extensions = String(def.accept || '')
+            .split(',')
+            .map((part) =>
+              part
+                .trim()
+                .match(/^\.([a-z0-9]+)$/i)?.[1]
+                ?.toLowerCase(),
+            )
+            .filter(Boolean);
+          return electron.dialog
             .showOpenDialog({
-              title: 'Choose file',
+              title: `Choose ${def.label || 'file'}`,
               properties: ['openFile'],
-              filters: [
-                {
-                  name: 'Audio',
-                  extensions: ['aac', 'aif', 'aiff', 'caf', 'flac', 'm4a', 'mp3', 'oga', 'ogg', 'opus', 'wav', 'webm'],
-                },
-              ],
+              filters: extensions.length
+                ? [{ name: def.label || 'File', extensions: [...new Set(extensions)] }]
+                : undefined,
             })
-            .then((r) => (r.canceled ? '' : r.filePaths[0] || '')),
+            .then((r) => (r.canceled ? '' : r.filePaths[0] || ''));
+        },
       });
       cb({ cancel: true });
       return;
@@ -254,6 +261,7 @@ const PERMS = new Set([
   'speaker-selection',
   'window-management',
 ]);
+if (plugins.loaded.includes('CustomFonts')) PERMS.add('local-fonts');
 
 function hfu(value) {
   try {
