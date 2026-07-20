@@ -2,8 +2,7 @@
 # launch-linux.sh [--debug [port]]
 set -u
 
-ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-TARGET="$ROOT/byoe/slick-linux"
+TARGET="${XDG_DATA_HOME:-$HOME/.local/share}/slick/app"
 EBIN="$TARGET/electron"
 
 DEBUG=()

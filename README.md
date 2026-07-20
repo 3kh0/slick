@@ -71,28 +71,32 @@ powershell -ExecutionPolicy Bypass -File install.ps1
 > [!NOTE]
 > Linux support is still in beta and x86_64-only. Slack doesn't ship an official arm64 Linux build, so there's nothing for an arm64 machine to run Slick against.
 
-Install Slack from your distro first (deb, rpm, AUR, whatever your package manager offers), then clone the repo and run:
+Install Slack from your distro first (deb, rpm, AUR, whatever your package manager offers), then run:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/3kh0/slick/main/install-linux.sh | bash
+```
+
+To uninstall:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/3kh0/slick/main/install-linux.sh | bash -s -- --uninstall
+```
+
+If you'd rather build it yourself (or hack on it), clone the repo and run:
 
 ```bash
 ./install-linux.sh
 ```
 
-This builds `byoe/slick-linux`, installs a desktop entry, registers `slack://`, and launches Slick. For manual launch or debugging:
+This builds from source into the same `~/.local/share/slick/app` location instead of using a prebuilt release. For manual launch or debugging:
 
 ```bash
 ./scripts/launch-linux.sh
 ./scripts/launch-linux.sh --debug 9223
 ```
 
-You also have some nice flags to play around with: `--restore-handler` on `install-linux.sh` to give `slack://` back to the official Slack app, and `./scripts/uninstall-linux.sh` to remove Slick entirely.
-
-Prebuilt `x86_64` tarballs are published on the [releases page](https://github.com/3kh0/slick/releases/latest) too. To install one (with optional provenance verification if `gh` is installed):
-
-```bash
-./install-linux.sh --from-release
-```
-
-Or extract a tarball by hand and run `Slick/electron` directly.
+You also have some nice flags to play around with: `--restore-handler` on `install-linux.sh` to give `slack://` back to the official Slack app, `--from-release` to use a prebuilt tarball instead of building from source, and `--uninstall` (or `./scripts/uninstall-linux.sh`) to remove Slick entirely.
 
 #### Flatpak
 

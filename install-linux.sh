@@ -2,10 +2,16 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")" && pwd)"
-TARGET="$ROOT/byoe/slick-linux"
+REPO="3kh0/slick"
+BRANCH="main"
+RAW_BASE="https://raw.githubusercontent.com/$REPO/$BRANCH"
+DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}"
+TARGET="$DATA_HOME/slick/app"
 EDIST="$ROOT/byoe/node_modules/electron/dist"
 EBIN="$EDIST/electron"
-REPO="3kh0/slick"
+DESKTOP_FILE="$HOME/.local/share/applications/dev.slick.byoe.desktop"
+PROFILE="$HOME/.config/slick"
+ICON_SIZES=(16 32 64 128 256 512)
 SLACK_PATHS=(
   "${SLICK_SLACK_DIR:-}"
   "/usr/lib/slack"
@@ -15,6 +21,12 @@ SLACK_PATHS=(
 )
 NO_LAUNCH=0
 FROM_RELEASE=0
+UNINSTALL=0
+
+# Only true when this script is sitting inside an actual clone of the repo
+# (curl | bash / bash <(curl ...) resolve ROOT to an unrelated directory).
+CLONED=0
+[ -f "$ROOT/scripts/byoe/build-handoff-linux.js" ] && CLONED=1
 
 step() { printf '\033[1;35m==>\033[0m \033[1m%s\033[0m\n' "$*"; }
 die() {
@@ -24,8 +36,8 @@ die() {
 
 verify_release_artifact() {
   local file="$1"
-  if ! command -v gh >/dev/null 2>&1; then
-    printf '    (gh CLI not found; skipping provenance check — https://cli.github.com)\n'
+  if ! command -v gh >/dev/null 2>&1 || ! gh attestation --help >/dev/null 2>&1; then
+    printf '    (gh CLI missing or too old for "gh attestation"; skipping provenance check — https://cli.github.com)\n'
     return 0
   fi
   step "Verifying build provenance"
@@ -44,10 +56,61 @@ verify_release_artifact() {
   die "refusing to install an unattested or mismatched build"
 }
 
+do_uninstall() {
+  local fail=0
+  step "Stopping Slick"
+  pkill -f "$TARGET/electron" 2>/dev/null || true
+  for _ in {1..20}; do
+    pgrep -f "$TARGET/electron" >/dev/null 2>&1 || break
+    sleep 0.25
+  done
+  if pgrep -f "$TARGET/electron" >/dev/null 2>&1; then
+    printf '\033[1;33mwarning:\033[0m some Slick processes are still running\n' >&2
+    fail=1
+  fi
+
+  step "Restoring slack:// to official Slack"
+  if command -v xdg-mime >/dev/null 2>&1; then
+    xdg-mime default slack.desktop x-scheme-handler/slack \
+      && echo "    slack:// now opens the official Slack again." \
+      || { printf '\033[1;33mwarning:\033[0m could not restore the slack:// handler\n' >&2; fail=1; }
+  else
+    printf '\033[1;33mwarning:\033[0m xdg-mime not found; could not restore the slack:// handler\n' >&2
+    fail=1
+  fi
+
+  step "Removing desktop integration"
+  rm -f "$DESKTOP_FILE"
+  for size in "${ICON_SIZES[@]}"; do
+    rm -f "$HOME/.local/share/icons/hicolor/${size}x${size}/apps/slick.png"
+  done
+  if command -v update-desktop-database >/dev/null 2>&1; then
+    update-desktop-database "$HOME/.local/share/applications" >/dev/null 2>&1 || true
+  fi
+  if command -v gtk-update-icon-cache >/dev/null 2>&1; then
+    gtk-update-icon-cache -f -t "$HOME/.local/share/icons/hicolor" >/dev/null 2>&1 || true
+  fi
+
+  step "Removing Slick"
+  rm -rf "$TARGET" "$TARGET.old"
+
+  step "Purging Slick data"
+  rm -rf "$PROFILE"
+  find "${TMPDIR:-/tmp}" -maxdepth 1 -type d -name 'slick-update-*' -exec rm -rf {} + 2>/dev/null || true
+
+  if [ "$fail" -ne 0 ]; then
+    printf '\n\033[1;33mSlick was partially removed, see the warnings above.\033[0m\n'
+    exit 1
+  fi
+  printf '\n\033[1;32mSlick has been fully removed.\033[0m\n'
+  exit 0
+}
+
 while [ $# -gt 0 ]; do
   case "$1" in
   --no-launch) NO_LAUNCH=1 ;;
   --from-release) FROM_RELEASE=1 ;;
+  --uninstall) UNINSTALL=1 ;;
   --restore-handler)
     command -v xdg-mime >/dev/null 2>&1 || die "xdg-mime not found; can't manage the slack:// handler on this system."
     xdg-mime default slack.desktop x-scheme-handler/slack &&
@@ -61,6 +124,9 @@ while [ $# -gt 0 ]; do
   esac
   shift
 done
+
+[ "$(uname -s)" = "Linux" ] || die "install-linux.sh only supports Linux."
+[ "$UNINSTALL" -eq 1 ] && do_uninstall
 
 find_slack() {
   local dir
@@ -135,16 +201,20 @@ EOF
 }
 
 step "Checking prerequisites"
-[ "$(uname -s)" = "Linux" ] || die "install-linux.sh only supports Linux."
 
 SLACK="$(find_slack)" || die "Slack not found. Install the official Slack .deb from https://slack.com/downloads/linux, then rerun."
 echo "    Slack resources: $SLACK/resources"
+
+if [ "$CLONED" -eq 0 ] && [ "$FROM_RELEASE" -eq 0 ]; then
+  echo "    no local clone found; installing the prebuilt release"
+  FROM_RELEASE=1
+fi
 
 if [ "$FROM_RELEASE" -eq 1 ]; then
   ARCH="$(uname -m)"
   case "$ARCH" in
   x86_64 | amd64) ARCH=x64 ;;
-  *) die "prebuilt Linux releases are x86_64-only (this machine is $(uname -m)). Build from source instead." ;;
+  *) die "prebuilt Linux releases are x86_64-only (this machine is $(uname -m)). Clone the repo and build from source instead." ;;
   esac
 
   step "Finding the latest release"
@@ -223,21 +293,31 @@ else
   VERSION="1.0.$BUILD"
 
   step "Building $TARGET (Build $BUILD)"
+  mkdir -p "$(dirname "$TARGET")"
   node "$ROOT/scripts/byoe/build-handoff-linux.js" --target "$TARGET" \
     --app-version "$VERSION" --build-number "$BUILD" --force >/dev/null
 fi
 
 step "Installing desktop integration"
-mkdir -p "$HOME/.local/share/icons/hicolor/256x256/apps" "$HOME/.local/share/applications"
-if [ -f "$ROOT/assets/icon.png" ]; then
-  cp "$ROOT/assets/icon.png" "$HOME/.local/share/icons/hicolor/256x256/apps/slick.png"
-elif [ ! -f "$HOME/.local/share/icons/hicolor/256x256/apps/slick.png" ]; then
-  echo "    note: no assets/icon.png; desktop icon may be missing."
-fi
+mkdir -p "$HOME/.local/share/applications"
+for size in "${ICON_SIZES[@]}"; do
+  ICON_DIR="$HOME/.local/share/icons/hicolor/${size}x${size}/apps"
+  mkdir -p "$ICON_DIR"
+  SRC_ICON="$ROOT/assets/desktop-linux/$size.png"
+  if [ "$CLONED" -eq 1 ] && [ -f "$SRC_ICON" ]; then
+    cp "$SRC_ICON" "$ICON_DIR/slick.png"
+  elif ! curl -fsSL "$RAW_BASE/assets/desktop-linux/$size.png" -o "$ICON_DIR/slick.png" 2>/dev/null; then
+    rm -f "$ICON_DIR/slick.png"
+    echo "    note: could not fetch the ${size}x${size} icon"
+  fi
+done
 [ -f "$TARGET/slick.desktop" ] || write_desktop_file "$TARGET"
-cp "$TARGET/slick.desktop" "$HOME/.local/share/applications/dev.slick.byoe.desktop"
+cp "$TARGET/slick.desktop" "$DESKTOP_FILE"
 if command -v update-desktop-database >/dev/null 2>&1; then
   update-desktop-database "$HOME/.local/share/applications" >/dev/null 2>&1 || true
+fi
+if command -v gtk-update-icon-cache >/dev/null 2>&1; then
+  gtk-update-icon-cache -f -t "$HOME/.local/share/icons/hicolor" >/dev/null 2>&1 || true
 fi
 if command -v xdg-mime >/dev/null 2>&1; then
   xdg-mime default dev.slick.byoe.desktop x-scheme-handler/slack || true
@@ -247,7 +327,9 @@ fi
 
 if [ "$NO_LAUNCH" -eq 0 ]; then
   step "Launching Slick"
-  "$ROOT/scripts/launch-linux.sh"
+  SLICK_LAUNCH_T0="$(date +%s%3N 2>/dev/null || echo '')"
+  export SLICK_LAUNCH_T0
+  "$TARGET/electron" --no-sandbox
 fi
 
 printf '\n\033[1;32mYippee!\033[0m Slick is installed at %s\n' "$TARGET"
@@ -255,7 +337,7 @@ cat <<EOF
 Things to know:
 - First launch shows a sign-in screen (separate profile from official Slack). Sign in once; it persists.
 - Configure at Preferences -> Slick.
-- Manual launch: ./scripts/launch-linux.sh
-- Prebuilt install: ./install-linux.sh --from-release
+- Manual launch: $TARGET/electron --no-sandbox
+- Uninstall: ./install-linux.sh --uninstall (or curl -fsSL $RAW_BASE/install-linux.sh | bash -s -- --uninstall)
 - Make slack:// open the official Slack again: ./install-linux.sh --restore-handler
 EOF
