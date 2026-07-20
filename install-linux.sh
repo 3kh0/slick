@@ -125,7 +125,7 @@ write_desktop_file() {
 Type=Application
 Name=Slick
 Comment=Slack client mod (BYOE)
-Exec=${target}/electron %U
+Exec=${target}/electron --no-sandbox %U
 Icon=slick
 Terminal=false
 Categories=Network;InstantMessaging;

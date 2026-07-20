@@ -26,4 +26,4 @@ export SLICK_LAUNCH_T0
   exit 1
 }
 
-exec "$EBIN" "${DEBUG[@]}" "$@"
+exec "$EBIN" --no-sandbox "${DEBUG[@]}" "$@"

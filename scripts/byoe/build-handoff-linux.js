@@ -306,7 +306,7 @@ function writeDesktopFile(target) {
 Type=Application
 Name=Slick
 Comment=Slack client mod (BYOE)
-Exec=${path.join(target, 'electron')} %U
+Exec=${path.join(target, 'electron')} --no-sandbox %U
 Icon=slick
 Terminal=false
 Categories=Network;InstantMessaging;
