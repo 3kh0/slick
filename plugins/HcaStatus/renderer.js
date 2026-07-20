@@ -66,6 +66,11 @@
   function paintAll() {
     document.querySelectorAll(SEL).forEach(paint);
   }
+  function paintWithin(root) {
+    if (!root.querySelectorAll) return;
+    if (root.matches && root.matches(SEL)) paint(root);
+    root.querySelectorAll(SEL).forEach(paint);
+  }
 
   window.__slickhca = {
     drain() {
@@ -89,18 +94,10 @@
     },
   };
 
-  let t = null;
-  const obs = new MutationObserver(() => {
-    if (t) return;
-    t = setTimeout(() => {
-      t = null;
-      paintAll();
-    }, 200);
-  });
   function boot() {
     if (!document.body) return setTimeout(boot, 200);
     paintAll();
-    obs.observe(document.body, { subtree: true, childList: true });
+    window.__slickDOM.onRoots((roots) => roots.forEach(paintWithin));
   }
   boot();
 })();

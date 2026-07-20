@@ -322,9 +322,12 @@
     );
     return { ts: ts[0], user: sender ? uid(sender) : uid(el) };
   }
-  function scanMessages() {
+  function scanMessages(root = document) {
     if (!S().showLastMessage) return;
-    document.querySelectorAll(ROW_SEL).forEach((row) => {
+    const rows = [];
+    if (root.nodeType === Node.ELEMENT_NODE && root.matches(ROW_SEL)) rows.push(root);
+    if (root.querySelectorAll) rows.push(...root.querySelectorAll(ROW_SEL));
+    rows.forEach((row) => {
       const m = rowMsg(row);
       if (m) markMsg(m.user, m.ts);
     });
@@ -345,7 +348,7 @@
     return null;
   }
 
-  function roots() {
+  function roots(scope = document) {
     const r = new Set();
     for (const sel of [
       '[data-qa="member_profile_pane"]',
@@ -365,7 +368,9 @@
     ]) {
       let f;
       try {
-        f = document.querySelectorAll(sel);
+        f = [];
+        if (scope.nodeType === Node.ELEMENT_NODE && scope.matches(sel)) f.push(scope);
+        if (scope.querySelectorAll) f.push(...scope.querySelectorAll(sel));
       } catch {
         continue;
       }
@@ -418,8 +423,11 @@
   function updBlk(b, id) {
     const data = lines(id);
     if (!data) return b.remove();
+    const signature = JSON.stringify(data);
+    if (b.dataset.slickLs === id && b.dataset.slickLsSignature === signature) return;
     b.textContent = '';
     b.dataset.slickLs = id;
+    b.dataset.slickLsSignature = signature;
     for (const ln of data) {
       const line = document.createElement('span');
       line.className = 'slick-ls-line';
@@ -528,9 +536,9 @@
       (orig.trim() || 'Away');
   }
 
-  function paint() {
+  function paint(scope = document) {
     const s = S();
-    roots().forEach((root) => {
+    roots(scope).forEach((root) => {
       const id = uid(root);
       if (!id || id === 'USLACKBOT') return;
       if (s.trackWatchlist) watch(id);
@@ -557,11 +565,18 @@
     } catch {}
   }
   let pT = 0;
-  const sched = () => {
+  let fullScan = false;
+  const sched = (full = false) => {
+    fullScan ||= full;
     if (pT) return;
     pT = setTimeout(() => {
       pT = 0;
-      pall();
+      if (fullScan) pall();
+      else {
+        style();
+        paint();
+      }
+      fullScan = false;
     }, 200);
   };
 
@@ -571,8 +586,18 @@
     if (!document.body) return setTimeout(boot, 200);
     patchWS();
     pall();
-    new MutationObserver(sched).observe(document.body, { subtree: true, childList: true });
-    addEventListener('slick:plugin-settings', sched);
+    window.__slickDOM.onRoots((added) => {
+      const scopes = new Set();
+      for (const node of added) {
+        const scope = node.closest(SURF) || node;
+        if (!scope.closest('[data-slick-ls]')) scopes.add(scope);
+      }
+      scopes.forEach((scope) => {
+        scanMessages(scope);
+        paint(scope);
+      });
+    });
+    addEventListener('slick:plugin-settings', () => sched(true));
     addEventListener('storage', (e) => {
       if (e.key === 'slick:lastseen:cache') {
         C = load();

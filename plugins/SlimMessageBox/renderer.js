@@ -46,20 +46,32 @@
       scope.classList.remove('slick-smb-stacked');
     }
   }
-  function applyDomHides() {
+  function applyDomHides(root) {
     var s = settings();
     for (var key in HIDE_DOM) {
       if (!s[key]) continue;
-      document.querySelectorAll(SCOPE + ' ' + HIDE_DOM[key]).forEach(function (el) {
+      var insideScope = root.nodeType === Node.ELEMENT_NODE && root.closest(SCOPE);
+      var selector = insideScope ? HIDE_DOM[key] : SCOPE + ' ' + HIDE_DOM[key];
+      var elements = [];
+      if (root.nodeType === Node.ELEMENT_NODE && root.matches(selector)) elements.push(root);
+      if (root.querySelectorAll) elements.push.apply(elements, root.querySelectorAll(selector));
+      elements.forEach(function (el) {
         el.style.setProperty('display', 'none', 'important');
       });
     }
   }
+  function scan(root) {
+    var selector = SCOPE + ' .ql-editor, ' + SCOPE + ' [contenteditable="true"][role="textbox"]';
+    var editors = [];
+    if (root.nodeType === Node.ELEMENT_NODE && root.matches(selector)) editors.push(root);
+    if (root.querySelectorAll) editors.push.apply(editors, root.querySelectorAll(selector));
+    editors.forEach(evaluate);
+    var scope = root.nodeType === Node.ELEMENT_NODE && root.closest(SCOPE);
+    if (scope) scope.querySelectorAll('.ql-editor,[contenteditable="true"][role="textbox"]').forEach(evaluate);
+    applyDomHides(root);
+  }
   function scanAll() {
-    document
-      .querySelectorAll(SCOPE + ' .ql-editor, ' + SCOPE + ' [contenteditable="true"][role="textbox"]')
-      .forEach(evaluate);
-    applyDomHides();
+    scan(document);
   }
   document.addEventListener(
     'input',
@@ -77,15 +89,13 @@
   );
   window.addEventListener('resize', scanAll);
   window.addEventListener('slick:plugin-settings', scanAll);
-  var pending = false;
-  new MutationObserver(function () {
-    if (pending) return;
-    pending = true;
-    setTimeout(function () {
-      pending = false;
-      scanAll();
-    }, 150);
-  }).observe(document.documentElement, { childList: true, subtree: true });
+  window.__slickDOM.onRoots(function (roots) {
+    var scopes = new Set();
+    roots.forEach(function (root) {
+      scopes.add((root.closest && root.closest(SCOPE)) || root);
+    });
+    scopes.forEach(scan);
+  });
   scanAll();
 
   // uses internals for button hiding

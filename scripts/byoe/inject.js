@@ -717,6 +717,7 @@ app.on('browser-window-created', (_event, win) => {
     }
   }
   wc.on('dom-ready', () => {
+    if (URL.parse(wc.getURL())?.protocol !== 'https:') return;
     documents.set(wc, { initialized: false });
     if (!clientDomReady && URL.parse(wc.getURL())?.hostname === 'app.slack.com') {
       clientDomReady = true;

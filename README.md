@@ -94,6 +94,18 @@ Prebuilt `x86_64` tarballs are published on the [releases page](https://github.c
 
 Or extract a tarball by hand and run `Slick/electron` directly.
 
+#### Flatpak
+
+The Flatpak still uses Slack's installed `app.asar`, so install the official x86_64 Slack package first. Build and install it from the repository root with:
+
+```bash
+flatpak-builder --user --install --force-clean --install-deps-from=flathub \
+  .flatpak-build packaging/flatpak/dev.slick.Slick.yml
+flatpak run dev.slick.Slick
+```
+
+The sandbox has read-only access to the common Slack install locations and stores its separate Slick profile under `~/.var/app/dev.slick.Slick/`.
+
 ## Release versioning
 
 Slick releases use integer build tags: `v13`, `v14`, `v15`, and so on. The GitHub Release title should read like `Slick Build 67`.

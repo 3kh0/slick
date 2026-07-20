@@ -3,11 +3,13 @@
   if (window.__slickPronouns) return;
 
   const ID_RE = /^[UW][A-Z0-9]{6,}$/;
+  const ROW_SEL = '.c-message_kit__message, .c-message, [data-qa="message_container"], [role="listitem"]';
 
   let cache = loadCache();
   let dirty = false;
   const queued = new Set();
   const inflight = new Set();
+  const knownEmpty = new Set();
 
   function loadCache() {
     try {
@@ -40,6 +42,9 @@
     return k ? el[k] : null;
   }
   function userIdOf(el) {
+    const direct = el.closest('[data-message-sender]') || el.querySelector('[data-message-sender]');
+    const directId = direct && direct.getAttribute('data-message-sender');
+    if (directId && ID_RE.test(directId)) return directId;
     let f = fiberOf(el);
     let hops = 0;
     while (f && hops < 40) {
@@ -157,7 +162,7 @@
     }
   }
 
-  async function fetch(id) {
+  async function fetchPronouns(id) {
     let token = null;
     try {
       const cfg = JSON.parse(localStorage.getItem('localConfig_v2'));
@@ -170,7 +175,7 @@
     const body = new FormData();
     body.append('token', token);
     body.append('user', id);
-    const res = await fetch('/api/users.info', { method: 'POST', body });
+    const res = await window.fetch('/api/users.info', { method: 'POST', body });
     if (!res.ok) return null;
     const data = await res.json().catch(() => null);
     if (!data || !data.ok) return data && data.error === 'user_not_found' ? '' : null;
@@ -185,13 +190,12 @@
     }
     Promise.all(
       ids.map(async (id) => {
-        const p = await fetch(id).catch(() => null);
+        const p = await fetchPronouns(id).catch(() => null);
         inflight.delete(id);
         if (p !== null) {
           cache[id] = p;
+          if (!p) knownEmpty.add(id);
           dirty = true;
-        } else {
-          cache[id] = '';
         }
       }),
     ).then(() => {
@@ -202,20 +206,21 @@
 
   function pronounsFor(id) {
     const fromStore = storePronouns(id);
-    if (fromStore !== null) {
+    if (fromStore) {
       if (cache[id] !== fromStore) {
         cache[id] = fromStore;
         dirty = true;
       }
       return fromStore;
     }
-    if (id in cache) return cache[id];
+    if (cache[id]) return cache[id];
+    if (knownEmpty.has(id)) return '';
     if (!inflight.has(id)) queued.add(id);
     return '';
   }
 
   function paint(ts) {
-    const row = ts.closest('.c-message_kit__message, .c-message, [data-qa="message_container"], [role="listitem"]');
+    const row = ts.closest(ROW_SEL);
     const sender =
       row &&
       row.querySelector(
@@ -241,7 +246,11 @@
     if (el.textContent !== p) el.textContent = p;
   }
   let lastTsColor = '';
-  function syncColor() {
+  let lastColorSync = 0;
+  function syncColor(force = false) {
+    const now = Date.now();
+    if (!force && now - lastColorSync < 5000) return;
+    lastColorSync = now;
     const label = document.querySelector('.c-timestamp__label');
     if (!label) return;
     const color = getComputedStyle(label).color;
@@ -251,10 +260,23 @@
     }
   }
 
-  function paintAll() {
-    syncColor();
-    document.querySelectorAll('.c-timestamp').forEach(paint);
+  function paintWithin(root) {
+    const timestamps = [];
+    if (root.nodeType === Node.ELEMENT_NODE && root.matches('.c-timestamp')) timestamps.push(root);
+    if (root.querySelectorAll) timestamps.push(...root.querySelectorAll('.c-timestamp'));
+    const rows = new Set();
+    timestamps.forEach((timestamp) => {
+      const row = timestamp.closest(ROW_SEL);
+      if (!row || rows.has(row)) return;
+      rows.add(row);
+      paint(timestamp);
+    });
     if (dirty) saveCache();
+  }
+
+  function paintAll() {
+    syncColor(true);
+    paintWithin(document);
   }
 
   window.__slickPronouns = {
@@ -262,18 +284,13 @@
     get: (id) => cache[id] ?? null,
   };
 
-  let t = null;
-  const obs = new MutationObserver(() => {
-    if (t) return;
-    t = setTimeout(() => {
-      t = null;
-      paintAll();
-    }, 200);
-  });
   function boot() {
     if (!document.body) return setTimeout(boot, 200);
     paintAll();
-    obs.observe(document.body, { subtree: true, childList: true });
+    window.__slickDOM.onRoots((roots) => {
+      syncColor();
+      roots.forEach(paintWithin);
+    });
   }
   boot();
 })();

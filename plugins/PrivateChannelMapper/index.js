@@ -9,4 +9,12 @@ module.exports = {
   },
 
   renderer: fs.readFileSync(path.join(__dirname, 'renderer.js'), 'utf8'),
+  settings: {
+    flaron: {
+      type: 'boolean',
+      label: 'Use external private channel DB (Flaron)',
+      description: 'If enabled, the plugin will show known private channel names if no local name is found.',
+      default: false,
+    },
+  },
 };

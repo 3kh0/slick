@@ -8,6 +8,9 @@ const { spawnSync } = require('child_process');
 const ROOT = path.resolve(__dirname, '..', '..');
 const LINUX_SLACK_PATHS = [
   process.env.SLICK_SLACK_DIR,
+  '/run/host/usr/lib/slack',
+  '/run/host/opt/Slack',
+  '/run/host/opt/slack',
   '/usr/lib/slack',
   '/opt/Slack',
   '/opt/slack',
@@ -71,6 +74,7 @@ function copyRuntime(resources) {
   fs.rmSync(runtime, { recursive: true, force: true });
   for (const file of [
     'scripts/byoe/inject.js',
+    'scripts/byoe/dom-hub.js',
     'scripts/byoe/internals/index.js',
     'scripts/byoe/login-handoff.js',
     'scripts/byoe/perf.js',
@@ -181,6 +185,9 @@ const RELEASES_URL = 'https://github.com/3kh0/slick/releases';
 
 const LINUX_SLACK_PATHS = [
   process.env.SLICK_SLACK_DIR,
+  '/run/host/usr/lib/slack',
+  '/run/host/opt/Slack',
+  '/run/host/opt/slack',
   '/usr/lib/slack',
   '/opt/Slack',
   '/opt/slack',

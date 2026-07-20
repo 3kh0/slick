@@ -5,15 +5,27 @@
   if (window.__slickPCM) return;
   window.__slickPCM = true;
 
-  const KEY = 'slick:pcm:names';
   const SEL = '.c-missing_channel--private';
   const ID_RE = /^[CGD][A-Z0-9]{6,}$/;
 
-  let names = read();
-  function read() {
+  let names = read('slick:pcm:names');
+
+  const FLARON_KEY = 'slick:pcm:flaron';
+  const FLARON_UNKNOWN_KEY = 'slick:pcm:flaron-unknown';
+
+  function flaronEnabled() {
+    return !!window.__slickPluginSettings?.PrivateChannelMapper?.flaron;
+  }
+
+  const cachedFlaron = read(FLARON_KEY);
+  const flaronUnknown = read(FLARON_UNKNOWN_KEY);
+  const failedFlaron = new Set();
+  const pendingFlaron = new Set();
+
+  function read(key) {
     let raw;
     try {
-      raw = JSON.parse(localStorage.getItem(KEY)) || {};
+      raw = JSON.parse(localStorage.getItem(key)) || {};
     } catch {
       return {};
     }
@@ -21,9 +33,9 @@
     for (const k of Object.keys(raw)) if (ID_RE.test(k)) clean[k] = raw[k];
     return clean;
   }
-  function write() {
+  function write(key, val) {
     try {
-      localStorage.setItem(KEY, JSON.stringify(names));
+      localStorage.setItem(key, JSON.stringify(val));
     } catch {}
   }
 
@@ -68,19 +80,64 @@
     return n;
   }
 
+  function flaronUnknownRecently(id) {
+    const ts = flaronUnknown[id];
+    if (typeof ts !== 'number') return false;
+    if (Date.now() - ts < 24 * 60 * 60 * 1000) return true;
+    delete flaronUnknown[id];
+    return false;
+  }
+
+  function getFlaron(id) {
+    if (cachedFlaron[id] || pendingFlaron.has(id) || failedFlaron.has(id)) return;
+    if (flaronUnknownRecently(id)) return;
+    pendingFlaron.add(id);
+    fetch('https://flaron.halceon.dev/channel/' + id)
+      .then((r) => r.json())
+      .then((data) => {
+        const name = data && typeof data.name === 'string' ? data.name.trim().slice(0, 100) : '';
+        if (name) {
+          cachedFlaron[id] = name;
+          write(FLARON_KEY, cachedFlaron);
+          applyAll();
+        } else if (data && data.error === 'unknown') {
+          flaronUnknown[id] = Date.now();
+          write(FLARON_UNKNOWN_KEY, flaronUnknown);
+        } else {
+          failedFlaron.add(id);
+        }
+      })
+      .catch(() => {
+        failedFlaron.add(id);
+      })
+      .finally(() => pendingFlaron.delete(id));
+  }
+
   function apply(el) {
     const id = idOf(el);
     if (!id) return;
     const custom = names[id];
-    el.title = custom ? id : '';
+    let flaron;
+    if (!custom && flaronEnabled()) {
+      getFlaron(id);
+      flaron = cachedFlaron[id];
+    }
+    const want = custom || flaron || id;
+    el.title = want === id ? '' : id;
+
     const node = labelTextNode(el);
-    const want = custom || id;
     if (node.nodeValue !== want) node.nodeValue = want;
     el.classList.toggle('slick-pcm--named', !!custom);
+    el.classList.toggle('slick-pcm--flaron', !!flaron);
   }
 
   function applyAll() {
     document.querySelectorAll(SEL).forEach(apply);
+  }
+
+  function applyWithin(root) {
+    if (root.nodeType === Node.ELEMENT_NODE && root.matches(SEL)) apply(root);
+    if (root.querySelectorAll) root.querySelectorAll(SEL).forEach(apply);
   }
 
   let overlay = null;
@@ -114,7 +171,7 @@
         const v = input.value.trim();
         if (v) names[id] = v;
         else delete names[id];
-        write();
+        write('slick:pcm:names', names);
         closeEditor();
         applyAll();
       } else if (e.key === 'Escape') {
@@ -132,21 +189,14 @@
     }
   });
 
-  let t = null;
-  const obs = new MutationObserver(() => {
-    if (t) return;
-    t = setTimeout(() => {
-      t = null;
-      applyAll();
-    }, 150);
-  });
   function boot() {
     if (!document.body) {
       setTimeout(boot, 200);
       return;
     }
     applyAll();
-    obs.observe(document.body, { subtree: true, childList: true, characterData: true });
+    window.__slickDOM.onRoots((roots) => roots.forEach(applyWithin), { charData: true });
+    window.addEventListener('slick:plugin-settings', applyAll);
   }
   boot();
 })();

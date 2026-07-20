@@ -19,7 +19,7 @@ function Die($m)  { Write-Host "error: " -ForegroundColor Red -NoNewline; Write-
 
 function Assert-ReleaseAttestation([string]$Path) {
   if (-not (Get-Command gh -ErrorAction SilentlyContinue)) {
-    Write-Host "    (gh CLI not found; skipping provenance check — https://cli.github.com)" -ForegroundColor DarkGray
+    Write-Host "    (gh CLI not found; skipping provenance check - https://cli.github.com)" -ForegroundColor DarkGray
     return
   }
   Step "Verifying build provenance"
@@ -337,7 +337,10 @@ Step "Creating shortcuts"
 New-Shortcuts $exe $iconFile
 
 Step "Launching Slick"
+$prevNoAttach = $env:ELECTRON_NO_ATTACH_CONSOLE
+$env:ELECTRON_NO_ATTACH_CONSOLE = '1'
 Start-Process $exe
+$env:ELECTRON_NO_ATTACH_CONSOLE = $prevNoAttach
 
 Write-Host ""
 Write-Host "Yippee! " -ForegroundColor Green -NoNewline

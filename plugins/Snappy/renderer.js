@@ -55,14 +55,13 @@
     for (const editor of changed) restore(editor);
   }
 
-  const observer = new MutationObserver((mutations) => {
+  window.__slickDOM.onRootsSync((added) => {
     if (!disabled()) return;
     prune();
-    for (const mutation of mutations) for (const node of mutation.addedNodes) apply(node);
+    for (const node of added) apply(node);
   });
-  observer.observe(document.body, { childList: true, subtree: true });
 
-  const state = (window.__slickSnappy = { apply: () => apply(document), observer });
+  const state = (window.__slickSnappy = { apply: () => apply(document) });
   window.addEventListener('slick:plugin-settings', state.apply);
   state.apply();
 })();

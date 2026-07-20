@@ -122,26 +122,24 @@
     itemRow(reference, menu).after(...rows);
   }
 
-  function x() {
-    for (const root of document.querySelectorAll(SELECTOR)) {
-      const id = visible(root) && userIdOf(root);
+  function within(root, selector) {
+    const found = [];
+    if (root.nodeType === Node.ELEMENT_NODE && root.matches(selector)) found.push(root);
+    if (root.querySelectorAll) found.push(...root.querySelectorAll(selector));
+    return found;
+  }
+
+  function x(root = document) {
+    for (const profile of within(root, SELECTOR)) {
+      const id = visible(profile) && userIdOf(profile);
       if (id) profileId = id;
     }
-    for (const item of document.querySelectorAll('button,[role="menuitem"]')) {
-      if (!visible(item) || item.textContent.replace(/\s+/g, ' ').trim() !== 'Copy link to profile') continue;
+    for (const item of within(root, 'button,[role="menuitem"]')) {
+      if (item.textContent.replace(/\s+/g, ' ').trim() !== 'Copy link to profile' || !visible(item)) continue;
       const menu = item.closest('[role="menu"],.c-menu');
       if (menu) injectMenu(menu, item);
     }
   }
-
-  let timer = null;
-  const observer = new MutationObserver(() => {
-    if (timer) return;
-    timer = setTimeout(() => {
-      timer = null;
-      x();
-    }, 50);
-  });
 
   function boot() {
     if (!document.body) {
@@ -160,7 +158,7 @@
       document.head.appendChild(style);
     }
     x();
-    observer.observe(document.body, { childList: true, subtree: true });
+    window.__slickDOM.onRoots((roots) => roots.forEach(x));
   }
 
   boot();
