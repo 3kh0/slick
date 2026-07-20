@@ -6,6 +6,7 @@
   let recorder;
   let timer;
   let busy = false;
+  let segments = [];
   let captureId = 0;
   let pendingCleanup;
 
@@ -41,21 +42,28 @@
     text.textContent = value;
   }
 
-  async function submit(blob, id) {
-    if (busy || !blob.size || id !== captureId) return;
+  function processSegments() {
+    if (busy) return;
+    while (segments.length && segments[0].id !== captureId) segments.shift();
+    const segment = segments.shift();
+    if (!segment) return;
     busy = true;
     const requestId = crypto.randomUUID();
     let resultTimer;
+    let done = false;
     const cleanup = () => {
+      if (done) return;
+      done = true;
       window.removeEventListener('slick:better-captions-result', receive);
       clearTimeout(resultTimer);
       if (pendingCleanup === cleanup) pendingCleanup = null;
       busy = false;
+      processSegments();
     };
     const receive = (event) => {
       if (event.detail?.id !== requestId) return;
       cleanup();
-      if (id !== captureId) return;
+      if (segment.id !== captureId) return;
       if (event.detail.error) status(`BetterCaptions: ${event.detail.error}`);
       else if (event.detail.text) status(event.detail.text);
     };
@@ -63,12 +71,18 @@
     pendingCleanup = cleanup;
     resultTimer = setTimeout(() => {
       cleanup();
-      if (id === captureId) status('BetterCaptions: Transcription timed out.');
+      if (segment.id === captureId) status('BetterCaptions: Transcription timed out.');
     }, 30000);
     fetch(`https://slick.better-captions/transcribe?id=${encodeURIComponent(requestId)}`, {
       method: 'POST',
-      body: blob,
+      body: segment.blob,
     }).catch(() => {});
+  }
+
+  function submit(blob, id) {
+    if (!blob.size || id !== captureId) return;
+    segments.push({ blob, id });
+    processSegments();
   }
 
   function recordSegment(id) {
@@ -96,6 +110,7 @@
   function stop() {
     const activeRecorder = recorder;
     captureId++;
+    segments = [];
     clearTimeout(timer);
     pendingCleanup?.();
     if (activeRecorder?.state === 'recording') activeRecorder.stop();
