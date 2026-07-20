@@ -79,12 +79,19 @@ module.exports = {
   },
   renderer: fs.readFileSync(path.join(__dirname, 'renderer.js'), 'utf8'),
   main(ctx) {
-    const sessions = new Set();
+    const sessions = new Map();
     let disarmTimer;
+
+    const retainSession = (session) => sessions.set(session, (sessions.get(session) || 0) + 1);
+    const releaseSession = (session) => {
+      const references = sessions.get(session) || 0;
+      if (references <= 1) sessions.delete(session);
+      else sessions.set(session, references - 1);
+    };
 
     const disarmCapture = () => {
       clearTimeout(disarmTimer);
-      for (const session of sessions) {
+      for (const session of sessions.keys()) {
         try {
           session.setDisplayMediaRequestHandler(null);
         } catch {}
@@ -124,14 +131,14 @@ module.exports = {
           setTimeout(disarmCapture, 0);
         }
       };
-      for (const session of sessions) session.setDisplayMediaRequestHandler(handler);
+      for (const session of sessions.keys()) session.setDisplayMediaRequestHandler(handler);
       disarmTimer = setTimeout(disarmCapture, 10000);
     };
 
     ctx.onWindow((win) => {
       const session = win.webContents.session;
-      sessions.add(session);
-      win.webContents.once('destroyed', () => sessions.delete(session));
+      retainSession(session);
+      win.webContents.once('destroyed', () => releaseSession(session));
     });
 
     const transcribe = async (audio) => {
@@ -265,7 +272,7 @@ module.exports = {
     });
 
     ctx.app.whenReady().then(() => {
-      sessions.add(ctx.electron.session.defaultSession);
+      retainSession(ctx.electron.session.defaultSession);
     });
   },
 };
