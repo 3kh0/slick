@@ -238,10 +238,14 @@ module.exports = {
       const url = new URL(details.url);
       if (details.method !== 'POST') return { cancel: true };
       if (url.pathname === '/capture') {
+        const id = url.searchParams.get('id') || '';
+        if (!/^[a-zA-Z0-9-]{8,64}$/.test(id)) return { cancel: true };
         try {
           armCapture();
+          deliver(details, { id, captureReady: true });
         } catch (error) {
           ctx.log('capture error:', error.message);
+          deliver(details, { id, error: error.message || 'Could not activate system-audio capture.' });
         }
         return { cancel: true };
       }

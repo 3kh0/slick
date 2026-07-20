@@ -42,6 +42,30 @@
     text.textContent = value;
   }
 
+  function prepareCapture() {
+    const requestId = crypto.randomUUID();
+    return new Promise((resolve, reject) => {
+      const cleanup = () => {
+        window.removeEventListener('slick:better-captions-result', receive);
+        clearTimeout(captureTimer);
+      };
+      const receive = (event) => {
+        if (event.detail?.id !== requestId) return;
+        cleanup();
+        if (event.detail.error) reject(new Error(event.detail.error));
+        else resolve();
+      };
+      window.addEventListener('slick:better-captions-result', receive);
+      const captureTimer = setTimeout(() => {
+        cleanup();
+        reject(new Error('Could not activate system-audio capture.'));
+      }, 5000);
+      fetch(`https://slick.better-captions/capture?id=${encodeURIComponent(requestId)}`, {
+        method: 'POST',
+      }).catch(() => {});
+    });
+  }
+
   function processSegments() {
     if (busy) return;
     while (segments.length && segments[0].id !== captureId) segments.shift();
@@ -122,7 +146,7 @@
 
   async function start() {
     try {
-      await fetch('https://slick.better-captions/capture', { method: 'POST' }).catch(() => {});
+      await prepareCapture();
       stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
       stream.getVideoTracks().forEach((track) => track.stop());
       if (!stream.getAudioTracks().length) throw new Error('Share a window or screen with system audio enabled.');
