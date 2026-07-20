@@ -329,7 +329,11 @@ if [ "$NO_LAUNCH" -eq 0 ]; then
   step "Launching Slick"
   SLICK_LAUNCH_T0="$(date +%s%3N 2>/dev/null || echo '')"
   export SLICK_LAUNCH_T0
-  "$TARGET/electron" --no-sandbox
+  LOG_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/slick"
+  mkdir -p "$LOG_DIR"
+  setsid "$TARGET/electron" --no-sandbox >"$LOG_DIR/launch.log" 2>&1 </dev/null &
+  disown
+  echo "    launched in the background (log: $LOG_DIR/launch.log)"
 fi
 
 printf '\n\033[1;32mYippee!\033[0m Slick is installed at %s\n' "$TARGET"
