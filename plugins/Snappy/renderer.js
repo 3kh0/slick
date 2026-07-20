@@ -12,6 +12,7 @@
     '.p-message_input__input_container_unstyled [contenteditable="true"]';
   const originals = new WeakMap();
   const changed = new Set();
+  let unsubscribe = null;
 
   function disabled() {
     return window.__slickPluginSettings?.Snappy?.disableSpellcheck === true;
@@ -47,21 +48,28 @@
     }
   }
 
-  function apply(root) {
+  function apply(root = document) {
+    for (const editor of editors(root)) disable(editor);
+  }
+
+  function sync() {
     if (disabled()) {
-      for (const editor of editors(root)) disable(editor);
+      if (!unsubscribe) {
+        unsubscribe = window.__slickDOM.onRootsSync((added) => {
+          prune();
+          for (const node of added) apply(node);
+        });
+      }
+      apply();
       return;
     }
+
+    unsubscribe?.();
+    unsubscribe = null;
     for (const editor of changed) restore(editor);
   }
 
-  window.__slickDOM.onRootsSync((added) => {
-    if (!disabled()) return;
-    prune();
-    for (const node of added) apply(node);
-  });
-
-  const state = (window.__slickSnappy = { apply: () => apply(document) });
+  const state = (window.__slickSnappy = { apply: sync });
   window.addEventListener('slick:plugin-settings', state.apply);
   state.apply();
 })();
