@@ -703,6 +703,24 @@ async function doApplyTo(wc, { initialize = false, refreshCss = true } = {}) {
 
 let firstWindow = true;
 let clientDomReady = false;
+function initializeDocument(wc, value) {
+  const url = URL.parse(value);
+  const document = documents.get(wc);
+  if (url?.protocol !== 'https:' || !document || document.initialized || document.initializing) return;
+  document.initializing = true;
+  if (!clientDomReady && url.hostname === 'app.slack.com') {
+    clientDomReady = true;
+    perf.mark('client dom-ready');
+  }
+  if (!workspaceReady) wc.mainFrame.executeJavaScript(BOOT_PROBE_JS, true).catch(() => {});
+  applyTo(wc, { initialize: true }).finally(() => {
+    document.initializing = false;
+  });
+  if (!workspaceReady) {
+    watchWorkspaceReady(wc);
+    armStallWatchdog(wc);
+  }
+}
 app.on('browser-window-created', (_event, win) => {
   if (firstWindow) {
     firstWindow = false;
@@ -756,18 +774,15 @@ app.on('browser-window-created', (_event, win) => {
     }
   }
   wc.on('dom-ready', () => {
-    if (URL.parse(wc.getURL())?.protocol !== 'https:') return;
     documents.set(wc, { initialized: false });
-    if (!clientDomReady && URL.parse(wc.getURL())?.hostname === 'app.slack.com') {
-      clientDomReady = true;
-      perf.mark('client dom-ready');
-    }
-    if (!workspaceReady) wc.mainFrame.executeJavaScript(BOOT_PROBE_JS, true).catch(() => {});
-    applyTo(wc, { initialize: true });
-    if (!workspaceReady) {
-      watchWorkspaceReady(wc);
-      armStallWatchdog(wc);
-    }
+    initializeDocument(wc, wc.getURL());
+    wc.mainFrame
+      .executeJavaScript('location.href', true)
+      .then((url) => initializeDocument(wc, url))
+      .catch(() => {});
+  });
+  wc.on('did-navigate-in-page', (_navEvent, url, isMainFrame) => {
+    if (isMainFrame) initializeDocument(wc, url);
   });
   wc.on('destroyed', () => {
     live.delete(wc);
