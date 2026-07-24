@@ -48,6 +48,7 @@ perf.mark('inject.js start');
 const fs = require('fs');
 const { isDeepStrictEqual } = require('util');
 const { allPluginSettings, buildCatalog, loadPlugins, mergeSettings } = require('./plugins');
+const diagnostics = require('./diagnostics');
 const internals = require('./internals');
 const settings = require('./settings-ui');
 const { buildSpec } = require('../theme');
@@ -111,6 +112,14 @@ const plugins = loadPlugins({
 });
 endPlugins(`${plugins.loaded.length} plugin(s) loaded`);
 
+const diagnosticSession = diagnostics.create({
+  app,
+  electron,
+  settingsDir: SETTINGS_DIR,
+  enabledPlugins: runtime.enabled,
+  activeTheme: runtime.theme,
+});
+
 const BOOT_LOG_FILE = path.join(SETTINGS_DIR, 'boot.log');
 function bootLog(text) {
   try {
@@ -125,23 +134,38 @@ function bootLog(text) {
 const reportPerf = () => perf.report({ launcherMs: LAUNCHER_MS, pluginTimings: plugins.timings, sink: bootLog });
 setTimeout(() => {
   reportPerf();
-  if (!workspaceReady) bootLog('60s-timeout (workspace never rendered) ' + netSummary());
+  if (!workspaceReady) {
+    bootLog('60s-timeout (workspace never rendered) ' + netSummary());
+    diagnosticSession.record('workspace-timeout', { timeoutMs: 60000 });
+  }
 }, 60000).unref();
 
 let nt = true;
 const netInflight = new Map();
 const netSlow = [];
+const diagnosticBlocked = new Set();
+const diagnosticIgnored = new Set();
 function trackNet(sess) {
   try {
     sess.webRequest.onSendHeaders({ urls: ['*://*/*'] }, (d) => {
       if (nt) netInflight.set(d.id, { url: d.url, type: d.resourceType, start: performance.now() });
     });
     const done = (d, how) => {
+      if (diagnosticIgnored.delete(d.id)) return;
+      if (diagnosticBlocked.delete(d.id)) how = 'blocked';
+      diagnosticSession.network(d.resourceType, how);
       if (!nt) return;
       const e = netInflight.get(d.id);
       if (!e) return;
       netInflight.delete(d.id);
       const ms = Math.round(performance.now() - e.start);
+      if (ms >= 1000 || how !== 'ok') {
+        let host = '';
+        try {
+          host = new URL(e.url).hostname;
+        } catch {}
+        diagnosticSession.record('network-request', { ms, type: e.type, result: how, host });
+      }
       if ((ms >= 1000 || how !== 'ok') && how !== 'net::ERR_ABORTED')
         netSlow.push({ ms, startMs: Math.round(e.start), type: e.type, how, url: e.url });
     };
@@ -196,6 +220,7 @@ function armBlocking(sess) {
   sess.webRequest.onBeforeRequest({ urls }, (details, cb) => {
     if (process.env.SLICK_DBG) console.log('[slick-dbg] intercepted', details.url);
     if (details.url.startsWith('https://slick.control/') || details.url.startsWith('http://slick.control/')) {
+      diagnosticIgnored.add(details.id);
       settings.handleControl(details.url, {
         catalog,
         enabledFile: ENABLED_FILE,
@@ -208,6 +233,7 @@ function armBlocking(sess) {
         onEnabled: setEnabled,
         onPluginSetting: (_dir, _key, _value, all) => setPluginSettings(all),
         onCustomCss: setCustomCss,
+        onDiagnostics: () => diagnosticSession.exportBundle(),
         onFileSetting: ({ def }) => {
           const extensions = String(def.accept || '')
             .split(',')
@@ -237,16 +263,19 @@ function armBlocking(sess) {
         const response = request.handler(details);
         if (!response) continue;
         if (response.cancel) blockedCount++;
+        if (response.cancel) diagnosticBlocked.add(details.id);
         cb(response);
         return;
       } catch (e) {
         console.error(`[slick-byoe] request interceptor "${request.name}" failed: ${e.message}`);
         blockedCount++;
+        diagnosticBlocked.add(details.id);
         cb({ cancel: true });
         return;
       }
     }
     blockedCount++;
+    diagnosticBlocked.add(details.id);
     cb({ cancel: true });
   });
 }
@@ -398,6 +427,8 @@ function requestNoti() {
 
 app.whenReady().then(() => {
   perf.mark('app ready');
+  diagnosticSession.record('app-ready', { atMs: Math.round(performance.now()) });
+  diagnosticSession.start(() => electron.BrowserWindow.getAllWindows());
   armBlocking(session.defaultSession);
   ap(session.defaultSession);
   trackNet(session.defaultSession);
@@ -528,10 +559,20 @@ function formatBootDiag(r) {
 
 const consoleBuf = [];
 const consoleContents = new Set();
+const consoleSignals = new Set();
 function captureConsole(e, level, message) {
   const msg = message ?? e?.message;
   if (workspaceReady || consoleBuf.length >= 1200 || msg == null) return;
-  consoleBuf.push({ t: Math.round(performance.now()), lvl: level ?? e?.level, msg: String(msg).slice(0, 240) });
+  const text = String(msg);
+  consoleBuf.push({ t: Math.round(performance.now()), lvl: level ?? e?.level, msg: text.slice(0, 240) });
+  let signal = '';
+  if (/purgeModelAndClearObjectStore.*did not resolve/i.test(text)) signal = 'persisted-model-purge-timeout';
+  else if (/Skipping checking persisted store because.*out of date/i.test(text)) signal = 'persisted-model-outdated';
+  else if (/service worker.*(?:failed|error|timeout)/i.test(text)) signal = 'service-worker-failure';
+  if (signal && !consoleSignals.has(signal)) {
+    consoleSignals.add(signal);
+    diagnosticSession.record('profile-cache-signal', { signal });
+  }
 }
 function stopConsoleCapture() {
   for (const wc of consoleContents) {
@@ -561,6 +602,24 @@ function watchWorkspaceReady(wc) {
       reportPerf();
       bootLog(formatBootDiag(r));
       bootLog(netSummary());
+      diagnosticSession.setBoot({
+        launcherMs: LAUNCHER_MS,
+        totalMs: Math.round(performance.now()),
+        workspaceReadyMs: r.readyMs,
+        domContentLoadedMs: r.dclMs,
+        responseEndMs: r.responseEnd,
+        domInteractiveMs: r.domInteractive,
+        loadEndMs: r.loadEnd,
+        resourceCount: r.resources,
+        longTasks: { count: r.longtasks, totalMs: r.longtaskMs, maxMs: r.maxLongtask },
+        serviceWorker: { state: r.swState, events: r.swEvents },
+        pluginLoadTimings: plugins.timings,
+      });
+      diagnosticSession.record('workspace-ready', {
+        totalMs: Math.round(performance.now()),
+        pageMs: r.readyMs,
+        longTaskMs: r.longtaskMs,
+      });
       if (r.readyMs > 5000) dumpConsole(`slow boot, workspace ${r.readyMs}ms`);
       nt = false;
       stopConsoleCapture();
@@ -591,6 +650,7 @@ function armStallWatchdog(wc) {
       return;
     }
     bootReloads++;
+    diagnosticSession.record('boot-reload', { attempt: bootReloads, timeoutMs: BOOT_STALL_MS });
     bootLog(
       `boot-stall watchdog: workspace not ready ${BOOT_STALL_MS}ms after dom-ready -> reload ${bootReloads}/${2} (url ${wc.getURL()})`,
     );
@@ -675,6 +735,14 @@ async function doApplyTo(wc, { initialize = false, refreshCss = true } = {}) {
   }
   if (shouldInitialize) {
     const endJs = track && perf.span();
+    try {
+      await wc.mainFrame.executeJavaScript(
+        diagnostics.rendererProbeSource(process.env.SLICK_PERF_DETAILED === '1'),
+        true,
+      );
+    } catch (e) {
+      console.error('[slick-byoe] diagnostics init failed:', e.message);
+    }
     if (internals.enabled() || plugins.needsInternals) {
       try {
         await wc.mainFrame.executeJavaScript(internals.source, true);
@@ -682,9 +750,16 @@ async function doApplyTo(wc, { initialize = false, refreshCss = true } = {}) {
         console.error('[slick-byoe] internals init failed:', e.message);
       }
     }
-    const jsDone = plugins.js.map((js) =>
-      wc.mainFrame.executeJavaScript(js, true).catch((e) => console.error('[slick-byoe] plugin JS failed:', e.message)),
-    );
+    const jsDone = plugins.js.map(({ name, source }) => {
+      const pluginName = JSON.stringify(name);
+      const wrapped =
+        `(() => { const previous = window.__slickPluginInstallContext;` +
+        `window.__slickPluginInstallContext = ${pluginName}; try {\n${source}\n}` +
+        `finally { window.__slickPluginInstallContext = previous; } })()`;
+      return wc.mainFrame
+        .executeJavaScript(wrapped, true)
+        .catch((e) => console.error(`[slick-byoe] plugin JS failed (${name}):`, e.message));
+    });
     try {
       const boot = settings.bootstrapScript(runtimeManifest());
       jsDone.push(
@@ -743,19 +818,27 @@ app.on('browser-window-created', (_event, win) => {
     );
     bootLog('at-unresponsive ' + netSummary());
     dumpConsole('at-unresponsive');
+    diagnosticSession.record('renderer-unresponsive', { windowId: wc.id, atMs: Math.round(unresponsiveAt) });
   });
   wc.on('responsive', () => {
     const ms = unresponsiveAt ? Math.round(performance.now() - unresponsiveAt) : 0;
     hungRenderers.delete(wc);
     bootLog(`renderer responsive again (wc${wc.id}, was hung ~${ms}ms)`);
+    diagnosticSession.record('renderer-responsive', { windowId: wc.id, hungMs: ms });
     unresponsiveAt = 0;
   });
-  wc.on('render-process-gone', (_e, details) =>
-    bootLog(`render-process-gone (wc${wc.id}, reason=${details.reason}, exitCode=${details.exitCode})`),
-  );
+  wc.on('render-process-gone', (_e, details) => {
+    bootLog(`render-process-gone (wc${wc.id}, reason=${details.reason}, exitCode=${details.exitCode})`);
+    diagnosticSession.record('render-process-gone', {
+      windowId: wc.id,
+      reason: details.reason,
+      exitCode: details.exitCode,
+    });
+  });
   wc.on('did-fail-load', (_e, code, desc, url, isMainFrame) => {
     if (code === -3) return;
     bootLog(`did-fail-load (wc${wc.id}, code=${code} ${desc}, mainFrame=${isMainFrame}, ${String(url).slice(0, 140)})`);
+    diagnosticSession.record('did-fail-load', { windowId: wc.id, code, description: desc, mainFrame: isMainFrame });
   });
   if (process.env.SLICK_DBG) {
     wc.on('did-navigate', (_e, url) => console.log(`[slick-dbg] wc${wc.id} did-navigate ${url}`));
@@ -818,6 +901,7 @@ function setTheme(name) {
   }
   if (THEME_FILE) fs.unwatchFile(THEME_FILE, onThemeFileChanged);
   runtime.theme = name;
+  diagnosticSession.updateConfig(runtime.enabled, runtime.theme);
   THEME_FILE = file;
   rebuild();
   watchTheme();
@@ -828,6 +912,7 @@ function setTheme(name) {
 function setEnabled(names) {
   if (!Array.isArray(names) || isDeepStrictEqual(names, runtime.enabled)) return;
   runtime.enabled = names;
+  diagnosticSession.updateConfig(runtime.enabled, runtime.theme);
   applyAllLive({ refreshCss: false });
 }
 
@@ -869,3 +954,5 @@ console.log(
     ` + ${plugins.loaded.length} plugin(s): ${plugins.loaded.join(', ') || 'none'}` +
     (blockedPatternCount ? ` | blocking ${blockedPatternCount} URL pattern(s)` : ''),
 );
+
+app.on('before-quit', () => diagnosticSession.finish('before-quit'));

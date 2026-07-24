@@ -74,7 +74,16 @@ function stubCrashReporter(crashReporter) {
 }
 
 function applySwitches({ app, commandLine, crashReporter, pluginsDir, snappySettings }) {
-  for (const [name, value] of DEFAULT_SWITCHES) appendSwitch(commandLine, name, value);
+  const disabled = new Set(
+    String(process.env.SLICK_DISABLE_SWITCHES || '')
+      .split(',')
+      .map((name) => name.trim())
+      .filter(Boolean),
+  );
+  for (const [name, value] of DEFAULT_SWITCHES) {
+    if (!disabled.has(name)) appendSwitch(commandLine, name, value);
+  }
+  if (process.env.SLICK_DISABLE_GPU === '1') app.disableHardwareAcceleration();
 
   const snappy = snappySettings || readSnappySettings({ app, pluginsDir });
   if (snappy.ignoreGpuBlocklist === true) commandLine.appendSwitch('ignore-gpu-blocklist');
