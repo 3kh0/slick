@@ -134,6 +134,7 @@ function handleControl(
     onPluginSetting,
     onFileSetting,
     onCustomCss,
+    onDiagnostics,
   },
 ) {
   let u;
@@ -215,6 +216,12 @@ function handleControl(
           console.error('[slick-settings] onCustomCss failed:', e.message);
         }
       }
+    }
+  } else if (op === 'diagnostics') {
+    if (onDiagnostics) {
+      Promise.resolve(onDiagnostics()).catch((e) =>
+        console.error('[slick-settings] diagnostic export failed:', e.message),
+      );
     }
   } else if (op === 'restart') {
     console.log('[slick-settings] relaunching to apply plugin changes');

@@ -146,7 +146,7 @@ function loadPlugins({ catalog, enabled, electron, settings }) {
       },
       injectCSS: (css) => out.css.push([].concat(css).join('\n')),
       injectJS: (js) => {
-        if (js) out.js.push(String(js));
+        if (js) out.js.push({ name, source: String(js) });
       },
       onWindow: (cb) => {
         if (typeof cb === 'function') out.windowHooks.push(cb);
@@ -168,7 +168,7 @@ function loadPlugins({ catalog, enabled, electron, settings }) {
     out.timings.push({ name, ms: performance.now() - start });
   }
 
-  if (out.js.length && domHubSource) out.js.unshift(domHubSource);
+  if (domHubSource) out.js.unshift({ name: 'slick-dom-hub', source: domHubSource });
 
   return out;
 }

@@ -64,6 +64,8 @@
       '#slick-panel-overlay .slick-editor-back:hover{opacity:1}',
       '#slick-panel-overlay .slick-customcss-editor{width:100%;min-height:320px;box-sizing:border-box;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;line-height:1.5;padding:10px 12px;border-radius:8px;border:1px solid rgba(127,127,127,.3);background:rgba(127,127,127,.06);color:inherit;resize:vertical;tab-size:2}',
       '#slick-panel-overlay .slick-customcss-editor:focus{outline:2px solid rgba(29,155,209,.5);outline-offset:1px}',
+      '#slick-panel-overlay .slick-diagnostics{display:flex;align-items:center;gap:12px;margin-top:10px}',
+      '#slick-panel-overlay .slick-diagnostics-status{font-size:12px;opacity:.65}',
     ].join('\n');
     document.head.appendChild(st);
   }
@@ -288,6 +290,12 @@
       '<div id="slick-plugin-list">' +
       rows(S.plugins, pluginRow, 'plugins') +
       '</div>' +
+      '<div class="c-legend slick-legend" style="margin-top:24px">Performance diagnostics</div>' +
+      '<p class="slick-intro">Save a redacted local report with startup, responsiveness, CPU, memory, GPU, and per-plugin DOM metrics. Nothing is uploaded.</p>' +
+      '<div class="slick-diagnostics">' +
+      '<button id="slick-export-diagnostics" class="c-button c-button--outline c-button--medium" type="button">Export diagnostics…</button>' +
+      '<span id="slick-diagnostics-status" class="slick-diagnostics-status" aria-live="polite"></span>' +
+      '</div>' +
       '<div id="slick-applybar" class="hidden">' +
       '<span class="slick-msg">These changes take effect after restarting Slick.</span>' +
       '<button id="slick-restart" class="c-button c-button--primary c-button--medium" type="button">Apply &amp; Restart</button>' +
@@ -376,6 +384,14 @@
       });
     });
     ov.querySelector('#slick-restart').addEventListener('click', () => ctl({ op: 'restart' }));
+    ov.querySelector('#slick-export-diagnostics').addEventListener('click', () => {
+      const status = ov.querySelector('#slick-diagnostics-status');
+      if (status) status.textContent = 'Choose where to save the local report.';
+      ctl({ op: 'diagnostics' });
+      setTimeout(() => {
+        if (status) status.textContent = '';
+      }, 8000);
+    });
     return ov;
   }
 
@@ -441,7 +457,7 @@
     }
   }
 
-  new MutationObserver(() => {
+  function syncSettingsSurface() {
     if (q(SEL.overlay)) {
       injectTab();
     } else {
@@ -454,7 +470,9 @@
       const tab = $(TAB_ID);
       if (tab) tab.classList.remove('c-tabs__tab--active');
     }
-  }).observe(document.body, { childList: true, subtree: true });
+  }
+  if (window.__slickDOM?.onTick) window.__slickDOM.onTick(syncSettingsSurface, { plugin: 'slick-settings' });
+  else new MutationObserver(syncSettingsSurface).observe(document.body, { childList: true, subtree: true });
 
   window.addEventListener('resize', () => {
     const ov = $('slick-panel-overlay');

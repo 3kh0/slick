@@ -161,6 +161,12 @@ Prefer to write your own CSS instead? Slick also has a "Custom CSS" option at th
 
 Please refer to [`plugins/README.md`](plugins/README.md) for the plugins documentation. I promise it is not boring.
 
+## Performance diagnostics
+
+Slick records lightweight local startup and responsiveness metrics. You can export a redacted report from **Preferences → Slick → Performance diagnostics**; nothing is uploaded automatically.
+
+Maintainers can compare stock Slack, Slick core, defaults, and individual plugins with disposable profile clones using the [performance testing guide](docs/performance.md).
+
 ## Credits
 
 - [Slack](https://slack.com/) for the original app and its delightful internals.
