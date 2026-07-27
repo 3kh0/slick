@@ -399,10 +399,12 @@ function create({ version, build, profile }) {
       'param([int]$ProcId,[string]$App,[string]$Stage)',
       '$ErrorActionPreference = "SilentlyContinue"',
       'while (Get-Process -Id $ProcId -ErrorAction SilentlyContinue) { Start-Sleep -Milliseconds 200 }',
+      '$deadline = (Get-Date).AddSeconds(20)',
+      'while ((Get-Process Slick -ErrorAction SilentlyContinue | Where-Object { $_.Path -like "$App\\*" }) -and (Get-Date) -lt $deadline) { Start-Sleep -Milliseconds 200 }',
       'Start-Sleep -Milliseconds 500',
-      'robocopy $Stage $App /MIR /NFL /NDL /NJH /NJS /NP | Out-Null',
+      'robocopy $Stage $App /MIR /R:10 /W:1 /NFL /NDL /NJH /NJS /NP | Out-Null',
       '$env:ELECTRON_NO_ATTACH_CONSOLE = "1"',
-      'Start-Process -FilePath (Join-Path $App "Slick.exe")',
+      'Start-Process -FilePath (Join-Path $App "Slick.exe") -WorkingDirectory $App',
       'Remove-Item -Recurse -Force (Split-Path $Stage -Parent)',
     ];
     fs.writeFileSync(ps1, lines.join(String.fromCharCode(13, 10)));
@@ -412,8 +414,6 @@ function create({ version, build, profile }) {
         '-NoProfile',
         '-ExecutionPolicy',
         'Bypass',
-        '-WindowStyle',
-        'Hidden',
         '-File',
         ps1,
         '-ProcId',
@@ -423,7 +423,7 @@ function create({ version, build, profile }) {
         '-Stage',
         stage,
       ],
-      { detached: true, stdio: 'ignore' },
+      { stdio: 'ignore', windowsHide: true },
     ).unref();
   }
 
