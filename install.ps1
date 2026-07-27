@@ -339,7 +339,12 @@ New-Shortcuts $exe $iconFile
 Step "Launching Slick"
 $prevNoAttach = $env:ELECTRON_NO_ATTACH_CONSOLE
 $env:ELECTRON_NO_ATTACH_CONSOLE = '1'
+# Lets the boot timeline price launch -> electron start. Shortcuts cannot carry
+# env vars, so normal launches fall back to the wrapper-entry mark instead.
+$prevLaunchT0 = $env:SLICK_LAUNCH_T0
+$env:SLICK_LAUNCH_T0 = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds().ToString()
 Start-Process $exe
+$env:SLICK_LAUNCH_T0 = $prevLaunchT0
 $env:ELECTRON_NO_ATTACH_CONSOLE = $prevNoAttach
 
 Write-Host ""

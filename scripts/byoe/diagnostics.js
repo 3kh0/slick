@@ -1,6 +1,7 @@
 'use strict';
 
 const fs = require('fs');
+const fsp = require('fs/promises');
 const os = require('os');
 const path = require('path');
 const { execFileSync } = require('child_process');
@@ -230,7 +231,6 @@ function systemInfo(app) {
 
 function create({ app, electron, settingsDir, enabledPlugins, activeTheme }) {
   const sessionsFile = path.join(settingsDir, 'performance-sessions.json');
-  const previous = readJson(sessionsFile, []);
   const session = {
     schemaVersion: SCHEMA_VERSION,
     id: `${Date.now()}-${process.pid}`,
@@ -245,7 +245,8 @@ function create({ app, electron, settingsDir, enabledPlugins, activeTheme }) {
     renderer: [],
     network: { total: 0, failed: 0, blocked: 0, byType: {} },
   };
-  let sessions = Array.isArray(previous) ? previous.slice(-(MAX_SESSIONS - 1)) : [];
+  let sessions = [];
+  let priorJson = null;
   let sampleTimer;
   let writeTimer;
   let getWindows = () => [];
@@ -310,21 +311,61 @@ function create({ app, electron, settingsDir, enabledPlugins, activeTheme }) {
       MAX_SAMPLES,
     );
     session.renderer = renderer;
-    persist();
+    // No write here — the WRITE_MS timer owns persistence. Sampling every 15s and
+    // writing the whole rolling file each time was four writes per intended one.
+    // Worst case an unclean exit loses the samples since the last write; finish()
+    // covers every clean quit.
+  }
+
+  // The rolling file reaches several megabytes, and nothing needs the earlier
+  // sessions until the first write 60s in — so this stays off the boot path.
+  // Once loaded they are immutable, so serialize them once and splice the live
+  // session on; re-stringifying them per write was the bulk of persist() cost.
+  function loadPrior() {
+    if (priorJson !== null) return priorJson;
+    const previous = readJson(sessionsFile, []);
+    sessions = Array.isArray(previous) ? previous.slice(-(MAX_SESSIONS - 1)) : [];
+    priorJson = sessions.map((entry) => JSON.stringify(entry)).join(',');
+    return priorJson;
   }
 
   function payload() {
+    loadPrior();
     return [...sessions, sanitize(session)].slice(-MAX_SESSIONS);
   }
 
-  function persist() {
+  // Compact, not pretty: this file is machine-read by the benchmark and by the
+  // next launch. exportBundle() still pretty-prints, because that one is read by
+  // people. Pretty-printing more than doubled the bytes and the stringify time.
+  function serialize() {
+    const prior = loadPrior();
+    return `[${prior ? `${prior},` : ''}${JSON.stringify(sanitize(session))}]\n`;
+  }
+
+  // Distinct suffixes: finish() can fire while an async persist is still in
+  // flight, and sharing one temp path would let the sync write land inside the
+  // async one and get renamed into place half-formed.
+  function writeAtomicSync(text) {
+    const temporary = `${sessionsFile}.tmp-${process.pid}-s`;
+    fs.mkdirSync(settingsDir, { recursive: true });
+    fs.writeFileSync(temporary, text);
+    fs.renameSync(temporary, sessionsFile);
+  }
+
+  async function persist() {
     if (writing) return;
     writing = true;
+    const temporary = `${sessionsFile}.tmp-${process.pid}-a`;
     try {
-      fs.mkdirSync(settingsDir, { recursive: true });
-      fs.writeFileSync(sessionsFile, JSON.stringify(payload(), null, 2) + '\n');
+      const text = serialize();
+      await fsp.mkdir(settingsDir, { recursive: true });
+      await fsp.writeFile(temporary, text);
+      await fsp.rename(temporary, sessionsFile);
     } catch (error) {
       console.error('[slick-diagnostics] persist failed:', error.message);
+      try {
+        await fsp.rm(temporary, { force: true });
+      } catch {}
     } finally {
       writing = false;
     }
@@ -375,12 +416,13 @@ function create({ app, electron, settingsDir, enabledPlugins, activeTheme }) {
   function start(windowProvider) {
     getWindows = windowProvider;
     sampleTimer = setInterval(() => sample().catch(() => {}), SAMPLE_MS);
-    writeTimer = setInterval(persist, WRITE_MS);
+    writeTimer = setInterval(() => persist().catch(() => {}), WRITE_MS);
     sampleTimer.unref?.();
     writeTimer.unref?.();
     setTimeout(() => sample().catch(() => {}), 3000).unref?.();
   }
 
+  // Runs on before-quit, where an async write would not finish — stays sync.
   function finish(reason = 'quit') {
     if (finished) return;
     finished = true;
@@ -388,7 +430,11 @@ function create({ app, electron, settingsDir, enabledPlugins, activeTheme }) {
     clearInterval(writeTimer);
     session.endedAt = new Date().toISOString();
     record('session-end', { reason });
-    persist();
+    try {
+      writeAtomicSync(serialize());
+    } catch (error) {
+      console.error('[slick-diagnostics] persist failed:', error.message);
+    }
   }
 
   return {
@@ -396,6 +442,7 @@ function create({ app, electron, settingsDir, enabledPlugins, activeTheme }) {
     exportBundle,
     finish,
     record,
+    persist,
     network(type, result) {
       const name = String(type || 'unknown')
         .replace(/[^a-z0-9_-]/gi, '')

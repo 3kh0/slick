@@ -2,7 +2,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { allPluginSettings, mergeSettings, coerceSetting } = require('./plugins');
+const { allPluginSettings, hydrateCatalog, mergeSettings, coerceSetting } = require('./plugins');
 
 const CONTROL_HOST = 'slick.control';
 const controlPattern = `*://${CONTROL_HOST}/*`;
@@ -72,7 +72,10 @@ function listThemes(catalog, activeName) {
   return catalog.themes.map((theme) => ({ ...theme, active: theme.file === activeName }));
 }
 
+// The manifest describes every plugin and theme, not just the enabled ones, so
+// this is where a lazily-built catalog gets filled in.
 function buildManifest({ catalog, enabled, activeTheme, pluginSettings, customCss }) {
+  hydrateCatalog(catalog);
   const plugins = catalog.plugins.map(({ dir, meta, schema }) => {
     return {
       dir,
@@ -144,6 +147,8 @@ function handleControl(
     return false;
   }
   if (u.host !== CONTROL_HOST) return false;
+  // Control ops validate against the full plugin and theme lists.
+  hydrateCatalog(catalog);
   const op = u.searchParams.get('op');
   if (op === 'toggle') {
     const dir = u.searchParams.get('plugin');

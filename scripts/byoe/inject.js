@@ -52,6 +52,7 @@ const diagnostics = require('./diagnostics');
 const internals = require('./internals');
 const settings = require('./settings-ui');
 const { buildSpec } = require('../theme');
+const { createWatcher } = require('./watch');
 perf.mark('modules loaded');
 
 const LAUNCHER_MS = process.env.SLICK_LAUNCH_T0
@@ -65,8 +66,16 @@ const DEFAULT_ENABLED_FILE = path.join(PLUGINS_DIR, 'enabled.json');
 const ACTIVE_THEME_FILE = path.join(SETTINGS_DIR, 'active-theme');
 const PLUGIN_SETTINGS_FILE = path.join(SETTINGS_DIR, 'plugin-settings.json');
 const CUSTOM_CSS_FILE = path.join(SETTINGS_DIR, 'custom.css');
-const catalog = buildCatalog({ pluginsDir: PLUGINS_DIR, themesDir: THEMES_DIR });
+// Read the enabled list before the catalog so boot only pays for those plugins.
+// With no list on disk the fallback is "load everything", so build eagerly then.
+const configuredEnabled = settings.readEnabled(ENABLED_FILE) || settings.readEnabled(DEFAULT_ENABLED_FILE);
+const catalog = buildCatalog({
+  pluginsDir: PLUGINS_DIR,
+  themesDir: THEMES_DIR,
+  only: configuredEnabled || undefined,
+});
 const defaultEnabled = () => catalog.plugins.map((plugin) => plugin.dir);
+// Re-reads on purpose: this doubles as the reload hook for ENABLED_FILE changes.
 const readEnabled = () =>
   settings.readEnabled(ENABLED_FILE) || settings.readEnabled(DEFAULT_ENABLED_FILE) || defaultEnabled();
 const runtime = {
@@ -877,15 +886,19 @@ function applyAllLive(options) {
   for (const wc of live.keys()) applyTo(wc, options);
 }
 
-function onThemeFileChanged(curr, prev) {
-  if (curr.mtimeMs === prev.mtimeMs) return;
+const fileWatcher = createWatcher({
+  onError: (dir, error) => console.error(`[slick-byoe] watch unavailable for ${dir}: ${error.message}`),
+});
+
+function onThemeFileChanged() {
   rebuild();
   applyAllLive({ refreshCss: true });
   console.log(`[slick-byoe] hot-reloaded "${theme.name}" (${theme.css.length} bytes) -> ${live.size} window(s)`);
 }
+let unwatchTheme = null;
 function watchTheme() {
   if (!THEME_FILE) return;
-  fs.watchFile(THEME_FILE, { interval: 300 }, onThemeFileChanged);
+  unwatchTheme = fileWatcher.watch(THEME_FILE, onThemeFileChanged);
   console.log(`[slick-byoe] watching ${path.basename(THEME_FILE)} for live edits`);
 }
 watchTheme();
@@ -899,7 +912,8 @@ function setTheme(name) {
     console.error(`[slick-byoe] theme not found: ${name}`);
     return;
   }
-  if (THEME_FILE) fs.unwatchFile(THEME_FILE, onThemeFileChanged);
+  unwatchTheme?.();
+  unwatchTheme = null;
   runtime.theme = name;
   diagnosticSession.updateConfig(runtime.enabled, runtime.theme);
   THEME_FILE = file;
@@ -930,10 +944,7 @@ function setCustomCss(css) {
 }
 
 function watchRuntimeFile(file, read, update) {
-  fs.watchFile(file, { interval: 300 }, (curr, prev) => {
-    if (curr.mtimeMs === prev.mtimeMs) return;
-    update(read());
-  });
+  fileWatcher.watch(file, () => update(read()));
 }
 
 watchRuntimeFile(ENABLED_FILE, readEnabled, setEnabled);
