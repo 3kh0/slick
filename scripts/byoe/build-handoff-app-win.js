@@ -77,6 +77,7 @@ function copyRuntime(resources) {
     'scripts/byoe/settings-ui.js',
     'scripts/byoe/switches.js',
     'scripts/byoe/updater.js',
+    'scripts/byoe/watch.js',
     'scripts/theme.js',
   ]) {
     const target = path.join(runtime, file);
@@ -103,6 +104,15 @@ const PROFILE = process.env.SLICK_HANDOFF_PROFILE || ${opts.profile ? JSON.strin
 const DEFAULT_THEME = ${JSON.stringify(defaultTheme)};
 const SLICK_VERSION = ${JSON.stringify(opts.appVersion)};
 const SLICK_BUILD = parseInt(${JSON.stringify(opts.buildNumber)}, 10) || 0;
+// Shared module instance with inject.js, so marks recorded out here land in the
+// same boot timeline that inject.js reports. Everything below this line is
+// Windows-only work — MSIX registry probing, PE arch sniffing, the native module
+// mirror — that was previously invisible to the boot log.
+const perf = require(path.join(SLICK_ROOT, 'scripts/byoe/perf.js'));
+// Electron's own startup happens before this file runs, and performance.now() is
+// measured from process start, so this mark prices that segment.
+perf.mark('electron bootstrap -> wrapper entry');
+
 const updater = require(path.join(SLICK_ROOT, 'scripts/byoe/updater.js')).create({ version: SLICK_VERSION, build: SLICK_BUILD, profile: PROFILE });
 const RELEASES_URL = updater.RELEASES_URL;
 
@@ -192,7 +202,11 @@ function findSlackResources() {
   return matched || cands[0] || path.join(process.env.LOCALAPPDATA || '', 'slack', 'app-0.0.0', 'resources');
 }
 
+// Standalone readdir, then reg query subprocesses for MSIX, then a PE header
+// read per candidate — all synchronous, all before Slack's own code starts.
+const endResolve = perf.span();
 const SLACK_RESOURCES = process.env.SLICK_SLACK_RESOURCES || findSlackResources();
+endResolve('slack resources resolved');
 const SLACK_ASAR = path.join(SLACK_RESOURCES, 'app.asar');
 const SLACK_UNPACKED = path.join(SLACK_RESOURCES, 'app.asar.unpacked');
 const SLACK_APP_DIR = path.dirname(SLACK_RESOURCES);
@@ -226,10 +240,11 @@ function nativeMirrorId() {
 // Windows permits reading another MSIX package's app.asar but rejects loading
 // executable code from its WindowsApps directory with ERROR_ACCESS_DENIED.
 function installNativeModuleMirror() {
-  if (!fs.existsSync(SLACK_UNPACKED)) return;
+  if (!fs.existsSync(SLACK_UNPACKED)) return false;
 
   const mirror = path.join(PROFILE, 'slick', 'native', nativeMirrorId(), 'app.asar.unpacked');
   const ready = path.join(mirror, '.complete');
+  const copied = !fs.existsSync(ready);
   if (!fs.existsSync(ready)) {
     const staging = mirror + '.tmp-' + process.pid;
     fs.rmSync(staging, { recursive: true, force: true });
@@ -252,6 +267,7 @@ function installNativeModuleMirror() {
       : filename;
     return dlopen.call(this, module, mapped, flags);
   };
+  return copied;
 }
 
 function preflightProblem() {
@@ -323,14 +339,25 @@ function boot() {
 
   const getAppPath = app.getAppPath.bind(app);
   app.getAppPath = () => (process.env.SLICK_HANDOFF_KEEP_WRAPPER_APP_PATH === '1' ? getAppPath() : SLACK_ASAR);
-  installNativeModuleMirror();
+
+  // First run copies Slack's whole app.asar.unpacked tree into the profile;
+  // afterwards this is a couple of stats. The two cases differ by seconds, so
+  // the timeline says which one it was.
+  const endMirror = perf.span();
+  const copiedMirror = installNativeModuleMirror();
+  endMirror(copiedMirror ? 'native module mirror COPIED (first run)' : 'native module mirror cached');
 
   require(path.join(SLICK_ROOT, 'scripts/byoe/login-handoff.js'));
   require(path.join(SLICK_ROOT, 'scripts/byoe/inject.js'));
+
+  const endSlack = perf.span();
   require(SLACK_ASAR);
+  endSlack('slack app.asar required');
 }
 
+const endPreflight = perf.span();
 const problem = preflightProblem();
+endPreflight('preflight checked');
 if (!problem) {
   boot();
 } else {

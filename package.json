@@ -8,6 +8,7 @@
     "lint:sh": "git ls-files '*.sh' | xargs shellcheck -S warning",
     "perf:analyze": "node scripts/perf/analyze.js",
     "perf:benchmark": "node scripts/perf/benchmark.js",
+    "perf:bootbench": "node scripts/perf/bootbench.js",
     "render": "scripts/byoe/render-icon.sh",
     "test:perf": "node --test scripts/ci/performance.test.js",
     "validate": "node scripts/ci/validate.js",

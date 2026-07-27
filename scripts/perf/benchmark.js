@@ -1,12 +1,13 @@
 #!/usr/bin/env node
 'use strict';
 
-const { execFileSync, spawn, spawnSync } = require('child_process');
+const { spawn, spawnSync } = require('child_process');
 const fs = require('fs');
 const http = require('http');
 const os = require('os');
 const path = require('path');
 const { analyze, format } = require('./analyze');
+const { createSampler } = require('./sampler');
 const { rendererProbeSource } = require('../byoe/diagnostics');
 
 const ROOT = path.resolve(__dirname, '..', '..');
@@ -417,36 +418,6 @@ async function backgroundObservation(cdp, targetId, seconds, sample) {
   }
 }
 
-function processTreeSample(rootPid) {
-  if (process.platform === 'win32') return null;
-  try {
-    const rows = execFileSync('ps', ['-axo', 'pid=,ppid=,%cpu=,rss='], { encoding: 'utf8' })
-      .trim()
-      .split('\n')
-      .map((line) => line.trim().split(/\s+/).map(Number))
-      .filter((row) => row.length === 4);
-    const ids = new Set([rootPid]);
-    let changed = true;
-    while (changed) {
-      changed = false;
-      for (const [pid, ppid] of rows) {
-        if (ids.has(ppid) && !ids.has(pid)) {
-          ids.add(pid);
-          changed = true;
-        }
-      }
-    }
-    const selected = rows.filter(([pid]) => ids.has(pid));
-    return {
-      cpuPercent: selected.reduce((sum, row) => sum + row[2], 0),
-      privateKb: selected.reduce((sum, row) => sum + row[3], 0),
-      processCount: selected.length,
-    };
-  } catch {
-    return null;
-  }
-}
-
 function stopProcess(child) {
   if (!child || child.exitCode !== null) return;
   if (process.platform === 'win32') {
@@ -505,6 +476,7 @@ async function runOnce(options, variant, cold, sequence) {
   const port = Number(options.port || 9323) + sequence;
   const launchedAt = Date.now();
   const child = launch({ executable, variant, profile, port, options });
+  const sampler = createSampler(child.pid);
   let cdp;
   const processSamples = [];
   try {
@@ -520,7 +492,7 @@ async function runOnce(options, variant, cold, sequence) {
     const until = Date.now() + Math.max(idleSeconds * 1000, soakMinutes * 60000);
     let nextJourney = Date.now() + 60000;
     while (Date.now() < until) {
-      const sample = processTreeSample(child.pid);
+      const sample = sampler.sample();
       if (sample) processSamples.push({ atMs: Date.now() - launchedAt, ...sample });
       if (soakMinutes && Date.now() >= nextJourney) {
         interactions.push(...(await readonlyJourney(cdp)));
@@ -530,7 +502,7 @@ async function runOnce(options, variant, cold, sequence) {
     }
     const backgroundSeconds = Math.max(0, Number(options.backgroundSeconds || 0));
     await backgroundObservation(cdp, target.id, backgroundSeconds, () => {
-      const sample = processTreeSample(child.pid);
+      const sample = sampler.sample();
       if (sample) processSamples.push({ atMs: Date.now() - launchedAt, background: true, ...sample });
     });
     const renderer = await cdp.evaluate(
@@ -580,6 +552,9 @@ async function runOnce(options, variant, cold, sequence) {
     };
   } finally {
     cdp?.close();
+    // Before stopProcess: taskkill /t tears the tree down, and a live poller
+    // would record a dying process as if it were an idle one.
+    sampler.stop();
     stopProcess(child);
     await new Promise((resolve) => setTimeout(resolve, 500));
     fs.rmSync(parent, { recursive: true, force: true });

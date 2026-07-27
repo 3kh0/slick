@@ -73,25 +73,51 @@ function themeCatalog(themesDir) {
   });
 }
 
-function buildCatalog({ pluginsDir, themesDir }) {
-  const plugins = pluginDirs(pluginsDir).map((dir) => {
-    try {
-      const mod = require(path.join(pluginsDir, dir, 'index.js'));
-      return { dir, mod, meta: mod.meta || {}, schema: settingsSchema(mod), error: null };
-    } catch (error) {
-      return {
-        dir,
-        mod: null,
-        meta: { description: `(failed to load: ${error.message})` },
-        schema: [],
-        error,
-      };
-    }
-  });
-  return { plugins, themes: themeCatalog(themesDir) };
+function loadEntry(pluginsDir, dir) {
+  try {
+    const mod = require(path.join(pluginsDir, dir, 'index.js'));
+    return { dir, mod, meta: mod.meta || {}, schema: settingsSchema(mod), error: null };
+  } catch (error) {
+    return {
+      dir,
+      mod: null,
+      meta: { description: `(failed to load: ${error.message})` },
+      schema: [],
+      error,
+    };
+  }
+}
+
+// Every plugin index.js synchronously reads its renderer.js, so an eager catalog
+// reads and parses the whole plugins tree at boot even when two are enabled.
+// Pass `only` to load just those and stub the rest; anything that needs the full
+// set calls hydrateCatalog() itself, so callers cannot forget.
+function buildCatalog({ pluginsDir, themesDir, only }) {
+  const wanted = Array.isArray(only) ? new Set(only) : null;
+  const plugins = pluginDirs(pluginsDir).map((dir) =>
+    wanted && !wanted.has(dir)
+      ? { dir, mod: null, meta: {}, schema: [], error: null, lazy: true }
+      : loadEntry(pluginsDir, dir),
+  );
+  return {
+    plugins,
+    themes: wanted ? [] : themeCatalog(themesDir),
+    pluginsDir,
+    themesDir,
+    lazy: !!wanted,
+  };
+}
+
+function hydrateCatalog(catalog) {
+  if (!catalog || !catalog.lazy) return catalog;
+  catalog.plugins = catalog.plugins.map((plugin) => (plugin.lazy ? loadEntry(catalog.pluginsDir, plugin.dir) : plugin));
+  catalog.themes = themeCatalog(catalog.themesDir);
+  catalog.lazy = false;
+  return catalog;
 }
 
 function allPluginSettings(catalog, stored) {
+  hydrateCatalog(catalog);
   const out = {};
   for (const plugin of catalog.plugins) {
     if (plugin.schema.length) out[plugin.dir] = mergeSettings(plugin.schema, (stored || {})[plugin.dir]);
@@ -126,7 +152,15 @@ function loadPlugins({ catalog, enabled, electron, settings }) {
 
   for (const name of discover(catalog, enabled)) {
     const start = performance.now();
-    const plugin = byDir.get(name);
+    let plugin = byDir.get(name);
+    // SLICK_PLUGINS and the load-everything fallback can both name plugins the
+    // catalog was not built with; load those rather than reporting them missing.
+    if (plugin && plugin.lazy && catalog.pluginsDir) {
+      plugin = loadEntry(catalog.pluginsDir, name);
+      byDir.set(name, plugin);
+      const index = catalog.plugins.findIndex((entry) => entry.dir === name);
+      if (index !== -1) catalog.plugins[index] = plugin;
+    }
     if (!plugin || !plugin.mod) {
       const reason = plugin?.error?.message || 'plugin not found';
       console.error(`[plugins] failed to load "${name}": ${reason}`);
@@ -177,8 +211,10 @@ module.exports = {
   allPluginSettings,
   buildCatalog,
   coerceSetting,
+  hydrateCatalog,
   loadPlugins,
   mergeSettings,
   pluginDirs,
   settingsSchema,
+  themeCatalog,
 };

@@ -92,6 +92,7 @@ function copyRuntime(resources) {
     'scripts/byoe/slack-updater.js',
     'scripts/byoe/switches.js',
     'scripts/byoe/updater.js',
+    'scripts/byoe/watch.js',
     'scripts/theme.js',
   ]) {
     const target = path.join(runtime, file);
