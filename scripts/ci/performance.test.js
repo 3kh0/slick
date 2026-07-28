@@ -12,6 +12,7 @@ const { redactString, rendererProbeSource, sanitize } = require('../byoe/diagnos
 const settings = require('../byoe/settings-ui');
 const { buildCatalog, hydrateCatalog, loadPlugins } = require('../byoe/plugins');
 const { createWatcher } = require('../byoe/watch');
+const { coalesceWindowHangEvents } = require('../byoe/window-events');
 
 const ROOT = path.resolve(__dirname, '..', '..');
 const PLUGINS_DIR = path.join(ROOT, 'plugins');
@@ -73,6 +74,42 @@ test('sanitize keeps the newest entries of an over-long rolling array', () => {
 
 test('renderer performance probe is valid JavaScript', () => {
   assert.doesNotThrow(() => new Function(rendererProbeSource(true)));
+});
+
+test('repeated window hang notifications are coalesced until responsive', () => {
+  const EventEmitter = require('node:events');
+  const win = new EventEmitter();
+  win.webContents = new EventEmitter();
+  const seen = [];
+  coalesceWindowHangEvents(win);
+  win.on('unresponsive', () => seen.push('unresponsive'));
+  win.on('responsive', () => seen.push('responsive'));
+
+  assert.equal(win.emit('unresponsive'), true);
+  assert.equal(win.emit('unresponsive'), false);
+  assert.equal(win.emit('responsive'), true);
+  assert.equal(win.emit('unresponsive'), true);
+  assert.deepEqual(seen, ['unresponsive', 'responsive', 'unresponsive']);
+});
+
+test('window hang coalescing resets when the renderer terminates or navigates', () => {
+  const EventEmitter = require('node:events');
+  const win = new EventEmitter();
+  win.webContents = new EventEmitter();
+  const seen = [];
+  coalesceWindowHangEvents(win);
+  win.on('unresponsive', () => seen.push('unresponsive'));
+
+  win.emit('unresponsive');
+  win.webContents.emit('render-process-gone');
+  win.emit('unresponsive');
+  win.webContents.emit('did-start-navigation', { isMainFrame: false, isSameDocument: false });
+  assert.equal(win.emit('unresponsive'), false, 'subframe navigation must not reset the main renderer state');
+  win.webContents.emit('did-start-navigation', { isMainFrame: true, isSameDocument: true });
+  assert.equal(win.emit('unresponsive'), false, 'same-document navigation must not reset the renderer state');
+  win.webContents.emit('did-start-navigation', { isMainFrame: true, isSameDocument: false });
+  assert.equal(win.emit('unresponsive'), true);
+  assert.deepEqual(seen, ['unresponsive', 'unresponsive', 'unresponsive']);
 });
 
 test('diagnostic control invokes the local export callback', async () => {
