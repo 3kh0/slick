@@ -452,9 +452,11 @@
     const user = msgu(message) || msgu(previous);
     if (shigu(user)) return;
     const snapshot = smsg(channel, ts);
-    const oldText = (snapshot && snapshot.renderedText) || msgt(previous);
+    const previousText = msgt(previous);
     const newText = msgt(message);
-    if (!oldText || oldText === newText) return;
+    if (previousText === newText) return;
+    const oldText = (snapshot && snapshot.renderedText) || previousText;
+    if (!oldText) return;
     const id = 'edited:' + keyOf(channel, ts) + ':' + oldText + ':' + newText;
     if (seenEvents.has(id)) return;
     seenEvents.add(id);
