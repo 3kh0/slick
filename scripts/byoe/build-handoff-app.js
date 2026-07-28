@@ -198,8 +198,17 @@ function slackElectronMajor() {
   }
 }
 
-function preflight() {
-  if (!fs.existsSync(SLACK_ASAR)) {
+function preflightProblem() {
+  if (process.env.SLICK_SKIP_PREFLIGHT === '1') return null;
+  if (!fs.existsSync(SLACK_ASAR)) return 'missing';
+  const slackElectron = slackElectronMajor();
+  const slickElectron = parseInt(process.versions.electron, 10);
+  if (slackElectron && slackElectron !== slickElectron) return 'mismatch:' + slackElectron;
+  return null;
+}
+
+function handlePreflight(problem) {
+  if (problem === 'missing') {
     dialog.showMessageBoxSync({
       type: 'error',
       title: 'Slick',
@@ -209,22 +218,22 @@ function preflight() {
     });
     return false;
   }
-  const x = slackElectronMajor();
-  const y = parseInt(process.versions.electron, 10);
-  if (x && x !== y) {
-    const choice = dialog.showMessageBoxSync({
-      type: 'error',
-      title: 'Slick',
-      message: 'This Slick build no longer matches Slack',
-      detail: 'Slack now ships Electron ' + x + ', but this Slick build bundles Electron ' + y + '. Download the latest Slick release.',
-      buttons: ['Open Releases Page', 'Launch Anyway', 'Quit'],
-      defaultId: 0,
-      cancelId: 2,
-    });
-    if (choice === 0) shell.openExternal(RELEASES_URL);
-    return choice === 1;
+  const slackElectron = problem.slice('mismatch:'.length);
+  const choice = dialog.showMessageBoxSync({
+    type: 'error',
+    title: 'Slick',
+    message: 'This Slick build no longer matches Slack',
+    detail: 'Slack now ships Electron ' + slackElectron + ', but this Slick build bundles Electron ' + process.versions.electron + '. Download the latest Slick release.',
+    buttons: ['Open Releases Page', 'Launch Anyway', 'Quit'],
+    defaultId: 0,
+    cancelId: 2,
+  });
+  if (choice === 0) shell.openExternal(RELEASES_URL);
+  if (choice === 1) {
+    process.env.SLICK_SKIP_PREFLIGHT = '1';
+    app.relaunch();
   }
-  return true;
+  return false;
 }
 
 function seedSettings() {
@@ -347,9 +356,7 @@ try {
   console.log('[slick-slack-updater] apply-staged failed: ' + ((e && e.message) || e));
 }
 
-if (!preflight()) {
-  app.exit(1);
-} else {
+function boot() {
   app.setPath('userData', PROFILE);
   installPatch();
   seedSettings();
@@ -366,6 +373,16 @@ if (!preflight()) {
   require(path.join(SLICK_ROOT, 'scripts/byoe/login-handoff.js'));
   require(path.join(SLICK_ROOT, 'scripts/byoe/inject.js'));
   require(SLACK_ASAR);
+}
+
+const problem = preflightProblem();
+if (!problem) {
+  boot();
+} else {
+  app.whenReady().then(() => {
+    handlePreflight(problem);
+    app.exit(problem === 'missing' ? 1 : 0);
+  });
 }
 `,
     },
