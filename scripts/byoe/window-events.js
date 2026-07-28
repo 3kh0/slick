@@ -7,14 +7,20 @@
 function coalesceWindowHangEvents(win) {
   const emit = win.emit;
   let unresponsive = false;
+  const reset = () => {
+    unresponsive = false;
+  };
+
+  win.webContents?.on('render-process-gone', reset);
+  win.webContents?.on('did-start-navigation', (event) => {
+    if (event.isMainFrame && !event.isSameDocument) reset();
+  });
 
   win.emit = function coalescedWindowEmit(event, ...args) {
     if (event === 'unresponsive') {
       if (unresponsive) return false;
       unresponsive = true;
-    } else if (event === 'responsive') {
-      unresponsive = false;
-    }
+    } else if (event === 'responsive') reset();
 
     return emit.call(this, event, ...args);
   };

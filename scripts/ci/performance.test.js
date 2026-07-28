@@ -77,7 +77,9 @@ test('renderer performance probe is valid JavaScript', () => {
 });
 
 test('repeated window hang notifications are coalesced until responsive', () => {
-  const win = new (require('node:events').EventEmitter)();
+  const EventEmitter = require('node:events');
+  const win = new EventEmitter();
+  win.webContents = new EventEmitter();
   const seen = [];
   coalesceWindowHangEvents(win);
   win.on('unresponsive', () => seen.push('unresponsive'));
@@ -88,6 +90,26 @@ test('repeated window hang notifications are coalesced until responsive', () => 
   assert.equal(win.emit('responsive'), true);
   assert.equal(win.emit('unresponsive'), true);
   assert.deepEqual(seen, ['unresponsive', 'responsive', 'unresponsive']);
+});
+
+test('window hang coalescing resets when the renderer terminates or navigates', () => {
+  const EventEmitter = require('node:events');
+  const win = new EventEmitter();
+  win.webContents = new EventEmitter();
+  const seen = [];
+  coalesceWindowHangEvents(win);
+  win.on('unresponsive', () => seen.push('unresponsive'));
+
+  win.emit('unresponsive');
+  win.webContents.emit('render-process-gone');
+  win.emit('unresponsive');
+  win.webContents.emit('did-start-navigation', { isMainFrame: false, isSameDocument: false });
+  assert.equal(win.emit('unresponsive'), false, 'subframe navigation must not reset the main renderer state');
+  win.webContents.emit('did-start-navigation', { isMainFrame: true, isSameDocument: true });
+  assert.equal(win.emit('unresponsive'), false, 'same-document navigation must not reset the renderer state');
+  win.webContents.emit('did-start-navigation', { isMainFrame: true, isSameDocument: false });
+  assert.equal(win.emit('unresponsive'), true);
+  assert.deepEqual(seen, ['unresponsive', 'unresponsive', 'unresponsive']);
 });
 
 test('diagnostic control invokes the local export callback', async () => {
