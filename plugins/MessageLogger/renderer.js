@@ -4,6 +4,7 @@
 
   var ROW_SEL = [
     '.c-message_kit__message',
+    '.c-message_kit__tombstone',
     '[data-qa="message_container"]',
     '[id^="message-list_"][role="listitem"]',
   ].join(',');
@@ -68,6 +69,8 @@
       '.slick-ml-edited-original-line{display:block}',
       '.slick-ml-edited-original s{text-decoration:line-through}',
       '.slick-ml-edited-marker{margin-left:4px;font-size:.85em;opacity:.72}',
+      '.slick-ml-deleted{display:block;white-space:pre-wrap;word-break:break-word}',
+      '.slick-ml-row-deleted .c-message_kit__tombstone__text{display:none!important}',
       '.slick-ml-row-deleted [data-slick-ml-delete-host][data-slick-ml-deleted-style="red"],.slick-ml-row-deleted [data-slick-ml-delete-host][data-slick-ml-deleted-style="red"] *{color:#e01e5a!important}',
       '.slick-ml-row-deleted [data-slick-ml-delete-host][data-slick-ml-deleted-style="opacity"]{opacity:.5!important}',
       '[data-slick-ml-hide]{cursor:pointer}',
@@ -258,6 +261,7 @@
       ts: message.ts,
       user: message.user,
       text: message.text,
+      renderedText: rt(row),
       row: row,
       parent: row.parentElement,
       nextSibling: row.nextSibling,
@@ -273,6 +277,8 @@
       root.querySelector('[data-qa="message-text"]') ||
       root.querySelector('.p-rich_text_block') ||
       root.querySelector('.p-rich_text_section');
+    const tombstone = row.querySelector('.c-message_kit__tombstone__text');
+    if (tombstone) return tombstone.parentElement || tombstone;
     const direct = pick(row);
     if (direct) return direct;
     const mc = row.querySelector('[data-qa="message_content"]');
@@ -298,7 +304,7 @@
       if (!message || message.ts !== ts) continue;
       if (channel && message.channel && message.channel !== channel) continue;
       remember(rows[i], message);
-      return message;
+      return kmsg(message.channel, message.ts) || message;
     }
     return null;
   }
@@ -350,6 +356,16 @@
     host.dataset.slickMlDeleteHost = 'true';
     host.dataset.slickMlDeletedKey = key;
     host.dataset.slickMlDeletedStyle = set().deletedStyle === 'opacity' ? 'opacity' : 'red';
+    const tombstone = row.querySelector('.c-message_kit__tombstone__text');
+    if (tombstone) {
+      let restored = row.querySelector('.slick-ml-deleted');
+      if (!restored) {
+        restored = document.createElement('span');
+        restored.className = 'slick-ml-deleted';
+        host.insertBefore(restored, tombstone);
+      }
+      restored.textContent = log.oldText || '(empty message)';
+    }
     return true;
   }
 
@@ -367,6 +383,8 @@
       delete host.dataset.slickMlDeletedKey;
       delete host.dataset.slickMlDeletedStyle;
     }
+    const restored = row.querySelector('.slick-ml-deleted');
+    if (restored) restored.remove();
   }
 
   function ispn(node) {
@@ -418,7 +436,14 @@
     if (seenEvents.size >= 500) seenEvents = new Set(Array.from(seenEvents).slice(-250));
   }
 
+  const tombstoneChange = (event) =>
+    event && event.subtype === 'message_changed' && event.message && event.message.subtype === 'tombstone';
+
   function redit(event) {
+    if (tombstoneChange(event)) {
+      redel(event);
+      return;
+    }
     const previous = event.previous_message || event.previous || {};
     const message = event.message || {};
     const ts = messageTs(message) || messageTs(previous);
@@ -426,7 +451,8 @@
     const channel = msgc(message, msgc(previous, event.channel));
     const user = msgu(message) || msgu(previous);
     if (shigu(user)) return;
-    const oldText = msgt(previous);
+    const snapshot = smsg(channel, ts);
+    const oldText = (snapshot && snapshot.renderedText) || msgt(previous);
     const newText = msgt(message);
     if (!oldText || oldText === newText) return;
     const id = 'edited:' + keyOf(channel, ts) + ':' + oldText + ':' + newText;
@@ -459,7 +485,7 @@
   }
 
   function redel(event) {
-    if (!event || event.subtype !== 'message_deleted') return event;
+    if (!event || (event.subtype !== 'message_deleted' && !tombstoneChange(event))) return event;
     const previous = event.previous_message || {};
     const ts = event.deleted_ts || messageTs(previous) || messageTs(event);
     if (!ts) return event;
@@ -468,7 +494,7 @@
     const user = msgu(previous) || (snapshot && snapshot.user) || event.previous_user || event.user || '';
     if (shigm(previous)) return event;
     if (shigu(user)) return event;
-    const oldText = msgt(previous) || (snapshot && snapshot.text) || '';
+    const oldText = (snapshot && snapshot.renderedText) || msgt(previous) || (snapshot && snapshot.text) || '';
     const id = 'deleted:' + keyOf(channel, ts) + ':' + oldText;
     if (!seenEvents.has(id)) {
       seenEvents.add(id);
@@ -481,7 +507,7 @@
     message.channel = msgc(message, channel);
     message.ts = messageTs(message) || ts;
     message.user = msgu(message) || user;
-    message.text = oldText;
+    message.text = typeof previous.text === 'string' ? previous.text : oldText;
     delete message.subtype;
     return {
       type: event.type || 'message',
@@ -506,7 +532,7 @@
       return { value: changed ? out : value, changed: changed };
     }
     if (typeof value !== 'object') return { value: value, changed: false };
-    if (value.subtype === 'message_deleted') {
+    if (value.subtype === 'message_deleted' || tombstoneChange(value)) {
       const rewritten = redel(value);
       return { value: rewritten, changed: rewritten !== value };
     }
