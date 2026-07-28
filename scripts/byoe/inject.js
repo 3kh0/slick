@@ -54,6 +54,7 @@ const internals = require('./internals');
 const settings = require('./settings-ui');
 const { buildSpec } = require('../theme');
 const { createWatcher } = require('./watch');
+const { coalesceWindowHangEvents } = require('./window-events');
 perf.mark('modules loaded');
 
 const LAUNCHER_MS = process.env.SLICK_LAUNCH_T0
@@ -808,6 +809,7 @@ function initializeDocument(wc, value) {
   }
 }
 app.on('browser-window-created', (_event, win) => {
+  if (process.platform === 'linux') coalesceWindowHangEvents(win);
   if (firstWindow) {
     firstWindow = false;
     perf.mark('first window created');
