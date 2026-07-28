@@ -10,8 +10,17 @@ const SCHEMA_VERSION = 1;
 const MAX_SESSIONS = 10;
 const MAX_EVENTS = 240;
 const MAX_SAMPLES = 720;
+// Deep enough for the deepest thing worth reading: session > samples[] > sample >
+// renderer[] > snapshot > dom > plugins > <PluginName> > {calls,ms}. At the old
+// budget of 6 the per-plugin DOM attribution and the per-process CPU numbers —
+// the two fields a slowness report is opened for — arrived as "[truncated]".
+const MAX_DEPTH = 12;
+// Tail, not head: every capped array here (samples, events, navigations) is a
+// rolling log, and a "it got slow after a while" report needs the recent end.
+const MAX_ARRAY = 800;
 const SAMPLE_MS = 15000;
 const WRITE_MS = 60000;
+const GPU_INFO_MS = 4000;
 const ID_RE = /\b[BCDEFGHJKMNPQRTUWXYZ][A-Z0-9]{8,}\b/g;
 const TOKEN_RE = /\b(?:xox[a-z]-[A-Za-z0-9-]+|Bearer\s+\S+)\b/gi;
 const URL_RE = /https?:\/\/[^\s"'<>]+/gi;
@@ -35,11 +44,11 @@ function redactString(value) {
 }
 
 function sanitize(value, depth = 0) {
-  if (depth > 6 || value == null) return value == null ? null : '[truncated]';
+  if (depth > MAX_DEPTH || value == null) return value == null ? null : '[truncated]';
   if (typeof value === 'string') return redactString(value);
   if (typeof value === 'number') return finite(value);
   if (typeof value === 'boolean') return value;
-  if (Array.isArray(value)) return value.slice(0, 100).map((item) => sanitize(item, depth + 1));
+  if (Array.isArray(value)) return value.slice(-MAX_ARRAY).map((item) => sanitize(item, depth + 1));
   if (typeof value !== 'object') return String(value);
   const out = {};
   for (const [key, child] of Object.entries(value)) {
@@ -204,7 +213,7 @@ function slackVersion() {
   return '';
 }
 
-function systemInfo(app) {
+function systemInfo(app, slickSwitches) {
   return {
     platform: process.platform,
     release: os.release(),
@@ -220,6 +229,7 @@ function systemInfo(app) {
       .filter((arg) => arg.startsWith('--'))
       .map((arg) => arg.split('=')[0])
       .toSorted(),
+    slickSwitches: [...(slickSwitches || [])].toSorted(),
     switchAblation: {
       disabled: String(process.env.SLICK_DISABLE_SWITCHES || '')
         .split(',')
@@ -229,14 +239,14 @@ function systemInfo(app) {
   };
 }
 
-function create({ app, electron, settingsDir, enabledPlugins, activeTheme }) {
+function create({ app, electron, settingsDir, enabledPlugins, activeTheme, slickSwitches }) {
   const sessionsFile = path.join(settingsDir, 'performance-sessions.json');
   const session = {
     schemaVersion: SCHEMA_VERSION,
     id: `${Date.now()}-${process.pid}`,
     startedAt: new Date().toISOString(),
     endedAt: null,
-    system: systemInfo(app),
+    system: systemInfo(app, slickSwitches),
     enabledPlugins: [...enabledPlugins],
     theme: activeTheme || '',
     boot: null,
@@ -371,32 +381,56 @@ function create({ app, electron, settingsDir, enabledPlugins, activeTheme }) {
     }
   }
 
+  // 'complete' is the only info type that fills in the fields a "the GPU is not
+  // helping" theory needs — the GL/ANGLE backend, the Skia backend, and the
+  // DirectComposition and overlay support flags. Under 'basic' those come back
+  // as an unpopulated struct (gl=none, skiaBackendType None, every flag false),
+  // which reads exactly like broken acceleration on a machine where it is fine.
+  // It can take a moment or, if the GPU process is wedged, never settle — hence
+  // the race, and hence keeping 'basic' as the fallback rather than nothing.
   async function gpuInfo() {
     let featureStatus = {};
-    let basic = {};
     try {
       featureStatus = app.getGPUFeatureStatus();
     } catch {}
+    let info = {};
+    let infoType = 'complete';
     try {
-      basic = await app.getGPUInfo('basic');
-    } catch {}
+      info = await Promise.race([
+        app.getGPUInfo('complete'),
+        new Promise((resolve) => setTimeout(() => resolve(null), GPU_INFO_MS).unref?.()),
+      ]);
+      if (!info) throw new Error('timed out');
+    } catch {
+      infoType = 'basic';
+      info = {};
+      try {
+        info = await app.getGPUInfo('basic');
+      } catch {}
+    }
     return sanitize({
       featureStatus,
-      gpuDeviceCount: Array.isArray(basic.gpuDevice) ? basic.gpuDevice.length : 0,
-      auxAttributes: basic.auxAttributes,
+      infoType,
+      gpuDeviceCount: Array.isArray(info.gpuDevice) ? info.gpuDevice.length : 0,
+      auxAttributes: info.auxAttributes,
     });
   }
 
+  // Everything here is sanitized already — the live session by payload(), the
+  // prior sessions when they were written, the GPU block by gpuInfo(). Running
+  // sanitize() over the assembled bundle spent two more depth levels on data
+  // that had already paid for its own, which is what "[truncated]" in the
+  // deepest fields of every export so far actually was.
   async function buildBundle() {
     await sample();
-    return sanitize({
+    return {
       schemaVersion: SCHEMA_VERSION,
       exportedAt: new Date().toISOString(),
       privacy:
         'Local export. URLs, Slack identifiers, tokens, messages, custom CSS, filenames, and setting values are excluded.',
       gpu: await gpuInfo(),
       sessions: payload(),
-    });
+    };
   }
 
   async function exportBundle() {

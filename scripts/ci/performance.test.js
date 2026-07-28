@@ -48,6 +48,29 @@ test('diagnostic exports remove identifiers, secrets, and content fields', () =>
   assert.equal(redactString('Bearer secret'), '[redacted-token]');
 });
 
+test('sanitize keeps the fields a slowness report is opened for', () => {
+  const session = {
+    samples: [
+      {
+        atMs: 1,
+        processes: [{ type: 'GPU', cpuPercent: 42.5, workingSetKb: 100 }],
+        renderer: [{ windowId: 1, hidden: false, dom: { plugins: { MessageLogger: { calls: 7, ms: 12.5 } } } }],
+      },
+    ],
+  };
+  const output = sanitize(session);
+  const sample = output.samples[0];
+  assert.equal(sample.processes[0].cpuPercent, 42.5, 'per-process CPU must survive the depth budget');
+  assert.equal(sample.renderer[0].dom.plugins.MessageLogger.calls, 7, 'per-plugin DOM attribution must survive');
+  assert.doesNotMatch(JSON.stringify(output), /truncated/);
+});
+
+test('sanitize keeps the newest entries of an over-long rolling array', () => {
+  const output = sanitize({ samples: Array.from({ length: 900 }, (_unused, index) => ({ atMs: index })) });
+  assert.equal(output.samples.length, 800);
+  assert.equal(output.samples.at(-1).atMs, 899, 'the recent end of a rolling log is the useful end');
+});
+
 test('renderer performance probe is valid JavaScript', () => {
   assert.doesNotThrow(() => new Function(rendererProbeSource(true)));
 });
@@ -298,6 +321,65 @@ test('diagnostics persists compactly, keeps the session cap, and survives a sync
     if (!previous) delete process.resourcesPath;
     fs.rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test('a diagnostic export carries the numbers, the applied switches, and complete GPU info', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'slick-diag-export-'));
+  const previous = process.resourcesPath;
+  if (!previous) process.resourcesPath = dir;
+  try {
+    const diagnostics = require('../byoe/diagnostics');
+    const requested = [];
+    const session = diagnostics.create({
+      app: {
+        getVersion: () => '1.0.0',
+        getAppMetrics: () => [{ type: 'GPU', cpu: { percentCPUUsage: 37.5 }, memory: { workingSetSize: 2048 } }],
+        getGPUFeatureStatus: () => ({ gpu_compositing: 'enabled' }),
+        getGPUInfo: (type) => {
+          requested.push(type);
+          return Promise.resolve({ gpuDevice: [{}], auxAttributes: { glImplementationParts: '(gl=egl,angle=d3d11)' } });
+        },
+      },
+      electron: {},
+      settingsDir: dir,
+      enabledPlugins: ['Snappy'],
+      activeTheme: '',
+      slickSwitches: ['disable-features=CalculateNativeWinOcclusion', 'enable-zero-copy'],
+    });
+
+    const bundle = await session.buildBundle();
+    assert.deepEqual(requested, ['complete'], "'basic' GPU info omits the backend fields the export exists to show");
+    assert.equal(bundle.gpu.infoType, 'complete');
+    assert.equal(bundle.gpu.auxAttributes.glImplementationParts, '(gl=egl,angle=d3d11)');
+    const live = bundle.sessions.at(-1);
+    assert.deepEqual(live.system.slickSwitches, ['disable-features=CalculateNativeWinOcclusion', 'enable-zero-copy']);
+    assert.equal(live.samples.at(-1).processes[0].cpuPercent, 37.5);
+    assert.doesNotMatch(JSON.stringify(bundle), /truncated/, 'the export is the artifact users send; it must be whole');
+  } finally {
+    if (!previous) delete process.resourcesPath;
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('applied switches are recorded for the export, including the settings-driven ones', () => {
+  const { applySwitches, appliedSwitches } = require('../byoe/switches');
+  const seen = [];
+  const commandLine = {
+    getSwitchValue: () => '',
+    appendSwitch: (name, value) => seen.push(value ? `${name}=${value}` : name),
+  };
+  const before = appliedSwitches().length;
+  applySwitches({
+    app: { getPath: () => os.tmpdir(), disableHardwareAcceleration: () => {} },
+    commandLine,
+    crashReporter: {},
+    pluginsDir: PLUGINS_DIR,
+    snappySettings: { ignoreGpuBlocklist: true },
+  });
+  const recorded = appliedSwitches().slice(before);
+  assert.deepEqual(recorded, seen, 'every switch handed to Chromium must show up in the export');
+  assert.ok(recorded.includes('ignore-gpu-blocklist'));
+  assert.ok(recorded.some((entry) => entry.startsWith('disable-features=')));
 });
 
 test('benchmark variants and cold-cache cleanup stay inside the disposable profile', () => {

@@ -35,10 +35,20 @@ function appendCommaSwitch(commandLine, name, values) {
   commandLine.appendSwitch(name, [...merged].join(','));
 }
 
+// Slick appends its switches programmatically, so they never appear in
+// process.argv — a diagnostic export could not show which ones were live, which
+// is the first thing to know when a report blames one of them.
+const applied = [];
+
 function appendSwitch(commandLine, name, value) {
   if (value && COMMA_SWITCHES.has(name)) appendCommaSwitch(commandLine, name, value);
   else if (value) commandLine.appendSwitch(name, value);
   else commandLine.appendSwitch(name);
+  applied.push(value ? `${name}=${value}` : name);
+}
+
+function appliedSwitches() {
+  return [...applied];
 }
 
 function readSnappySettings({ app, pluginsDir }) {
@@ -86,13 +96,20 @@ function applySwitches({ app, commandLine, crashReporter, pluginsDir, snappySett
   if (process.env.SLICK_DISABLE_GPU === '1') app.disableHardwareAcceleration();
 
   const snappy = snappySettings || readSnappySettings({ app, pluginsDir });
-  if (snappy.ignoreGpuBlocklist === true) commandLine.appendSwitch('ignore-gpu-blocklist');
+  if (snappy.ignoreGpuBlocklist === true) appendSwitch(commandLine, 'ignore-gpu-blocklist');
   if (snappy.disableCrashReporter === true) {
-    commandLine.appendSwitch('disable-crash-reporter');
-    commandLine.appendSwitch('disable-breakpad');
+    appendSwitch(commandLine, 'disable-crash-reporter');
+    appendSwitch(commandLine, 'disable-breakpad');
     stubCrashReporter(crashReporter);
   }
   return snappy;
 }
 
-module.exports = { DEFAULT_SWITCHES, appendCommaSwitch, applySwitches, readSnappySettings, stubCrashReporter };
+module.exports = {
+  DEFAULT_SWITCHES,
+  appendCommaSwitch,
+  appliedSwitches,
+  applySwitches,
+  readSnappySettings,
+  stubCrashReporter,
+};

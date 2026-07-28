@@ -35,7 +35,8 @@ if (process.platform === 'darwin') {
 }
 
 const PLUGINS_DIR = path.join(__dirname, '..', '..', 'plugins');
-require('./switches').applySwitches({
+const switches = require('./switches');
+switches.applySwitches({
   app,
   commandLine: app.commandLine,
   crashReporter: electron.crashReporter,
@@ -127,6 +128,7 @@ const diagnosticSession = diagnostics.create({
   settingsDir: SETTINGS_DIR,
   enabledPlugins: runtime.enabled,
   activeTheme: runtime.theme,
+  slickSwitches: switches.appliedSwitches(),
 });
 
 const BOOT_LOG_FILE = path.join(SETTINGS_DIR, 'boot.log');
