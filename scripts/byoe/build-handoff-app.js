@@ -7,14 +7,13 @@ const { spawnSync } = require('child_process');
 
 const ROOT = path.resolve(__dirname, '..', '..');
 const DEFAULT_SOURCE_APP = path.join(ROOT, 'byoe/node_modules/electron/dist/Electron.app');
-const SLACK_RESOURCES = '/Applications/Slack.app/Contents/Resources';
-const SLACK_ASAR = path.join(SLACK_RESOURCES, 'app.asar');
 const ENTITLEMENTS = path.join(ROOT, 'scripts/release/entitlements.plist');
 const DEFAULTS = {
   target: '/tmp/slick/Slick.app',
   profile: '/tmp/slick/profile',
   appVersion: '1.0.0',
   buildNumber: '0',
+  slackApp: '/Applications/Slack.app',
   sourceApp: process.env.SLICK_SOURCE_APP || DEFAULT_SOURCE_APP,
   force: false,
   allowNonTmp: false,
@@ -24,6 +23,7 @@ function usage() {
   console.error(`Usage:
   node scripts/byoe/build-handoff-app.js [--target <app>] [--profile <dir>] [--app-version <x.y.z>]
                                          [--build-number <n>]
+                                         [--slack-app <Slack.app>]
                                          [--source-app <Electron.app>] [--force] [--allow-non-tmp]
 
 Defaults:
@@ -31,6 +31,7 @@ Defaults:
   --profile     ${DEFAULTS.profile}
   --app-version ${DEFAULTS.appVersion}
   --build-number ${DEFAULTS.buildNumber}
+  --slack-app   ${DEFAULTS.slackApp}
   --source-app  ${DEFAULTS.sourceApp}`);
   process.exit(2);
 }
@@ -42,6 +43,7 @@ function parseArgs(argv) {
     else if (argv[i] === '--profile') o.profile = argv[++i] || usage();
     else if (argv[i] === '--app-version') o.appVersion = argv[++i] || usage();
     else if (argv[i] === '--build-number') o.buildNumber = argv[++i] || usage();
+    else if (argv[i] === '--slack-app') o.slackApp = argv[++i] || usage();
     else if (argv[i] === '--source-app') o.sourceApp = argv[++i] || usage();
     else if (argv[i] === '--force') o.force = true;
     else if (argv[i] === '--allow-non-tmp') o.allowNonTmp = true;
@@ -179,17 +181,23 @@ const { app, dialog, shell, Menu, MenuItem } = require('electron');
 const SLICK_ROOT = path.join(process.resourcesPath, 'slick');
 const PROFILE = process.env.SLICK_HANDOFF_PROFILE || path.join(app.getPath('appData'), 'Slick');
 const DEFAULT_THEME = ${JSON.stringify(defaultTheme)};
-const SLACK_RESOURCES = ${JSON.stringify(SLACK_RESOURCES)};
-const SLACK_ASAR = ${JSON.stringify(SLACK_ASAR)};
+const DEFAULT_SLACK_APP = ${JSON.stringify(path.resolve(opts.slackApp))};
+const SLACK_PATH_CONFIG = path.join(PROFILE, 'slick', 'slack-app-path');
+let SLACK_APP = DEFAULT_SLACK_APP;
+try {
+  SLACK_APP = fs.readFileSync(SLACK_PATH_CONFIG, 'utf8').trim() || DEFAULT_SLACK_APP;
+} catch {}
+const SLACK_RESOURCES = path.join(SLACK_APP, 'Contents', 'Resources');
+const SLACK_ASAR = path.join(SLACK_RESOURCES, 'app.asar');
 const SLICK_VERSION = ${JSON.stringify(opts.appVersion)};
 const SLICK_BUILD = parseInt(${JSON.stringify(opts.buildNumber)}, 10) || 0;
 const updater = require(path.join(SLICK_ROOT, 'scripts/byoe/updater.js')).create({ version: SLICK_VERSION, build: SLICK_BUILD, profile: PROFILE });
 const RELEASES_URL = updater.RELEASES_URL;
-const slackUpdater = require(path.join(SLICK_ROOT, 'scripts/byoe/slack-updater.js')).create({ version: SLICK_VERSION, profile: PROFILE });
+const slackUpdater = require(path.join(SLICK_ROOT, 'scripts/byoe/slack-updater.js')).create({ version: SLICK_VERSION, profile: PROFILE, slackApp: SLACK_APP });
 
 function slackElectronMajor() {
   try {
-    const plist = '/Applications/Slack.app/Contents/Frameworks/Electron Framework.framework/Resources/Info.plist';
+    const plist = path.join(SLACK_APP, 'Contents/Frameworks/Electron Framework.framework/Resources/Info.plist');
     const raw = require('child_process').execFileSync(
       '/usr/bin/plutil', ['-extract', 'CFBundleVersion', 'raw', '-o', '-', plist], { encoding: 'utf8' },
     );
@@ -214,7 +222,7 @@ function handlePreflight(problem) {
       type: 'error',
       title: 'Slick',
       message: 'Slack is not installed',
-      detail: 'Slick needs the official Slack app at /Applications/Slack.app. Install it from slack.com, then open Slick again.',
+      detail: 'Slick needs the official Slack app at ' + SLACK_APP + '. Install it there or reinstall Slick with --slack-app, then open Slick again.',
       buttons: ['Quit'],
     });
     return false;
@@ -359,6 +367,7 @@ try {
 
 function boot() {
   app.setPath('userData', PROFILE);
+  process.env.SLICK_SLACK_APP = SLACK_APP;
   installPatch();
   seedSettings();
   updater.scheduleUpdateChecks();

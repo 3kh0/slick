@@ -43,15 +43,29 @@ exit(LSSetDefaultHandlerForURLScheme("slack" as NSString as CFString, id as NSSt
 EOF
 }
 
-if [ "${1:-}" = "--restore-handler" ]; then
-  handler com.tinyspeck.slackmacgap && echo "slack:// now opens the official Slack again." || die "could not restore handler"
-  exit 0
-fi
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --slack-app)
+      [ "$#" -ge 2 ] || die "--slack-app needs a path"
+      SLACK="${2%/}"
+      shift 2
+      ;;
+    --restore-handler)
+      handler com.tinyspeck.slackmacgap && echo "slack:// now opens the official Slack again." || die "could not restore handler"
+      exit 0
+      ;;
+    *) die "unknown option: $1" ;;
+  esac
+done
 
 step "Checking prerequisites"
 [ "$(uname -s)" = "Darwin" ] || die "Slick only supports macOS :("
 [ -f "$SLACK/Contents/Resources/app.asar" ] \
   || die "Slack not found at $SLACK, please install it from slack.com first."
+SLACK="$(cd "$(dirname "$SLACK")" && pwd)/$(basename "$SLACK")"
+SLACK_CONFIG="$HOME/Library/Application Support/Slick/slick/slack-app-path"
+mkdir -p "$(dirname "$SLACK_CONFIG")"
+printf '%s\n' "$SLACK" > "$SLACK_CONFIG"
 
 if [ -f "$ROOT/scripts/byoe/build-handoff-app.js" ]; then
   node -e 'process.exit(parseInt(process.versions.node, 10) >= 18 ? 0 : 1)' 2>/dev/null \
@@ -99,7 +113,7 @@ if [ -f "$ROOT/scripts/byoe/build-handoff-app.js" ]; then
   step "Building $APP (Build $BUILD)"
   node "$ROOT/scripts/byoe/build-handoff-app.js" --target "$APP" \
     --profile "$HOME/Library/Application Support/Slack" \
-    --app-version "$VERSION" --build-number "$BUILD" --allow-non-tmp --force >/dev/null
+    --slack-app "$SLACK" --app-version "$VERSION" --build-number "$BUILD" --allow-non-tmp --force >/dev/null
 
   step "Installing icon"
   "$ROOT/scripts/byoe/set-icon.sh" 2>&1 | while IFS= read -r line; do printf '    %s\n' "$line"; done

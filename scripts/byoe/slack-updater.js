@@ -26,8 +26,6 @@ const https = require('https');
 const { execFile, execFileSync } = require('child_process');
 
 const MAC = process.platform === 'darwin';
-const SLACK_APP = '/Applications/Slack.app';
-const SLACK_INFO_PLIST = path.join(SLACK_APP, 'Contents/Info.plist');
 const FRAMEWORK_PLIST_REL = 'Contents/Frameworks/Electron Framework.framework/Resources/Info.plist';
 const SLACK_BUNDLE_ID = 'com.tinyspeck.slackmacgap';
 const LATEST_REDIRECT = 'https://slack.com/ssb/download-osx-universal';
@@ -61,8 +59,6 @@ function plistValue(plist, key) {
 }
 const electronMajorOf = (app) => parseInt(plistValue(path.join(app, FRAMEWORK_PLIST_REL), 'CFBundleVersion'), 10) || 0;
 const bundleIdOf = (app) => plistValue(path.join(app, 'Contents/Info.plist'), 'CFBundleIdentifier');
-const installedVersion = () => plistValue(SLACK_INFO_PLIST, 'CFBundleShortVersionString');
-
 // Move a bundle dir onto another path: cheap rename within a volume, ditto copy across.
 function moveDir(from, to) {
   try {
@@ -72,7 +68,9 @@ function moveDir(from, to) {
   }
 }
 
-function create({ profile, version }) {
+function create({ profile, version, slackApp = '/Applications/Slack.app' }) {
+  const slackInfoPlist = path.join(slackApp, 'Contents/Info.plist');
+  const installedVersion = () => plistValue(slackInfoPlist, 'CFBundleShortVersionString');
   if (!MAC) {
     const noop = () => {};
     return {
@@ -168,17 +166,17 @@ function create({ profile, version }) {
         clearStaging()
       );
 
-    const backup = `${SLACK_APP}.slick-old`;
+    const backup = `${slackApp}.slick-old`;
     try {
       fs.rmSync(backup, { recursive: true, force: true });
-      if (fs.existsSync(SLACK_APP)) fs.renameSync(SLACK_APP, backup);
-      moveDir(stagedApp, SLACK_APP);
+      if (fs.existsSync(slackApp)) fs.renameSync(slackApp, backup);
+      moveDir(stagedApp, slackApp);
       fs.rmSync(backup, { recursive: true, force: true });
       log(`installed Slack ${marker.version}`);
     } catch (e) {
       // Restore whatever we moved so the user is never left without Slack.
       try {
-        if (!fs.existsSync(SLACK_APP) && fs.existsSync(backup)) fs.renameSync(backup, SLACK_APP);
+        if (!fs.existsSync(slackApp) && fs.existsSync(backup)) fs.renameSync(backup, slackApp);
       } catch {}
       log(`failed to install staged Slack: ${msg(e)}`);
     } finally {

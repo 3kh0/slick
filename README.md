@@ -30,6 +30,18 @@ Install the official [Slack app](https://slack.com/downloads/mac) (not the App S
 curl -fsSL https://raw.githubusercontent.com/3kh0/slick/main/install.sh | bash
 ```
 
+If Slack is installed somewhere else, pass its app bundle with `--slack-app`:
+
+```bash
+./install.sh --slack-app "$HOME/Documents/Apps/Slack.app"
+```
+
+When using the remote installer, pass the option to `bash` like this:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/3kh0/slick/main/install.sh | bash -s -- --slack-app "$HOME/Documents/Apps/Slack.app"
+```
+
 If you prefer doing it by hand, grab the latest prebuilt app from the [releases page](https://github.com/3kh0/slick/releases/latest) and pick the build for your Mac (check > About This Mac > Chip if unsure):
 
 - `Slick-build-N-mac-arm64` — **Apple Silicon** (if there is a M in the name)
