@@ -388,7 +388,7 @@ app.on('session-created', ap);
 
 function installNotificationSounds() {
   if (process.platform !== 'darwin') return;
-  const R = '/Applications/Slack.app/Contents/Resources';
+  const R = path.join(process.env.SLICK_SLACK_APP || '/Applications/Slack.app', 'Contents', 'Resources');
   const s = path.join(app.getPath('home'), 'Library', 'Sounds');
   let names;
   try {
