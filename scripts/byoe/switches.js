@@ -9,10 +9,6 @@ const DEFAULT_SWITCHES = [
   ['enable-zero-copy'],
   ['enable-hardware-overlays', 'single-fullscreen,single-on-top,underlay'],
   ['enable-features', 'WebAssemblyLazyCompilation'],
-  ['disable-renderer-backgrounding'],
-  ['disable-background-timer-throttling'],
-  ['disable-backgrounding-occluded-windows'],
-  ['disable-features', 'IntensiveWakeUpThrottling,AllowAggressiveThrottlingWithWebSocket,CalculateNativeWinOcclusion'],
   ['autoplay-policy', 'no-user-gesture-required'],
 ];
 const COMMA_SWITCHES = new Set(['enable-features', 'disable-features', 'enable-hardware-overlays']);
