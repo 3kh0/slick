@@ -8,11 +8,16 @@ const isSlackUrl = (v) => typeof v === 'string' && /^slack:/i.test(v);
 const isEphemeralArg = (v) => isSlackUrl(v) || v === '--test-type=webdriver' || v === '--userAgent';
 
 function registerSlackProtocol(setter) {
-  return setter(
-    PROTOCOL,
-    process.execPath,
-    [...process.execArgv, ...process.argv.slice(1)].filter((a) => !isEphemeralArg(a)),
-  );
+  const registered =
+    process.platform === 'darwin'
+      ? setter(PROTOCOL)
+      : setter(
+          PROTOCOL,
+          process.execPath,
+          [...process.execArgv, ...process.argv.slice(1)].filter((a) => !isEphemeralArg(a)),
+        );
+  if (registered === false) console.error('[slick-byoe] could not register as the slack:// handler');
+  return registered;
 }
 
 const originalSetDefault = app.setAsDefaultProtocolClient.bind(app);
