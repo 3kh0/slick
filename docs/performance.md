@@ -130,24 +130,24 @@ Repeat a suspect variant without one of Slick's Chromium switches or without har
 npm run perf:benchmark -- run \
   --profile "$PWD/work/perf-fixture" \
   --variant defaults \
-  --disable-switch disable-background-timer-throttling \
+  --disable-switch enable-hardware-overlays \
   --disable-gpu
 ```
 
-The same ablations work on an affected user's own machine, without a fixture, because both are read from the environment at launch. Windows shortcuts cannot carry environment variables, so the run has to start from a shell:
+The same ablations work on an affected user's own machine, without a fixture, because both are read from the environment at launch. For example, Windows shortcuts cannot carry environment variables, so the run has to start from a shell:
 
 ```powershell
-$env:SLICK_DISABLE_SWITCHES = 'disable-features,disable-renderer-backgrounding,disable-backgrounding-occluded-windows,disable-background-timer-throttling'
+$env:SLICK_DISABLE_SWITCHES = 'enable-hardware-overlays,enable-zero-copy'
 & "$env:LOCALAPPDATA\Slick\Slick.exe"
 ```
 
-`SLICK_DISABLE_SWITCHES` takes switch names, so `disable-features` drops all three features Slick disables at once. `SLICK_DISABLE_GPU=1` forces software rendering and `SLICK_PLUGINS=` (empty) loads none, which together with the list above cover the three things a report can blame that are not Slack itself. `system.slickSwitches` in the export records what was actually applied, so a follow-up export confirms the ablation took effect — Slick appends its switches programmatically, and those never appear in `commandLineSwitches`.
+`SLICK_DISABLE_SWITCHES` takes switch names. `SLICK_DISABLE_GPU=1` forces software rendering and `SLICK_PLUGINS=` (empty) loads none, which together cover the things a report can blame that are not Slack itself. `system.slickSwitches` in the export records what was actually applied, so a follow-up export confirms the ablation took effect — Slick appends its switches programmatically, and those never appear in `commandLineSwitches`.
 
 ### Reading a "fine until something else ran" report
 
-Slick opts out of every mechanism Chromium uses to get out of the way of the foreground application: `disable-renderer-backgrounding`, `disable-backgrounding-occluded-windows`, `disable-background-timer-throttling`, and `disable-features=IntensiveWakeUpThrottling,CalculateNativeWinOcclusion`. Stock Slack keeps all of them. That difference is invisible until something else on the machine wants the CPU or GPU — a game, a build, a video call — at which point stock Slack yields and Slick does not.
+Slick leaves Chromium's background throttling and native occlusion detection enabled, matching stock Slack. Background or covered windows can therefore yield CPU and GPU resources when a game, build, or video call is in the foreground.
 
-`CalculateNativeWinOcclusion` is the one specific to Windows. With it disabled, a fully covered Slack window is never marked occluded, so `document.hidden` stays `false`, Slack's own visibility-driven throttling never engages, and the renderer keeps painting behind whatever is on top of it. A renderer snapshot showing `hidden: false` across a session the user spent in another application is the signature; recorded event-loop stalls are a second one, because the stall detector ignores hidden windows.
+Older Slick builds disabled those mechanisms. In diagnostics from an affected build, a renderer snapshot showing `hidden: false` across a session spent in another application is the signature. On Windows, disabling `CalculateNativeWinOcclusion` was especially harmful because fully covered windows kept painting behind whatever was on top of them.
 
 Generate a plugin isolation sequence from an affected user's diagnostic export:
 

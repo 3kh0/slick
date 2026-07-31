@@ -416,7 +416,16 @@ test('applied switches are recorded for the export, including the settings-drive
   const recorded = appliedSwitches().slice(before);
   assert.deepEqual(recorded, seen, 'every switch handed to Chromium must show up in the export');
   assert.ok(recorded.includes('ignore-gpu-blocklist'));
-  assert.ok(recorded.some((entry) => entry.startsWith('disable-features=')));
+  assert.ok(!recorded.includes('disable-renderer-backgrounding'));
+  assert.ok(!recorded.includes('disable-background-timer-throttling'));
+  assert.ok(!recorded.includes('disable-backgrounding-occluded-windows'));
+  assert.ok(
+    !recorded.some(
+      (entry) =>
+        entry.startsWith('disable-features=') &&
+        /IntensiveWakeUpThrottling|AllowAggressiveThrottlingWithWebSocket|CalculateNativeWinOcclusion/.test(entry),
+    ),
+  );
 });
 
 test('benchmark variants and cold-cache cleanup stay inside the disposable profile', () => {
