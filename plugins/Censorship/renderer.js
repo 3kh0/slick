@@ -68,7 +68,16 @@
   var compiledFor = null;
   function compile() {
     var cfg = settings();
-    var sig = String(cfg.terms) + '\u0000' + String(cfg.style) + '\u0000' + String(cfg.replacement) + '\u0000' + String(cfg.keepFirstLetter) + '\u0000' + String(cfg.keepLastLetter);
+    var sig =
+      String(cfg.terms) +
+      '\u0000' +
+      String(cfg.style) +
+      '\u0000' +
+      String(cfg.replacement) +
+      '\u0000' +
+      String(cfg.keepFirstLetter) +
+      '\u0000' +
+      String(cfg.keepLastLetter);
     if (sig === compiledFor) return;
     compiledFor = sig;
     var terms = splitTerms(cfg.terms);
