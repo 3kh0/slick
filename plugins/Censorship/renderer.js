@@ -60,8 +60,9 @@
 
   function termPattern(term) {
     var pattern = term.split(/\s+/).map(esc).join('\\s+');
-    if (isWordChar(term[0])) pattern = '(?<![\\p{L}\\p{N}_])' + pattern;
-    if (isWordChar(term[term.length - 1])) pattern += '(?![\\p{L}\\p{N}_])';
+    var chars = Array.from(term);
+    if (isWordChar(chars[0])) pattern = '(?<![\\p{L}\\p{N}_])' + pattern;
+    if (isWordChar(chars[chars.length - 1])) pattern += '(?![\\p{L}\\p{N}_])';
     return pattern;
   }
 
@@ -99,7 +100,7 @@
   }
 
   function repeated(match, char) {
-    var chars = match.split('');
+    var chars = Array.from(match);
     var first = -1;
     var last = -1;
     for (var i = 0; i < chars.length; i++) {
@@ -109,10 +110,10 @@
       }
     }
     return chars
-      .map(function (c, i) {
+      .map(function (c, index) {
         if (!/\S/.test(c)) return c;
-        if (keepFirst && i === first) return c;
-        if (keepLast && i === last) return c;
+        if (keepFirst && index === first) return c;
+        if (keepLast && index === last) return c;
         return char;
       })
       .join('');
