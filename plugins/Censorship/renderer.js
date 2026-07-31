@@ -30,6 +30,8 @@
   var matcher = null;
   var style = 'stars';
   var replacement = 'uwu';
+  var keepFirst = false;
+  var keepLast = false;
   var applying = false;
 
   function settings() {
@@ -66,12 +68,14 @@
   var compiledFor = null;
   function compile() {
     var cfg = settings();
-    var sig = String(cfg.terms) + '\u0000' + String(cfg.style) + '\u0000' + String(cfg.replacement);
+    var sig = String(cfg.terms) + '\u0000' + String(cfg.style) + '\u0000' + String(cfg.replacement) + '\u0000' + String(cfg.keepFirstLetter) + '\u0000' + String(cfg.keepLastLetter);
     if (sig === compiledFor) return;
     compiledFor = sig;
     var terms = splitTerms(cfg.terms);
     style = String(cfg.style);
     replacement = String(cfg.replacement) || 'uwu';
+    keepFirst = !!cfg.keepFirstLetter;
+    keepLast = !!cfg.keepLastLetter;
 
     if (!terms.length) {
       matcher = null;
@@ -86,7 +90,23 @@
   }
 
   function repeated(match, char) {
-    return match.replace(/\S/g, char);
+    var chars = match.split('');
+    var first = -1;
+    var last = -1;
+    for (var i = 0; i < chars.length; i++) {
+      if (/\S/.test(chars[i])) {
+        if (first === -1) first = i;
+        last = i;
+      }
+    }
+    return chars
+      .map(function (c, i) {
+        if (!/\S/.test(c)) return c;
+        if (keepFirst && i === first) return c;
+        if (keepLast && i === last) return c;
+        return char;
+      })
+      .join('');
   }
 
   function mask(match) {
