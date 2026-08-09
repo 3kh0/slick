@@ -58,9 +58,10 @@
         signal: AbortSignal.timeout(5_000),
       });
       const result = await response.json().catch(() => ({}));
-      const botUserId = response.ok && /^U[A-Z0-9]+$/.test(String(result?.setup?.botUserId || ''))
-        ? String(result.setup.botUserId)
-        : '';
+      const botUserId =
+        response.ok && /^U[A-Z0-9]+$/.test(String(result?.setup?.botUserId || ''))
+          ? String(result.setup.botUserId)
+          : '';
       setupCache.set(teamId, {
         botUserId,
         expiresAt: Date.now() + (botUserId ? 5 * 60_000 : 30_000),
