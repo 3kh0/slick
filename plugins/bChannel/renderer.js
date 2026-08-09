@@ -18,6 +18,12 @@
 
   const handled = new Map();
   const handoffsInFlight = new Map();
+  const readyChannels = new Map();
+  const setupCache = new Map();
+  const readinessChecksInFlight = new Map();
+  const managedChannels = new Map();
+  const READY_CHANNEL_TTL_MS = 60_000;
+  const MANAGED_CHANNEL_TTL_MS = 5 * 60_000;
   const composerState = new WeakMap();
   const paneState = new WeakMap();
   const nativeFetch = window.fetch;
@@ -37,6 +43,62 @@
       }
     } catch (error) {}
     return 'https://bc.deployor.dev';
+  }
+
+  async function preflightBotId(teamId) {
+    if (!/^[TE][A-Z0-9]+$/.test(String(teamId || ''))) return '';
+    const cached = setupCache.get(teamId);
+    if (cached && cached.expiresAt > Date.now()) return cached.botUserId;
+    try {
+      const response = await nativeFetch.call(window, `${serviceUrl()}/slick/preflight`, {
+        method: 'POST',
+        credentials: 'omit',
+        headers: { 'content-type': 'application/x-www-form-urlencoded;charset=UTF-8' },
+        body: new URLSearchParams({ teamId }),
+        signal: AbortSignal.timeout(5_000),
+      });
+      const result = await response.json().catch(() => ({}));
+      const botUserId = response.ok && /^U[A-Z0-9]+$/.test(String(result?.setup?.botUserId || ''))
+        ? String(result.setup.botUserId)
+        : '';
+      setupCache.set(teamId, {
+        botUserId,
+        expiresAt: Date.now() + (botUserId ? 5 * 60_000 : 30_000),
+      });
+      return botUserId;
+    } catch (error) {
+      return '';
+    }
+  }
+
+  async function warmChannelReadiness(teamId, channelId, store) {
+    if (!store?.dispatch || !store?.getState || !isChannelConversation(channelId)) return;
+    const botUserId = await preflightBotId(teamId);
+    if (!botUserId) return;
+    const cacheKey = `${botUserId}:${channelId}`;
+    if (Date.now() - (readyChannels.get(cacheKey) || 0) < READY_CHANNEL_TTL_MS) return;
+    if (readinessChecksInFlight.has(cacheKey)) return readinessChecksInFlight.get(cacheKey);
+    const check = (async () => {
+      try {
+        const runtimeRequire = getSlackRequire();
+        const membership = await runtimeRequire('eh+y').qY(store.dispatch, store.getState, channelId, [botUserId]);
+        if (membership?.[botUserId] !== true) return;
+        const current = await store.dispatch(
+          runtimeRequire('M9P0').Kn({
+            channelId,
+            prefName: 'who_can_post',
+            reason: 'slick-bchannel-preflight-posting-permissions',
+          }),
+        );
+        if (prefAllowsBot(current, botUserId)) readyChannels.set(cacheKey, Date.now());
+      } catch (error) {}
+    })();
+    readinessChecksInFlight.set(cacheKey, check);
+    try {
+      await check;
+    } finally {
+      if (readinessChecksInFlight.get(cacheKey) === check) readinessChecksInFlight.delete(cacheKey);
+    }
   }
 
   function requestUrl(input) {
@@ -275,6 +337,13 @@
 
   function isChannelConversation(channelId) {
     return /^[CG][A-Z0-9]+$/.test(String(channelId || ''));
+  }
+
+  function isManagedChannel(channelId) {
+    const seenAt = managedChannels.get(String(channelId || '')) || 0;
+    if (Date.now() - seenAt < MANAGED_CHANNEL_TTL_MS) return true;
+    if (seenAt) managedChannels.delete(String(channelId || ''));
+    return false;
   }
 
   function teamIdFrom(values) {
@@ -737,8 +806,13 @@
           break;
         } catch (error) {
           uploadError = error;
+          const requestedFileIds = new Set(Array.isArray(args?.fileIds) ? args.fileIds.map(String) : []);
+          const visibleRequestedImage = draftImageIdsFromDom(document).some((fileId) => requestedFileIds.has(fileId));
+          const uploadMayStillBeResolving =
+            visibleRequestedImage || (Array.isArray(args?.pendingFileIds) && args.pendingFileIds.length > 0);
           if (
             attempt >= 10 ||
+            !uploadMayStillBeResolving ||
             !/attachment Slack no longer has|Slack no longer has the bytes/i.test(String(error?.message))
           ) {
             throw error;
@@ -833,12 +907,23 @@
     meta.composer = composer;
 
     const channelId = String(pane?.props?.channelId || '');
+    const teamId = String(pane?.props?.teamId || '');
     meta.eligible = isChannelConversation(channelId);
+
+    if (meta.managed && meta.eligible) managedChannels.set(channelId, Date.now());
 
     if (meta.managed) {
       const autoslug = quill.getModule('autoslug');
       if (autoslug?.options) autoslug.options.includeAllBroadcastKeywords = meta.eligible;
       autocomplete.props.includeAllBroadcastKeywords = meta.eligible;
+    }
+    const hasBroadcast = meta.eligible && deltaCandidateKinds(quill.getContents?.()).size > 0;
+    const preflightKey = hasBroadcast && /^[TE][A-Z0-9]+$/.test(teamId) ? `${teamId}:${channelId}` : '';
+    if (preflightKey && meta.preflightKey !== preflightKey) {
+      meta.preflightKey = preflightKey;
+      void warmChannelReadiness(teamId, channelId, meta.store);
+    } else if (!preflightKey) {
+      meta.preflightKey = '';
     }
     wrapMessagePane(pane, meta);
   }
@@ -995,6 +1080,9 @@
   async function ensureBChannelReady(staged, store, channelId) {
     const botUserId = setupBotId(staged);
     if (!botUserId || !store?.dispatch || !store?.getState || !isChannelConversation(channelId)) return false;
+    const cacheKey = `${botUserId}:${channelId}`;
+    const cachedAt = readyChannels.get(cacheKey) || 0;
+    if (Date.now() - cachedAt < READY_CHANNEL_TTL_MS) return false;
     let runtimeRequire;
     try {
       runtimeRequire = getSlackRequire();
@@ -1029,6 +1117,7 @@
 
     if (!botIsMember) return changedSlackState;
 
+    let postingReady = false;
     try {
       const preferences = runtimeRequire('M9P0');
       const current = await store.dispatch(
@@ -1038,7 +1127,8 @@
           reason: 'slick-bchannel-check-posting-permissions',
         }),
       );
-      if (!prefAllowsBot(current, botUserId)) {
+      postingReady = prefAllowsBot(current, botUserId);
+      if (!postingReady) {
         const whoCanPost = postingPrefWithBot(current, botUserId);
         if (whoCanPost) {
           await store.dispatch(
@@ -1058,12 +1148,16 @@
                 reason: 'slick-bchannel-confirm-posting-permissions',
               }),
             );
-            if (prefAllowsBot(refreshed, botUserId)) break;
+            if (prefAllowsBot(refreshed, botUserId)) {
+              postingReady = true;
+              break;
+            }
           }
         }
       }
     } catch (error) {}
     if (changedSlackState) await waitForSlack(2_000);
+    if (botIsMember && postingReady) readyChannels.set(cacheKey, Date.now());
     return changedSlackState;
   }
 
@@ -1185,7 +1279,7 @@
           ? candidateFromFileCompletion(body)
           : null
       : null;
-    if (candidate?.requiresHandoff) {
+    if (candidate && (candidate.requiresHandoff || isManagedChannel(candidate.intent.channelId))) {
       return handoffAsSlackResponse(candidate);
     }
     const request = nativeFetch.apply(this, arguments);
