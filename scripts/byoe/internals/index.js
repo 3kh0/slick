@@ -3,9 +3,10 @@
 function slickInternalsMain() {
   if (window.__slickInternals) return;
 
-  var chunkArray = window.webpackChunkwebapp;
+  // Slack bundles with rspack now, older builds still expose the webpack name
+  var chunkArray = window.webpackChunkwebapp || window.rspackChunkwebapp;
   if (!Array.isArray(chunkArray)) {
-    console.error('[slick-internals] webpackChunkwebapp not present, internals unavailable');
+    console.error('[slick-internals] no chunk array (webpackChunkwebapp/rspackChunkwebapp), internals unavailable');
     return;
   }
 

@@ -436,7 +436,7 @@
 
   function getSlackRequire() {
     if (slackRequire) return slackRequire;
-    const chunks = window.rspackChunkwebapp;
+    const chunks = window.webpackChunkwebapp || window.rspackChunkwebapp;
     if (!Array.isArray(chunks)) throw new Error("Slack's message formatter is not available yet.");
     const id = `slick_bchannel_${Date.now()}_${Math.random().toString(36).slice(2)}`;
     chunks.push([

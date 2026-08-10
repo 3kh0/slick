@@ -68,7 +68,7 @@
   let webpackRequire = null;
   function getWebpackRequire() {
     if (webpackRequire) return webpackRequire;
-    const chunks = window.webpackChunkwebapp;
+    const chunks = window.webpackChunkwebapp || window.rspackChunkwebapp;
     if (!chunks?.push) return null;
     chunks.push([
       ['slick-user-pronouns-' + Date.now()],

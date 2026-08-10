@@ -25,7 +25,7 @@
 
   function getWebpackRequire() {
     if (webpackRequire) return webpackRequire;
-    const chunks = window.webpackChunkwebapp;
+    const chunks = window.webpackChunkwebapp || window.rspackChunkwebapp;
     if (!chunks?.push) throw new Error('module loader is not ready');
     chunks.push([
       ['slick-custom-name-recording-' + Date.now()],
