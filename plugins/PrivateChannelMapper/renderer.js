@@ -1,20 +1,25 @@
 (function () {
   // source: https://github.com/anirudhb/rope/blob/master/src/plugins/PrivateChannelMapper.tsx
   // thanks ani! ur the best :)
+  // mention support ported from https://github.com/jeremy46231/taut/blob/main/plugins/PrivateChannel.tsx
   'use strict';
   if (window.__slickPCM) return;
   window.__slickPCM = true;
 
   const SEL = '.c-missing_channel--private';
   const ID_RE = /^[CGD][A-Z0-9]{6,}$/;
+  const FLARON = 'https://flaron.halceon.dev';
 
   let names = read('slick:pcm:names');
 
   const FLARON_KEY = 'slick:pcm:flaron';
   const FLARON_UNKNOWN_KEY = 'slick:pcm:flaron-unknown';
 
+  function setting(key) {
+    return !!((window.__slickPluginSettings && window.__slickPluginSettings.PrivateChannelMapper) || {})[key];
+  }
   function flaronEnabled() {
-    return !!window.__slickPluginSettings?.PrivateChannelMapper?.flaron;
+    return setting('flaron');
   }
 
   const cachedFlaron = read(FLARON_KEY);
@@ -92,7 +97,7 @@
     if (cachedFlaron[id] || pendingFlaron.has(id) || failedFlaron.has(id)) return;
     if (flaronUnknownRecently(id)) return;
     pendingFlaron.add(id);
-    fetch('https://flaron.halceon.dev/channel/' + id)
+    fetch(FLARON + '/channel/' + id)
       .then((r) => r.json())
       .then((data) => {
         const name = data && typeof data.name === 'string' ? data.name.trim().slice(0, 100) : '';
@@ -117,18 +122,19 @@
     const id = idOf(el);
     if (!id) return;
     const custom = names[id];
+    const known = custom || (shadows.get(id) || {}).name;
     let flaron;
-    if (!custom && flaronEnabled()) {
+    if (!known && flaronEnabled()) {
       getFlaron(id);
       flaron = cachedFlaron[id];
     }
-    const want = custom || flaron || id;
+    const want = known || flaron || id;
     el.title = want === id ? '' : id;
 
     const node = labelTextNode(el);
     if (node.nodeValue !== want) node.nodeValue = want;
     el.classList.toggle('slick-pcm--named', !!custom);
-    el.classList.toggle('slick-pcm--flaron', !!flaron);
+    el.classList.toggle('slick-pcm--flaron', want !== id && !custom);
   }
 
   function applyAll() {
@@ -189,14 +195,244 @@
     }
   });
 
+  /* ---------- mentioning private channels you are not in ----------
+   * Composer autocomplete searches Slack's own redux `channels` slice, so we layer
+   * Flaron name/id pairs on top of it at read time. Slack's data always wins and
+   * nothing is written back, so turning the setting off restores stock behaviour.
+   */
+
+  const SHADOW_KEY = 'slick:pcm:shadows';
+  const SHADOW_MAX = 200;
+  const QUERY_RE = /^[^\s#@,<>]{2,80}$/;
+  const SEARCH_KEY = 'slick-private-channel';
+
+  const SETTLE_MS = 250;
+
+  const shadows = new Map();
+  const missedNames = new Set();
+  const pendingNames = new Map();
+  let stateVersion = 0;
+  let latestQuery = '';
+
+  // true once `query` is the last thing typed and the user has stopped
+  const settled = (query) =>
+    new Promise((resolve) => setTimeout(() => resolve(latestQuery === query), latestQuery === query ? SETTLE_MS : 0));
+
+  const deburr = (s) => s.normalize('NFKD').replace(/[̀-ͯ]/g, '');
+
+  function makeChannel(id, name) {
+    return {
+      id,
+      name,
+      name_normalized: deburr(name),
+      _name_lc: deburr(name.toLowerCase()),
+      is_channel: false,
+      is_group: true,
+      is_im: false,
+      is_mpim: false,
+      is_private: true,
+      is_member: false,
+      is_archived: false,
+      is_general: false,
+      previous_names: [],
+      isNonExistent: false,
+      isUnknown: false,
+    };
+  }
+
+  function loadShadows() {
+    const saved = read(SHADOW_KEY);
+    for (const id of Object.keys(saved)) {
+      if (typeof saved[id] === 'string' && saved[id]) shadows.set(id, makeChannel(id, saved[id]));
+    }
+  }
+
+  function addShadow(id, name) {
+    shadows.delete(id);
+    shadows.set(id, makeChannel(id, name));
+    while (shadows.size > SHADOW_MAX) shadows.delete(shadows.keys().next().value);
+    stateVersion++;
+    const out = {};
+    for (const [key, ch] of shadows) out[key] = ch.name;
+    write(SHADOW_KEY, out);
+    applyAll();
+  }
+
+  let webpackRequire = null;
+  function getWebpackRequire() {
+    if (webpackRequire) return webpackRequire;
+    const chunks = window.webpackChunkwebapp || window.rspackChunkwebapp;
+    if (!chunks || !chunks.push) return null;
+    chunks.push([['slick-private-channel-' + Date.now()], {}, (require) => (webpackRequire = require)]);
+    return webpackRequire;
+  }
+  // ids are minified, so match on source. Cache only on a hit (the map fills lazily)
+  // and read only instantiated modules (requiring one early can have side effects).
+  const needleIds = new Map();
+  function moduleByNeedle(r, needle) {
+    let id = needleIds.get(needle);
+    if (!id && (id = Object.keys(r.m || {}).find((k) => String(r.m[k]).includes(needle)))) needleIds.set(needle, id);
+    return id && r.c && r.c[id] ? r.c[id].exports : null;
+  }
+
+  function findStore(r) {
+    const mod = moduleByNeedle(r, 'getStoreInstanceMap');
+    const getStores =
+      mod && Object.values(mod).find((v) => typeof v === 'function' && v.name === 'getStoreInstanceMap');
+    if (!getStores) return null;
+    const stores = getStores() || {};
+    const routeTeamId = (location.pathname.match(/\/client\/([A-Z0-9]+)/) || [])[1];
+    const list = Object.values(stores).filter(
+      (s) => typeof s?.getState === 'function' && typeof s?.dispatch === 'function',
+    );
+    return (
+      stores[routeTeamId] ||
+      list.find((s) => s.getState()?.selfTeamIds?.teamId === routeTeamId) ||
+      (list.length === 1 ? list[0] : null)
+    );
+  }
+
+  // The local searcher enumerates the channel slice's prototype and memoizes on the
+  // slice's identity, so a shadow only lands if both are fresh objects.
+  function patchStore(store) {
+    const orig = store.getState.bind(store);
+    let cachedRaw = null;
+    let cachedVersion = -1;
+    let cachedOut = null;
+    store.getState = () => {
+      const raw = orig();
+      if (!shadows.size || !setting('mentions')) return raw;
+      if (raw === cachedRaw && cachedVersion === stateVersion) return cachedOut;
+      const rawChannels = raw.channels;
+      const proto = Object.assign({}, Object.getPrototypeOf(rawChannels));
+      for (const [id, ch] of shadows) if (!(proto[id] || {}).name) proto[id] = ch;
+      const channels = Object.create(proto, Object.getOwnPropertyDescriptors(rawChannels));
+      cachedRaw = raw;
+      cachedVersion = stateVersion;
+      cachedOut = Object.create(Object.getPrototypeOf(raw), {
+        ...Object.getOwnPropertyDescriptors(raw),
+        channels: { value: channels, enumerable: true, configurable: true, writable: true },
+      });
+      return cachedOut;
+    };
+  }
+
+  async function resolveName(name) {
+    if (missedNames.has(name)) return false;
+    let pending = pendingNames.get(name);
+    if (!pending) {
+      pending = fetch(FLARON + '/cname/' + encodeURIComponent(name))
+        .then((r) => (r.ok ? r.json() : null))
+        .catch(() => null)
+        .finally(() => pendingNames.delete(name));
+      pendingNames.set(name, pending);
+    }
+    const data = await pending;
+    // public channels come back with full metadata, private ones only {id, name}
+    if (!data || !ID_RE.test(data.id || '') || typeof data.name !== 'string' || 'created' in data) {
+      if (data) missedNames.add(name);
+      return false;
+    }
+    addShadow(data.id, data.name);
+    return true;
+  }
+
+  const resultId = (r) => (r && (r.item ? r.item.id : r.id)) || '';
+  const resultName = (r) => (r && (r.item ? r.item.name : r.name)) || '';
+
+  function mergeResults(base, extra) {
+    const seen = new Set(base.map(resultId));
+    return base.concat(extra.filter((res) => resultId(res) && !seen.has(resultId(res))));
+  }
+
+  // Slack ranks by frecency and has none for a channel it cannot see, so a shadow
+  // spelled out in full would otherwise sit below fuzzy matches
+  function hoistShadows(list, query) {
+    const mine = list.filter((res) => shadows.has(resultId(res)) && resultName(res).toLowerCase() === query);
+    return mine.length ? mine.concat(list.filter((res) => !mine.includes(res))) : list;
+  }
+
+  function patchSearcher(r, store) {
+    const mod = moduleByNeedle(r, 'searchLocalAsync');
+    const getSearcher = mod && Object.values(mod).find((v) => typeof v === 'function');
+    if (!getSearcher) return false;
+    const teamId = store.getState()?.selfTeamIds?.teamId;
+    let ours;
+    try {
+      ours = getSearcher({ teamId, key: SEARCH_KEY });
+    } catch {
+      return false;
+    }
+    const proto = ours && Object.getPrototypeOf(ours);
+    if (!proto || typeof proto.search !== 'function' || proto.__slickPCM) return !!(proto && proto.__slickPCM);
+    const origSearch = proto.search;
+    proto.__slickPCM = true;
+    proto.search = function (args) {
+      const out = origSearch.apply(this, arguments);
+      const options = args && args.options;
+      if (this === ours || !setting('mentions')) return out;
+      if (!options || !options.tiered || !(options.entities || {}).channels) return out;
+      if ((options.sort || {}).source !== 'texty-autocomplete') return out;
+      const query = String(args.query || '')
+        .trim()
+        .replace(/^#/, '')
+        .toLowerCase();
+      if (!QUERY_RE.test(query)) return out;
+      latestQuery = query;
+
+      return Promise.resolve(out).then((local) => {
+        if (!Array.isArray(local)) return local;
+        const merged = Promise.resolve(local.promise).then(async (remote) => {
+          const base = Array.isArray(remote) ? remote : local;
+          if (base.some((res) => resultName(res).toLowerCase() === query)) return hoistShadows(base, query);
+          // ask Flaron only about the name typing stopped on, or every prefix of it
+          // becomes a request and a stray shadow
+          if (!(await settled(query))) return base;
+          if (!(await resolveName(query))) return base;
+          // our own searcher, so the rerun does not abort the composer's live request
+          const rerun = await origSearch.call(ours, args);
+          return Array.isArray(rerun) ? hoistShadows(mergeResults(base, rerun), query) : base;
+        });
+        // Slack sometimes hands back a frozen array, so extend a copy
+        const fresh = hoistShadows(local.slice(), query);
+        fresh.promise = merged;
+        return fresh;
+      });
+    };
+    return true;
+  }
+
+  let mentionsReady = false;
+  let mentionTries = 0;
+  function initMentions() {
+    if (mentionsReady || !setting('mentions')) return;
+    const r = getWebpackRequire();
+    const store = r && findStore(r);
+    if (store && patchSearcher(r, store)) {
+      patchStore(store);
+      mentionsReady = true;
+      applyAll();
+      return;
+    }
+    // the search bundle loads lazily, so keep looking for a little while
+    if (mentionTries++ < 40) setTimeout(initMentions, 250);
+  }
+
   function boot() {
     if (!document.body) {
       setTimeout(boot, 200);
       return;
     }
+    loadShadows();
     applyAll();
     window.__slickDOM.onRoots((roots) => roots.forEach(applyWithin), { charData: true });
-    window.addEventListener('slick:plugin-settings', applyAll);
+    window.addEventListener('slick:plugin-settings', () => {
+      applyAll();
+      initMentions();
+    });
+    // hold the redux and search patches back until a mention is actually typed
+    document.addEventListener('keydown', (e) => e.key === '#' && initMentions(), true);
+    if (shadows.size) initMentions();
   }
   boot();
 })();
