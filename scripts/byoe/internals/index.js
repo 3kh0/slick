@@ -32,12 +32,12 @@ function slickInternalsMain() {
   var futureRegistry = new Map();
   var chunkCbs = [];
   // Keep original factory references so source-signature discovery still sees
-  // Slack's code (the wrapped factory's own source is just our shim).
+  // Slack's code even when a caller reads the source past our toString shim.
   var originalFactories = new Map();
   var originalPush = chunkArray.push.bind(chunkArray);
   function wrapFactory(id, factory) {
     originalFactories.set(id, factory);
-    return function (module, exports, require) {
+    var wrapped = function (module, exports, require) {
       var result = factory.call(this, module, exports, require);
       try {
         futureRegistry.set(id, module.exports);
@@ -45,6 +45,14 @@ function slickInternalsMain() {
       } catch (e) {}
       return result;
     };
+    // Plugins locate Slack modules by scanning `require.m[id]` source for a needle.
+    // Wrapping replaces that entry, so report Slack's source instead of our shim's
+    // or every such lookup comes back empty while internals are on. String() rather
+    // than Function.prototype.toString so a re-wrap still chains down to Slack.
+    wrapped.toString = function () {
+      return String(factory);
+    };
+    return wrapped;
   }
   var patchedPush = function () {
     for (var c = 0; c < arguments.length; c++) {
