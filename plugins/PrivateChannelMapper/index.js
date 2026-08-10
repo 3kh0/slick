@@ -7,7 +7,7 @@ module.exports = {
     name: 'PrivateChannelMapper',
     description: 'Name the private channels you can’t see, and mention the ones you are not in',
   },
-
+  capabilities: ['internals'],
   renderer: fs.readFileSync(path.join(__dirname, 'renderer.js'), 'utf8'),
   settings: {
     flaron: {
