@@ -479,6 +479,31 @@
     return result.blocks;
   }
 
+  function clearPendingFileUploads(store, pendingIds) {
+    if (!pendingIds.size || !store?.dispatch) return;
+    let runtimeRequire;
+    try {
+      runtimeRequire = getSlackRequire();
+    } catch (error) {
+      return;
+    }
+    for (const [id, factory] of Object.entries(runtimeRequire.m || {})) {
+      const source = String(factory);
+      if (!source.includes('pendingFileUploads')) continue;
+      const exports = runtimeRequire(id);
+      const candidate = Object.values(exports || {}).find(
+        (value) => typeof value === 'function' && /removePending|clearPending|deletePending/i.test(String(value)),
+      );
+      if (!candidate) continue;
+      for (const pendingId of pendingIds) {
+        try {
+          store.dispatch(candidate(pendingId));
+        } catch (error) {}
+      }
+      return;
+    }
+  }
+
   function composerAttachmentRoot(composer) {
     return (
       composer?.closest?.(
@@ -855,6 +880,10 @@
           includeBroadcastKeywordWarning: false,
         });
         await uploadStagedFiles(staged.token, uploads);
+        clearPendingFileUploads(
+          meta.store,
+          new Set(Array.isArray(args?.pendingFileIds) ? args.pendingFileIds.map(String) : []),
+        );
         return result;
       } catch (error) {
         await discardIntent(staged.token);
