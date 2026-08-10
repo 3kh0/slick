@@ -196,15 +196,13 @@
   });
 
   /* ---------- mentioning private channels you are not in ----------
-   * Slack's composer autocomplete searches its own redux `channels` slice, so a
-   * channel it has never heard of can never be mentioned. We layer name/id pairs
-   * from Flaron on top of that slice at read time (Slack's own data always wins)
-   * and re-run the search once a shadow lands. Nothing is written to Slack's state.
+   * Composer autocomplete searches Slack's own redux `channels` slice, so we layer
+   * Flaron name/id pairs on top of it at read time. Slack's data always wins and
+   * nothing is written back, so turning the setting off restores stock behaviour.
    */
 
   const SHADOW_KEY = 'slick:pcm:shadows';
   const SHADOW_MAX = 200;
-  // Slack's composer passes the raw typed text, sigil and all
   const QUERY_RE = /^[^\s#@,<>]{2,80}$/;
   const SEARCH_KEY = 'slick-private-channel';
 
@@ -216,7 +214,7 @@
   let stateVersion = 0;
   let latestQuery = '';
 
-  // true once `query` is the last thing the user typed and they have stopped
+  // true once `query` is the last thing typed and the user has stopped
   const settled = (query) =>
     new Promise((resolve) => setTimeout(() => resolve(latestQuery === query), latestQuery === query ? SETTLE_MS : 0));
 
@@ -268,13 +266,12 @@
     chunks.push([['slick-private-channel-' + Date.now()], {}, (require) => (webpackRequire = require)]);
     return webpackRequire;
   }
-  // module ids are minified and unstable, so find modules by a source needle
+  // ids are minified, so match on source. Cache only on a hit (the map fills lazily)
+  // and read only instantiated modules (requiring one early can have side effects).
   const needleIds = new Map();
   function moduleByNeedle(r, needle) {
-    // not cached until found: rspack fills the module map lazily
     let id = needleIds.get(needle);
     if (!id && (id = Object.keys(r.m || {}).find((k) => String(r.m[k]).includes(needle)))) needleIds.set(needle, id);
-    // only read modules Slack already instantiated, requiring one can have side effects
     return id && r.c && r.c[id] ? r.c[id].exports : null;
   }
 
@@ -295,9 +292,8 @@
     );
   }
 
-  // Read-time overlay: Slack's local searcher enumerates the channel slice's
-  // prototype and memoizes on the slice's identity, so a shadow only lands when
-  // both the prototype and the slice are fresh objects.
+  // The local searcher enumerates the channel slice's prototype and memoizes on the
+  // slice's identity, so a shadow only lands if both are fresh objects.
   function patchStore(store) {
     const orig = store.getState.bind(store);
     let cachedRaw = null;
@@ -321,7 +317,6 @@
     };
   }
 
-  // Flaron only indexes private channels by their exact name
   async function resolveName(name) {
     if (missedNames.has(name)) return false;
     let pending = pendingNames.get(name);
@@ -350,8 +345,8 @@
     return base.concat(extra.filter((res) => resultId(res) && !seen.has(resultId(res))));
   }
 
-  // Slack ranks by frecency, which it has none of for a channel it cannot see, so
-  // a shadow the user spelled out in full would otherwise land below fuzzy matches
+  // Slack ranks by frecency and has none for a channel it cannot see, so a shadow
+  // spelled out in full would otherwise sit below fuzzy matches
   function hoistShadows(list, query) {
     const mine = list.filter((res) => shadows.has(resultId(res)) && resultName(res).toLowerCase() === query);
     return mine.length ? mine.concat(list.filter((res) => !mine.includes(res))) : list;
@@ -389,14 +384,12 @@
         if (!Array.isArray(local)) return local;
         const merged = Promise.resolve(local.promise).then(async (remote) => {
           const base = Array.isArray(remote) ? remote : local;
-          // Slack already knows a channel by that name, so leave it alone
           if (base.some((res) => resultName(res).toLowerCase() === query)) return hoistShadows(base, query);
-          // only the name the user stopped typing on is worth asking Flaron about,
-          // otherwise every prefix of it becomes a request and a stray shadow
+          // ask Flaron only about the name typing stopped on, or every prefix of it
+          // becomes a request and a stray shadow
           if (!(await settled(query))) return base;
           if (!(await resolveName(query))) return base;
-          // let Slack build the result itself, on a searcher of our own so we do
-          // not abort the request the composer is currently waiting on
+          // our own searcher, so the rerun does not abort the composer's live request
           const rerun = await origSearch.call(ours, args);
           return Array.isArray(rerun) ? hoistShadows(mergeResults(base, rerun), query) : base;
         });
@@ -437,7 +430,7 @@
       applyAll();
       initMentions();
     });
-    // only wire up the redux/search patches once the user actually mentions something
+    // hold the redux and search patches back until a mention is actually typed
     document.addEventListener('keydown', (e) => e.key === '#' && initMentions(), true);
     if (shadows.size) initMentions();
   }
