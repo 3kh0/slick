@@ -64,8 +64,8 @@
       '#slick-panel-overlay .slick-editor-back:hover{opacity:1}',
       '#slick-panel-overlay .slick-customcss-editor{width:100%;min-height:320px;box-sizing:border-box;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;line-height:1.5;padding:10px 12px;border-radius:8px;border:1px solid rgba(127,127,127,.3);background:rgba(127,127,127,.06);color:inherit;resize:vertical;tab-size:2}',
       '#slick-panel-overlay .slick-customcss-editor:focus{outline:2px solid rgba(29,155,209,.5);outline-offset:1px}',
-      '#slick-panel-overlay .slick-diagnostics{display:flex;align-items:center;gap:12px;margin-top:10px}',
-      '#slick-panel-overlay .slick-diagnostics-status{font-size:12px;opacity:.65}',
+      '#slick-panel-overlay .slick-actions{display:flex;align-items:center;gap:12px;margin-top:10px}',
+      '#slick-panel-overlay .slick-actions-status{font-size:12px;opacity:.65}',
     ].join('\n');
     document.head.appendChild(st);
   }
@@ -268,10 +268,57 @@
     return row(esc(t.label), t.description, themeRadio(t), '', extra);
   };
 
+  function checkedAt(ts) {
+    if (!ts) return 'never';
+    try {
+      return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(ts));
+    } catch {
+      return 'never';
+    }
+  }
+
+  const updateSummary = (u) =>
+    (u.version ? 'Slick ' + u.version + ' · ' : '') +
+    (u.build ? 'Build ' + u.build : 'Development build') +
+    ' · Last checked ' +
+    checkedAt(u.lastCheckedAt);
+
+  const updateSection = (u) =>
+    !u
+      ? ''
+      : '<div class="c-legend slick-legend" style="margin-top:24px">Updates</div>' +
+        '<p class="slick-intro" id="slick-update-summary">' +
+        esc(updateSummary(u)) +
+        '</p>' +
+        '<div class="slick-actions">' +
+        (u.supported
+          ? '<button id="slick-check-updates" class="c-button c-button--outline c-button--medium" type="button">Check for updates</button>'
+          : '') +
+        '<span id="slick-update-status" class="slick-actions-status" aria-live="polite">' +
+        (u.supported ? '' : 'This build cannot check for updates.') +
+        '</span>' +
+        '</div>';
+
   const rows = (items, render, dir) =>
     items.length
       ? items.map(render).join('')
       : '<div class="slick-intro">Nothing found in <code>' + dir + '/</code>.</div>';
+
+  function setUpdateStatus(text) {
+    const status = $('slick-update-status');
+    if (status) status.textContent = text;
+  }
+
+  function onUpdateStatus(e) {
+    const btn = $('slick-check-updates');
+    if (btn) {
+      clearTimeout(btn.__slickTimeout);
+      btn.disabled = false;
+    }
+    const summary = $('slick-update-summary');
+    if (summary && S.update) summary.textContent = updateSummary(S.update);
+    setUpdateStatus((e.detail && e.detail.message) || '');
+  }
 
   function buildOverlay() {
     let ov = $('slick-panel-overlay');
@@ -290,11 +337,12 @@
       '<div id="slick-plugin-list">' +
       rows(S.plugins, pluginRow, 'plugins') +
       '</div>' +
+      updateSection(S.update) +
       '<div class="c-legend slick-legend" style="margin-top:24px">Performance diagnostics</div>' +
       '<p class="slick-intro">Save a redacted local report with startup, responsiveness, CPU, memory, GPU, and per-plugin DOM metrics. Nothing is uploaded.</p>' +
-      '<div class="slick-diagnostics">' +
+      '<div class="slick-actions">' +
       '<button id="slick-export-diagnostics" class="c-button c-button--outline c-button--medium" type="button">Export diagnostics…</button>' +
-      '<span id="slick-diagnostics-status" class="slick-diagnostics-status" aria-live="polite"></span>' +
+      '<span id="slick-diagnostics-status" class="slick-actions-status" aria-live="polite"></span>' +
       '</div>' +
       '<div id="slick-applybar" class="hidden">' +
       '<span class="slick-msg">These changes take effect after restarting Slick.</span>' +
@@ -383,6 +431,19 @@
         ov.querySelector('#slick-applybar').classList.remove('hidden');
       });
     });
+    const updateBtn = ov.querySelector('#slick-check-updates');
+    if (updateBtn) {
+      updateBtn.addEventListener('click', () => {
+        updateBtn.disabled = true;
+        setUpdateStatus('Checking for updates…');
+        ctl({ op: 'update' });
+        clearTimeout(updateBtn.__slickTimeout);
+        updateBtn.__slickTimeout = setTimeout(() => {
+          updateBtn.disabled = false;
+        }, 60000);
+      });
+    }
+
     ov.querySelector('#slick-restart').addEventListener('click', () => ctl({ op: 'restart' }));
     ov.querySelector('#slick-export-diagnostics').addEventListener('click', () => {
       const status = ov.querySelector('#slick-diagnostics-status');
@@ -479,6 +540,7 @@
     if (ov && ov.style.display === 'block') positionOverlay();
   });
   window.addEventListener('slick:settings', refreshConfigFields);
+  window.addEventListener('slick:update-status', onUpdateStatus);
 
   injectTab();
   return 'slick-settings-renderer ready';

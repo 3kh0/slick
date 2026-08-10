@@ -173,6 +173,10 @@ Prefer to write your own CSS instead? Slick also has a "Custom CSS" option at th
 
 Please refer to [`plugins/README.md`](plugins/README.md) for the plugins documentation. I promise it is not boring.
 
+## Updates
+
+Slick checks for new builds on its own every few hours. To check manually, use **Preferences > Slick > Updates > Check for updates** (or **Slick > Check for Updates…** in the menu bar on macOS). The panel shows the running version, its build number, and when the last check happened.
+
 ## Performance diagnostics
 
 Slick records lightweight local startup and responsiveness metrics. You can export a redacted report from **Preferences → Slick → Performance diagnostics**; nothing is uploaded automatically.

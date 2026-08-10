@@ -11,6 +11,7 @@ const PLATFORM = process.platform === 'darwin' ? 'darwin' : process.platform ===
 const MAC = PLATFORM === 'darwin';
 const CINT = 6 * 60 * 60 * 1000;
 const REPO = '3kh0/slick';
+const RELEASES_URL = 'https://github.com/' + REPO + '/releases';
 const WORKFLOW_URI = 'https://github.com/' + REPO + '/.github/workflows/release.yml';
 const SLSA_PROVENANCE = 'https://slsa.dev/provenance/v1';
 // Public-good Fulcio roots  from sigstore.dev
@@ -497,8 +498,7 @@ function create({ version, build, profile }) {
 
   async function perform(release) {
     const asset = pickAsset(release);
-    if (!asset || !asset.browser_download_url)
-      return shell.openExternal(release.html_url || 'https://github.com/3kh0/slick/releases');
+    if (!asset || !asset.browser_download_url) return shell.openExternal(release.html_url || RELEASES_URL);
     const dir = fs.mkdtempSync(path.join(app.getPath('temp'), 'slick-update-'));
     const zip = path.join(dir, asset.name);
     const status = 'Slick Build ' + releaseBuild(release);
@@ -587,7 +587,7 @@ function create({ version, build, profile }) {
           cancelId: 1,
         })
         .then(({ response }) => {
-          if (response === 0) shell.openExternal(release.html_url || 'https://github.com/' + REPO + '/releases');
+          if (response === 0) shell.openExternal(release.html_url || RELEASES_URL);
         })
         .catch(() => {});
     }
@@ -656,18 +656,20 @@ function create({ version, build, profile }) {
     promptDownload(release, latestBuild);
   }
 
-  async function manualCheckForUpdates() {
+  async function manualCheckForUpdates({ quiet = false } = {}) {
     if (!build) {
-      dialog
-        .showMessageBox({
-          type: 'info',
-          title: 'Slick updates',
-          message: 'Update checking is unavailable',
-          detail: 'This is a development build, so Slick cannot check for updates.',
-          buttons: ['OK'],
-        })
-        .catch(() => {});
-      return;
+      if (!quiet) {
+        dialog
+          .showMessageBox({
+            type: 'info',
+            title: 'Slick updates',
+            message: 'Update checking is unavailable',
+            detail: 'This is a development build, so Slick cannot check for updates.',
+            buttons: ['OK'],
+          })
+          .catch(() => {});
+      }
+      return { state: 'unsupported', message: 'This is a development build, so Slick cannot check for updates.' };
     }
 
     let release;
@@ -675,34 +677,40 @@ function create({ version, build, profile }) {
       writeState({ ...readState(), lastCheckedAt: Date.now() });
       release = await fetchLatestRelease();
     } catch (err) {
-      dialog
-        .showMessageBox({
-          type: 'error',
-          title: 'Slick update check failed',
-          message: 'Could not check for updates',
-          detail: String((err && err.message) || err) + '. Try again later.',
-          buttons: ['OK'],
-        })
-        .catch(() => {});
-      return;
+      const reason = String((err && err.message) || err);
+      if (!quiet) {
+        dialog
+          .showMessageBox({
+            type: 'error',
+            title: 'Slick update check failed',
+            message: 'Could not check for updates',
+            detail: reason + '. Try again later.',
+            buttons: ['OK'],
+          })
+          .catch(() => {});
+      }
+      return { state: 'error', message: 'Could not check for updates: ' + reason };
     }
 
     const latestBuild = releaseBuild(release);
     if (latestBuild <= build) {
-      dialog
-        .showMessageBox({
-          type: 'info',
-          title: 'Slick is up to date',
-          message: "You're running the latest version of Slick",
-          detail: 'Build ' + build + ' is the newest available.',
-          buttons: ['OK'],
-        })
-        .catch(() => {});
-      return;
+      if (!quiet) {
+        dialog
+          .showMessageBox({
+            type: 'info',
+            title: 'Slick is up to date',
+            message: "You're running the latest version of Slick",
+            detail: 'Build ' + build + ' is the newest available.',
+            buttons: ['OK'],
+          })
+          .catch(() => {});
+      }
+      return { state: 'latest', message: 'Slick is up to date. Build ' + build + ' is the newest available.' };
     }
 
     writeState({ ...readState(), lastPromptedBuild: latestBuild, lastPromptedAt: Date.now() });
     promptDownload(release, latestBuild);
+    return { state: 'available', latestBuild, message: 'Build ' + latestBuild + ' is available.' };
   }
 
   function scheduleUpdateChecks() {
@@ -722,7 +730,15 @@ function create({ version, build, profile }) {
       .catch(() => {});
   }
 
-  return { readState, scheduleUpdateChecks, manualCheckForUpdates };
+  function info() {
+    return { version, build, lastCheckedAt: readState().lastCheckedAt || 0 };
+  }
+
+  instance = { RELEASES_URL, readState, info, scheduleUpdateChecks, manualCheckForUpdates };
+  return instance;
 }
 
-module.exports = { create, verifyBundle, sha256File };
+let instance = null;
+const current = () => instance;
+
+module.exports = { RELEASES_URL, create, current, verifyBundle, sha256File };
