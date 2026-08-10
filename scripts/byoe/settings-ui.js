@@ -74,7 +74,7 @@ function listThemes(catalog, activeName) {
 
 // The manifest describes every plugin and theme, not just the enabled ones, so
 // this is where a lazily-built catalog gets filled in.
-function buildManifest({ catalog, enabled, activeTheme, pluginSettings, customCss }) {
+function buildManifest({ catalog, enabled, activeTheme, pluginSettings, customCss, update }) {
   hydrateCatalog(catalog);
   const plugins = catalog.plugins.map(({ dir, meta, schema }) => {
     return {
@@ -106,6 +106,7 @@ function buildManifest({ catalog, enabled, activeTheme, pluginSettings, customCs
     themes,
     plugins,
     customCss: customCss || '',
+    update: update || null,
   };
 }
 
@@ -138,6 +139,7 @@ function handleControl(
     onFileSetting,
     onCustomCss,
     onDiagnostics,
+    onUpdateCheck,
   },
 ) {
   let u;
@@ -227,6 +229,10 @@ function handleControl(
       Promise.resolve(onDiagnostics()).catch((e) =>
         console.error('[slick-settings] diagnostic export failed:', e.message),
       );
+    }
+  } else if (op === 'update') {
+    if (onUpdateCheck) {
+      Promise.resolve(onUpdateCheck()).catch((e) => console.error('[slick-settings] update check failed:', e.message));
     }
   } else if (op === 'restart') {
     console.log('[slick-settings] relaunching to apply plugin changes');

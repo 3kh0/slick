@@ -246,6 +246,7 @@ function armBlocking(sess) {
         onPluginSetting: (_dir, _key, _value, all) => setPluginSettings(all),
         onCustomCss: setCustomCss,
         onDiagnostics: () => diagnosticSession.exportBundle(),
+        onUpdateCheck: runUpdateCheck,
         onFileSetting: ({ def }) => {
           const extensions = String(def.accept || '')
             .split(',')
@@ -686,6 +687,40 @@ function applyTo(wc, options = {}) {
   return next;
 }
 
+function updaterApi() {
+  try {
+    return require('./updater').current();
+  } catch {
+    return null;
+  }
+}
+
+function updateInfo() {
+  const api = updaterApi();
+  if (!api) return null;
+  const { version, build, lastCheckedAt } = api.info();
+  return { version, build, lastCheckedAt, supported: !!build };
+}
+
+async function runUpdateCheck() {
+  const api = updaterApi();
+  const status = api
+    ? await api.manualCheckForUpdates({ quiet: true })
+    : { state: 'unsupported', message: 'Updates are unavailable in this build.' };
+  const payload = JSON.stringify({ status, update: updateInfo() });
+  for (const wc of live.keys()) {
+    if (wc.isDestroyed()) continue;
+    wc.mainFrame
+      .executeJavaScript(
+        `(() => { const slick = ${payload};` +
+          `window.__slickSettings = Object.assign(window.__slickSettings || {}, { update: slick.update });` +
+          `window.dispatchEvent(new CustomEvent('slick:update-status', { detail: slick.status })); })()`,
+        true,
+      )
+      .catch(() => {});
+  }
+}
+
 function runtimeManifest() {
   return settings.buildManifest({
     catalog,
@@ -693,6 +728,7 @@ function runtimeManifest() {
     activeTheme: runtime.theme,
     pluginSettings: runtime.pluginSettings,
     customCss: runtime.customCss,
+    update: updateInfo(),
   });
 }
 
