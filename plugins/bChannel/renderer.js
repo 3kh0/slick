@@ -3,8 +3,7 @@
 
   if (window.__slickBChannel) return;
 
-  const POST_MESSAGE_RE = /\/api\/chat\.postMessage(?:[/?#]|$)/;
-  const COMPLETE_UPLOAD_RE = /\/api\/files\.completeUploadExternal(?:[/?#]|$)/;
+  const BROADCAST_MARKER_RE = /<!(?:channel|here)(?:\|[^>]*)?>|@(?:channel|here)\b/i;
   const IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/gif', 'image/webp']);
   const DENIED_BROADCASTS = new Set(['restricted_action']);
   const COMPOSER_SELECTOR = [
@@ -28,6 +27,12 @@
   const paneState = new WeakMap();
   const nativeFetch = window.fetch;
   window.__slickBChannel = true;
+  setInterval(() => {
+    const now = Date.now();
+    for (const [key, at] of readyChannels) if (now - at >= READY_CHANNEL_TTL_MS) readyChannels.delete(key);
+    for (const [key, entry] of setupCache) if (now >= entry.expiresAt) setupCache.delete(key);
+    for (const [key, at] of managedChannels) if (now - at >= MANAGED_CHANNEL_TTL_MS) managedChannels.delete(key);
+  }, 5 * 60_000).unref?.();
   let slackRequire;
   let slackSerializer;
 
@@ -255,6 +260,10 @@
   function candidateFromBody(body) {
     const values = bodyRecord(body);
     if (!values) return null;
+    const rawText = typeof values.text === 'string' ? values.text : '';
+    const rawBlocks = typeof values.blocks === 'string' ? values.blocks : '';
+    if (!rawText && !rawBlocks) return null;
+    if (!BROADCAST_MARKER_RE.test(rawText) && !BROADCAST_MARKER_RE.test(rawBlocks)) return null;
     const channelId = String(values.channel || '');
     const token = String(values.token || '');
     const blocks = jsonArray(values.blocks);
@@ -291,6 +300,10 @@
   function candidateFromFileCompletion(body) {
     const values = bodyRecord(body);
     if (!values) return null;
+    const rawText = String(values.initial_comment || values.text || '');
+    const rawBlocks = typeof values.blocks === 'string' ? values.blocks : '';
+    if (!rawText && !rawBlocks) return null;
+    if (!BROADCAST_MARKER_RE.test(rawText) && !BROADCAST_MARKER_RE.test(rawBlocks)) return null;
     const channelId = String(values.channel_id || values.channel || '');
     const token = String(values.token || '');
     const blocks = jsonArray(values.blocks);
@@ -316,6 +329,21 @@
         blocks: normalized.blocks,
         ...(threadTs ? { threadTs } : {}),
       },
+    };
+  }
+
+  function candidateFromDelete(body) {
+    const values = bodyRecord(body);
+    if (!values) return null;
+    const channelId = String(values.channel || '');
+    const ts = String(values.ts || '');
+    if (!/^[CG][A-Z0-9]+$/.test(channelId) || !/^\d{1,16}\.\d{1,16}$/.test(ts)) return null;
+    return {
+      token: String(values.token || ''),
+      channelId,
+      ts,
+      dedupe: `${channelId}:${ts}`,
+      ...teamIdFrom(values),
     };
   }
 
@@ -345,6 +373,13 @@
     if (Date.now() - seenAt < MANAGED_CHANNEL_TTL_MS) return true;
     if (seenAt) managedChannels.delete(String(channelId || ''));
     return false;
+  }
+
+  function isBChannelMessage(channelId, ts) {
+    const store = currentSlackStore();
+    const msg = store?.getState().messages?.[channelId]?.[ts];
+    if (msg?.metadata?.event_type === 'bchannel_message') return true;
+    return msg?.bot_id === 'B0BJDMND6HX';
   }
 
   function teamIdFrom(values) {
@@ -426,10 +461,18 @@
     return null;
   }
 
+  let cachedSlackStore = null;
+  let cachedSlackStoreRoute = '';
   function currentSlackStore() {
+    const route = location.pathname;
+    if (cachedSlackStore && cachedSlackStoreRoute === route) return cachedSlackStore;
     for (const composer of document.querySelectorAll?.(COMPOSER_SELECTOR) || []) {
       const store = storeFromFiber(reactFiber(composer));
-      if (store) return store;
+      if (store) {
+        cachedSlackStore = store;
+        cachedSlackStoreRoute = route;
+        return store;
+      }
     }
     return null;
   }
@@ -920,45 +963,94 @@
     const container = composer.closest?.('.ql-container') || composer.parentElement;
     const quill = container?.__quill;
     if (!quill || typeof quill.getModule !== 'function') return;
-    const fiber = reactFiber(container || composer);
-    if (!fiber) return;
-    const autocomplete = componentFromFiber(fiber, 'TextyAutocomplete');
-    const pane = componentFromFiber(fiber, 'MessagePaneInput');
-    if (!autocomplete?.props) return;
 
     let meta = composerState.get(composer);
     if (!meta) {
+      const fiber = reactFiber(container || composer);
+      if (!fiber) return;
+      const autocomplete = componentFromFiber(fiber, 'TextyAutocomplete');
+      const pane = componentFromFiber(fiber, 'MessagePaneInput');
+      if (!autocomplete?.props) return;
       const originallyEnabled = autocomplete.props.includeAllBroadcastKeywords === true;
-      meta = { managed: !originallyEnabled, eligible: false, store: storeFromFiber(fiber), composer };
+      meta = {
+        managed: !originallyEnabled,
+        eligible: false,
+        store: storeFromFiber(fiber),
+        composer,
+        autocomplete,
+        pane,
+        dirty: true,
+      };
       composerState.set(composer, meta);
+      try {
+        quill.on?.('text-change', () => {
+          meta.dirty = true;
+        });
+      } catch (error) {}
     } else if (!meta.store) {
-      meta.store = storeFromFiber(fiber);
+      meta.store = storeFromFiber(reactFiber(container || composer));
     }
     meta.composer = composer;
+    meta.quill = quill;
 
+    const pane = meta.pane;
+    const autocomplete = meta.autocomplete;
     const channelId = String(pane?.props?.channelId || '');
     const teamId = String(pane?.props?.teamId || '');
-    meta.eligible = isChannelConversation(channelId);
+    const eligible = isChannelConversation(channelId);
+    const channelChanged = meta.channelId !== channelId;
+    meta.channelId = channelId;
+    meta.teamId = teamId;
 
-    if (meta.managed && meta.eligible) managedChannels.set(channelId, Date.now());
-
-    if (meta.managed) {
-      const autoslug = quill.getModule('autoslug');
-      if (autoslug?.options) autoslug.options.includeAllBroadcastKeywords = meta.eligible;
-      autocomplete.props.includeAllBroadcastKeywords = meta.eligible;
+    if (eligible !== meta.eligible || channelChanged) {
+      meta.eligible = eligible;
+      if (meta.managed && eligible) managedChannels.set(channelId, Date.now());
+      if (meta.managed) {
+        const autoslug = quill.getModule('autoslug');
+        if (autoslug?.options) autoslug.options.includeAllBroadcastKeywords = eligible;
+        autocomplete.props.includeAllBroadcastKeywords = eligible;
+      }
     }
-    const hasBroadcast = meta.eligible && deltaCandidateKinds(quill.getContents?.()).size > 0;
+
+    let hasBroadcast = meta.hasBroadcast === true;
+    if (meta.eligible && (meta.dirty || channelChanged)) {
+      meta.dirty = false;
+      try {
+        hasBroadcast = deltaCandidateKinds(quill.getContents?.()).size > 0;
+      } catch (error) {}
+      meta.hasBroadcast = hasBroadcast;
+    }
     const preflightKey = hasBroadcast && /^[TE][A-Z0-9]+$/.test(teamId) ? `${teamId}:${channelId}` : '';
     if (preflightKey && meta.preflightKey !== preflightKey) {
       meta.preflightKey = preflightKey;
       void warmChannelReadiness(teamId, channelId, meta.store);
-    } else if (!preflightKey) {
+    } else if (!preflightKey && meta.preflightKey) {
       meta.preflightKey = '';
     }
     wrapMessagePane(pane, meta);
   }
 
   let composerFrame = 0;
+  const COMPOSER_CONTAINER_SELECTOR =
+    '.p-message_pane_input, .p-message_input, .p-threads_footer, .ql-container, [data-qa="message_input"], [data-qa="texty_input"]';
+  function mutationAffectsComposer(records) {
+    for (const record of records) {
+      const target = record.target;
+      if (target && target.nodeType === 1) {
+        try {
+          if (target.closest?.(COMPOSER_CONTAINER_SELECTOR)) return true;
+        } catch (error) {}
+      }
+      for (const node of record.addedNodes) {
+        if (node && node.nodeType === 1) {
+          try {
+            if (node.matches?.(COMPOSER_SELECTOR) || node.querySelector?.(COMPOSER_SELECTOR)) return true;
+          } catch (error) {}
+        }
+      }
+    }
+    return false;
+  }
   function scheduleComposerUpgrade() {
     if (composerFrame) return;
     const schedule = window.requestAnimationFrame || ((callback) => (window.setTimeout || setTimeout)(callback, 0));
@@ -967,14 +1059,23 @@
       for (const composer of document.querySelectorAll?.(COMPOSER_SELECTOR) || []) upgradeComposer(composer);
     });
   }
+  function upgradeComposerFromEvent(event) {
+    let node = event?.target;
+    if (!node || node.nodeType !== 1) return;
+    let composer = node.closest?.(COMPOSER_SELECTOR) || null;
+    if (!composer && node.matches?.(COMPOSER_SELECTOR)) composer = node;
+    if (composer) upgradeComposer(composer);
+  }
 
   function installComposerIntegration() {
-    for (const event of ['focusin', 'beforeinput', 'input', 'compositionend']) {
-      document.addEventListener?.(event, scheduleComposerUpgrade, true);
+    for (const event of ['focusin', 'input', 'compositionend']) {
+      document.addEventListener?.(event, upgradeComposerFromEvent, true);
     }
     const root = document.documentElement || document.body;
     if (typeof window.MutationObserver === 'function' && root) {
-      new window.MutationObserver(scheduleComposerUpgrade).observe(root, {
+      new window.MutationObserver((records) => {
+        if (mutationAffectsComposer(records)) scheduleComposerUpgrade();
+      }).observe(root, {
         childList: true,
         subtree: true,
       });
@@ -1294,21 +1395,81 @@
     );
   }
 
+  async function handoffDelete(candidate) {
+    if (!candidate.token) return { ok: false, fallThrough: true };
+    let staged;
+    try {
+      staged = await stageIntent({
+        version: 1,
+        action: 'delete',
+        channelId: candidate.channelId,
+        ts: candidate.ts,
+        ...(candidate.teamId ? { teamId: candidate.teamId } : {}),
+      });
+    } catch {
+      return { ok: false, fallThrough: true };
+    }
+    const commandBody = new URLSearchParams({
+      token: candidate.token,
+      channel: candidate.channelId,
+      command: '/bchannel',
+      text: staged.commandText,
+    });
+    let commandResponse;
+    try {
+      commandResponse = await nativeFetch.call(window, '/api/chat.command', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'content-type': 'application/x-www-form-urlencoded; charset=UTF-8' },
+        body: commandBody,
+        signal: AbortSignal.timeout(15000),
+      });
+    } catch {
+      return { ok: false, fallThrough: false };
+    }
+    const result = await commandResponse.json().catch(() => ({}));
+    if (!commandResponse.ok || result.ok === false) {
+      return { ok: false, fallThrough: false };
+    }
+    return { ok: true, fallThrough: false };
+  }
+
+  async function deleteAsSlackResponse(candidate) {
+    const { ok, fallThrough } = await handoffDelete(candidate);
+    if (fallThrough) return null;
+    return new Response(
+      JSON.stringify(
+        ok
+          ? { ok: true, channel: candidate.channelId, ts: candidate.ts }
+          : { ok: false, error: 'cannot_delete_message' },
+      ),
+      { status: 200, headers: { 'content-type': 'application/json' } },
+    );
+  }
+
   function maybeHandoff(candidate, result) {
     if (!candidate || !result || result.ok !== false || !DENIED_BROADCASTS.has(result.error)) return;
     void handoff(candidate);
   }
 
   window.fetch = function (input, init) {
-    const url = requestUrl(input);
+    let kind = 0;
+    if (init) {
+      const url = requestUrl(input);
+      if (url.indexOf('/api/chat.postMessage') !== -1) kind = 1;
+      else if (url.indexOf('/api/files.completeUploadExternal') !== -1) kind = 2;
+      else if (url.indexOf('/api/chat.delete') !== -1) kind = 3;
+    }
+    if (!kind) return nativeFetch.apply(this, arguments);
     const body = init?.body;
-    const candidate = init
-      ? POST_MESSAGE_RE.test(url)
-        ? candidateFromBody(body)
-        : COMPLETE_UPLOAD_RE.test(url)
-          ? candidateFromFileCompletion(body)
-          : null
-      : null;
+    let candidate = null;
+    if (kind === 1) candidate = candidateFromBody(body);
+    else if (kind === 2) candidate = candidateFromFileCompletion(body);
+    else candidate = candidateFromDelete(body);
+    if (candidate && kind === 3) {
+      if (!isBChannelMessage(candidate.channelId, candidate.ts)) return nativeFetch.apply(this, arguments);
+      return deleteAsSlackResponse(candidate).then((res) => res ?? nativeFetch.apply(this, arguments));
+    }
     if (candidate && (candidate.requiresHandoff || isManagedChannel(candidate.intent.channelId))) {
       return handoffAsSlackResponse(candidate);
     }
@@ -1329,19 +1490,41 @@
 
   const nativeOpen = XMLHttpRequest.prototype.open;
   XMLHttpRequest.prototype.open = function (method, url) {
+    if (String(method || 'GET').toUpperCase() !== 'POST') return nativeOpen.apply(this, arguments);
     this.__slickBChannelUrl = String(url);
     this.__slickBChannelPost =
-      String(method || 'GET').toUpperCase() === 'POST' &&
-      (POST_MESSAGE_RE.test(this.__slickBChannelUrl) || COMPLETE_UPLOAD_RE.test(this.__slickBChannelUrl));
+      this.__slickBChannelUrl.indexOf('/api/chat.postMessage') !== -1 ||
+      this.__slickBChannelUrl.indexOf('/api/files.completeUploadExternal') !== -1 ||
+      this.__slickBChannelUrl.indexOf('/api/chat.delete') !== -1;
     return nativeOpen.apply(this, arguments);
   };
 
   const nativeSend = XMLHttpRequest.prototype.send;
   XMLHttpRequest.prototype.send = function (body) {
+    const url = this.__slickBChannelUrl || '';
+    if (url.indexOf('/api/chat.delete') !== -1) {
+      const candidate = candidateFromDelete(body);
+      if (candidate && isBChannelMessage(candidate.channelId, candidate.ts)) {
+        void deleteAsSlackResponse(candidate).then((res) => {
+          if (!res) return nativeSend.apply(this, arguments);
+          res
+            .clone()
+            .text()
+            .then((payload) => {
+              Object.defineProperty(this, 'responseText', { configurable: true, writable: true, value: payload });
+              Object.defineProperty(this, 'response', { configurable: true, writable: true, value: payload });
+              Object.defineProperty(this, 'status', { configurable: true, writable: true, value: 200 });
+              this.dispatchEvent(new Event('load'));
+            });
+        });
+        return;
+      }
+    }
     if (this.__slickBChannelPost) {
-      const candidate = COMPLETE_UPLOAD_RE.test(this.__slickBChannelUrl || '')
-        ? candidateFromFileCompletion(body)
-        : candidateFromBody(body);
+      const candidate =
+        url.indexOf('/api/files.completeUploadExternal') !== -1
+          ? candidateFromFileCompletion(body)
+          : candidateFromBody(body);
       if (candidate) {
         this.addEventListener('load', () => maybeHandoff(candidate, responseData(this.responseText || this.response)), {
           once: true,
@@ -1352,5 +1535,4 @@
   };
 
   installComposerIntegration();
-  console.log('[bChannel] active');
 })();

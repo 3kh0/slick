@@ -3,10 +3,9 @@
 function slickInternalsMain() {
   if (window.__slickInternals) return;
 
-  // Slack bundles with rspack now, older builds still expose the webpack name
   var chunkArray = window.webpackChunkwebapp || window.rspackChunkwebapp;
   if (!Array.isArray(chunkArray)) {
-    console.error('[slick-internals] no chunk array (webpackChunkwebapp/rspackChunkwebapp), internals unavailable');
+    console.error('[slick-internals] webpack/rspack chunk array not present, internals unavailable');
     return;
   }
 
@@ -32,27 +31,29 @@ function slickInternalsMain() {
   var futureRegistry = new Map();
   var chunkCbs = [];
   // Keep original factory references so source-signature discovery still sees
-  // Slack's code even when a caller reads the source past our toString shim.
+  // Slack's code (the wrapped factory's own source is just our shim).
   var originalFactories = new Map();
   var originalPush = chunkArray.push.bind(chunkArray);
   function wrapFactory(id, factory) {
     originalFactories.set(id, factory);
-    var wrapped = function (module, exports, require) {
+    return function (module, exports, require) {
       var result = factory.call(this, module, exports, require);
       try {
-        futureRegistry.set(id, module.exports);
-        for (var i = 0; i < chunkCbs.length; i++) chunkCbs[i](module.exports, id);
+        var moduleExports = module.exports;
+        for (var i = 0; i < exportPatchers.length; i++) {
+          try {
+            var replaced = exportPatchers[i](moduleExports, id);
+            if (replaced !== undefined && replaced !== moduleExports) {
+              module.exports = replaced;
+              moduleExports = replaced;
+            }
+          } catch (e) {}
+        }
+        futureRegistry.set(id, moduleExports);
+        for (var j = 0; j < chunkCbs.length; j++) chunkCbs[j](moduleExports, id);
       } catch (e) {}
       return result;
     };
-    // Plugins locate Slack modules by scanning `require.m[id]` source for a needle.
-    // Wrapping replaces that entry, so report Slack's source instead of our shim's
-    // or every such lookup comes back empty while internals are on. String() rather
-    // than Function.prototype.toString so a re-wrap still chains down to Slack.
-    wrapped.toString = function () {
-      return String(factory);
-    };
-    return wrapped;
   }
   var patchedPush = function () {
     for (var c = 0; c < arguments.length; c++) {
@@ -201,6 +202,7 @@ function slickInternalsMain() {
   var propPatchers = []; // { matcher, transform }
   var replacers = new Map(); // matcher -> replacer
   var resolveCache = new WeakMap();
+  var exportPatchers = []; // (exports, moduleId) -> exports | undefined
 
   var ORIGINAL = Symbol.for('slick.originalComponent');
   var markerCache = new WeakMap();
@@ -381,6 +383,32 @@ function slickInternalsMain() {
     };
   }
 
+  // patchModuleExports(patcher): run patcher against every module's exports
+  // (loaded now or loaded later). patcher(exports, moduleId) may return a
+  // replacement exports object. Use to swap internals like createStore.
+  function patchModuleExports(patcher) {
+    exportPatchers.push(patcher);
+    var cache = webpackRequire.c || {};
+    for (var id in cache) {
+      if (!Object.prototype.hasOwnProperty.call(cache, id)) continue;
+      try {
+        var mod = cache[id];
+        var replaced = patcher(mod.exports, id);
+        if (replaced !== undefined && replaced !== mod.exports) mod.exports = replaced;
+      } catch (e) {}
+    }
+    var seen = cachedExports();
+    for (var i = 0; i < seen.length; i++) {
+      try {
+        patcher(seen[i], 'cached');
+      } catch (e) {}
+    }
+    return function dispose() {
+      var idx = exportPatchers.indexOf(patcher);
+      if (idx >= 0) exportPatchers.splice(idx, 1);
+    };
+  }
+
   window.__slickInternals = {
     version: 1,
     modules: {
@@ -390,6 +418,7 @@ function slickInternalsMain() {
       findFactoryIds: findFactoryIds,
       requireById: requireById,
       findExport: findExport,
+      patchModuleExports: patchModuleExports,
       onChunk: function (cb) {
         chunkCbs.push(cb);
         return function () {
