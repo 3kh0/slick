@@ -294,14 +294,17 @@
 
   // The local searcher enumerates the channel slice's prototype and memoizes on the
   // slice's identity, so a shadow only lands if both are fresh objects.
-  function patchStore(store) {
+  const wrappedStores = new WeakSet();
+  function wrapStore(store) {
+    if (!store || typeof store.getState !== 'function' || wrappedStores.has(store)) return;
+    wrappedStores.add(store);
     const orig = store.getState.bind(store);
     let cachedRaw = null;
     let cachedVersion = -1;
     let cachedOut = null;
     store.getState = () => {
       const raw = orig();
-      if (!shadows.size || !setting('mentions')) return raw;
+      if (!shadows.size || !setting('mentions') || !raw || !raw.channels) return raw;
       if (raw === cachedRaw && cachedVersion === stateVersion) return cachedOut;
       const rawChannels = raw.channels;
       const proto = Object.assign({}, Object.getPrototypeOf(rawChannels));
@@ -315,6 +318,32 @@
       });
       return cachedOut;
     };
+  }
+
+  function wrapStores(r) {
+    const mod = r && moduleByNeedle(r, 'getStoreInstanceMap');
+    const getStores =
+      mod && Object.values(mod).find((v) => typeof v === 'function' && v.name === 'getStoreInstanceMap');
+    if (getStores) for (const store of Object.values(getStores() || {})) wrapStore(store);
+  }
+
+  const ROW_COMPONENTS = ['Connect(SmallChannelListEntity)', 'Connect(SmallChannelEntity)'];
+  let rowsPatched = false;
+  let internalsTries = 0;
+  function patchRowsSoon() {
+    if (rowsPatched || !setting('mentions')) return;
+    const react = window.__slickInternals && window.__slickInternals.react;
+    if (!react || !react.patchProps) {
+      if (internalsTries++ < 100) setTimeout(patchRowsSoon, 100);
+      return;
+    }
+    rowsPatched = true;
+    for (const name of ROW_COMPONENTS)
+      react.patchProps(name, (props) => {
+        if (!setting('mentions') || !props || (props.channel && props.channel.name)) return props;
+        const shadow = shadows.get(props.channelId);
+        return shadow ? Object.assign({}, props, { channel: shadow }) : props;
+      });
   }
 
   async function resolveName(name) {
@@ -405,11 +434,13 @@
   let mentionsReady = false;
   let mentionTries = 0;
   function initMentions() {
-    if (mentionsReady || !setting('mentions')) return;
+    if (!setting('mentions')) return;
+    patchRowsSoon();
     const r = getWebpackRequire();
+    if (r) wrapStores(r);
+    if (mentionsReady) return;
     const store = r && findStore(r);
     if (store && patchSearcher(r, store)) {
-      patchStore(store);
       mentionsReady = true;
       applyAll();
       return;

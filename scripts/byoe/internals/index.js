@@ -36,7 +36,7 @@ function slickInternalsMain() {
   var originalPush = chunkArray.push.bind(chunkArray);
   function wrapFactory(id, factory) {
     originalFactories.set(id, factory);
-    return function (module, exports, require) {
+    var wrapped = function (module, exports, require) {
       var result = factory.call(this, module, exports, require);
       try {
         var moduleExports = module.exports;
@@ -54,6 +54,10 @@ function slickInternalsMain() {
       } catch (e) {}
       return result;
     };
+    wrapped.toString = function () {
+      return String(factory);
+    };
+    return wrapped;
   }
   var patchedPush = function () {
     for (var c = 0; c < arguments.length; c++) {
