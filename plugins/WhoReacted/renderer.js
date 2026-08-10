@@ -65,7 +65,7 @@
   let webpackRequire = null;
   function getWebpackRequire() {
     if (webpackRequire) return webpackRequire;
-    const chunks = window.webpackChunkwebapp;
+    const chunks = window.webpackChunkwebapp || window.rspackChunkwebapp;
     if (!chunks || !chunks.push) return null;
     chunks.push([['slick-who-reacted-' + Date.now()], {}, (require) => (webpackRequire = require)]);
     return webpackRequire;
