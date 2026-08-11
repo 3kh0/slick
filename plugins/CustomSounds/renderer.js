@@ -5,7 +5,26 @@
   const NativeAudio = window.Audio;
   const NativeNotification = window.Notification;
   const play = HTMLMediaElement.prototype.play;
-  const hint = /sound|notification|notify|mention|alert|ding|knock|chime|beep|incoming|slack/i;
+
+  const SOUNDS = new Set([
+    'animal_stick',
+    'b2',
+    'been_tree',
+    'boop',
+    'channel_message',
+    'channel_message_2x',
+    'complete_quest_requirement',
+    'confirm_delivery',
+    'flitterbug',
+    'here_you_go_lighter',
+    'hi_flowers_hit',
+    'hummus',
+    'item_pickup',
+    'knock_brush',
+    'save_and_checkout',
+  ]);
+
+  const asset = /^([a-z0-9_]+?)(?:-[0-9a-f]{6,32})?\.(?:aac|m4a|mp3|oga|ogg|opus|wav)$/i;
 
   const cfg = () => window.__slickPluginSettings?.CustomSounds || {};
   const path = () => String(cfg().soundPath || '').trim();
@@ -16,20 +35,32 @@
     '?p=' +
     encodeURIComponent(path());
 
-  function replace(a) {
-    const src = a?.currentSrc || a?.src || a?.querySelector?.('source[src]')?.src || '';
-    if (!on() || !src || src.startsWith('slick-custom-sounds:') || src.startsWith('blob:') || src.startsWith('data:'))
-      return;
+  function isNotificationSound(src) {
     let u;
     try {
       u = new URL(src, location.href);
     } catch {
+      return false;
+    }
+    if (u.protocol !== 'https:' && u.protocol !== 'http:') return false;
+    if (!/(^|\.)slack-edge\.com$/i.test(u.hostname) && u.origin !== location.origin) return false;
+    const name = u.pathname.slice(u.pathname.lastIndexOf('/') + 1).match(asset)?.[1];
+    return !!name && SOUNDS.has(name.toLowerCase());
+  }
+
+  function replace(a) {
+    if (!a || a.tagName !== 'AUDIO') return;
+    const original = a.dataset.slickCustomSoundsOriginal;
+    if (original) {
+      const next = on() ? url() : original;
+      if (a.src !== next) a.src = next;
       return;
     }
-    if (/\.(aac|aif|aiff|caf|flac|m4a|mp3|oga|ogg|opus|wav|webm)(?:$|[?#])/i.test(u.pathname) || hint.test(src)) {
-      a.dataset.slickCustomSoundsOriginal ||= src;
-      a.src = url();
-    }
+    if (!on()) return;
+    const src = a.currentSrc || a.src || a.querySelector?.('source[src]')?.src || '';
+    if (!src || !isNotificationSound(src)) return;
+    a.dataset.slickCustomSoundsOriginal = src;
+    a.src = url();
   }
 
   function SlickAudio(src) {
@@ -70,6 +101,7 @@
     enabled: on,
     playCustomSound: playCustom,
     soundUrl: url,
+    isNotificationSound,
     test: () =>
       new Promise((resolve) => {
         const a = new NativeAudio(url());
