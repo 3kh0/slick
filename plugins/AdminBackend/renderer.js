@@ -15,6 +15,7 @@
   const ACTIONS = [
     ['identity', 'Open in Identity'],
     ['joe', 'Open in Joe'],
+    ['telescreen', 'Open in Telescreen'],
   ];
   let profileId = null;
   function stringId(value) {
