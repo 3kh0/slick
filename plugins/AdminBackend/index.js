@@ -29,7 +29,9 @@ module.exports = {
             ? `https://auth.hackclub.com/backend/identities?search=${encodeURIComponent(id)}`
             : target === 'joe'
               ? `https://joe.fraud.hackclub.com/profile/${encodeURIComponent(id)}`
-              : null;
+              : target === 'telescreen'
+                ? `https://telescreen.hackclub.com/subjects/${encodeURIComponent(id)}`
+                : null;
         if (!e) return;
         event.preventDefault();
         s.openExternal(e).catch((error) => ctx.log(`could not open ${e}: ${error.message}`));
