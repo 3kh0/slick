@@ -23,6 +23,7 @@
       ['identity', 'Open in Identity'],
       ['joe', 'Open in Joe'],
       ['telescreen', 'Open in Telescreen'],
+      ['fire_engine', 'Open in Fire Engine'],
     ].filter(function ([target]) {
       return cfg[target] !== false;
     });
