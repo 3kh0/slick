@@ -8,6 +8,26 @@ module.exports = {
     name: 'AdminBackend',
     description: 'Open profiles in Hack Club admin tools',
   },
+  settings: {
+    identity: {
+      type: 'boolean',
+      label: 'Identity',
+      description: 'Show the Identity backend',
+      default: true,
+    },
+    joe: {
+      type: 'boolean',
+      label: 'Joe',
+      description: 'Show the Joe fraud backend',
+      default: true,
+    },
+    telescreen: {
+      type: 'boolean',
+      label: 'Telescreen',
+      description: 'Show the Telescreen backend',
+      default: true,
+    },
+  },
   renderer: fs.readFileSync(path.join(__dirname, 'renderer.js'), 'utf8'),
   main(ctx) {
     const s = ctx.electron && ctx.electron.shell;
