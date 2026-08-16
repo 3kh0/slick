@@ -52,11 +52,14 @@ function parseArgs(argv) {
   return o;
 }
 
-function run(cmd, args) {
+const ALLOWED_CMDS = { plutil: '/usr/bin/plutil', codesign: '/usr/bin/codesign' };
+function run(name, args) {
+  const cmd = ALLOWED_CMDS[name];
+  if (!cmd) throw new Error(`Unknown command: ${name}`);
   const r = spawnSync(cmd, args, { encoding: 'utf8' });
-  if (r.status !== 0) throw new Error((r.stderr || r.stdout || `${cmd} failed`).trim());
+  if (r.status !== 0) throw new Error((r.stderr || r.stdout || `${name} failed`).trim());
 }
-const plutil = (...args) => run('/usr/bin/plutil', args);
+const plutil = (...args) => run('plutil', args);
 
 function packAsar(files, outPath) {
   let offset = 0;
