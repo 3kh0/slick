@@ -406,7 +406,7 @@ if (!problem) {
   const codesignArgs = ['--force', '--deep', '--sign', '-'];
   if (fs.existsSync(ENTITLEMENTS)) codesignArgs.push('--entitlements', ENTITLEMENTS);
   codesignArgs.push(target);
-  run('/usr/bin/codesign', codesignArgs);
+  run('codesign', codesignArgs);
 
   console.log(JSON.stringify({ app: target, profile, note: 'Open this to register slack:// to Slick' }, null, 2));
 }
