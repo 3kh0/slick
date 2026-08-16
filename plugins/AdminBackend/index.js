@@ -32,7 +32,7 @@ module.exports = {
       label: 'Fire Engine',
       description: 'Show the Fire Engine backend',
       default: true,
-    }
+    },
   },
   renderer: fs.readFileSync(path.join(__dirname, 'renderer.js'), 'utf8'),
   main(ctx) {
