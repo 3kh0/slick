@@ -81,7 +81,18 @@ function Reg($key, $vals) {
 
 $Protocol = 'slack'
 $ProgId = 'Slick.slack'
-$Shortcuts = @("$env:USERPROFILE\Desktop\Slick.lnk", "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Slick.lnk")
+
+function Get-ShellFolder($name, $fallback) {
+  try {
+    $p = [Environment]::GetFolderPath($name)
+    if ($p) { return $p }
+  } catch {}
+  $fallback
+}
+$DesktopDir  = Get-ShellFolder 'DesktopDirectory' (Join-Path $env:USERPROFILE 'Desktop')
+$ProgramsDir = Get-ShellFolder 'Programs' (Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs')
+$Shortcuts = @((Join-Path $DesktopDir 'Slick.lnk'), (Join-Path $ProgramsDir 'Slick.lnk'))
+$LegacyShortcuts = @("$env:USERPROFILE\Desktop\Slick.lnk", "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Slick.lnk")
 
 function Register-SlackHandler($exe, $iconFile) {
   $cmd = "`"$exe`" `"%1`""
@@ -158,10 +169,16 @@ function Slack-Exe($res) { if ($res) { Get-ChildItem (Split-Path $res) -Filter '
 function New-Shortcuts($exe, $iconFile) {
   $ws = New-Object -ComObject WScript.Shell
   foreach ($lnk in $Shortcuts) {
-    $sc = $ws.CreateShortcut($lnk)
-    $sc.TargetPath = $exe; $sc.WorkingDirectory = (Split-Path $exe); $sc.Description = 'Slick (Slack mod)'
-    if ($iconFile -and (Test-Path $iconFile)) { $sc.IconLocation = "$iconFile,0" }
-    $sc.Save()
+    try {
+      New-Item -ItemType Directory -Force (Split-Path $lnk) | Out-Null
+      $sc = $ws.CreateShortcut($lnk)
+      $sc.TargetPath = $exe; $sc.WorkingDirectory = (Split-Path $exe); $sc.Description = 'Slick (Slack mod)'
+      if ($iconFile -and (Test-Path $iconFile)) { $sc.IconLocation = "$iconFile,0" }
+      $sc.Save()
+      Write-Host "    $lnk"
+    } catch {
+      Write-Host "    warning: could not create $lnk ($($_.Exception.Message))" -ForegroundColor Yellow
+    }
   }
 }
 
@@ -192,7 +209,7 @@ if ($Uninstall) {
   Stop-Slick
   Unregister-SlackHandler
   Restore-OfficialHandler | Out-Null
-  $Shortcuts | ForEach-Object { Remove-Item $_ -Force -EA SilentlyContinue }
+  $Shortcuts + $LegacyShortcuts | Select-Object -Unique | ForEach-Object { Remove-Item $_ -Force -EA SilentlyContinue }
   Remove-Item $Target -Recurse -Force -EA SilentlyContinue
   Write-Host "    removed $Target, shortcuts, and the slack:// handler"
   if ($Purge) {
