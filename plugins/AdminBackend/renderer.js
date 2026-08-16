@@ -12,12 +12,22 @@
     '.p-member_profile',
     '.p-member_profile_popover',
   ].join(',');
-  const ACTIONS = [
-    ['identity', 'Open in Identity'],
-    ['joe', 'Open in Joe'],
-    ['telescreen', 'Open in Telescreen'],
-  ];
   let profileId = null;
+  function settings() {
+    return (window.__slickPluginSettings && window.__slickPluginSettings.AdminBackend) || {};
+  }
+  function getActions() {
+    var cfg = settings();
+
+    return [
+      ['identity', 'Open in Identity'],
+      ['joe', 'Open in Joe'],
+      ['telescreen', 'Open in Telescreen'],
+      ['fire_engine', 'Open in Fire Engine'],
+    ].filter(function ([target]) {
+      return cfg[target] !== false;
+    });
+  }
   function stringId(value) {
     return typeof value === 'string' && /^[UW][A-Z0-9]{6,}$/.test(value) ? value : null;
   }
@@ -90,7 +100,7 @@
     if (existing && existing.dataset.slickAdminBackendUser === id) return;
     menu.querySelectorAll('[data-slick-admin-backend]').forEach((element) => element.remove());
 
-    const rows = ACTIONS.flatMap(([target, label]) => {
+    const rows = getActions().flatMap(([target, label]) => {
       const clone = itemRow(reference, menu).cloneNode(true);
       const item = clone.matches('button,[role="menuitem"]') ? clone : clone.querySelector('button,[role="menuitem"]');
       if (!item) return [];
@@ -160,6 +170,9 @@
     }
     x();
     window.__slickDOM.onRoots((roots) => roots.forEach(x));
+    window.addEventListener('slick:plugin-settings', () => {
+      x();
+    });
   }
 
   boot();

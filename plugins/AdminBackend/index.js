@@ -8,6 +8,32 @@ module.exports = {
     name: 'AdminBackend',
     description: 'Open profiles in Hack Club admin tools',
   },
+  settings: {
+    identity: {
+      type: 'boolean',
+      label: 'Identity',
+      description: 'Show the Identity backend',
+      default: true,
+    },
+    joe: {
+      type: 'boolean',
+      label: 'Joe',
+      description: 'Show the Joe fraud backend',
+      default: true,
+    },
+    telescreen: {
+      type: 'boolean',
+      label: 'Telescreen',
+      description: 'Show the Telescreen backend',
+      default: true,
+    },
+    fire_engine: {
+      type: 'boolean',
+      label: 'Fire Engine',
+      description: 'Show the Fire Engine backend',
+      default: true,
+    },
+  },
   renderer: fs.readFileSync(path.join(__dirname, 'renderer.js'), 'utf8'),
   main(ctx) {
     const s = ctx.electron && ctx.electron.shell;
@@ -31,7 +57,9 @@ module.exports = {
               ? `https://joe.fraud.hackclub.com/profile/${encodeURIComponent(id)}`
               : target === 'telescreen'
                 ? `https://telescreen.hackclub.com/subjects/${encodeURIComponent(id)}`
-                : null;
+                : target === 'fire_engine'
+                  ? `https://nemo.hackclub.com/fd/members/${encodeURIComponent(id)}`
+                  : null;
         if (!e) return;
         event.preventDefault();
         s.openExternal(e).catch((error) => ctx.log(`could not open ${e}: ${error.message}`));
