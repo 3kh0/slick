@@ -3,7 +3,7 @@
   "private": true,
   "description": "BYOE = bring your own electron!",
   "dependencies": {
-    "electron": "43.2.0"
+    "electron": "44.2.0"
   },
   "trustedDependencies": [
     "electron"

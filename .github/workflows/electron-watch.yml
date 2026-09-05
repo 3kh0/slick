@@ -1,0 +1,61 @@
+name: Electron watch
+
+on:
+  schedule:
+    - cron: "30 11 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  check:
+    name: Check Slack's Electron major
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v7
+      - id: check
+        run: node scripts/ci/electron-watch.js
+
+      - name: Open tracking issue
+        if: steps.check.outputs.mismatch == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TITLE: Slack ships Electron ${{ steps.check.outputs.slack_major }}, Slick pins ${{ steps.check.outputs.byoe_major }}
+          SLACK_VERSION: ${{ steps.check.outputs.slack_version }}
+          SLACK_ELECTRON: ${{ steps.check.outputs.slack_electron }}
+          BYOE_ELECTRON: ${{ steps.check.outputs.byoe_electron }}
+          PIN: ${{ steps.check.outputs.suggested || steps.check.outputs.slack_electron }}
+          WORKFLOW_URL: ${{ github.server_url }}/${{ github.repository }}/blob/main/.github/workflows/electron-watch.yml
+        run: |
+          set -euo pipefail
+
+          gh label create electron-mismatch --color BFD4F2 \
+            --description "Slack's bundled Electron major moved ahead of byoe/" 2>/dev/null || true
+
+          # One issue per major: the daily run finds its own issue instead of duplicating it.
+          existing="$(gh issue list --state all --label electron-mismatch --limit 100 --json number,title \
+            | jq -r --arg t "$TITLE" '.[] | select(.title == $t) | .number' | head -1)"
+          if [ -n "$existing" ]; then
+            echo "Issue #$existing already tracks this."
+            exit 0
+          fi
+
+          cat > body.md <<BODY
+          Slack **$SLACK_VERSION** bundles Electron **$SLACK_ELECTRON**, but \`byoe/package.json\` pins Electron **$BYOE_ELECTRON**.
+
+          Slack's native modules are built against the Electron major Slack shipped, so running them under a BYOE across a major boundary ABI-crashes: \`scripts/launch-byoe.sh\` refuses to launch, and \`scripts/byoe/slack-updater.js\` stops staging Slack updates until the pin catches up. Source installs through \`install.sh\` self-heal — they install whatever Slack ships — but the prebuilt releases bake this pin, so they need a new build.
+
+          To fix:
+
+          \`\`\`sh
+          cd byoe && bun add --exact electron@$PIN
+          \`\`\`
+
+          Then smoke-test a launch against the new Slack before tagging a release.
+
+          <sub>Opened automatically by <a href="$WORKFLOW_URL">electron-watch.yml</a>.</sub>
+          BODY
+
+          gh issue create --title "$TITLE" --label electron-mismatch --body-file body.md

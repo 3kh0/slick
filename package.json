@@ -12,6 +12,7 @@
     "render": "scripts/byoe/render-icon.sh",
     "test:perf": "node --test scripts/ci/performance.test.js",
     "validate": "node scripts/ci/validate.js",
+    "check:electron": "node scripts/ci/electron-watch.js",
     "check": "npm run fmt:check && npm run lint && npm run lint:sh && npm run validate && npm run test:perf"
   },
   "devDependencies": {
