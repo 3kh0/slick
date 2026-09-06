@@ -277,7 +277,10 @@ function preflightProblem() {
   if (process.env.SLICK_SKIP_PREFLIGHT === '1') return null;
   if (!fs.existsSync(SLACK_ASAR)) return 'missing';
   const slackElectron = slackElectronVersion();
-  if (slackElectron && slackElectron !== process.versions.electron) return 'mismatch:' + slackElectron;
+  // Native addons follow NODE_MODULE_VERSION (Electron major). Patch skew is fine.
+  if (slackElectron && slackElectron.split('.')[0] !== process.versions.electron.split('.')[0]) {
+    return 'mismatch:' + slackElectron;
+  }
   return null;
 }
 
