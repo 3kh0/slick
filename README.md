@@ -22,9 +22,9 @@ Slick runs on MacOS, Windows, and Linux. Linux is still in beta.
 
 Whatever platform you use, you'll need the official Slack app installed first, since Slick runs Slack's own code.
 
-### Early-injection beta (opt-in)
+### Slick v2 beta
 
-The early-injection prototype is a separate opt-in from Linux's platform beta. It runs the plugin catalog through the early runtime (QuietSpotify stays desktop-only). See the beta guide for the complete list, coexistence rules, and limitations. Normal installation remains on the stable loader.
+We have a new early-injection beta prototype that runs plugins and themes in Slack's own runtime instead of the stable loader. This is a work-in-progress and not yet ready for general use, but you can try it out if you want to help test it.
 
 Use a **source checkout containing the beta changes** until the updated installers and release payloads are published. From that checkout's root:
 
@@ -36,7 +36,7 @@ PowerShell's native named switch is `-Beta` (the installer also declares a `--be
 
 Source installers build and configure beta in staging before replacing the existing app. **macOS beta requires a source build**: downloaded macOS apps reject `--beta` because modifying a notarized bundle invalidates its signing; source builds add the marker before signing. Linux and Windows can configure beta-capable prebuilt releases in staging once those releases are published.
 
-Read the [beta testing guide](docs/beta.md) first for requirements, source checkout instructions, rollback, browser unpacked installation, diagnostics, and the manual test checklist. This remains an opt-in prototype; fixture results do not establish real-Slack or cross-platform compatibility.
+Claude wrote up a wonderful [beta testing guide](docs/beta.md) first for requirements, source checkout instructions, rollback, browser unpacked installation, diagnostics, and the manual test checklist. Don't use the beta unless you read it and understand the risks.
 
 ### MacOS
 
