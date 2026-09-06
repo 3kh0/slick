@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Slick Early settings</title>
+    <link rel="stylesheet" href="options.css" />
+  </head>
+  <body>
+    <main>
+      <h1>Slick Early</h1>
+      <p>
+        Experimental early-injection prototype. Enable the plugins you want to test; changes apply to open Slack tabs
+        after they finish loading. Settings are stored in this browser only and never leave it.
+      </p>
+      <form id="settings">
+        <label class="master"><input type="checkbox" name="enabled" checked /> Enable prototype</label>
+        <div id="plugins"></div>
+        <button type="submit">Save settings</button>
+        <p id="status" role="status"></p>
+      </form>
+    </main>
+    <script src="plugins-meta.js"></script>
+    <script src="options.js"></script>
+  </body>
+</html>

@@ -178,9 +178,9 @@ function loadPlugins({ catalog, enabled, electron, settings }) {
         const urls = [].concat(pats).filter(Boolean);
         if (urls.length && typeof handler === 'function') out.requests.push({ name, urls, handler });
       },
-      injectCSS: (css) => out.css.push([].concat(css).join('\n')),
+      injectCSS: (css) => out.css.push({ name, css: [].concat(css).join('\n') }),
       injectJS: (js) => {
-        if (js) out.js.push({ name, source: String(js) });
+        if (js) out.js.push({ name, source: String(js), coexist: mod.earlyCoexist === true });
       },
       onWindow: (cb) => {
         if (typeof cb === 'function') out.windowHooks.push(cb);

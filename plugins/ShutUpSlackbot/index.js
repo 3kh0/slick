@@ -86,7 +86,7 @@ function t(ctx) {
     } catch {}
   };
 
-  if (ctx.app && ctx.app.isReady()) register();
+  if (typeof ctx.app?.isReady === 'function' && ctx.app.isReady()) register();
   else if (ctx.app && typeof ctx.app.whenReady === 'function')
     ctx.app
       .whenReady()

@@ -24,7 +24,7 @@ function usage() {
   node scripts/byoe/build-handoff-app.js [--target <app>] [--profile <dir>] [--app-version <x.y.z>]
                                          [--build-number <n>]
                                          [--slack-app <Slack.app>]
-                                         [--source-app <Electron.app>] [--force] [--allow-non-tmp]
+                                         [--source-app <Electron.app>] [--force] [--beta] [--allow-non-tmp]
 
 Defaults:
   --target      ${DEFAULTS.target}
@@ -45,6 +45,7 @@ function parseArgs(argv) {
     else if (argv[i] === '--build-number') o.buildNumber = argv[++i] || usage();
     else if (argv[i] === '--slack-app') o.slackApp = argv[++i] || usage();
     else if (argv[i] === '--source-app') o.sourceApp = argv[++i] || usage();
+    else if (argv[i] === '--beta') o.beta = true;
     else if (argv[i] === '--force') o.force = true;
     else if (argv[i] === '--allow-non-tmp') o.allowNonTmp = true;
     else usage();
@@ -78,7 +79,7 @@ function packAsar(files, outPath) {
   fs.writeFileSync(outPath, Buffer.concat([head, ...blobs]));
 }
 
-function copyRuntime(resources) {
+function copyRuntime(resources, beta) {
   const runtime = path.join(resources, 'slick');
   fs.rmSync(runtime, { recursive: true, force: true });
   for (const file of [
@@ -103,6 +104,7 @@ function copyRuntime(resources) {
     fs.copyFileSync(path.join(ROOT, file), target);
   }
   fs.cpSync(path.join(ROOT, 'plugins'), path.join(runtime, 'plugins'), { recursive: true });
+  require('../release/beta').copyPayload(ROOT, runtime, beta);
   fs.cpSync(path.join(ROOT, 'themes'), path.join(runtime, 'themes'), {
     recursive: true,
     filter: (source) => path.basename(source) !== '.active',
@@ -162,7 +164,7 @@ function main() {
     JSON.stringify([{ CFBundleURLName: 'Slack URL', CFBundleURLSchemes: ['slack'] }]),
     plist,
   );
-  copyRuntime(res);
+  copyRuntime(res, opts.beta);
   seedSettings(profile);
 
   const files = [

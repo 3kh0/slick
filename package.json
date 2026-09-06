@@ -11,9 +11,12 @@
     "perf:bootbench": "node scripts/perf/bootbench.js",
     "render": "scripts/byoe/render-icon.sh",
     "test:perf": "node --test scripts/ci/performance.test.js",
+    "test:early": "node --test scripts/early/*.test.js scripts/byoe/updater.test.js scripts/release/beta.test.js",
+    "early:build": "node scripts/early/build.js",
     "validate": "node scripts/ci/validate.js",
     "check:electron": "node scripts/ci/electron-watch.js",
-    "check": "npm run fmt:check && npm run lint && npm run lint:sh && npm run validate && npm run test:perf"
+    "check": "npm run fmt:check && npm run lint && npm run lint:sh && npm run validate && npm run test:perf && npm run test:early",
+    "test:early:electron": "npm run early:build && node scripts/early/test-electron.js"
   },
   "devDependencies": {
     "oxfmt": "^0.65.0",

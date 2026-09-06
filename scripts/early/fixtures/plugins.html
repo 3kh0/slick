@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'nonce-fixture'; style-src 'unsafe-inline'; connect-src https://app.slack.com https://slack.com https://a.slackb.com"
+    />
+    <style>
+      .c-message__body {
+        font: 14px monospace;
+      }
+    </style>
+    <script nonce="fixture">
+      window.fixture = { early: !!window.__slickEarly, evalBlocked: false };
+      try {
+        new Function('return 1')();
+      } catch {
+        fixture.evalBlocked = true;
+      }
+    </script>
+  </head>
+  <body>
+    <div id="messages">
+      <div class="c-message__body"><span id="line-one">I applied for a job today</span></div>
+      <div class="c-message__body">
+        <code id="snippet">job()</code>
+      </div>
+    </div>
+    <div id="draft" contenteditable="true">my job draft</div>
+    <div id="composer" class="p-message_input__input_container_unstyled">
+      <div class="ql-editor" role="textbox" contenteditable="true" spellcheck="true">Draft</div>
+    </div>
+  </body>
+</html>

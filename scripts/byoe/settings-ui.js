@@ -74,7 +74,7 @@ function listThemes(catalog, activeName) {
 
 // The manifest describes every plugin and theme, not just the enabled ones, so
 // this is where a lazily-built catalog gets filled in.
-function buildManifest({ catalog, enabled, activeTheme, pluginSettings, customCss, update }) {
+function buildManifest({ catalog, enabled, activeTheme, pluginSettings, customCss, update, beta }) {
   hydrateCatalog(catalog);
   const plugins = catalog.plugins.map(({ dir, meta, schema }) => {
     return {
@@ -107,6 +107,7 @@ function buildManifest({ catalog, enabled, activeTheme, pluginSettings, customCs
     plugins,
     customCss: customCss || '',
     update: update || null,
+    beta: beta || null,
   };
 }
 

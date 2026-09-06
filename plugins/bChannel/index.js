@@ -68,11 +68,21 @@ module.exports = {
   },
 
   main(ctx) {
-    if (ctx.app?.isReady()) registerPreload(ctx);
+    // Beta installs already inject this renderer at document_start through the
+    // shared early preload. Skip the extra session preload so the IIFE guard is
+    // not racing a second copy of the same script.
+    try {
+      if (fs.existsSync(path.join(__dirname, '..', '..', '.slick-beta'))) {
+        ctx.log('early runtime owns document-start injection');
+        return;
+      }
+    } catch {}
+    const start = () => registerPreload(ctx);
+    if (typeof ctx.app?.isReady === 'function' && ctx.app.isReady()) start();
     else
       ctx.app
         ?.whenReady?.()
-        .then(() => registerPreload(ctx))
+        .then(start)
         .catch(() => {});
   },
 
