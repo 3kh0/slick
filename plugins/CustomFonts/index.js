@@ -17,6 +17,10 @@ module.exports = {
     description: 'Use any installed system font or upload your own font file.',
   },
 
+  // Early owns the system-font family. The renderer still loads so uploaded
+  // font files (custom protocol) keep working on desktop.
+  earlyCoexist: true,
+
   settings: {
     fontFamily: {
       type: 'text',

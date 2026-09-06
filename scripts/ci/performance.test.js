@@ -296,6 +296,9 @@ test('file watching coalesces bursts and survives an atomic replace', async () =
   let fired = 0;
   const dispose = watcher.watch(target, () => fired++);
   try {
+    // fs.watch() is constructed synchronously, but macOS can arm its backend on
+    // the next event-loop turn. Do not make the test race that handoff.
+    await wait(25);
     // Windows emits several events per logical change; callers get one.
     for (let index = 0; index < 6; index++) fs.writeFileSync(target, `burst-${index}`);
     await wait(300);

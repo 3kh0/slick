@@ -7,6 +7,8 @@ SLACK="/Applications/Slack.app"
 EDIST="$ROOT/byoe/node_modules/electron/dist"
 EBIN="$EDIST/Electron.app/Contents/MacOS/Electron"
 REPO="3kh0/slick"
+BETA=0
+NO_LAUNCH=0
 
 step() { printf '\033[1;35m==>\033[0m \033[1m%s\033[0m\n' "$*"; }
 die()  { printf '\033[1;31merror:\033[0m %s\n' "$*" >&2; exit 1; }
@@ -45,6 +47,12 @@ EOF
 
 while [ "$#" -gt 0 ]; do
   case "$1" in
+    --help|-h)
+      echo "Usage: bash install.sh [--beta] [--no-launch] [--slack-app PATH] [--restore-handler]"
+      echo "Beta requires a source checkout. Reinstall without --beta to return to stable."
+      exit 0 ;;
+    --no-launch) NO_LAUNCH=1; shift ;;
+    --beta) BETA=1; shift ;;
     --slack-app)
       [ "$#" -ge 2 ] || die "--slack-app needs a path"
       SLACK="${2%/}"
@@ -58,6 +66,10 @@ while [ "$#" -gt 0 ]; do
   esac
 done
 
+if [ "$BETA" -eq 1 ] && [ ! -f "$ROOT/scripts/byoe/build-handoff-app.js" ]; then
+  die "--beta requires a source checkout on macOS; clone the beta revision and run bash ./install.sh --beta"
+fi
+
 step "Checking prerequisites"
 [ "$(uname -s)" = "Darwin" ] || die "Slick only supports macOS :("
 [ -f "$SLACK/Contents/Resources/app.asar" ] \
@@ -70,6 +82,13 @@ printf '%s\n' "$SLACK" > "$SLACK_CONFIG"
 if [ -f "$ROOT/scripts/byoe/build-handoff-app.js" ]; then
   node -e 'process.exit(parseInt(process.versions.node, 10) >= 18 ? 0 : 1)' 2>/dev/null \
     || die "Node.js 18+ is required (found: $(node -v 2>/dev/null || echo none)), please install it from nodejs.org first."
+
+  BETA_ARGS=()
+  if [ "$BETA" -eq 1 ]; then
+    step "Preflighting beta runtime"
+    node "$ROOT/scripts/release/beta.js" "$ROOT" --build
+    BETA_ARGS=(--beta)
+  fi
 
   EVER="$(/usr/bin/plutil -extract CFBundleVersion raw -o - \
     "$SLACK/Contents/Frameworks/Electron Framework.framework/Resources/Info.plist")"
@@ -99,8 +118,10 @@ if [ -f "$ROOT/scripts/byoe/build-handoff-app.js" ]; then
     cd "$ROOT"
   fi
 
-  pkill -f "$APP/Contents/MacOS/Electron" 2>/dev/null || true
-  wait_gone -f "$APP/Contents/MacOS/Electron"
+  mkdir -p "$HOME/Applications"
+  TMP="$(mktemp -d "$HOME/Applications/.slick-install.XXXXXX")"
+  trap 'rm -rf "$TMP"' EXIT
+  STAGED_APP="$TMP/Slick.app"
 
   BUILD=""
   if command -v git >/dev/null 2>&1; then
@@ -111,12 +132,12 @@ if [ -f "$ROOT/scripts/byoe/build-handoff-app.js" ]; then
   VERSION="1.0.$BUILD"
 
   step "Building $APP (Build $BUILD)"
-  node "$ROOT/scripts/byoe/build-handoff-app.js" --target "$APP" \
+  node "$ROOT/scripts/byoe/build-handoff-app.js" --target "$STAGED_APP" \
     --profile "$HOME/Library/Application Support/Slack" \
-    --slack-app "$SLACK" --app-version "$VERSION" --build-number "$BUILD" --allow-non-tmp --force >/dev/null
+    --slack-app "$SLACK" --app-version "$VERSION" --build-number "$BUILD" --allow-non-tmp --force ${BETA_ARGS[@]+"${BETA_ARGS[@]}"} >/dev/null
 
   step "Installing icon"
-  "$ROOT/scripts/byoe/set-icon.sh" 2>&1 | while IFS= read -r line; do printf '    %s\n' "$line"; done
+  "$ROOT/scripts/byoe/set-icon.sh" "$STAGED_APP" --no-register 2>&1 | while IFS= read -r line; do printf '    %s\n' "$line"; done
 else
   if [ "$(sysctl -n hw.optional.arm64 2>/dev/null || true)" = "1" ]; then ARCH=arm64; else ARCH=x64; fi
 
@@ -129,30 +150,50 @@ else
   echo "    Slick $TAG for $ARCH it is!"
 
   step "Downloading Slick $TAG"
-  TMP="$(mktemp -d /tmp/slick-install.XXXXXX)"
+  mkdir -p "$HOME/Applications"
+  TMP="$(mktemp -d "$HOME/Applications/.slick-install.XXXXXX")"
   trap 'rm -rf "$TMP"' EXIT
   curl --fail --location --progress-bar -o "$TMP/Slick.zip" "$URL"
 
   verify_release_artifact "$TMP/Slick.zip"
 
-  pkill -f "$APP/Contents/MacOS/Electron" 2>/dev/null || true
-  wait_gone -f "$APP/Contents/MacOS/Electron"
+  ditto -x -k "$TMP/Slick.zip" "$TMP/staged"
+  STAGED_APP="$TMP/staged/Slick.app"
+  [ -x "$STAGED_APP/Contents/MacOS/Electron" ] || die "release zip did not contain Slick.app"
+  [ "$BETA" -eq 0 ] || die "--beta is not supported for downloaded macOS apps: modifying the runtime invalidates code signing. Clone the repo and run ./install.sh --beta instead."
+  [ ! -e "$STAGED_APP/Contents/Resources/slick/.slick-beta" ] || die "release unexpectedly enables beta; refusing to modify a signed app"
 
-  step "Installing $APP"
-  mkdir -p "$HOME/Applications"
-  rm -rf "$APP"
-  ditto -x -k "$TMP/Slick.zip" "$HOME/Applications"
-  [ -d "$APP" ] || die "release zip did not contain Slick.app"
+fi
 
+pkill -f "$APP/Contents/MacOS/Electron" 2>/dev/null || true
+wait_gone -f "$APP/Contents/MacOS/Electron"
+step "Installing $APP"
+mkdir -p "$HOME/Applications"
+BACKUP="$(mktemp -d "$HOME/Applications/.slick-previous.XXXXXX")"
+if [ -e "$APP" ]; then mv "$APP" "$BACKUP/Slick.app"; fi
+if ! mv "$STAGED_APP" "$APP"; then
+  [ ! -e "$BACKUP/Slick.app" ] || mv "$BACKUP/Slick.app" "$APP"
+  die "could not install staged app; previous install restored"
+fi
+rm -rf "$BACKUP"
+
+if [ -f "$ROOT/scripts/byoe/build-handoff-app.js" ]; then
+  if [ "$BETA" -eq 1 ]; then
+    touch "$ROOT/.slick-beta"
+  else
+    rm -f "$ROOT/.slick-beta"
+  fi
 fi
 
 step "Registering Slick as the slack:// handler"
 handler dev.slick.byoe.handoff || echo "    (could not set handler now; Slick claims it on first launch)"
 
-step "Launching Slick"
-osascript -e 'quit app "Slack"' >/dev/null 2>&1 || true
-wait_gone -x Slack
-open -a "$APP"
+if [ "$NO_LAUNCH" -eq 0 ]; then
+  step "Launching Slick"
+  osascript -e 'quit app "Slack"' >/dev/null 2>&1 || true
+  wait_gone -x Slack
+  open -a "$APP"
+fi
 
 printf '\n\033[1;32mYippee!\033[0m Slick is installed at %s\n' "$APP"
 cat <<EOF
@@ -161,3 +202,10 @@ Here are some things you might want to know:
 - Configure the client at Preferences -> Slick tab on the left.
 - Make slack:// open the official app again: ./install.sh --restore-handler
 EOF
+
+if [ "$BETA" -eq 1 ]; then
+  echo "Early-injection beta installed. Automatic Slick updates are disabled."
+  echo "Update by rerunning this installer with --beta; omit --beta to return to stable."
+else
+  echo "Stable loader installed."
+fi

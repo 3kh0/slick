@@ -1,6 +1,7 @@
 'use strict';
 
 const path = require('path');
+const crypto = require('crypto');
 const { execFile } = require('child_process');
 const electron = require('electron');
 
@@ -68,6 +69,20 @@ const DEFAULT_ENABLED_FILE = path.join(PLUGINS_DIR, 'enabled.json');
 const ACTIVE_THEME_FILE = path.join(SETTINGS_DIR, 'active-theme');
 const PLUGIN_SETTINGS_FILE = path.join(SETTINGS_DIR, 'plugin-settings.json');
 const CUSTOM_CSS_FILE = path.join(SETTINGS_DIR, 'custom.css');
+const BETA_MARKER = path.join(__dirname, '..', '..', '.slick-beta');
+const EARLY_BUNDLE_FILES = ['main.js', 'desktop-preload.cjs'].map((name) =>
+  path.join(__dirname, '..', '..', 'dist', 'early-extension', name),
+);
+function earlyRevision() {
+  try {
+    const hash = crypto.createHash('sha256');
+    for (const file of EARLY_BUNDLE_FILES) hash.update(fs.readFileSync(file));
+    return hash.digest('hex').slice(0, 12);
+  } catch {
+    return 'unavailable';
+  }
+}
+const EARLY_REVISION = earlyRevision();
 // Read the enabled list before the catalog so boot only pays for those plugins.
 // With no list on disk the fallback is "load everything", so build eagerly then.
 const configuredEnabled = settings.readEnabled(ENABLED_FILE) || settings.readEnabled(DEFAULT_ENABLED_FILE);
@@ -86,6 +101,38 @@ const runtime = {
   theme: process.env.SLICK_THEME || settings.readActiveTheme(ACTIVE_THEME_FILE) || '',
   customCss: settings.readCustomCss(CUSTOM_CSS_FILE),
 };
+let desktopEarly;
+try {
+  desktopEarly = require('../early/desktop').register({
+    electron,
+    read: () => ({
+      enabled: process.env.SLICK_PLUGINS?.trim()
+        ? process.env.SLICK_PLUGINS.split(',')
+            .map((name) => name.trim())
+            .filter(Boolean)
+        : runtime.enabled,
+      settings: runtime.pluginSettings,
+      nicknames: runtime.pluginSettings.Nicknames?.names,
+    }),
+    writeNickname: (id, name) => {
+      const stored = settings.readPluginSettings(PLUGIN_SETTINGS_FILE);
+      const names = { ...stored.Nicknames?.names };
+      if (name) names[id] = name;
+      else delete names[id];
+      setPluginSettings(settings.writePluginSetting(PLUGIN_SETTINGS_FILE, 'Nicknames', 'names', names));
+    },
+    migrateNicknames: (names) => {
+      const stored = settings.readPluginSettings(PLUGIN_SETTINGS_FILE);
+      if (Object.hasOwn(stored.Nicknames || {}, 'names')) {
+        setPluginSettings(stored);
+        return;
+      }
+      setPluginSettings(settings.writePluginSetting(PLUGIN_SETTINGS_FILE, 'Nicknames', 'names', names));
+    },
+  });
+} catch (error) {
+  console.error('[slick-beta] registration failed:', error.message);
+}
 let THEME_FILE =
   runtime.theme && runtime.theme !== settings.CUSTOM_THEME_ID ? path.join(THEMES_DIR, `${runtime.theme}.json`) : null;
 
@@ -204,21 +251,30 @@ function netSummary() {
   return L.join('\n');
 }
 
-function pluginCss() {
+function pluginCss(early = {}) {
   const dynamic = plugins.cssFns.map(({ name, schema, fn }) => {
     try {
-      return fn(mergeSettings(schema, runtime.pluginSettings[name]));
+      const values = mergeSettings(schema, runtime.pluginSettings[name]);
+      // The early runtime owns this plugin's styling for the whole document;
+      // emitting the legacy rules as well would double-apply them.
+      if (early[name]) {
+        return name === 'SlimMessageBox' && runtime.enabled.includes(name)
+          ? fn({ ...values, discordLayout: false })
+          : '';
+      }
+      return fn(values);
     } catch (e) {
       console.error(`[slick-byoe] plugin "${name}" css() failed: ${e.message}`);
       return '';
     }
   });
-  return plugins.css.concat(dynamic).filter(Boolean).join('\n');
+  const stat = plugins.css.filter(({ name }) => !early[name]).map(({ css }) => css);
+  return stat.concat(dynamic).filter(Boolean).join('\n');
 }
 
-function fullCss() {
+function fullCss(early) {
   const customActive = runtime.theme === settings.CUSTOM_THEME_ID;
-  return [theme.css, pluginCss(), customActive ? runtime.customCss : ''].filter(Boolean).join('\n');
+  return [theme.css, pluginCss(early), customActive ? runtime.customCss : ''].filter(Boolean).join('\n');
 }
 
 const armedSessions = new WeakSet();
@@ -721,7 +777,7 @@ async function runUpdateCheck() {
   }
 }
 
-function runtimeManifest() {
+function runtimeManifest(beta) {
   return settings.buildManifest({
     catalog,
     enabled: runtime.enabled,
@@ -729,12 +785,13 @@ function runtimeManifest() {
     pluginSettings: runtime.pluginSettings,
     customCss: runtime.customCss,
     update: updateInfo(),
+    beta,
   });
 }
 
-function pushRuntimeSettings(wc) {
+function pushRuntimeSettings(wc, beta) {
   const cfg = allPluginSettings(catalog, runtime.pluginSettings);
-  const manifest = runtimeManifest();
+  const manifest = runtimeManifest(beta);
   return wc.mainFrame.executeJavaScript(
     `window.__slickPluginSettings = ${JSON.stringify(cfg)};` +
       `window.__slickSettings = Object.assign(window.__slickSettings || {}, ${JSON.stringify(manifest)});` +
@@ -752,8 +809,48 @@ async function doApplyTo(wc, { initialize = false, refreshCss = true } = {}) {
   const shouldInitialize = initialize || !document.initialized;
   const track = !perfApplied && URL.parse(wc.getURL())?.hostname === 'app.slack.com';
   if (track) perfApplied = true;
+  if (shouldInitialize && desktopEarly?.registered(wc.session)) {
+    try {
+      document.early = await wc.mainFrame.executeJavaScript('window.__slickDesktopEarly?.activate(1500) || {}', true);
+      if (wc.isDestroyed() || documents.get(wc) !== document) return;
+    } catch {
+      document.early = {};
+      document.beta = {
+        state: 'failed',
+        late: false,
+        errorCount: 1,
+        plugins: {},
+      };
+    }
+  }
+  if (desktopEarly?.registered(wc.session)) {
+    try {
+      document.beta = await wc.mainFrame.executeJavaScript('window.__slickDesktopEarly?.report() || null', true);
+      if (wc.isDestroyed() || documents.get(wc) !== document) return;
+    } catch {
+      document.beta ||= { state: 'failed', late: false, errorCount: 1, plugins: {} };
+    }
+  }
+  if (fs.existsSync(BETA_MARKER)) {
+    const registrationReason = desktopEarly?.reason?.(wc.session) || '';
+    document.beta = {
+      ...(document.beta || {
+        state: registrationReason ? 'unavailable' : 'pending',
+        reason: registrationReason,
+        late: false,
+        errorCount: registrationReason ? 1 : 0,
+        plugins: {},
+      }),
+      optedIn: true,
+      runtimeRevision: EARLY_REVISION,
+      platform: process.platform,
+      architecture: process.arch,
+      electron: process.versions.electron || '',
+      chrome: process.versions.chrome || '',
+    };
+  }
   if (refreshCss) {
-    const css = fullCss();
+    const css = fullCss(document.early);
     const oldKeys = live.get(wc) || [];
     let newKeys = oldKeys;
     if (css) {
@@ -777,7 +874,7 @@ async function doApplyTo(wc, { initialize = false, refreshCss = true } = {}) {
     }
   }
   try {
-    await pushRuntimeSettings(wc);
+    await pushRuntimeSettings(wc, document.beta);
   } catch (e) {
     console.error('[slick-byoe] plugin settings push failed:', e.message);
   }
@@ -798,18 +895,22 @@ async function doApplyTo(wc, { initialize = false, refreshCss = true } = {}) {
         console.error('[slick-byoe] internals init failed:', e.message);
       }
     }
-    const jsDone = plugins.js.map(({ name, source }) => {
-      const pluginName = JSON.stringify(name);
-      const wrapped =
-        `(() => { const previous = window.__slickPluginInstallContext;` +
-        `window.__slickPluginInstallContext = ${pluginName}; try {\n${source}\n}` +
-        `finally { window.__slickPluginInstallContext = previous; } })()`;
-      return wc.mainFrame
-        .executeJavaScript(wrapped, true)
-        .catch((e) => console.error(`[slick-byoe] plugin JS failed (${name}):`, e.message));
-    });
+    const jsDone = plugins.js
+      // A plugin that also owns UI the early runtime does not provide stays
+      // loaded and suppresses only its own duplicated behaviour.
+      .filter(({ name, coexist }) => coexist || !document.early?.[name])
+      .map(({ name, source }) => {
+        const pluginName = JSON.stringify(name);
+        const wrapped =
+          `(() => { const previous = window.__slickPluginInstallContext;` +
+          `window.__slickPluginInstallContext = ${pluginName}; try {\n${source}\n}` +
+          `finally { window.__slickPluginInstallContext = previous; } })()`;
+        return wc.mainFrame
+          .executeJavaScript(wrapped, true)
+          .catch((e) => console.error(`[slick-byoe] plugin JS failed (${name}):`, e.message));
+      });
     try {
-      const boot = settings.bootstrapScript(runtimeManifest());
+      const boot = settings.bootstrapScript(runtimeManifest(document.beta));
       jsDone.push(
         wc.mainFrame
           .executeJavaScript(boot, true)
@@ -966,6 +1067,7 @@ function setTheme(name) {
 function setEnabled(names) {
   if (!Array.isArray(names) || isDeepStrictEqual(names, runtime.enabled)) return;
   runtime.enabled = names;
+  desktopEarly?.publish();
   diagnosticSession.updateConfig(runtime.enabled, runtime.theme);
   applyAllLive({ refreshCss: false });
 }
@@ -973,6 +1075,7 @@ function setEnabled(names) {
 function setPluginSettings(all) {
   if (!all || typeof all !== 'object' || Array.isArray(all) || isDeepStrictEqual(all, runtime.pluginSettings)) return;
   runtime.pluginSettings = all;
+  desktopEarly?.publish();
   applyAllLive({ refreshCss: true });
 }
 

@@ -22,6 +22,22 @@ Slick runs on MacOS, Windows, and Linux. Linux is still in beta.
 
 Whatever platform you use, you'll need the official Slack app installed first, since Slick runs Slack's own code.
 
+### Early-injection beta (opt-in)
+
+The early-injection prototype is a separate opt-in from Linux's platform beta. It runs the plugin catalog through the early runtime (QuietSpotify stays desktop-only). See the beta guide for the complete list, coexistence rules, and limitations. Normal installation remains on the stable loader.
+
+Use a **source checkout containing the beta changes** until the updated installers and release payloads are published. From that checkout's root:
+
+- **macOS:** `bash ./install.sh --beta`
+- **Windows (PowerShell):** `powershell -ExecutionPolicy Bypass -File .\install.ps1 -Beta`
+- **Linux:** `bash ./install-linux.sh --beta`
+
+PowerShell's native named switch is `-Beta` (the installer also declares a `--beta` alias). These commands opt the installed runtime into beta using its root `.slick-beta` marker. Reinstall without the beta switch to remove the marker and return to the stable loader without deleting Slick settings.
+
+Source installers build and configure beta in staging before replacing the existing app. **macOS beta requires a source build**: downloaded macOS apps reject `--beta` because modifying a notarized bundle invalidates its signing; source builds add the marker before signing. Linux and Windows can configure beta-capable prebuilt releases in staging once those releases are published.
+
+Read the [beta testing guide](docs/beta.md) first for requirements, source checkout instructions, rollback, browser unpacked installation, diagnostics, and the manual test checklist. This remains an opt-in prototype; fixture results do not establish real-Slack or cross-platform compatibility.
+
 ### MacOS
 
 Install the official [Slack app](https://slack.com/downloads/mac) (not the App Store version) at `/Applications/Slack.app`, then use the installer script:
@@ -175,7 +191,7 @@ Please refer to [`plugins/README.md`](plugins/README.md) for the plugins documen
 
 ## Updates
 
-Slick checks for new builds on its own every few hours. To check manually, use **Preferences > Slick > Updates > Check for updates** (or **Slick > Check for Updates…** in the menu bar on macOS). The panel shows the running version, its build number, and when the last check happened.
+Stable Slick installations check for new builds on their own every few hours. Early-injection beta installations disable automatic Slick updates; update the source checkout and rerun the installer with the beta switch instead (see the [beta guide](docs/beta.md)). To check manually, use **Preferences > Slick > Updates > Check for updates** (or **Slick > Check for Updates…** in the menu bar on macOS). The panel shows the running version, its build number, and when the last check happened.
 
 ## Performance diagnostics
 
