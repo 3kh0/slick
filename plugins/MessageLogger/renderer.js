@@ -60,8 +60,24 @@
     return (window.__slickPluginSettings && window.__slickPluginSettings['MessageLogger']) || {};
   }
 
+  let stylePending = false;
   function istyle() {
     if (document.getElementById('slick-message-logger-style')) return;
+    // Early injection can run before the parser has produced <html>, so there is
+    // nowhere to put the sheet yet. readystatechange is the guaranteed retry;
+    // the 0ms hop just catches the common case sooner.
+    const root = document.head || document.documentElement;
+    if (!root) {
+      if (stylePending) return;
+      stylePending = true;
+      const retry = () => {
+        stylePending = false;
+        istyle();
+      };
+      document.addEventListener('readystatechange', retry, { once: true });
+      setTimeout(retry, 0);
+      return;
+    }
     const style = document.createElement('style');
     style.id = 'slick-message-logger-style';
     style.textContent = [
@@ -78,7 +94,7 @@
       '[data-slick-ml-hide]:hover *,[data-slick-ml-hide]:focus-within *{color:#fff!important}',
       '.slick-ml-row-vanished{display:none!important}',
     ].join('\n');
-    document.head.appendChild(style);
+    root.appendChild(style);
   }
 
   function decode(value) {

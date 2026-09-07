@@ -272,6 +272,30 @@ test('bounded activation waits for render evidence before committing and never s
   assert.equal(fallback.bridge.activate().SlimMessageBox, false);
 });
 
+test('a boot still in flight at the deadline keeps the early path instead of a fallback it cannot honour', async () => {
+  // An embedded renderer holds its own `window.__slick<Name>` guard the moment
+  // it starts, so the legacy script a fallback injects would return there and
+  // the plugin would do nothing. While there is still time the probe stays
+  // strict; only the final decision accepts an in-flight boot.
+  const stalled = () => diagnostics({ installing: { LastSeen: true }, installed: {} });
+  const win = adapterWindow({ enabled: ['LastSeen'], nicknames: {}, settings: {} }, () => {}, stalled);
+  const pending = win.bridge.activate(120);
+  assert.equal(win.bridge.active.LastSeen, undefined, 'the strict probe does not settle on an in-flight boot');
+  assert.equal((await pending).LastSeen, true);
+  assert.equal(win.config().plugins.LastSeen.enabled, true);
+  assert.deepEqual({ ...win.bridge.report().plugins.LastSeen }, { status: 'early', reason: '' });
+});
+
+test('a plugin that never reports and is not booting falls back with the reason it earned', async () => {
+  const idle = () => diagnostics({ installing: { Other: true }, installed: {} });
+  const win = adapterWindow({ enabled: ['LastSeen'], nicknames: {}, settings: {} }, () => {}, idle);
+  assert.equal((await win.bridge.activate(1)).LastSeen, false);
+  assert.deepEqual(
+    { ...win.bridge.report().plugins.LastSeen },
+    { status: 'legacy', reason: 'capability not observed' },
+  );
+});
+
 test('a failing plugin falls back alone while the others keep their early hooks', async () => {
   const win = adapterWindow(
     { enabled: ['SilentTyping', 'Censorship'], nicknames: {}, settings: {} },

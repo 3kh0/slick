@@ -148,7 +148,22 @@
     if (!timer) timer = setTimeout(flush, 150);
   }
 
+  let awaitingRoot = false;
   function observe() {
+    // Shipped with the early runtime, this hub can be subscribed to before the
+    // parser has produced <html>. Nothing exists to watch yet and nothing is
+    // missed, so retry once there is a root.
+    if (!document.documentElement) {
+      if (awaitingRoot) return;
+      awaitingRoot = true;
+      const retry = () => {
+        awaitingRoot = false;
+        if (rootSubs.length || tickSubs.length || syncSubs.length || attrSubs.length) observe();
+      };
+      document.addEventListener('readystatechange', retry, { once: true });
+      setTimeout(retry, 0);
+      return;
+    }
     if (!observer) observer = new MutationObserver(onStructuralMutations);
     const opts = { childList: true, subtree: true };
     if (attrFilter.size) {

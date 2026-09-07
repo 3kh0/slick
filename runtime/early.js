@@ -24,6 +24,7 @@ module.exports = function installEarly(descriptors) {
     componentHits: {},
     counters: {},
     installed: {},
+    installing: {},
     capabilities: {},
     hookMs: 0,
   };
@@ -158,6 +159,197 @@ module.exports = function installEarly(descriptors) {
     } catch (error) {
       fail(plugin.id, error);
     }
+  }
+
+  // --- deferred installs ---------------------------------------------------------
+  // An embedded legacy renderer usually only *schedules* its boot: `if
+  // (!document.body) return setTimeout(boot, 200)`, or a `DOMContentLoaded`
+  // listener. Treating the renderer's synchronous return as "installed" lets the
+  // activation probe pass before the plugin has done anything, and a throw from
+  // that deferred callback lands outside every try/catch — so the plugin reports
+  // early, the loader skips its legacy script, and it silently does nothing for
+  // the life of the document.
+  //
+  // `api.defer(handlers)` returns the schedulers an embedded renderer runs with
+  // instead of the page's own (see runtime/embed.js, which shadows the global
+  // bindings inside the renderer's scope). The plugin then reports installed when
+  // its boot chain settles, and a throw is blamed on it while the loader can
+  // still fall back.
+  const PENDING_GRACE = 1200;
+  const LIFECYCLE = new Set(['DOMContentLoaded', 'load', 'readystatechange']);
+  let zone = null;
+  let listenersPatched = false;
+  function canStillFire(type) {
+    if (!hasDocument) return false;
+    if (type === 'DOMContentLoaded') return document.readyState === 'loading';
+    return document.readyState !== 'complete';
+  }
+  // Wrapping is gated on an active zone, so every listener Slack registers pays
+  // one truthiness check and nothing else. Only a document-lifecycle listener
+  // registered by renderer code is wrapped, because that is how a renderer defers
+  // its boot; a wrapped listener cannot be removed by identity, which no renderer
+  // does for these three events.
+  function patchLifecycleListeners() {
+    if (listenersPatched || typeof EventTarget === 'undefined') return;
+    listenersPatched = true;
+    const native = EventTarget.prototype.addEventListener;
+    EventTarget.prototype.addEventListener = function (type, listener, options) {
+      const wrapped =
+        zone && typeof listener === 'function' && LIFECYCLE.has(type) ? zone.lifecycle(type, listener) : null;
+      return native.call(this, type, wrapped || listener, options);
+    };
+  }
+  const host = typeof window !== 'undefined' ? window : globalThis;
+  const nativeScheduler = (name) => (typeof host[name] === 'function' ? host[name].bind(host) : null);
+  function deferApi(plugin) {
+    return function defer(handlers = {}) {
+      patchLifecycleListeners();
+      const id = plugin.id;
+      const holds = new Map();
+      let live = 0;
+      let ready = false;
+      let broken = false;
+      let grace = null;
+      const clearGrace = () => {
+        if (grace === null) return;
+        if (typeof clearTimeout === 'function') clearTimeout(grace);
+        grace = null;
+      };
+      function settle() {
+        if (ready || broken || live > 0) return;
+        ready = true;
+        clearGrace();
+        delete stats.installing[id];
+        if (handlers.ready) {
+          try {
+            handlers.ready();
+          } catch (error) {
+            fail(id, error);
+          }
+        }
+      }
+      function blame(error) {
+        if (ready) {
+          // Past install there is nothing to hand back: the loader settled
+          // activation long ago, and joining `errors` here would retroactively
+          // disqualify a plugin that is running. Counted and logged instead, so
+          // the beta report still shows it.
+          stats.counters[`${id}.late`] = (stats.counters[`${id}.late`] || 0) + 1;
+          console.error(`[slick-early] ${id} threw after installing:`, error);
+          return;
+        }
+        broken = true;
+        live = 0;
+        clearGrace();
+        delete stats.installing[id];
+        fail(id, error);
+        if (handlers.failed) {
+          try {
+            handlers.failed(error);
+          } catch (nested) {
+            fail(id, nested);
+          }
+        }
+      }
+      function hold() {
+        if (ready || broken) return false;
+        live++;
+        stats.installing[id] = true;
+        // A boot chain that keeps rescheduling (ShowRealUser retries for ten
+        // seconds) must not hold activation open. After the grace period the
+        // plugin reports installed and keeps running, which is the behaviour
+        // without this tracking, rather than forcing a fallback that a page
+        // holding the renderer's guard cannot honour.
+        if (grace === null && typeof setTimeout === 'function')
+          grace = setTimeout(() => {
+            grace = null;
+            live = 0;
+            settle();
+          }, PENDING_GRACE);
+        return true;
+      }
+      const context = {
+        lifecycle(type, listener) {
+          let held = canStillFire(type) && hold();
+          return function (...args) {
+            if (held) {
+              held = false;
+              live = Math.max(0, live - 1);
+            }
+            run(listener, args, this);
+            settle();
+          };
+        },
+      };
+      function run(fn, args, self) {
+        const previous = zone;
+        zone = context;
+        try {
+          return fn.apply(self, args);
+        } catch (error) {
+          blame(error);
+        } finally {
+          zone = previous;
+        }
+      }
+      function schedule(native, recurring) {
+        if (!native) return undefined;
+        return function (fn, ...rest) {
+          if (typeof fn !== 'function') return native(fn, ...rest);
+          // A recurring callback never settles, so it is watched for failures
+          // but never counted as outstanding install work.
+          let held = !recurring && hold();
+          const handle = native(
+            function (...args) {
+              if (held) {
+                held = false;
+                live = Math.max(0, live - 1);
+                holds.delete(handle);
+              }
+              run(fn, args, undefined);
+              settle();
+            },
+            ...rest,
+          );
+          if (held) {
+            holds.set(handle, () => {
+              held = false;
+              live = Math.max(0, live - 1);
+            });
+          }
+          return handle;
+        };
+      }
+      function cancel(native) {
+        if (!native) return undefined;
+        return function (handle) {
+          const release = holds.get(handle);
+          if (release) {
+            holds.delete(handle);
+            release();
+            settle();
+          }
+          return native(handle);
+        };
+      }
+      const timeout = nativeScheduler('setTimeout');
+      const interval = nativeScheduler('setInterval');
+      return {
+        // Runs the renderer's own body. Nothing scheduled means the plugin is
+        // installed the moment this returns, exactly as before.
+        run(fn) {
+          run(fn, [], undefined);
+          settle();
+        },
+        setTimeout: schedule(timeout, false),
+        setInterval: schedule(interval, true),
+        clearTimeout: cancel(nativeScheduler('clearTimeout')),
+        clearInterval: cancel(nativeScheduler('clearInterval')),
+        queueMicrotask: schedule(nativeScheduler('queueMicrotask'), false),
+        requestAnimationFrame: schedule(nativeScheduler('requestAnimationFrame'), false),
+        requestIdleCallback: schedule(nativeScheduler('requestIdleCallback'), false),
+      };
+    };
   }
 
   // --- shared styles -------------------------------------------------------------
@@ -613,6 +805,7 @@ module.exports = function installEarly(descriptors) {
       },
       subscribe,
       fail: (error) => fail(plugin.id, error),
+      defer: deferApi(plugin),
       installed(ok) {
         stats.installed[plugin.id] = ok !== false;
       },
@@ -828,6 +1021,7 @@ module.exports = function installEarly(descriptors) {
       componentHits: { ...stats.componentHits },
       counters: { ...stats.counters },
       installed: { ...stats.installed },
+      installing: { ...stats.installing },
       capabilities: { ...stats.capabilities },
       active: Object.fromEntries(plugins.map((plugin) => [plugin.id, activeFor(plugin)])),
       errors: [...errors],

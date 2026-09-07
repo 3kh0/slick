@@ -5,7 +5,7 @@ const path = require('path');
 
 let domHubSource = '';
 try {
-  domHubSource = fs.readFileSync(path.join(__dirname, 'dom-hub.js'), 'utf8');
+  domHubSource = fs.readFileSync(path.join(__dirname, '..', '..', 'runtime', 'dom-hub.js'), 'utf8');
 } catch (e) {
   console.error('[plugins] dom-hub.js missing:', e.message);
 }

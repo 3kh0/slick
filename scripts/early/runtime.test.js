@@ -745,6 +745,178 @@ test('embedded renderers serialize as real functions, wait until enabled, and cl
   assert.equal(doc.getElementById('slick-early-sample').textContent, '');
 });
 
+test('the shared DOM hub is installed ahead of the plugins and embedded legacy renderers subscribe to it', () => {
+  // Embedded legacy renderers reach the page at document_start, long before the
+  // desktop loader injects its own copy of the hub, so the bundle has to carry
+  // it: without this, every ported renderer that watches the tree threw on
+  // `window.__slickDOM.onRoots` and installed nothing.
+  const whoReacted = require('../../runtime/plugins/who-reacted');
+  const { env, runtime } = domEnvironment([whoReacted]);
+  assert.equal(typeof env.world.__slickDOM.onRoots, 'function', 'the hub is present before any plugin runs');
+  runtime.configure({ plugins: { WhoReacted: { enabled: true, maxAvatars: 8 } } });
+  assert.deepEqual(
+    Array.from(runtime.diagnostics().errors, (error) => error.message),
+    [],
+  );
+  assert.equal(runtime.diagnostics().installed.WhoReacted, true);
+  assert.ok(env.world.__slickDOM.snapshot().subscribers.roots > 0, 'the renderer holds a live root subscription');
+});
+
+test('an embedded renderer reports installed when its deferred boot settles, not when its IIFE returns', async () => {
+  const { embed } = require('../../runtime/embed');
+  const plugin = embed({
+    id: 'DeferSample',
+    renderer: `(function () {
+      window.__slickDeferSample = { booted: false };
+      setTimeout(function () {
+        window.__slickDeferSample.booted = true;
+      }, 0);
+    })();`,
+  });
+  const { env, runtime } = domEnvironment([plugin]);
+  runtime.configure({ plugins: { DeferSample: { enabled: true } } });
+  assert.equal(env.world.__slickDeferSample.booted, false);
+  assert.equal(runtime.diagnostics().installed.DeferSample, undefined, 'a scheduled boot is not an install');
+  assert.equal(runtime.diagnostics().installing.DeferSample, true);
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  assert.equal(env.world.__slickDeferSample.booted, true);
+  assert.equal(runtime.diagnostics().installed.DeferSample, true);
+  assert.equal(runtime.diagnostics().installing.DeferSample, undefined);
+});
+
+test('a deferred failure is blamed on the plugin, clears its CSS and drops the guard so the legacy script takes over', async () => {
+  const { embed } = require('../../runtime/embed');
+  // The guard and the early return are the shape every legacy renderer has: the
+  // whole point of dropping the guard is that this second run does something.
+  const renderer = `(function () {
+    if (window.__slickBoomSample) return;
+    window.__slickBoomSample = { booted: false };
+    setTimeout(function () {
+      if (window.boomBroken) throw new Error('boot exploded');
+      window.__slickBoomSample.booted = true;
+    }, 0);
+  })();`;
+  const plugin = embed({ id: 'BoomSample', renderer, css: '.slick-boom { color: red }' });
+  const { env, doc, runtime } = domEnvironment([plugin], { boomBroken: true });
+  runtime.configure({ plugins: { BoomSample: { enabled: true } } });
+  assert.match(doc.getElementById('slick-early-boomsample').textContent, /slick-boom/);
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  const diagnostics = runtime.diagnostics();
+  assert.equal(diagnostics.installed.BoomSample, false, 'a renderer that threw never installed');
+  assert.deepEqual(
+    Array.from(diagnostics.errors, (error) => `${error.capability}: ${error.message}`),
+    ['BoomSample: boot exploded'],
+  );
+  assert.equal(env.world.__slickBoomSample, undefined, 'the dead attempt does not keep its guard');
+  assert.equal(doc.getElementById('slick-early-boomsample').textContent, '', 'the legacy CSS is authoritative now');
+  // What scripts/byoe/inject.js does for a plugin that did not activate early.
+  env.world.boomBroken = false;
+  vm.runInContext(renderer, env.world);
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  assert.equal(env.world.__slickBoomSample.booted, true, 'the legacy renderer installs on the fallback path');
+});
+
+test("a failed renderer gives back its own guard and nobody else's", async () => {
+  const { embed } = require('../../runtime/embed');
+  // The failure lands after the second renderer has run, so a diff of the whole
+  // `window.__slick*` namespace would sweep up a neighbour that is running fine.
+  const boom = embed({
+    id: 'FirstBoom',
+    renderer: `(function () {
+      window.__slickFirstBoom = { booted: false };
+      setTimeout(function () {
+        throw new Error('boot exploded');
+      }, 0);
+    })();`,
+  });
+  const neighbour = embed({
+    id: 'Neighbour',
+    renderer: '(function () { window.__slickNeighbour = { kept: true }; })();',
+  });
+  const { env, runtime } = domEnvironment([boom, neighbour]);
+  runtime.configure({ plugins: { FirstBoom: { enabled: true }, Neighbour: { enabled: true } } });
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  assert.equal(env.world.__slickFirstBoom, undefined, 'the failed renderer drops its guard');
+  assert.equal(env.world.__slickNeighbour.kept, true, 'the neighbour keeps its own');
+  assert.equal(runtime.diagnostics().installed.Neighbour, true);
+});
+
+test('a renderer that throws after installing is counted rather than un-installed', async () => {
+  const { embed } = require('../../runtime/embed');
+  const plugin = embed({
+    id: 'LateSample',
+    renderer: `(function () {
+      window.__slickLateSample = {
+        explode: function () {
+          setTimeout(function () {
+            throw new Error('late boom');
+          }, 0);
+        },
+      };
+    })();`,
+  });
+  const { env, runtime } = domEnvironment([plugin], { console: { error() {} } });
+  runtime.configure({ plugins: { LateSample: { enabled: true } } });
+  assert.equal(runtime.diagnostics().installed.LateSample, true, 'nothing scheduled means installed right away');
+  env.world.__slickLateSample.explode();
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  const diagnostics = runtime.diagnostics();
+  assert.equal(diagnostics.installed.LateSample, true, 'a running plugin is not disqualified after activation');
+  assert.equal(diagnostics.counters['LateSample.late'], 1);
+  assert.deepEqual(Array.from(diagnostics.errors), [], 'a late throw must not corrupt the activation decision');
+});
+
+test('a recurring timer does not hold an install open', () => {
+  const { embed } = require('../../runtime/embed');
+  const plugin = embed({
+    id: 'PollSample',
+    renderer: `(function () {
+      window.__slickPollSample = { ticks: 0 };
+      window.__slickPollSample.handle = setInterval(function () {
+        window.__slickPollSample.ticks++;
+      }, 60000);
+    })();`,
+  });
+  const { env, runtime } = domEnvironment([plugin]);
+  runtime.configure({ plugins: { PollSample: { enabled: true } } });
+  assert.equal(runtime.diagnostics().installed.PollSample, true);
+  assert.equal(runtime.diagnostics().installing.PollSample, undefined);
+  env.world.clearInterval(env.world.__slickPollSample.handle);
+});
+
+test('a boot chain that keeps rescheduling reports installed after the grace period', async () => {
+  const { embed } = require('../../runtime/embed');
+  const plugin = embed({
+    id: 'GraceSample',
+    renderer: `(function () {
+      window.__slickGraceSample = { ticks: 0 };
+      (function poll() {
+        window.__slickGraceSample.ticks++;
+        window.__slickGraceSample.handle = setTimeout(poll, 30);
+      })();
+    })();`,
+  });
+  const { env, runtime } = domEnvironment([plugin]);
+  runtime.configure({ plugins: { GraceSample: { enabled: true } } });
+  assert.equal(runtime.diagnostics().installing.GraceSample, true);
+  assert.equal(runtime.diagnostics().installed.GraceSample, undefined);
+  await new Promise((resolve) => setTimeout(resolve, 1300));
+  assert.equal(runtime.diagnostics().installed.GraceSample, true, 'a chain that will not settle still reports');
+  assert.ok(env.world.__slickGraceSample.ticks > 1, 'and it keeps running');
+  env.world.clearTimeout(env.world.__slickGraceSample.handle);
+});
+
+test('the shared DOM hub tolerates a subscriber that arrives before the document has a root', async () => {
+  const { doc, env } = domEnvironment([]);
+  const root = doc.documentElement;
+  doc.documentElement = null;
+  env.world.__slickDOM.onRoots(() => {});
+  assert.equal(doc.observers.size, 0, 'there is nothing to observe yet');
+  doc.documentElement = root;
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  assert.equal(doc.observers.size, 1, 'the hub attaches once the parser produces one');
+});
+
 test('embedded CustomSlackbot CSS follows settings without a page renderer', () => {
   const plugin = require('../../runtime/plugins/custom-slackbot');
   const { doc, runtime } = domEnvironment([plugin]);

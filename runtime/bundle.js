@@ -3,8 +3,17 @@
 // Shared source generator for every early-runtime host: the browser extension's
 // MAIN-world content script, the desktop preload, and the tests. Descriptor
 // functions are emitted as source, so they must not close over module scope.
+const fs = require('node:fs');
+const path = require('node:path');
 const install = require('./early');
 const registry = require('./registry');
+
+// The shared DOM hub ships ahead of the runtime: embedded legacy renderers
+// (see from-legacy) subscribe through `window.__slickDOM`, and early hosts run
+// them at document_start, long before the loader injects its own copy. The
+// hub's own `if (window.__slickDOM) return` guard makes that later injection a
+// no-op, so the page keeps a single hub either way.
+const domHub = fs.readFileSync(path.join(__dirname, 'dom-hub.js'), 'utf8');
 
 function literal(value) {
   if (typeof value === 'function') {
@@ -24,7 +33,7 @@ function literal(value) {
 }
 
 function source(plugins = registry) {
-  return `(${install.toString()})(${literal(plugins)});\n`;
+  return `${domHub}\n(${install.toString()})(${literal(plugins)});\n`;
 }
 
 // Settings metadata for the extension options page: data only, no functions.

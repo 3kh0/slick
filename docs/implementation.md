@@ -35,6 +35,7 @@ Those are useful references, not stable specifications. Verify upstream code bef
 | `runtime/early.js`                     | Module interception, component wrapping, shared style/DOM/text/network capabilities |
 | `runtime/registry.js`                  | The ordered plugin descriptor list the bundle carries                               |
 | `runtime/bundle.js`                    | Descriptor serialization, bundle source, options-page metadata                      |
+| `runtime/dom-hub.js`                   | `window.__slickDOM`, the one observer the legacy renderers subscribe through        |
 | `runtime/plugins/*.js`                 | One descriptor per ported plugin                                                    |
 | `extension/manifest.json`              | Static MAIN and ISOLATED content scripts, options page, rules service worker        |
 | `extension/bridge.js`                  | One-way extension storage → page settings                                           |
@@ -99,24 +100,25 @@ Direct `configure` calls are in-memory and disappear on navigation. The browser 
 
 `setup(api)` receives a scoped API. Everything on it is already gated on that plugin's activation.
 
-| Member                      | Purpose                                                                               |
-| --------------------------- | ------------------------------------------------------------------------------------- |
-| `api.settings`              | Coerced settings, including `enabled`                                                 |
-| `api.enabled`               | Global switch and this plugin's activation                                            |
-| `api.version`, `subscribe`  | Settings generation and change notifications                                          |
-| `api.assets`                | Build-time data from the descriptor                                                   |
-| `api.installed(ok)`         | Self-report whether the plugin's hook actually installed; feeds the default probe     |
-| `api.count(name, n)`        | Diagnostic counters, reported as `Plugin.name`                                        |
-| `api.fail(error)`           | Record an error against this plugin                                                   |
-| `api.component(name, fn)`   | Transform an inner component's props                                                  |
-| `api.onExports(fn)`         | Inspect or replace a module's exports as it initializes                               |
-| `api.trackStore(store)`     | Register a Redux store for refresh on settings changes                                |
-| `api.style(id)`             | A managed `<style>` element; `.set(css)`                                              |
-| `api.dom.roots/elements`    | Subscribe to the shared MutationObserver                                              |
-| `api.text(fn)`              | Join the shared text pass                                                             |
-| `api.net.request/socket`    | Intercept outgoing requests and websocket frames; returns whether the patch installed |
-| `api.fiber.of/walk/closest` | Climb a node's React fiber for `memoizedProps` without each plugin reimplementing it  |
-| `api.ready(fn)`             | Run once `document.documentElement` exists                                            |
+| Member                      | Purpose                                                                                   |
+| --------------------------- | ----------------------------------------------------------------------------------------- |
+| `api.settings`              | Coerced settings, including `enabled`                                                     |
+| `api.enabled`               | Global switch and this plugin's activation                                                |
+| `api.version`, `subscribe`  | Settings generation and change notifications                                              |
+| `api.assets`                | Build-time data from the descriptor                                                       |
+| `api.installed(ok)`         | Self-report whether the plugin's hook actually installed; feeds the default probe         |
+| `api.count(name, n)`        | Diagnostic counters, reported as `Plugin.name`                                            |
+| `api.fail(error)`           | Record an error against this plugin                                                       |
+| `api.component(name, fn)`   | Transform an inner component's props                                                      |
+| `api.onExports(fn)`         | Inspect or replace a module's exports as it initializes                                   |
+| `api.trackStore(store)`     | Register a Redux store for refresh on settings changes                                    |
+| `api.style(id)`             | A managed `<style>` element; `.set(css)`                                                  |
+| `api.dom.roots/elements`    | Subscribe to the shared MutationObserver                                                  |
+| `api.text(fn)`              | Join the shared text pass                                                                 |
+| `api.net.request/socket`    | Intercept outgoing requests and websocket frames; returns whether the patch installed     |
+| `api.fiber.of/walk/closest` | Climb a node's React fiber for `memoizedProps` without each plugin reimplementing it      |
+| `api.ready(fn)`             | Run once `document.documentElement` exists                                                |
+| `api.defer(handlers)`       | Schedulers that keep a deferred install observable; see [Ported plugins](#ported-plugins) |
 
 ## Runtime contracts
 
@@ -158,6 +160,10 @@ Do not also wrap `Connect(Name)` with the same transform. The connected componen
 
 There is exactly one `MutationObserver`, on `document.documentElement`, for every plugin. Plugins must not create their own document-wide observers: repeatedly walking Slack's tree from several observers is the main cost of the legacy renderer plugins. `characterData` is enabled only while some subscriber asks for it, and the observer is re-observed when that changes.
 
+This is `api.dom`, for native descriptors. Embedded renderers subscribe to the page-world `window.__slickDOM` hub instead (see [Ported plugins](#ported-plugins)), so a beta document with both kinds of plugin enabled carries two observers. Consolidating them — routing `api.dom` through the page hub, or porting the remaining renderers to native descriptors — is open work.
+
+Either hub can now be subscribed to before the parser has produced `<html>`: `MutationObserver.observe(null)` throws, so both wait for a root and attach when there is one. A legacy renderer doing its own DOM work at `document_start` needs the same care — `document.head` and `document.body` can both be null, which is what MessageLogger's stylesheet had to learn.
+
 Hooks receive `(added, removed, targets)`. `targets` carries the mutation record targets, so a plugin can react to a _removal_ without re-walking the document — SlimMessageBox uses it to re-measure only the composer a mutation actually touched. Hooks are skipped while their plugin is inactive, so toggling a plugin never adds or drops observers.
 
 Scoped observers are still appropriate where the plugin owns a small element and needs geometry: SlimMessageBox keeps a per-composer `ResizeObserver`. The goal is to avoid repeatedly rewriting Slack's data-driven UI, not to forbid DOM APIs where measurement is necessary.
@@ -186,6 +192,8 @@ Skips are central, not per plugin: `SCRIPT`, `STYLE`, `TEXTAREA`, `INPUT`, `SELE
 ## Ported plugins
 
 Native descriptors (hand-written against the plugin API) stay the right shape for anything that needs module, store, or geometry hooks. `runtime/from-legacy.js` plus `runtime/embed.js` wrap a legacy renderer IIFE at **build time** into a real `setup` function that is serialized with the bundle. That is not page-world `eval`: Slack CSP continues to block `eval` / `new Function` in the document. Embedded renderers run only while the plugin is enabled, and only when `document` exists, so fetch/WebSocket patches still land at `document_start`.
+
+An embedded renderer is unmodified page code, so it watches the tree through `window.__slickDOM`, not through `api.dom`. `runtime/dom-hub.js` is therefore emitted ahead of the runtime in `bundle.source()`: at `document_start` the loader has not injected its own copy yet, and subscribing to a hub that does not exist throws. The hub's `if (window.__slickDOM) return` guard makes the loader's later injection a no-op, so the page keeps one hub either way. A beta document running both kinds of plugin therefore carries two observers; consolidating them is open work.
 
 | Plugin                 | Default | Path                         | Notes                                                                                      |
 | ---------------------- | ------- | ---------------------------- | ------------------------------------------------------------------------------------------ |
@@ -220,6 +228,19 @@ Native descriptors (hand-written against the plugin API) stay the right shape fo
 | `QuietSpotify`         | —       | desktop `main()` only        | Cross-origin Spotify embed frames are not reachable from the Slack page                    |
 
 `api.fiber` exists so a later native rewrite of WhoReacted/CopyReacted/UserPronouns/ShowRealUser does not copy another `__reactFiber$` walk. New plugins should prefer a native descriptor when the work maps onto `net`, `text`, `component`, `style`, or `dom`; use `from-legacy` when the existing IIFE is already self-contained and the cost of a rewrite is the regression risk.
+
+### Deferred installs
+
+A renderer's install is rarely finished when its IIFE returns. The prevailing shape is `if (!document.body) return setTimeout(boot, 200)`, and two renderers wait on `DOMContentLoaded` instead. Treating the synchronous return as "installed" makes the activation probe pass before the plugin has done anything, and a throw from the deferred callback lands outside every `try`/`catch` — so the plugin reports **early**, the loader skips its legacy script, and it does nothing at all for the life of the document. That is how a missing `window.__slickDOM` used to kill WhoReacted silently.
+
+`embed()` therefore runs the renderer body inside `api.defer(handlers)` with `setTimeout`, `setInterval`, `clearTimeout`, `clearInterval`, `queueMicrotask`, `requestAnimationFrame` and `requestIdleCallback` **shadowed as local bindings in the renderer's own scope** — lexical, so the renderer's inner functions keep them too, and no page global is replaced. On top of that, `EventTarget.prototype.addEventListener` is patched once, gated on an active zone, and wraps only a `DOMContentLoaded` / `load` / `readystatechange` listener registered by renderer code, and only while that event can still fire. Everything Slack registers pays one truthiness check. A wrapped lifecycle listener cannot be removed by identity, which no renderer does for those three events. Promise continuations are not tracked; a renderer that boots from an `await` still reports optimistically.
+
+The result:
+
+- **Settles** — the boot chain drains with no throw, so `api.installed(true)`. Activation waits for this instead of racing it. `diagnostics.installing[id]` is the in-flight marker.
+- **Throws while installing** — blamed on the plugin, `api.installed(false)`, the plugin's early CSS is dropped, and the `window.__slick<Name>` guard the dead attempt set is deleted. That last part is what makes the fallback real: the legacy script the loader injects for anything that did not activate early returns immediately at its own guard, so a plugin that failed early would otherwise be dead in both paths. Only the keys that renderer's own body added are removed, measured the moment it returns — plugins install in sequence, and a later diff of `window.__slick*` would sweep up its neighbours.
+- **Throws after installing** — counted as `<Id>.late` and logged, never added to `errors`, because activation is already fixed and a late error there would retroactively disqualify a plugin that is running. The beta panel reports it as `early — N error(s) after activation`.
+- **Never settles** — a recurring `setInterval` is watched but never counted, and a boot chain that keeps rescheduling (ShowRealUser retries for ten seconds) reports installed after a 1.2s grace period. A plugin still booting when activation runs out of time keeps the early path anyway, because a fallback the page cannot honour is worse than no fallback: see [Desktop arbitration](#desktop-arbitration).
 
 ### Nicknames
 
@@ -292,8 +313,9 @@ Activation resolves per plugin:
 - `diagnostics.late`, or any error whose `capability` is not a plugin id, disqualifies the whole early path.
 - An error recorded against a plugin disqualifies **only that plugin**.
 - Otherwise the descriptor's `probe` decides, defaulting to `diagnostics.installed[id] === true`.
+- On the **final** decision only, a plugin still listed in `diagnostics.installing` also counts as early. While there is still time the probe stays strict, which is what leaves a failing boot the room to hand itself back; once time is up, an embedded renderer that is demonstrably still booting already holds its own page guard, so the legacy script a fallback would inject returns at that guard and the plugin does nothing at all. `probe` receives `(diagnostics, settling)` if it wants to make that distinction itself.
 
-`activate(waitMs)` waits up to 1.5 seconds for every enabled plugin's probe to pass, then fixes the selection until navigation. `scripts/byoe/inject.js` skips the legacy renderer script and both the static and dynamic CSS for any plugin that activated early, so no plugin is patched twice. Two exceptions exist, both because the early runtime owns only part of a plugin:
+`activate(waitMs)` waits up to 1.5 seconds for every enabled plugin's probe to pass, then fixes the selection until navigation. For an embedded renderer that is the boot chain settling, not its IIFE returning (see [Deferred installs](#deferred-installs)), which is what gives a failed boot time to hand the plugin back. In practice this costs nothing: the loader asks at `did-finish-load`, by which point a `document.body` poll has long since fired. `scripts/byoe/inject.js` skips the legacy renderer script and both the static and dynamic CSS for any plugin that activated early, so no plugin is patched twice. Two exceptions exist, both because the early runtime owns only part of a plugin:
 
 - SlimMessageBox's narrow hide-rules CSS is still emitted, with `discordLayout: false`.
 - A legacy plugin may set `earlyCoexist: true` on its module. Its renderer then still loads and is responsible for suppressing only its own duplicated behaviour. Nicknames does this: the early runtime owns the name projection, but the renderer owns the profile-menu nickname editor, which has no early equivalent. `applyName` returns immediately while `__slickDesktopEarly.active.Nicknames` is set, and edits are routed back through `__slickDesktopEarly.nickname`.

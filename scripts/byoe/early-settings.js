@@ -40,22 +40,37 @@ module.exports = function installDesktopSettings(initial, send) {
       window.dispatchEvent(new StorageEvent('storage', { key }));
     } catch {}
   }
-  function capabilities() {
+  // `settling` is only true for the final decision. While there is still time,
+  // a plugin has to show real evidence, which is what leaves a failing boot the
+  // room to hand itself back. Once time is up, a plugin whose boot is still
+  // demonstrably running keeps the early path: it holds its own page guard, so
+  // the legacy script a fallback injects would return at that guard and the
+  // plugin would do nothing at all. An embedded renderer that waits on a lazily
+  // loaded Slack bundle (PrivateChannelMapper retries for ten seconds) lands
+  // here every time.
+  function capabilities(settling) {
     const diagnostics = runtime.diagnostics();
     const own = new Set(ids);
     // Interception installed after Slack captured references, or a failure
     // outside any single plugin, disqualifies the whole early path.
     const safe = !diagnostics.late && !diagnostics.errors.some((error) => !own.has(error.capability));
+    const installing = diagnostics.installing || {};
     const found = {};
     for (const plugin of runtime.plugins) {
       const failed = diagnostics.errors.some((error) => error.capability === plugin.id);
-      const probe = plugin.probe ? plugin.probe(diagnostics) : diagnostics.installed[plugin.id] === true;
+      const probe = plugin.probe
+        ? plugin.probe(diagnostics, settling === true)
+        : diagnostics.installed[plugin.id] === true || (settling === true && installing[plugin.id] === true);
       found[plugin.id] = safe && !failed && probe === true;
     }
     return found;
   }
   function report() {
     const diagnostics = runtime.diagnostics();
+    // Never throw out of the status panel: a runtime old enough to miss a field
+    // still has to be reportable.
+    const counters = diagnostics.counters || {};
+    const installing = diagnostics.installing || {};
     const selected = active || {};
     const enabled = new Set(state.enabled || []);
     const own = new Set(ids);
@@ -66,12 +81,19 @@ module.exports = function installDesktopSettings(initial, send) {
       let reason = '';
       if (enabled.has(plugin.id)) {
         if (!active) status = 'pending';
-        else if (selected[plugin.id]) status = 'early';
-        else {
+        else if (selected[plugin.id]) {
+          status = 'early';
+          // A plugin can install early and still throw later, from a timer or a
+          // DOM callback. That cannot be handed back to the legacy path, but it
+          // is the difference between "early" and "early and working".
+          const late = Number(counters[`${plugin.id}.late`]) || 0;
+          if (late) reason = `${late} error(s) after activation`;
+        } else {
           status = 'legacy';
           if (diagnostics.late) reason = 'late injection';
           else if (globalFailure) reason = 'runtime error';
           else if (diagnostics.errors.some((error) => error.capability === plugin.id)) reason = 'plugin error';
+          else if (installing[plugin.id]) reason = 'boot did not settle';
           else reason = 'capability not observed';
         }
       }
@@ -87,7 +109,7 @@ module.exports = function installDesktopSettings(initial, send) {
   const waiting = () => (state.enabled || []).filter((id) => ids.includes(id));
   function finish() {
     if (!active) {
-      active = capabilities();
+      active = capabilities(true);
       update(state);
     }
     return active;
@@ -101,7 +123,7 @@ module.exports = function installDesktopSettings(initial, send) {
       const deadline = Date.now() + Math.min(waitMs, 1500);
       activation = new Promise((resolve) => {
         function check() {
-          const found = capabilities();
+          const found = capabilities(false);
           const diagnostics = runtime.diagnostics();
           if (
             diagnostics.late ||

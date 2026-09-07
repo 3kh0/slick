@@ -13,6 +13,8 @@ fs.copyFileSync(
   path.join(profile, 'dist/early-extension/desktop-preload.cjs'),
 );
 fs.writeFileSync(path.join(profile, '.slick-beta'), '');
+const bundle = require('../../runtime/bundle');
+const { embed } = require('../../runtime/embed');
 const REGISTRY = require('../../runtime/registry').map(({ id }) => id);
 const FIXTURE_ENABLED = [
   'NoTrack',
@@ -44,6 +46,7 @@ app.whenReady().then(async () => {
   let win;
   let secondWindow;
   let pluginWindow;
+  let deferWindow;
   try {
     const fixture = fs.readFileSync(path.join(__dirname, 'fixtures/composer.html'));
     const pluginsFixture = fs.readFileSync(path.join(__dirname, 'fixtures/plugins.html'));
@@ -123,11 +126,31 @@ app.whenReady().then(async () => {
         NoTrack: { enabled: true },
         ClearURLs: { enabled: true, rules },
         AnonymiseFileNames: { enabled: true },
+        WhoReacted: { enabled: true, maxAvatars: 8 },
       };
       const apply = (overrides = {}) => runtime.configure({ plugins: { ...base, ...overrides } });
       const checks = { early: fixture.early, evalBlocked: fixture.evalBlocked };
+      // WhoReacted reads reactor ids off the reaction's fiber and resolves
+      // avatars through its own cache, so a seeded cache keeps this offline.
+      const avatar = 'data:image/gif;base64,R0lGODlhAQABAIAAAP///wAAACwAAAAAAQABAAACAkQBADs=';
+      localStorage.setItem('slick:wr:avatars', JSON.stringify({ U1234567: { u: avatar, t: Date.now() } }));
+      const reaction = (el) => {
+        el.__reactFiber$fixture = { memoizedProps: { name: 'tada', count: 1, users: ['U1234567'] }, return: null };
+        return el;
+      };
+      reaction(document.getElementById('reaction-first'));
+      checks.domHub = typeof window.__slickDOM?.onRoots === 'function';
       apply();
       await settle();
+      checks.reactionAvatar = document.querySelectorAll('#reaction-first > .slick-wr > img.slick-wr__av').length === 1;
+      // Reactions Slack renders later must arrive through the shared hub, which
+      // debounces for 150ms, rather than through the renderer's initial scan.
+      const late = reaction(document.createElement('button'));
+      late.className = 'c-reaction';
+      late.id = 'reaction-late';
+      document.getElementById('reactions').append(late);
+      await new Promise(resolve => setTimeout(resolve, 400));
+      checks.lateReactionAvatar = late.querySelectorAll(':scope > .slick-wr > img.slick-wr__av').length === 1;
       checks.censored = document.getElementById('line-one').textContent === 'I applied for a *** today';
       checks.codeUntouched = document.getElementById('snippet').textContent === 'job()';
       checks.draftUntouched = document.getElementById('draft').textContent === 'my job draft';
@@ -195,12 +218,111 @@ app.whenReady().then(async () => {
       'Snappy',
       'CustomFonts',
       'Censorship',
+      'WhoReacted',
     ])
       assert.equal(pluginActivation[id], true, `activation ${id}`);
     assert.equal(
       pluginActivation.Nicknames,
       false,
       'no message sender rendered, so Nicknames stays on the legacy path',
+    );
+
+    // A window with no preload, driven with purpose-built descriptors, is where
+    // deferred installs can be steered: real timers, a real EventTarget, and the
+    // same CSP. The renderers below are the shape every legacy renderer has —
+    // a `window.__slick<Name>` guard, then a boot that runs later.
+    const BOOM_RENDERER = `(function () {
+      if (window.__slickDeferBoom) return;
+      window.__slickDeferBoom = { booted: false };
+      setTimeout(function () {
+        if (window.deferBoomBroken) throw new Error('boot exploded');
+        window.__slickDeferBoom.booted = true;
+      }, 20);
+    })();`;
+    const deferSource = bundle.source([
+      embed({
+        id: 'DeferLate',
+        renderer: `(function () {
+          window.__slickDeferLate = { booted: false };
+          setTimeout(function () {
+            window.__slickDeferLate.booted = true;
+          }, 20);
+        })();`,
+      }),
+      embed({ id: 'DeferBoom', renderer: BOOM_RENDERER, css: '.slick-defer-boom { color: red }' }),
+      embed({
+        id: 'DeferLifecycle',
+        renderer: `(function () {
+          window.__slickDeferLifecycle = { booted: false };
+          if (document.readyState === 'loading')
+            document.addEventListener('DOMContentLoaded', function () {
+              window.__slickDeferLifecycle.booted = true;
+            }, { once: true });
+          else window.__slickDeferLifecycle.booted = true;
+        })();`,
+      }),
+    ]);
+    const deferSession = session.fromPartition('slick-beta-defer');
+    await deferSession.protocol.handle('https', serve);
+    deferWindow = new BrowserWindow({
+      show: false,
+      webPreferences: { session: deferSession, sandbox: true, contextIsolation: true },
+    });
+    deferWindow.webContents.on('console-message', (_event, _level, message) => console.log(message));
+    // Outside the preload's `/client/` guard on purpose: this window installs the
+    // descriptors below and nothing else.
+    await deferWindow.loadURL('https://app.slack.com/plugins-defer');
+    const deferEvaluate = (code) => deferWindow.webContents.executeJavaScript(code, true);
+    await deferEvaluate(deferSource);
+    const defer = await deferEvaluate(`(async () => {
+      const runtime = window.__slickEarly;
+      const checks = {};
+      window.deferBoomBroken = true;
+      // This page finished loading, so DOMContentLoaded can no longer fire and
+      // the runtime would rightly refuse to wait for it. Borrowing the getter is
+      // the only way to reach that branch after load.
+      Object.defineProperty(document, 'readyState', { get: () => 'loading', configurable: true });
+      runtime.configure({ plugins: {
+        DeferLate: { enabled: true },
+        DeferBoom: { enabled: true },
+        DeferLifecycle: { enabled: true },
+      } });
+      delete document.readyState;
+      checks.lateScheduled = runtime.diagnostics().installed.DeferLate !== true;
+      checks.lateInstalling = runtime.diagnostics().installing.DeferLate === true;
+      checks.lifecycleHeld = runtime.diagnostics().installing.DeferLifecycle === true;
+      checks.boomCss = document.getElementById('slick-early-deferboom').textContent.includes('slick-defer-boom');
+      await new Promise(resolve => setTimeout(resolve, 120));
+      checks.lateBooted = window.__slickDeferLate.booted === true;
+      checks.lateInstalled = runtime.diagnostics().installed.DeferLate === true;
+      // The deferred throw: blamed on its own plugin, never installed, guard
+      // gone, and its early CSS handed back to the legacy path.
+      checks.boomFailed = runtime.diagnostics().installed.DeferBoom === false;
+      checks.boomBlamed = runtime.diagnostics().errors.some(
+        error => error.capability === 'DeferBoom' && error.message.includes('boot exploded'),
+      );
+      checks.boomGuardDropped = window.__slickDeferBoom === undefined;
+      checks.boomCssCleared = document.getElementById('slick-early-deferboom').textContent === '';
+      // The lifecycle listener is still the only thing holding the install.
+      checks.lifecycleWaiting = runtime.diagnostics().installed.DeferLifecycle !== true;
+      document.dispatchEvent(new Event('DOMContentLoaded'));
+      checks.lifecycleBooted = window.__slickDeferLifecycle.booted === true;
+      checks.lifecycleInstalled = runtime.diagnostics().installed.DeferLifecycle === true;
+      return checks;
+    })()`);
+    for (const [key, value] of Object.entries(defer)) assert.equal(value, true, `defer fixture: ${key}`);
+    const deferActivation = await deferEvaluate('({ ...__slickEarly.diagnostics().installed })');
+    assert.deepEqual(deferActivation, { DeferLate: true, DeferBoom: false, DeferLifecycle: true });
+    // Exactly what scripts/byoe/inject.js does for a plugin that did not
+    // activate early: run its legacy renderer in the page. It only does
+    // anything because the failed attempt gave the guard back.
+    await deferEvaluate('window.deferBoomBroken = false');
+    await deferEvaluate(BOOM_RENDERER);
+    await new Promise((resolve) => setTimeout(resolve, 120));
+    assert.equal(
+      await deferEvaluate('window.__slickDeferBoom.booted'),
+      true,
+      'the legacy renderer must install on the fallback path',
     );
 
     const secondSession = session.fromPartition('slick-beta-second');
@@ -236,13 +358,15 @@ app.whenReady().then(async () => {
     }
     console.log(
       'Electron CSP, early/lazy modules, draft restoration, resizing, attachments, settings, multiple composers, ' +
-        'idle checks and the ported text/DOM/style/network plugins passed.',
+        'idle checks, the ported text/DOM/style/network plugins, an embedded legacy renderer on the shared ' +
+        'DOM hub, and deferred installs falling back to legacy on failure passed.',
     );
   } catch (error) {
-    console.error(error);
+    console.error(error && error.stack ? error.stack : error);
     process.exitCode = 1;
   } finally {
     secondWindow?.destroy();
+    deferWindow?.destroy();
     pluginWindow?.destroy();
     win?.destroy();
     fs.rmSync(profile, { recursive: true, force: true });

@@ -8,6 +8,16 @@
 // The renderer runs immediately when `document` exists (document_start), so
 // fetch/WebSocket/iframe patches land before Slack captures them. In host-less
 // Node tests without a document, installation waits for `api.ready`.
+//
+// A renderer's install is rarely over when its IIFE returns — most of them defer
+// the real work (`if (!document.body) return setTimeout(boot, 200)`). So the
+// renderer body runs inside `api.defer`, with the page's schedulers shadowed
+// inside its scope: the plugin reports installed when its boot chain settles,
+// and a throw from a deferred callback is blamed on the plugin instead of
+// escaping as an uncaught page error. On failure the plugin hands itself back to
+// the legacy path, which means dropping the `window.__slick<Name>` guard the
+// dead attempt set — a legacy script returns at that guard and would otherwise
+// leave the plugin doing nothing at all.
 
 function sourceOf(value) {
   if (value == null) return '';
@@ -39,7 +49,7 @@ function pluginSettings() {
   } catch (e) {}
 }
 function cssText() {
-  if (!api.enabled) return '';
+  if (installFailed || !api.enabled) return '';
   ${
     cssIsFn
       ? `try {
@@ -56,16 +66,67 @@ function sync() {
   style.set(cssText());
   pluginSettings();
 }
+// The runtime's own page globals are never a renderer's guard.
+var RUNTIME_GLOBALS = {
+  __slickEarly: 1, __slickDOM: 1, __slickPluginSettings: 1, __slickDesktopEarly: 1,
+  __slickBetaSend: 1, __slickInternals: 1, __slickPluginInstallContext: 1,
+};
+function slickGlobals() {
+  var seen = {};
+  try {
+    var keys = Object.keys(window);
+    for (var i = 0; i < keys.length; i++) if (keys[i].indexOf('__slick') === 0) seen[keys[i]] = true;
+  } catch (e) {}
+  return seen;
+}
+// Only what this renderer's own body added, measured the moment it returns:
+// plugins install in sequence, so a later diff would sweep up the guards of
+// every renderer that ran after this one.
+function guardsAdded(before) {
+  var mine = {};
+  var seen = slickGlobals();
+  for (var key in seen) if (!before[key] && !RUNTIME_GLOBALS[key]) mine[key] = true;
+  return mine;
+}
+function dropGuards(mine) {
+  for (var key in mine) {
+    try {
+      delete window[key];
+    } catch (e) {}
+  }
+}
 function runRenderer() {
   pluginSettings();
-  try {
+  var before = slickGlobals();
+  var guards = {};
+  var zone = api.defer({
+    ready: function () {
+      api.installed(true);
+    },
+    failed: function () {
+      api.installed(false);
+      installFailed = true;
+      dropGuards(guards);
+      sync();
+    },
+  });
+  zone.run(function () {
+    var setTimeout = zone.setTimeout;
+    var clearTimeout = zone.clearTimeout;
+    var setInterval = zone.setInterval;
+    var clearInterval = zone.clearInterval;
+    var queueMicrotask = zone.queueMicrotask;
+    var requestAnimationFrame = zone.requestAnimationFrame;
+    var requestIdleCallback = zone.requestIdleCallback;
+    try {
 ${rendererText}
-    api.installed(true);
-  } catch (e) {
-    api.fail(e);
-  }
+    } finally {
+      guards = guardsAdded(before);
+    }
+  });
   sync();
 }
+var installFailed = false;
 var started = false;
 function tryStart() {
   sync();

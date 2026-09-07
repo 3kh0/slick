@@ -187,6 +187,12 @@ class FakeDocument {
   getElementById(id) {
     return this.documentElement.querySelectorAll(`#${id}`)[0] || null;
   }
+  querySelectorAll(selector) {
+    return this.documentElement.querySelectorAll(selector);
+  }
+  querySelector(selector) {
+    return this.documentElement.querySelectorAll(selector)[0] || null;
+  }
   addEventListener(type, fn) {
     if (!this.listeners.has(type)) this.listeners.set(type, []);
     this.listeners.get(type).push(fn);
@@ -245,9 +251,13 @@ function createWorld(extra = {}) {
   return {
     document,
     MutationObserver,
+    Node: { ELEMENT_NODE: 1, TEXT_NODE: 3 },
     NodeFilter: { SHOW_TEXT: 4, FILTER_ACCEPT: 1, FILTER_REJECT: 2 },
     queueMicrotask,
     setTimeout,
+    clearTimeout,
+    setInterval,
+    clearInterval,
     ...extra,
   };
 }

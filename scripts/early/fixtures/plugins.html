@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'none'; script-src 'nonce-fixture'; style-src 'unsafe-inline'; connect-src https://app.slack.com https://slack.com https://a.slackb.com"
+      content="default-src 'none'; script-src 'nonce-fixture'; style-src 'unsafe-inline'; img-src data:; connect-src https://app.slack.com https://slack.com https://a.slackb.com"
     />
     <style>
       .c-message__body {
@@ -26,6 +26,11 @@
       <div class="c-message__body">
         <code id="snippet">job()</code>
       </div>
+    </div>
+    <!-- WhoReacted paints into these: an embedded legacy renderer that only
+         works if the shared DOM hub reached the page with the early runtime. -->
+    <div id="reactions">
+      <button class="c-reaction" id="reaction-first" data-qa="reactji"><span class="c-reaction__count">1</span></button>
     </div>
     <div id="draft" contenteditable="true">my job draft</div>
     <div id="composer" class="p-message_input__input_container_unstyled">

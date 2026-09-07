@@ -85,7 +85,6 @@ function copyRuntime(resources, beta) {
   for (const file of [
     'scripts/byoe/inject.js',
     'scripts/byoe/diagnostics.js',
-    'scripts/byoe/dom-hub.js',
     'scripts/byoe/internals/index.js',
     'scripts/byoe/login-handoff.js',
     'scripts/byoe/perf.js',
@@ -98,6 +97,7 @@ function copyRuntime(resources, beta) {
     'scripts/byoe/watch.js',
     'scripts/byoe/window-events.js',
     'scripts/theme.js',
+    'runtime/dom-hub.js',
   ]) {
     const target = path.join(runtime, file);
     fs.mkdirSync(path.dirname(target), { recursive: true });
