@@ -1,6 +1,8 @@
 #Requires -Version 5.1
 [CmdletBinding()]
 param(
+  [Alias('-beta')]
+  [switch]$Beta,
   [switch]$Force,
   [switch]$RestoreHandler,
   [switch]$Uninstall,
@@ -240,17 +242,20 @@ if ($slackArch -eq 'arm64') {
   Write-Host "    note: x64 Slack on an ARM64 PC runs emulated (a drop in performance is expected)." -ForegroundColor Yellow
 }
 
-Stop-Slick
-if (Test-Path $Target) {
-  if ($Force) { Write-Host "    replacing existing install at $Target" }
-  else { Write-Host "    existing install found at $Target; updating it" }
-  Remove-Item $Target -Recurse -Force
-}
-
+$InstallTarget = $Target
 $FromSource = [bool]$Root -and (Test-Path (Join-Path $Root 'scripts\byoe\build-handoff-app-win.js'))
 
 if ($FromSource) {
   if (-not (Get-Command node -EA SilentlyContinue)) { Die "Node.js is required to build from source (get it from nodejs.org)" }
+
+  $betaArgs = @()
+  if ($Beta) {
+    Step "Preflighting beta runtime"
+    & node (Join-Path $Root 'scripts\release\beta.js') $Root --build
+    if ($LASTEXITCODE -ne 0) { Die "source beta build failed; existing install was not changed" }
+    $betaArgs = @('--beta')
+  }
+  $Target = Join-Path (Split-Path $InstallTarget) ('slick-stage-' + [Guid]::NewGuid().ToString('N'))
 
   $eVer = ((Get-Content (Join-Path $Root 'byoe\package.json') -Raw | ConvertFrom-Json).dependencies.electron -replace '[^\d.]', '')
   if (-not $eVer) { Die "could not get electron version from byoe/package.json" }
@@ -280,7 +285,7 @@ if ($FromSource) {
 
   Step "Building Slick (Build $build) at $Target"
   $out = & node (Join-Path $Root 'scripts\byoe\build-handoff-app-win.js') `
-    --target $Target --app-version "1.0.$build" --build-number "$build" --source-dist $dist --force 2>&1
+    --target $Target --app-version "1.0.$build" --build-number "$build" --source-dist $dist --force @betaArgs 2>&1
   if ($LASTEXITCODE -ne 0) { Write-Host $out; Die "build failed" }
 
   $icon = Join-Path $Root 'assets\icon.ico'
@@ -328,18 +333,53 @@ if ($FromSource) {
   $zip = Join-Path $env:TEMP "slick-$tag-win32-$releaseArch.zip"
   Get-File $asset.browser_download_url $zip "Downloading Slick $tag (win32-$releaseArch)"
   Assert-ReleaseAttestation $zip
-  $stage = Join-Path $env:TEMP ("slick-stage-" + [Guid]::NewGuid().ToString('N'))
+  $stage = Join-Path (Split-Path $InstallTarget) ("slick-stage-" + [Guid]::NewGuid().ToString('N'))
   Expand-Archive $zip -DestinationPath $stage -Force
   Remove-Item $zip -EA SilentlyContinue
   $exeItem = Get-ChildItem $stage -Recurse -Filter 'Slick.exe' -EA SilentlyContinue | Select-Object -First 1
   if (-not $exeItem) { Die "release zip did not contain Slick.exe" }
-  New-Item -ItemType Directory -Force (Split-Path $Target) | Out-Null
-  Move-Item $exeItem.Directory.FullName $Target
-  Remove-Item $stage -Recurse -Force -EA SilentlyContinue
+  $Target = $exeItem.Directory.FullName
 }
 
 $exe = Join-Path $Target 'Slick.exe'
 if (-not (Test-Path $exe)) { Die "install incomplete: $exe is missing" }
+
+$runtime = Join-Path $Target 'resources\slick'
+if ($Beta -and -not $FromSource) {
+  Step "Building and enabling staged beta runtime"
+  $betaScript = Join-Path $runtime 'scripts\release\beta.js'
+  if (-not (Test-Path $betaScript)) { Die "this release does not support --beta; install a newer release" }
+  $prevRunAsNode = $env:ELECTRON_RUN_AS_NODE
+  try {
+    $env:ELECTRON_RUN_AS_NODE = '1'
+    & $exe $betaScript $runtime --beta | Out-Host
+    if ($LASTEXITCODE -ne 0) { Die "beta build failed" }
+  } finally {
+    $env:ELECTRON_RUN_AS_NODE = $prevRunAsNode
+  }
+} elseif (-not $Beta) {
+  Remove-Item (Join-Path $runtime '.slick-beta') -Force -EA SilentlyContinue
+}
+
+Stop-Slick
+$backup = $InstallTarget + '.previous-' + [Guid]::NewGuid().ToString('N')
+$hadInstall = Test-Path $InstallTarget
+if ($hadInstall) { Move-Item $InstallTarget $backup }
+try {
+  New-Item -ItemType Directory -Force (Split-Path $InstallTarget) | Out-Null
+  Move-Item $Target $InstallTarget
+} catch {
+  if ($hadInstall) { Move-Item $backup $InstallTarget }
+  throw
+}
+if ($hadInstall) { Remove-Item $backup -Recurse -Force }
+if (-not $FromSource) { Remove-Item $stage -Recurse -Force -EA SilentlyContinue }
+$Target = $InstallTarget
+$exe = Join-Path $Target 'Slick.exe'
+if ($FromSource) {
+  if ($Beta) { [IO.File]::WriteAllText((Join-Path $Root '.slick-beta'), '') }
+  else { Remove-Item (Join-Path $Root '.slick-beta') -Force -EA SilentlyContinue }
+}
 
 $iconFile = if ($FromSource) { Join-Path $Root 'assets\icon.ico' } else { $null }
 
@@ -372,3 +412,10 @@ Write-Host "- First launch shows a sign-in screen (separate profile from officia
 Write-Host "- Configure at Preferences -> Slick."
 Write-Host "- Uninstall:  powershell -File install.ps1 -Uninstall   (add -Purge to also wipe your profile)"
 Write-Host "- Restore slack:// to official Slack:  powershell -File install.ps1 -RestoreHandler"
+
+if ($Beta) {
+  Write-Host "Early-injection beta installed. Automatic Slick updates are disabled."
+  Write-Host "Update by rerunning this installer with -Beta; omit -Beta to return to stable."
+} else {
+  Write-Host "Stable loader installed."
+}

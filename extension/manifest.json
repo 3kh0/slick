@@ -1,0 +1,19 @@
+{
+  "manifest_version": 3,
+  "name": "Slick Early (prototype)",
+  "version": "0.2.0",
+  "description": "Early Slack component, DOM and network hooks for the Slick plugin prototype.",
+  "permissions": ["storage"],
+  "host_permissions": ["https://raw.githubusercontent.com/ClearURLs/Rules/*"],
+  "background": { "service_worker": "rules.js" },
+  "options_ui": { "page": "options.html", "open_in_tab": true },
+  "content_scripts": [
+    { "matches": ["https://app.slack.com/client/*"], "js": ["main.js"], "run_at": "document_start", "world": "MAIN" },
+    {
+      "matches": ["https://app.slack.com/client/*"],
+      "js": ["bridge.js"],
+      "run_at": "document_start",
+      "world": "ISOLATED"
+    }
+  ]
+}

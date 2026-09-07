@@ -28,6 +28,12 @@
   function apply() {
     const settings = cfg();
     const path = String(settings.fontPath || '').trim();
+    // When the early runtime owns system fonts, only an uploaded file remains here.
+    if (window.__slickDesktopEarly?.active?.CustomFonts && !path) {
+      const existing = document.getElementById('slick-custom-font-style');
+      if (existing) existing.textContent = '';
+      return;
+    }
     const family = path ? 'SlickCustomFont' : String(settings.fontFamily || '').trim();
     let style = document.getElementById('slick-custom-font-style');
     if (!style) {

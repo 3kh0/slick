@@ -212,6 +212,7 @@ function progressHtml() {
 
 function create({ version, build, profile }) {
   const ua = 'Slick/' + version;
+  const beta = fs.existsSync(path.resolve(__dirname, '..', '..', '.slick-beta'));
 
   function statePath() {
     return path.join(profile, 'slick', 'update-check.json');
@@ -632,7 +633,7 @@ function create({ version, build, profile }) {
   }
 
   async function checkForUpdates() {
-    if (!build) return;
+    if (beta || !build) return;
     const now = Date.now();
     const state = readState();
     if (state.lastCheckedAt && now - state.lastCheckedAt < CINT) return;
@@ -657,6 +658,22 @@ function create({ version, build, profile }) {
   }
 
   async function manualCheckForUpdates({ quiet = false } = {}) {
+    if (beta) {
+      const message =
+        'Beta installations are managed manually. Rerun the installer with --beta to update Slick; automatic updates are disabled.';
+      if (!quiet) {
+        dialog
+          .showMessageBox({
+            type: 'info',
+            title: 'Slick beta updates',
+            message: 'Beta updates are managed manually',
+            detail: message,
+            buttons: ['OK'],
+          })
+          .catch(() => {});
+      }
+      return { state: 'unsupported', message };
+    }
     if (!build) {
       if (!quiet) {
         dialog
@@ -714,7 +731,7 @@ function create({ version, build, profile }) {
   }
 
   function scheduleUpdateChecks() {
-    if (!build) return;
+    if (beta || !build) return;
     const run = () => {
       checkForUpdates();
       setTimeout(run, CINT);

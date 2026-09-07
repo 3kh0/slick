@@ -27,7 +27,7 @@ const DEFAULTS = {
 function usage() {
   console.error(`Usage:
   node scripts/byoe/build-handoff-linux.js [--target <dir>] [--source-dist <electron/dist>]
-                                           [--app-version <x.y.z>] [--build-number <n>] [--force]
+                                           [--app-version <x.y.z>] [--build-number <n>] [--force] [--beta]
 
 Defaults:
   --target       ${DEFAULTS.target}
@@ -43,6 +43,7 @@ function parseArgs(argv) {
     else if (argv[i] === '--source-dist') o.sourceDist = argv[++i] || usage();
     else if (argv[i] === '--app-version') o.appVersion = argv[++i] || usage();
     else if (argv[i] === '--build-number') o.buildNumber = argv[++i] || usage();
+    else if (argv[i] === '--beta') o.beta = true;
     else if (argv[i] === '--force') o.force = true;
     else usage();
   }
@@ -69,7 +70,7 @@ function packAsar(files, outPath) {
   fs.writeFileSync(outPath, Buffer.concat([head, ...blobs]));
 }
 
-function copyRuntime(resources) {
+function copyRuntime(resources, beta) {
   const runtime = path.join(resources, 'slick');
   fs.rmSync(runtime, { recursive: true, force: true });
   for (const file of [
@@ -93,6 +94,7 @@ function copyRuntime(resources) {
     fs.copyFileSync(path.join(ROOT, file), target);
   }
   fs.cpSync(path.join(ROOT, 'plugins'), path.join(runtime, 'plugins'), { recursive: true });
+  require('../release/beta').copyPayload(ROOT, runtime, beta);
   fs.cpSync(path.join(ROOT, 'themes'), path.join(runtime, 'themes'), {
     recursive: true,
     filter: (source) => path.basename(source) !== '.active',
@@ -363,7 +365,7 @@ function main() {
   const defaultTheme = fs.existsSync(activeThemeFile) ? fs.readFileSync(activeThemeFile, 'utf8').trim() : '';
   fs.cpSync(electron.dist, target, { recursive: true });
 
-  copyRuntime(resources);
+  copyRuntime(resources, opts.beta);
   seedSettings(profile);
   const files = [
     {

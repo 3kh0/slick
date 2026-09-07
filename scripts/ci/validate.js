@@ -17,7 +17,10 @@ const BUILD_SCRIPTS = [
 const injectFile = path.join(ROOT, 'scripts/byoe/inject.js');
 const injectSource = fs.readFileSync(injectFile, 'utf8');
 for (const buildScript of BUILD_SCRIPTS) {
-  const buildSource = fs.readFileSync(buildScript, 'utf8');
+  let buildSource = fs.readFileSync(buildScript, 'utf8');
+  if (buildSource.includes("require('../release/beta').copyPayload")) {
+    buildSource += fs.readFileSync(path.join(ROOT, 'scripts/release/beta.js'), 'utf8');
+  }
   const buildScriptRel = path.relative(ROOT, buildScript).replace(/\\/g, '/');
   for (const match of injectSource.matchAll(/require\(['"](\.\.?\/[^'"]+)['"]\)/g)) {
     const dependency = path
@@ -93,6 +96,8 @@ for (const d of dirs) {
       for (const cap of m.capabilities) if (!KNOWN.includes(cap)) fail(`plugins/${d}`, `unknown capability "${cap}"`);
   }
   if (m.main && typeof m.main !== 'function') fail(`plugins/${d}`, '"main" must be a function');
+  if (m.earlyCoexist !== undefined && typeof m.earlyCoexist !== 'boolean')
+    fail(`plugins/${d}`, '"earlyCoexist" must be a boolean');
   if (!m.main && !m.css && !m.renderer) fail(`plugins/${d}`, 'exports none of main/css/renderer');
 
   if (m.settings !== undefined && (typeof m.settings !== 'object' || Array.isArray(m.settings) || !m.settings)) {

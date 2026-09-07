@@ -66,6 +66,10 @@
       '#slick-panel-overlay .slick-customcss-editor:focus{outline:2px solid rgba(29,155,209,.5);outline-offset:1px}',
       '#slick-panel-overlay .slick-actions{display:flex;align-items:center;gap:12px;margin-top:10px}',
       '#slick-panel-overlay .slick-actions-status{font-size:12px;opacity:.65}',
+      '#slick-panel-overlay .slick-beta-grid{display:grid;grid-template-columns:minmax(90px,auto) 1fr;gap:5px 14px;margin:10px 0 14px;font-size:13px}',
+      '#slick-panel-overlay .slick-beta-grid dt{font-weight:600}',
+      '#slick-panel-overlay .slick-beta-grid dd{margin:0;min-width:0;word-break:break-word}',
+      '#slick-panel-overlay .slick-beta-plugin-list{margin:8px 0 0;padding-left:20px;font-size:13px;line-height:1.5}',
     ].join('\n');
     document.head.appendChild(st);
   }
@@ -299,6 +303,72 @@
         '</span>' +
         '</div>';
 
+  function betaSummary(beta) {
+    if (!beta) return '';
+    const plugins = Object.entries(beta.plugins || {})
+      .filter(([, value]) => value.status !== 'disabled')
+      .map(([name, value]) => `${name}: ${value.status}${value.reason ? ` (${value.reason})` : ''}`);
+    return [
+      'Slick early-injection beta report',
+      `Opt-in: ${beta.optedIn ? 'installed' : 'not installed'}`,
+      `Runtime: ${beta.runtimeRevision || 'unavailable'}`,
+      `Environment: ${beta.platform || 'unknown'} ${beta.architecture || 'unknown'}; Electron ${beta.electron || 'unknown'}; Chrome ${beta.chrome || 'unknown'}`,
+      `Activation: ${beta.state || 'unknown'}${beta.reason ? ` (${beta.reason})` : ''}; late=${beta.late === true}; errors=${Number(beta.errorCount) || 0}`,
+      ...plugins,
+      'Updates: rerun the source installer with --beta. Rollback: rerun it without --beta.',
+    ].join('\n');
+  }
+
+  function betaStatusMarkup(beta) {
+    if (!beta) return '';
+    const plugins = Object.entries(beta.plugins || {})
+      .filter(([, value]) => value.status !== 'disabled')
+      .map(
+        ([name, value]) =>
+          '<li><strong>' +
+          esc(name) +
+          ':</strong> ' +
+          esc(value.status) +
+          (value.reason ? ' — ' + esc(value.reason) : '') +
+          '</li>',
+      )
+      .join('');
+    return (
+      '<dl class="slick-beta-grid">' +
+      '<dt>Opt-in</dt><dd>' +
+      (beta.optedIn ? 'Installed' : 'Not installed') +
+      '</dd><dt>Runtime</dt><dd><code>' +
+      esc(beta.runtimeRevision || 'unavailable') +
+      '</code></dd><dt>Environment</dt><dd>' +
+      esc(
+        `${beta.platform || 'unknown'} ${beta.architecture || 'unknown'} · Electron ${beta.electron || 'unknown'} · Chrome ${beta.chrome || 'unknown'}`,
+      ) +
+      '</dd><dt>Activation</dt><dd>' +
+      esc(beta.state || 'unknown') +
+      (beta.reason ? ' · ' + esc(beta.reason) : '') +
+      (beta.late ? ' · late injection' : '') +
+      (beta.errorCount ? ` · ${beta.errorCount} error(s)` : '') +
+      '</dd></dl>' +
+      (plugins ? '<ul class="slick-beta-plugin-list">' + plugins + '</ul>' : '')
+    );
+  }
+
+  const betaSection = (beta) =>
+    !beta
+      ? ''
+      : '<div class="c-legend slick-legend" style="margin-top:24px">Early-injection beta status</div>' +
+        '<p class="slick-intro">Opt-in and activation are separate. “legacy” means that plugin safely fell back for this window.</p>' +
+        '<div id="slick-beta-status">' +
+        betaStatusMarkup(beta) +
+        '</div><div class="slick-actions"><button id="slick-copy-beta-report" class="c-button c-button--outline c-button--medium" type="button">Copy beta report</button>' +
+        '<span id="slick-beta-copy-status" class="slick-actions-status" aria-live="polite"></span></div>' +
+        '<p class="slick-intro" style="margin-top:10px">Update by rerunning the source installer with <code>--beta</code>. Roll back by rerunning it without <code>--beta</code>.</p>';
+
+  function refreshBetaStatus() {
+    const target = $('slick-beta-status');
+    if (target) target.innerHTML = betaStatusMarkup(S.beta);
+  }
+
   const rows = (items, render, dir) =>
     items.length
       ? items.map(render).join('')
@@ -337,6 +407,7 @@
       '<div id="slick-plugin-list">' +
       rows(S.plugins, pluginRow, 'plugins') +
       '</div>' +
+      betaSection(S.beta) +
       updateSection(S.update) +
       '<div class="c-legend slick-legend" style="margin-top:24px">Performance diagnostics</div>' +
       '<p class="slick-intro">Save a redacted local report with startup, responsiveness, CPU, memory, GPU, and per-plugin DOM metrics. Nothing is uploaded.</p>' +
@@ -444,6 +515,19 @@
       });
     }
 
+    const betaCopy = ov.querySelector('#slick-copy-beta-report');
+    if (betaCopy) {
+      betaCopy.addEventListener('click', async () => {
+        const copyStatus = ov.querySelector('#slick-beta-copy-status');
+        try {
+          await navigator.clipboard.writeText(betaSummary(S.beta));
+          if (copyStatus) copyStatus.textContent = 'Copied.';
+        } catch {
+          if (copyStatus) copyStatus.textContent = 'Copy failed; use DevTools diagnostics.';
+        }
+      });
+    }
+
     ov.querySelector('#slick-restart').addEventListener('click', () => ctl({ op: 'restart' }));
     ov.querySelector('#slick-export-diagnostics').addEventListener('click', () => {
       const status = ov.querySelector('#slick-diagnostics-status');
@@ -539,7 +623,10 @@
     const ov = $('slick-panel-overlay');
     if (ov && ov.style.display === 'block') positionOverlay();
   });
-  window.addEventListener('slick:settings', refreshConfigFields);
+  window.addEventListener('slick:settings', () => {
+    refreshConfigFields();
+    refreshBetaStatus();
+  });
   window.addEventListener('slick:update-status', onUpdateStatus);
 
   injectTab();

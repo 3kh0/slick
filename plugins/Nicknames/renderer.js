@@ -100,6 +100,7 @@
     if (nick) nicknames[id] = nick;
     else delete nicknames[id];
     write();
+    window.__slickDesktopEarly?.nickname(id, nick);
     applyAll();
   }
 
@@ -249,6 +250,7 @@
   }
 
   function applyName(el) {
+    if (window.__slickDesktopEarly?.active.Nicknames) return;
     const id = userIdOf(el);
     if (!id) return;
     const node = nameTextNode(el);

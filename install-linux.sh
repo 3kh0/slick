@@ -19,6 +19,7 @@ SLACK_PATHS=(
   "/opt/slack"
   "$HOME/.local/share/slack"
 )
+BETA=0
 NO_LAUNCH=0
 FROM_RELEASE=0
 UNINSTALL=0
@@ -108,6 +109,11 @@ do_uninstall() {
 
 while [ $# -gt 0 ]; do
   case "$1" in
+  --help|-h)
+    echo "Usage: bash install-linux.sh [--beta] [--no-launch] [--from-release] [--uninstall] [--restore-handler]"
+    echo "Reinstall without --beta to return to stable while retaining settings."
+    exit 0 ;;
+  --beta) BETA=1 ;;
   --no-launch) NO_LAUNCH=1 ;;
   --from-release) FROM_RELEASE=1 ;;
   --uninstall) UNINSTALL=1 ;;
@@ -226,24 +232,35 @@ if [ "$FROM_RELEASE" -eq 1 ]; then
   echo "    Slick $TAG for linux-$ARCH it is!"
 
   step "Downloading Slick $TAG"
-  TMP="$(mktemp -d /tmp/slick-install.XXXXXX)"
+  mkdir -p "$(dirname "$TARGET")"
+  TMP="$(mktemp -d "$(dirname "$TARGET")/.slick-install.XXXXXX")"
   trap 'rm -rf "$TMP"' EXIT
   curl --fail --location --progress-bar -o "$TMP/Slick.tar.gz" "$URL"
 
   verify_release_artifact "$TMP/Slick.tar.gz"
 
-  step "Installing $TARGET"
-  mkdir -p "$(dirname "$TARGET")"
-  rm -rf "$TARGET"
   tar -xzf "$TMP/Slick.tar.gz" -C "$TMP"
-  [ -d "$TMP/Slick" ] || die "release tarball did not contain Slick/"
-  mv "$TMP/Slick" "$TARGET"
-  [ -x "$TARGET/electron" ] || die "release tarball missing $TARGET/electron"
-  write_desktop_file "$TARGET"
+  [ -x "$TMP/Slick/electron" ] || die "release tarball did not contain Slick/electron"
+  RUNTIME="$TMP/Slick/resources/slick"
+  if [ "$BETA" -eq 1 ]; then
+    step "Building and enabling staged beta runtime"
+    [ -f "$RUNTIME/scripts/release/beta.js" ] || die "this release does not support --beta; install a newer release"
+    ELECTRON_RUN_AS_NODE=1 "$TMP/Slick/electron" "$RUNTIME/scripts/release/beta.js" "$RUNTIME" --beta
+  else
+    rm -f "$RUNTIME/.slick-beta"
+  fi
+  STAGED_APP="$TMP/Slick"
 else
   command -v node >/dev/null 2>&1 || die "Node.js 18+ is required."
   node -e 'process.exit(parseInt(process.versions.node, 10) >= 18 ? 0 : 1)' 2>/dev/null ||
     die "Node.js 18+ is required (found: $(node -v 2>/dev/null || echo none))."
+
+  BETA_ARGS=()
+  if [ "$BETA" -eq 1 ]; then
+    step "Preflighting beta runtime"
+    node "$ROOT/scripts/release/beta.js" "$ROOT" --build
+    BETA_ARGS=(--beta)
+  fi
 
   EVER="$(slack_electron_version "$SLACK" || true)"
   [ -n "$EVER" ] || die "Could not read Slack's Electron version from $SLACK."
@@ -292,10 +309,32 @@ else
   BUILD="${BUILD:-0}"
   VERSION="1.0.$BUILD"
 
-  step "Building $TARGET (Build $BUILD)"
   mkdir -p "$(dirname "$TARGET")"
-  node "$ROOT/scripts/byoe/build-handoff-linux.js" --target "$TARGET" \
-    --app-version "$VERSION" --build-number "$BUILD" --force >/dev/null
+  TMP="$(mktemp -d "$(dirname "$TARGET")/.slick-install.XXXXXX")"
+  trap 'rm -rf "$TMP"' EXIT
+  STAGED_APP="$TMP/Slick"
+  step "Building $TARGET (Build $BUILD)"
+  node "$ROOT/scripts/byoe/build-handoff-linux.js" --target "$STAGED_APP" \
+    --app-version "$VERSION" --build-number "$BUILD" --force ${BETA_ARGS[@]+"${BETA_ARGS[@]}"} >/dev/null
+fi
+
+step "Installing $TARGET"
+mkdir -p "$(dirname "$TARGET")"
+BACKUP="$(mktemp -d "$(dirname "$TARGET")/.slick-previous.XXXXXX")"
+if [ -e "$TARGET" ]; then mv "$TARGET" "$BACKUP/app"; fi
+if ! mv "$STAGED_APP" "$TARGET"; then
+  [ ! -e "$BACKUP/app" ] || mv "$BACKUP/app" "$TARGET"
+  die "could not install staged app; previous install restored"
+fi
+rm -rf "$BACKUP"
+write_desktop_file "$TARGET"
+
+if [ "$CLONED" -eq 1 ]; then
+  if [ "$BETA" -eq 1 ] && [ "$FROM_RELEASE" -eq 0 ]; then
+    touch "$ROOT/.slick-beta"
+  elif [ "$BETA" -eq 0 ]; then
+    rm -f "$ROOT/.slick-beta"
+  fi
 fi
 
 step "Installing desktop integration"
@@ -345,3 +384,10 @@ Things to know:
 - Uninstall: ./install-linux.sh --uninstall (or curl -fsSL $RAW_BASE/install-linux.sh | bash -s -- --uninstall)
 - Make slack:// open the official Slack again: ./install-linux.sh --restore-handler
 EOF
+
+if [ "$BETA" -eq 1 ]; then
+  echo "Early-injection beta installed. Automatic Slick updates are disabled."
+  echo "Update by rerunning this installer with --beta; omit --beta to return to stable."
+else
+  echo "Stable loader installed."
+fi

@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'nonce-fixture'; style-src 'unsafe-inline'"
+    />
+    <style>
+      .p-message_input__input_container_unstyled {
+        width: 600px;
+      }
+      .ql-editor {
+        font: 16px/20px monospace;
+        padding: 0;
+        white-space: pre-wrap;
+        overflow-wrap: break-word;
+      }
+      .ql-editor p {
+        margin: 0;
+      }
+    </style>
+    <script nonce="fixture">
+      window.fixture = { early: !!window.__slickEarly, evalBlocked: false };
+      try {
+        new Function('return 1')();
+      } catch {
+        fixture.evalBlocked = true;
+      }
+      window.rspackChunkwebapp = [];
+      const modules = {},
+        cache = {};
+      function requireModule(id) {
+        if (cache[id]) return cache[id].exports;
+        const m = (cache[id] = { exports: {} });
+        modules[id](m, m.exports, requireModule);
+        return m.exports;
+      }
+      const parentPush = rspackChunkwebapp.push.bind(rspackChunkwebapp);
+      rspackChunkwebapp.push = (chunk) => {
+        Object.assign(modules, chunk[1]);
+        return parentPush(chunk);
+      };
+      rspackChunkwebapp.push([
+        [1],
+        {
+          initial(m) {
+            m.exports = 'initial';
+          },
+        },
+      ]);
+      fixture.initial = requireModule('initial');
+      window.loadLazyFixture = () => {
+        rspackChunkwebapp.push([
+          [2],
+          {
+            lazy(m) {
+              m.exports = 'lazy';
+            },
+          },
+        ]);
+        return requireModule('lazy');
+      };
+    </script>
+  </head>
+  <body>
+    <div id="composer" class="p-message_input__input_container_unstyled">
+      <div class="c-basic_container__body">
+        <div class="c-texty_input_unstyled__container">
+          <div class="ql-editor" role="textbox" contenteditable="true">
+            <p>Draft line one</p>
+            <p>Draft line two</p>
+            <p>Draft line three</p>
+          </div>
+        </div>
+        <div class="c-wysiwyg_container__toolbar_buttons">Toolbar</div>
+      </div>
+    </div>
+  </body>
+</html>
