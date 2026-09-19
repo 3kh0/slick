@@ -348,6 +348,31 @@ test('settings manifest carries redacted beta activation status', () => {
   assert.match(fs.readFileSync(path.join(__dirname, '../byoe/settings-renderer.js'), 'utf8'), /Copy beta report/);
 });
 
+test('custom CSS opens in Monaco and is kept in a final document style', () => {
+  let opened = false;
+  assert.equal(
+    settings.handleControl('https://slick.control/?op=customcss-open', {
+      catalog: { plugins: [], themes: [] },
+      onOpenCustomCss: () => {
+        opened = true;
+      },
+    }),
+    true,
+  );
+  assert.equal(opened, true);
+
+  const editorWindow = require('../byoe/custom-css-window');
+  assert.match(editorWindow.editorHtml(), /monaco-editor@0\.52\.2/);
+  const renderer = fs.readFileSync(path.join(__dirname, '../byoe/settings-renderer.js'), 'utf8');
+  assert.match(renderer, /ctl\(\{ op: 'customcss-open' \}\)/);
+  assert.doesNotMatch(renderer, /<textarea id="slick-customcss"/);
+
+  const inject = fs.readFileSync(path.join(__dirname, '../byoe/inject.js'), 'utf8');
+  assert.match(inject, /style\.id = id/);
+  assert.match(inject, /style !== head\.lastElementChild/);
+  assert.match(inject, /refreshCustomCss: true/);
+});
+
 test('active composer keeps narrow legacy hide rules without duplicating layout', () => {
   const plugin = require('../../plugins/SlimMessageBox');
   const css = plugin.css({ discordLayout: false, hideBroadcast: true });

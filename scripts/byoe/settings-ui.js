@@ -139,6 +139,7 @@ function handleControl(
     onPluginSetting,
     onFileSetting,
     onCustomCss,
+    onOpenCustomCss,
     onDiagnostics,
     onUpdateCheck,
   },
@@ -225,6 +226,8 @@ function handleControl(
         }
       }
     }
+  } else if (op === 'customcss-open') {
+    if (onOpenCustomCss) onOpenCustomCss();
   } else if (op === 'diagnostics') {
     if (onDiagnostics) {
       Promise.resolve(onDiagnostics()).catch((e) =>

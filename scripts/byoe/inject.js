@@ -53,6 +53,7 @@ const { allPluginSettings, buildCatalog, loadPlugins, mergeSettings } = require(
 const diagnostics = require('./diagnostics');
 const internals = require('./internals');
 const settings = require('./settings-ui');
+const { createCustomCssWindow } = require('./custom-css-window');
 const { buildSpec } = require('../theme');
 const { createWatcher } = require('./watch');
 const { coalesceWindowHangEvents } = require('./window-events');
@@ -101,6 +102,14 @@ const runtime = {
   theme: process.env.SLICK_THEME || settings.readActiveTheme(ACTIVE_THEME_FILE) || '',
   customCss: settings.readCustomCss(CUSTOM_CSS_FILE),
 };
+const customCssEditor = createCustomCssWindow({
+  electron,
+  read: () => runtime.customCss,
+  write: (css) => {
+    settings.writeCustomCss(CUSTOM_CSS_FILE, css);
+    setCustomCss(css);
+  },
+});
 let desktopEarly;
 try {
   desktopEarly = require('../early/desktop').register({
@@ -273,8 +282,32 @@ function pluginCss(early = {}) {
 }
 
 function fullCss(early) {
-  const customActive = runtime.theme === settings.CUSTOM_THEME_ID;
-  return [theme.css, pluginCss(early), customActive ? runtime.customCss : ''].filter(Boolean).join('\n');
+  return [theme.css, pluginCss(early)].filter(Boolean).join('\n');
+}
+
+function applyCustomCss(wc) {
+  const css = runtime.theme === settings.CUSTOM_THEME_ID ? runtime.customCss : '';
+  return wc.mainFrame.executeJavaScript(
+    `(() => {
+      const id = 'slick-custom-css';
+      let style = document.getElementById(id);
+      if (!style) {
+        style = document.createElement('style');
+        style.id = id;
+        (document.head || document.documentElement).appendChild(style);
+        const observer = new MutationObserver(() => {
+          const head = document.head;
+          if (head && style.parentNode === head && style !== head.lastElementChild) head.appendChild(style);
+        });
+        if (document.head) observer.observe(document.head, { childList: true });
+        window.__slickCustomCssObserver = observer;
+      }
+      style.textContent = ${JSON.stringify(css)};
+      if (document.head && style.parentNode !== document.head) document.head.appendChild(style);
+      else if (document.head && style !== document.head.lastElementChild) document.head.appendChild(style);
+    })()`,
+    true,
+  );
 }
 
 const armedSessions = new WeakSet();
@@ -301,6 +334,7 @@ function armBlocking(sess) {
         onEnabled: setEnabled,
         onPluginSetting: (_dir, _key, _value, all) => setPluginSettings(all),
         onCustomCss: setCustomCss,
+        onOpenCustomCss: customCssEditor.open,
         onDiagnostics: () => diagnosticSession.exportBundle(),
         onUpdateCheck: runUpdateCheck,
         onFileSetting: ({ def }) => {
@@ -802,7 +836,7 @@ function pushRuntimeSettings(wc, beta) {
 }
 
 let perfApplied = false;
-async function doApplyTo(wc, { initialize = false, refreshCss = true } = {}) {
+async function doApplyTo(wc, { initialize = false, refreshCss = true, refreshCustomCss = refreshCss } = {}) {
   if (wc.isDestroyed()) return;
   const document = documents.get(wc) || { initialized: false };
   if (!documents.has(wc)) documents.set(wc, document);
@@ -871,6 +905,13 @@ async function doApplyTo(wc, { initialize = false, refreshCss = true } = {}) {
       try {
         await wc.removeInsertedCSS(key);
       } catch {}
+    }
+  }
+  if (shouldInitialize || refreshCustomCss) {
+    try {
+      await applyCustomCss(wc);
+    } catch (e) {
+      console.error('[slick-byoe] custom CSS injection failed:', e.message);
     }
   }
   try {
@@ -1083,7 +1124,8 @@ function setCustomCss(css) {
   css = css || '';
   if (css === runtime.customCss) return;
   runtime.customCss = css;
-  applyAllLive({ refreshCss: true });
+  customCssEditor.update(css);
+  applyAllLive({ refreshCss: false, refreshCustomCss: true });
 }
 
 function watchRuntimeFile(file, read, update) {
