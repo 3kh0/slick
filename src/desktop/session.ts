@@ -25,24 +25,32 @@ export function appUrl(): string {
   return process.env.SLICK_APP_URL || 'slick://app/slick.js';
 }
 
-/** `resourcesPath` must be Slick's own, captured before patch.ts spoofs it. */
-export function setupSession(slickResourcesPath: string) {
-  const bundle = path.join(slickResourcesPath, 'slick.js');
+/**
+ * Serve slick.js over slick://.
+ *
+ * `dirs` are searched in order. A packaged build finds it in Slick's own
+ * resources (captured before patch.ts spoofs `resourcesPath` to Slack's); an
+ * unpackaged dev run finds it next to main.js, because there `resourcesPath`
+ * belongs to the Electron binary rather than to us.
+ */
+export function setupSession(dirs: string[]) {
+  const candidates = dirs.map((dir) => path.join(dir, 'slick.js'));
 
   session.defaultSession.protocol.handle(SLICK_SCHEME, (request) => {
     const file = new URL(request.url).pathname.replace(/^\//, '');
     if (file !== 'app/slick.js' && file !== 'slick.js') {
       return new Response('Not found', { status: 404 });
     }
-    try {
-      return new Response(readFileSync(bundle), {
-        headers: { 'Content-Type': 'application/javascript' },
-      });
-    } catch (error) {
-      console.error('[slick] slick.js missing from resources:', error);
-      return new Response('console.error("[slick] bundle not found")', {
-        headers: { 'Content-Type': 'application/javascript' },
-      });
+    for (const bundle of candidates) {
+      try {
+        return new Response(readFileSync(bundle), {
+          headers: { 'Content-Type': 'application/javascript' },
+        });
+      } catch {}
     }
+    console.error(`[slick] slick.js not found in any of: ${candidates.join(', ')}`);
+    return new Response('console.error("[slick] bundle not found")', {
+      headers: { 'Content-Type': 'application/javascript' },
+    });
   });
 }

@@ -77,7 +77,7 @@ function startSlack(asar: string) {
   applyPatches(asar, path.join(__dirname, 'preload.js'));
   setupBridge();
 
-  app.whenReady().then(() => setupSession(slickResourcesPath));
+  app.whenReady().then(() => setupSession([slickResourcesPath, __dirname]));
 
   process.on('uncaughtException', (error) => console.error('[slick] uncaught exception:', error));
   process.on('unhandledRejection', (reason) => console.error('[slick] unhandled rejection:', reason));
