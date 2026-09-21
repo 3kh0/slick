@@ -38,17 +38,43 @@ compiles, runs, and silently does nothing.
 
 ### Caveat: the slice is empty until the client really loads a conversation
 
-In unattended runs of `npm run desktop:dev` (window opened but never focused),
-`state.messages` stayed empty for the whole session, and so did `channels`,
-`members` and `view` -- while `experiments` (1857), `channelCursors` (1076) and
-`channelLatests` (1076) filled normally. `channelHistory[channelId].slices`
-carries only `{ timestamps, start, end }`, never bodies.
+Measured again on **Slack 4.52.162** against a real signed-in session, from the
+packaged build (2026-09-21):
+
+| slice            | entries |
+| ---------------- | ------- |
+| `messages`       | **0**   |
+| `channels`       | 0       |
+| `members`        | 0       |
+| `view`           | 0       |
+| `channelHistory` | 1,929   |
+| `experiments`    | 1,859   |
+
+The `messages` key **exists** (it is one of the 412 slices) and stays empty
+while the client is sitting on the activity feed with no conversation open. Of
+293 non-empty slices, exactly one is message-shaped -- `customStatus`, with a
+single entry -- so nothing else is quietly holding message bodies instead.
 
 So an empty `messages` does **not** mean Slack stopped using it; it means that
-client never got far enough to load one. Verify message-shaped work with a
-focused window on an open channel, and treat "the slice is empty" as a probe
-problem until proven otherwise. An earlier pass here concluded message bodies
-were unreachable, purely because the probe read an unpopulated store.
+client never opened a conversation. Verify message-shaped work with a focused
+window on an open channel, and treat "the slice is empty" as a probe problem
+until proven otherwise. An earlier pass here concluded message bodies were
+unreachable, purely because the probe read an unpopulated store.
+
+**Still unconfirmed:** that `messages[channelId][ts]` populates on this exact
+build. Taut reads it and pins 4.52.155, and the key is present, but no run of
+Slick has yet seen it filled. Opening any channel and re-reading the slice
+settles it.
+
+### The activity feed does not read `messages`
+
+`MessageWrapper`, `Blocks` and `ActivityItem` were all observed rendering while
+`state.messages` was still empty: the activity feed carries its own message
+payload. A `patchSlice('messages')` therefore does **not** cover it, and
+anything that rewrites message content needs an `ActivityItem` patch as well.
+Censorship was wrong about this until the run above caught it.
+
+Search is the same story, through `MessageListItem`.
 
 ## Finding a name
 
@@ -75,6 +101,36 @@ Prefer a **filter** over a name for anything load-bearing:
 `patchComponent({ filter: (c) => 'memberId' in (c.defaultProps ?? {}) }, ...)`
 survives a rename; `patchComponent('RimetoMemberProfileOverflowMenu', ...)`
 does not.
+
+## Confirmed rendering on Slack 4.52.162
+
+A packaged run against a real signed-in session, sitting on the activity feed,
+saw these actually render. `getRenderedComponent` only knows what has rendered,
+so this is evidence of presence, never of absence.
+
+| name                                                               | used by                                 |
+| ------------------------------------------------------------------ | --------------------------------------- |
+| `Reaction`, `ReactionAnimation`                                    | WhoReacted                              |
+| `ReactionBar`, `ReactionAddButton`                                 | CopyReacted                             |
+| `BroadcastPreamble`                                                | UserPronouns                            |
+| `MessageWrapper`, `ActivityItem`, `Blocks`                         | ShowRealUser, MessageLogger, Censorship |
+| `BaseMessageSender`                                                | HcaStatus                               |
+| `MessageBackground`                                                | StreamerMode                            |
+| `TextyButtons`                                                     | SlimMessageBox                          |
+| `MessagePaneInput`                                                 | SilentTyping, `onMessageSendDelta`      |
+| `HelpButton`                                                       | StreamerMode's toggle                   |
+| `MenuTrigger`, `Button`, `Tooltip`, `Label`, `ConnectedBaseAvatar` | the elements registry                   |
+
+Not yet seen rendering, because that run never opened a thread, menu, modal,
+search or the composer's edit mode: `ThreadSenderAndTimestampGeneric`,
+`ThreadRootGeneric`, `RimetoMemberProfileOverflowMenu`, `MenuFromTemplate`,
+`MessageListItem`, `InputContainer`, `BaseEditMessage`, `EditAudioButton`,
+`SvgIcon`, `ConfirmationModal`, `FormTextInput`, `InlineAlert`,
+`MrkdwnElement`. These are the names to re-check first if a plugin looks inert.
+
+Thunk creators confirmed resolving by name: `ensureMembersArePresent`
+(members batching), `addAndUploadPendingFile` (`files.upload`), `openModal`
+(the modal API), `showNotification`.
 
 ## Names in use
 
