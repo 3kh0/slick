@@ -78,6 +78,10 @@ export async function bundleRenderer(entry: PluginEntry, debug: boolean): Promis
     sourcemap: false,
     jsx: 'transform',
     plugins: [slickGlobalShim],
+    // Assets are inlined as data URIs rather than fetched. Slick is
+    // embedded-only: a plugin reaching the network for an image is both a
+    // privacy leak and a thing that breaks offline.
+    loader: { '.gif': 'dataurl', '.png': 'dataurl', '.svg': 'dataurl', '.woff2': 'dataurl' },
     define: { process: 'undefined' },
   });
 

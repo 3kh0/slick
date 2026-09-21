@@ -147,7 +147,14 @@ async function createBaseAPI(bridge: SlickBridge) {
 type BaseAPI = Awaited<ReturnType<typeof createBaseAPI>>;
 export type SlickAPI = ReturnType<typeof createScopedAPI>;
 
-function createScopedAPI(base: BaseAPI, id: string, scope: PluginScope, blob: BlobStore, channel: PluginChannel) {
+function createScopedAPI(
+  base: BaseAPI,
+  id: string,
+  scope: PluginScope,
+  blob: BlobStore,
+  channel: PluginChannel,
+  config: ConfigStore,
+) {
   // Wrap a registration so its disposer is run automatically on teardown.
   const tracked =
     <A extends unknown[]>(fn: (...args: A) => () => void) =>
@@ -185,6 +192,15 @@ function createScopedAPI(base: BaseAPI, id: string, scope: PluginScope, blob: Bl
 
     storage,
     Cache: <T>(name: string, ttlMs?: number) => new Cache<T>(storage, name, ttlMs),
+
+    /**
+     * This plugin's own settings, written back to the settings file so
+     * Preferences shows them. The key must be declared in the schema and in
+     * `liveSettings`, or writing it restarts the plugin that just wrote it.
+     */
+    settings: {
+      set: (key: string, value: unknown) => config.setPluginSetting(id, key, value),
+    },
 
     /** This plugin's main-process half. The id is bound; it cannot be spoofed. */
     main: {
@@ -324,7 +340,14 @@ export class PluginManager {
   private async start(id: string, entry: Entry): Promise<void> {
     const base = await this.baseAPI;
     const scope = createScope();
-    const api = createScopedAPI(base, id, scope, this.bridge.blobStore(`plugin:${id}`), this.bridge.plugin(id));
+    const api = createScopedAPI(
+      base,
+      id,
+      scope,
+      this.bridge.blobStore(`plugin:${id}`),
+      this.bridge.plugin(id),
+      this.config,
+    );
 
     let instance: SlickPlugin;
     try {
