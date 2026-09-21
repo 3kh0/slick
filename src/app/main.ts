@@ -11,7 +11,7 @@ import { SlickPlugin } from '../shared/Plugin.ts';
 import { exposeDebugGlobals as exposeReactDebug, patchingReady } from './slack/react.tsx';
 // Imported for its side effects: redux.ts wraps createStore and Slack's
 // thunk factory at module scope, which has to happen before Slack loads.
-import { getStore, reduxReady } from './slack/redux.ts';
+import { exposeDebugGlobals as exposeReduxDebug, getStore, reduxReady } from './slack/redux.ts';
 import {
   exposeDebugGlobals as exposeWebpackDebug,
   installWebpackHooks,
@@ -80,6 +80,7 @@ function main() {
     installWebpackHooks();
     exposeWebpackDebug();
     exposeReactDebug();
+    exposeReduxDebug();
   } catch (error) {
     console.error('[slick] failed to install interception; Slack will run unmodified:', error);
     return;

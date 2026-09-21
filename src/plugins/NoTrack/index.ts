@@ -1,15 +1,18 @@
 // Disable Slack's built-in tracking.
 //
 // The main-process half (main.ts) blocks the telemetry hosts at the network
-// layer. This half stops the page generating the calls in the first place, so
-// Slack is not sitting in a retry loop against requests that will never land.
-// Running before Slack's bundle is what makes that possible: the telemetry
-// modules are stubbed before anything captures a reference to them.
+// layer, which is what actually stops the data leaving. This half suppresses
+// sendBeacon, which bypasses webRequest entirely and so cannot be blocked
+// there.
+//
+// Taut additionally no-ops Slack's telemetry factories, but the names it uses
+// (getGenericTracer / getGenericTelemeter / getNoopTelemeter) are not thunk
+// creators in Slack 4.52.155 -- a registry dump of all 4,994 named thunks does
+// not contain them -- so patching them by thunk name is dead code. Finding
+// them as module exports is a discovery task; see docs/slack-internals.md.
 
 import { SlickPlugin } from '$slick';
 import * as meta from './meta.ts';
-
-const TELEMETRY_FACTORIES = ['getGenericTracer', 'getGenericTelemeter', 'getNoopTelemeter'];
 
 export default class NoTrack extends SlickPlugin<typeof meta.settings> {
   static readonly id = meta.id;
@@ -21,15 +24,8 @@ export default class NoTrack extends SlickPlugin<typeof meta.settings> {
   private restoreBeacon: (() => void) | null = null;
 
   start() {
-    for (const name of TELEMETRY_FACTORIES) {
-      this.api.redux.patchThunk(
-        (value: any) => value?.meta?.name === name,
-        () => () => undefined,
-      );
-    }
-
     if (this.config.blockBeacons) this.patchBeacon();
-    this.log('telemetry suppressed');
+    this.log(this.config.blockBeacons ? 'beacons blocked' : 'beacon blocking is off');
   }
 
   /**

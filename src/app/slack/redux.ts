@@ -412,3 +412,13 @@ export const reduxReady = (async () => {
 })();
 
 export type ReduxAPI = Awaited<typeof reduxReady>;
+
+/** Discovery aids; see docs/slack-internals.md. */
+export function exposeDebugGlobals() {
+  Object.assign(globalThis as any, {
+    getStore,
+    getRawState,
+    getThunkCreator,
+    thunkNames: () => [...thunkCreators.keys()],
+  });
+}
