@@ -1,13 +1,14 @@
-// Build entry point. `node scripts/build.ts [app|desktop] [--debug]`
+// Build entry point. `node scripts/build.ts [app|desktop|package] [--debug]`
 
 import { buildApp } from './build/app.ts';
 import { buildDesktop } from './build/desktop.ts';
+import { packageDesktop } from './build/package.ts';
 
 const args = process.argv.slice(2);
 const debug = args.includes('--debug');
 const targets = args.filter((arg) => !arg.startsWith('--'));
 
-const all = { app: buildApp, desktop: buildDesktop };
+const all = { app: buildApp, desktop: buildDesktop, package: packageDesktop };
 const chosen = targets.length ? targets : ['desktop'];
 
 for (const target of chosen) {

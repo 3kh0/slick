@@ -35,6 +35,7 @@ export default class Censorship extends SlickPlugin<typeof meta.settings> {
       return this.api.redux.mapEntries<SlackMessage>(bucket, (_ts, message) => this.censor(message));
     });
     this.patchSearch();
+    this.patchActivityFeed();
     this.log(this.matcher.pattern ? 'masking configured terms in messages' : 'no terms configured');
   }
 
@@ -51,6 +52,21 @@ export default class Censorship extends SlickPlugin<typeof meta.settings> {
 
   private censor(message?: SlackMessage): SlackMessage | undefined {
     return censorMessage(message, this.matcher);
+  }
+
+  /**
+   * The activity feed renders from its own payload, not from `state.messages`
+   * -- verified against a live client, where `MessageWrapper` and `Blocks` had
+   * both rendered while `state.messages` was still empty. Without this, a
+   * censored term is masked in the channel and visible in the activity feed.
+   */
+  private patchActivityFeed() {
+    this.api.patchComponent<{ msg?: SlackMessage }>('ActivityItem', (Original) => (props) => {
+      const React = this.api.react;
+      const version = this.api.redux.usePatchVersion();
+      const msg = React.useMemo(() => this.censor(props.msg), [props.msg, version]);
+      return React.createElement(Original, { ...props, msg });
+    });
   }
 
   // Search keeps its own copies that never pass through `messages`.
