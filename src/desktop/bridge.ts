@@ -9,6 +9,7 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { ipcMain, webContents } from 'electron';
 import { configDir, profileDir, settingsDir } from './paths.js';
+import { setupBlobRpc } from './pluginHost.js';
 import { appUrl } from './session.js';
 
 const SETTINGS_FILE = 'settings.json';
@@ -59,11 +60,20 @@ export function broadcast(channel: string, ...args: unknown[]) {
   }
 }
 
-const methods: Record<string, (args: unknown[]) => unknown> = {
+const methods: Record<string, (args: any[]) => unknown> = {
   readSettings: () => readFile(SETTINGS_FILE, '{}'),
   writeSettings: ([text]) => writeFile(SETTINGS_FILE, String(text ?? '')),
   readUserCss: () => readFile(USER_CSS_FILE, ''),
   writeUserCss: ([css]) => writeFile(USER_CSS_FILE, String(css ?? '')),
+
+  // Page-origin fetch, for the cross-origin requests plugins cannot make
+  // themselves. Returns text only; plugins parse it.
+  async fetch([url, init]) {
+    const response = await fetch(String(url), init);
+    return { status: response.status, body: await response.text() };
+  },
+
+  ...setupBlobRpc(),
 };
 
 export function setupBridge() {

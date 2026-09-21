@@ -3,11 +3,14 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import { build } from 'esbuild';
 import { APP, DIST_APP, ROOT, SLICK_JS } from '../lib/paths.ts';
+import { bundleAllRenderers } from '../lib/plugin.ts';
 import { versions } from '../lib/versions.ts';
 
 const SOURCE_ORIGIN = 'slick:///';
 
 export async function buildApp({ debug = false } = {}) {
+  const plugins = await bundleAllRenderers(debug);
+
   const result = await build({
     entryPoints: [`${APP}/main.ts`],
     absWorkingDir: ROOT,
@@ -21,6 +24,7 @@ export async function buildApp({ debug = false } = {}) {
     define: {
       __SLICK_VERSION__: JSON.stringify(versions.version),
       __SLICK_BUILD__: JSON.stringify(versions.build),
+      __SLICK_PLUGINS__: JSON.stringify(plugins),
       // The bundle is injected as a <script src>, so anything reaching for
       // Node globals is a bug; fail loudly rather than shipping a shim.
       process: 'undefined',

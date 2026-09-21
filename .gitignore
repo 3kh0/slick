@@ -9,3 +9,4 @@ byoe/slick-linux/
 themes/.active
 .env
 .slick-beta
+src/desktop/mainPlugins.generated.ts

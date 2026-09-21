@@ -100,7 +100,11 @@ function injectSlickMenu(items: (Electron.MenuItem | Electron.MenuItemConstructo
 
 // Patches
 
-export function applyPatches(slackAsarPath: string, slickPreloadPath: string) {
+export function applyPatches(
+  slackAsarPath: string,
+  slickPreloadPath: string,
+  onWindow?: (window: Electron.BrowserWindow) => void,
+) {
   const slackResources = path.dirname(slackAsarPath);
 
   // The preload we substitute has to be able to run Slack's original one, or
@@ -119,10 +123,16 @@ export function applyPatches(slackAsarPath: string, slickPreloadPath: string) {
           console.error('[slick] could not read Slack preload:', error);
         }
       }
-      return new Target({
+      const window = new Target({
         ...opts,
         webPreferences: { ...opts.webPreferences, preload: slickPreloadPath, devTools: true },
       });
+      try {
+        onWindow?.(window);
+      } catch (error) {
+        console.error('[slick] window hook failed:', error);
+      }
+      return window;
     },
   });
 

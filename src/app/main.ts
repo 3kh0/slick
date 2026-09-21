@@ -5,6 +5,9 @@
 // a Slick that half-starts can stop Slack booting entirely, and a Slack that
 // does not boot is much worse than a Slack without Slick.
 
+import { bootstrap } from './bootstrap.ts';
+import { getBridge } from './bridge.ts';
+import { SlickPlugin } from '../shared/Plugin.ts';
 import { exposeDebugGlobals as exposeReactDebug, patchingReady } from './slack/react.tsx';
 // Imported for its side effects: redux.ts wraps createStore and Slack's
 // thunk factory at module scope, which has to happen before Slack loads.
@@ -84,14 +87,24 @@ function main() {
 
   console.log(`[slick] ${version} running before Slack — preconditions passed`);
 
+  // Plugins resolve their base class through this global, so every plugin
+  // shares the runtime's SlickPlugin identity (see scripts/lib/plugin.ts).
+  (globalThis as any).__slick = { SlickPlugin };
+
+  const bridge = getBridge();
+  if (!bridge) return;
+
   void patchingReady.then(async () => {
     await reduxReady;
     console.log(
       `[slick] React patched, ${webpackStats().modules} modules seen, store ${getStore() ? 'found' : 'not found yet'}`,
     );
+    try {
+      await bootstrap(bridge);
+    } catch (error) {
+      console.error('[slick] bootstrap failed; Slack keeps running:', error);
+    }
   });
-
-  // Phase 3 lands the config store and plugin manager here.
 }
 
 main();

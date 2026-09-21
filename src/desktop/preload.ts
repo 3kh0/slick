@@ -102,6 +102,24 @@ void (async () => {
       },
     }),
 
+    blobStore: (namespace: string) => ({
+      list: () => call('blobList', [namespace]),
+      read: (key: string) => call('blobRead', [namespace, key]),
+      write: (key: string, value: string) => call('blobWrite', [namespace, key, value]),
+      delete: (key: string) => call('blobDelete', [namespace, key]),
+      clear: () => call('blobClear', [namespace]),
+    }),
+
+    // contextBridge structure-clones arguments, so only the serializable parts
+    // of RequestInit survive the trip.
+    fetch: (url: string, init?: RequestInit) => {
+      const serial: Record<string, unknown> = {};
+      if (init?.method) serial.method = init.method;
+      if (typeof init?.body === 'string') serial.body = init.body;
+      if (init?.headers) serial.headers = { ...(init.headers as Record<string, string>) };
+      return call('fetch', [url, serial]);
+    },
+
     start: () => ipcRenderer.invoke('slick:start'),
   });
 

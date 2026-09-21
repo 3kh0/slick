@@ -9,7 +9,17 @@ import { createRequire } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { app, dialog, protocol } from 'electron';
-import { setupBridge } from './bridge.js';
+import { broadcast, setupBridge } from './bridge.js';
+import { mainPlugins, pluginMeta } from './mainPlugins.generated.js';
+import {
+  bootMainPlugins,
+  readyMainPlugins,
+  registerMainPlugins,
+  setupPluginRpc,
+  updateSettings,
+  windowCreated,
+} from './pluginHost.js';
+import { readStoredPlugins, watchSettings } from './settingsFile.js';
 import { applyPatches } from './patch.js';
 import { findSlackAsar, macSlackElectronMajor } from './slackFinder.js';
 import { privilegedSchemes, setupSession } from './session.js';
@@ -74,10 +84,26 @@ function startSlack(asar: string) {
     });
   }
 
-  applyPatches(asar, path.join(__dirname, 'preload.js'));
-  setupBridge();
+  // Main halves boot before app-ready, because privileged schemes and
+  // Chromium switches can only be registered that early.
+  registerMainPlugins(mainPlugins, pluginMeta);
+  updateSettings(readStoredPlugins());
+  bootMainPlugins();
 
-  app.whenReady().then(() => setupSession([slickResourcesPath, __dirname]));
+  applyPatches(asar, path.join(__dirname, 'preload.js'), windowCreated);
+  setupBridge();
+  setupPluginRpc();
+
+  app.whenReady().then(async () => {
+    setupSession([slickResourcesPath, __dirname]);
+    await readyMainPlugins();
+    // Edits to the settings file reach both halves: the main plugins through
+    // their ctx, the renderer through the bridge's change event.
+    watchSettings((text, plugins) => {
+      updateSettings(plugins);
+      broadcast('slick:settings-changed', text);
+    });
+  });
 
   process.on('uncaughtException', (error) => console.error('[slick] uncaught exception:', error));
   process.on('unhandledRejection', (reason) => console.error('[slick] unhandled rejection:', reason));

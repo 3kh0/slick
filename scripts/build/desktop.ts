@@ -6,7 +6,8 @@
 import { copyFile, mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { build } from 'esbuild';
-import { DESKTOP, DIST_DESKTOP, ROOT, SLICK_JS } from '../lib/paths.ts';
+import { mainHalvesModule, slickSharedAlias } from '../lib/plugin.ts';
+import { DESKTOP, DIST_DESKTOP, ROOT, SLICK_JS, SRC } from '../lib/paths.ts';
 import { versions } from '../lib/versions.ts';
 import { buildApp } from './app.ts';
 
@@ -26,6 +27,12 @@ export async function buildDesktop({ debug = false } = {}) {
   await buildApp({ debug });
   await mkdir(DIST_DESKTOP, { recursive: true });
 
+  // The set of privileged plugins is fixed at build time: main halves are
+  // resolved from a generated module rather than discovered at runtime, so
+  // nothing dropped into a plugins directory later gains Node access.
+  const generated = path.join(SRC, 'desktop', 'mainPlugins.generated.ts');
+  await writeFile(generated, mainHalvesModule());
+
   for (const { entry, out, format } of entries) {
     await build({
       entryPoints: [path.join(DESKTOP, entry)],
@@ -38,6 +45,7 @@ export async function buildDesktop({ debug = false } = {}) {
       minify: !debug,
       sourcemap: debug ? 'inline' : false,
       external: ['electron'],
+      plugins: [slickSharedAlias],
       define,
     });
     console.log(`[build:desktop] ${out}`);
