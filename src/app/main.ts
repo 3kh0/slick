@@ -5,6 +5,16 @@
 // a Slick that half-starts can stop Slack booting entirely, and a Slack that
 // does not boot is much worse than a Slack without Slick.
 
+import { exposeDebugGlobals as exposeReactDebug, patchingReady } from './slack/react.tsx';
+// Imported for its side effects: redux.ts wraps createStore and Slack's
+// thunk factory at module scope, which has to happen before Slack loads.
+import { getStore, reduxReady } from './slack/redux.ts';
+import {
+  exposeDebugGlobals as exposeWebpackDebug,
+  installWebpackHooks,
+  stats as webpackStats,
+} from './slack/webpack.ts';
+
 type Precondition = { name: string; ok: () => boolean; detail: string };
 
 const preconditions: Precondition[] = [
@@ -61,9 +71,27 @@ function main() {
     console.warn('[slick] safe mode: plugins will not be loaded');
   }
 
+  // Interception has to be installed synchronously, before this script returns:
+  // the very next <script> in the document is Slack's own bundle.
+  try {
+    installWebpackHooks();
+    exposeWebpackDebug();
+    exposeReactDebug();
+  } catch (error) {
+    console.error('[slick] failed to install interception; Slack will run unmodified:', error);
+    return;
+  }
+
   console.log(`[slick] ${version} running before Slack — preconditions passed`);
 
-  // Phase 2 lands src/app/slack/{webpack,react,redux}.ts here, then bootstrap().
+  void patchingReady.then(async () => {
+    await reduxReady;
+    console.log(
+      `[slick] React patched, ${webpackStats().modules} modules seen, store ${getStore() ? 'found' : 'not found yet'}`,
+    );
+  });
+
+  // Phase 3 lands the config store and plugin manager here.
 }
 
 main();
