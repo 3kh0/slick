@@ -29,6 +29,8 @@ export type Setting =
       description?: string;
       default: string;
       maxLength?: number;
+      /** For `file`: the extensions the picker offers, as an input accept list. */
+      accept?: string;
       restartRequired?: boolean;
     }
   | {
