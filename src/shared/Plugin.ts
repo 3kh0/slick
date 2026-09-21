@@ -14,6 +14,11 @@ export type { SlackActivityItem, SlackAttachment, SlackBot, SlackMessage } from 
 export type { MapEntry, SlackStore } from '../app/slack/redux.ts';
 export type { RtmEvent } from '../app/slack/rtm.ts';
 export type { ComponentReplacer, ComponentType, PatchMatcher } from '../app/slack/react.tsx';
+export type { SlackMember } from '../app/slack/members.ts';
+export type { SlackChannel } from '../app/slack/channels.ts';
+export type { Block, FromDeltaOptions } from '../app/slack/blocks.ts';
+export type { Delta, DeltaOp } from './delta.ts';
+export type { MenuTemplateItem, SelectOption } from '../app/api/elements.ts';
 export type { PluginSettings, Setting, SettingsSchema, SettingValue } from './settings.ts';
 export type { Capability, MainCtx, SlickMainPlugin } from './main.ts';
 

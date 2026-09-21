@@ -25,10 +25,19 @@ import {
   waitForComponent,
   waitForRenderedComponent,
 } from './slack/react.tsx';
+import { blocksReady } from './slack/blocks.ts';
+import { channelsReady } from './slack/channels.ts';
+import { filesReady } from './slack/files.ts';
+import { membersReady } from './slack/members.ts';
 import { messagesReady } from './slack/messages.ts';
 import { reduxReady } from './slack/redux.ts';
 import { rtmReady } from './slack/rtm.ts';
 import { getByProps, getExport, getValueSource, waitForExport } from './slack/webpack.ts';
+import { elementsReady } from './api/elements.ts';
+import { menuReady } from './api/menu.tsx';
+import { modalReady } from './api/modal.tsx';
+import { setupMessageSendDelta } from './api/messageSend.tsx';
+import { userAPI } from './api/userAPI.ts';
 
 const PLUGIN_ID = /^[A-Za-z0-9_.-]{1,100}$/;
 const LIFECYCLE_TIMEOUT_MS = 5_000;
@@ -116,9 +125,21 @@ async function createBaseAPI(bridge: SlickBridge) {
     redux: await reduxReady,
     rtm: await rtmReady,
     messages: await messagesReady,
+    members: await membersReady,
+    channels: await channelsReady,
+    blocks: await blocksReady,
+    files: await filesReady,
+    // Slack's three composer components are patched once here, so plugin
+    // transforms compose instead of each wrapping the others' props.
+    onMessageSendDelta: setupMessageSendDelta(patchComponent),
+    // UI
+    elements: await elementsReady,
+    menu: await menuReady,
+    modal: await modalReady,
     // environment
     react: await reactReady,
     fetch: bridge.fetch.bind(bridge),
+    userAPI,
     onDocument,
   };
 }
@@ -154,6 +175,8 @@ function createScopedAPI(base: BaseAPI, id: string, scope: PluginScope, blob: Bl
       ...base.messages,
       injectMessages: tracked(base.messages.injectMessages),
     },
+
+    onMessageSendDelta: tracked(base.onMessageSendDelta),
 
     onDocument: tracked(base.onDocument),
 

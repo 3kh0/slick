@@ -10,6 +10,7 @@
 // allocation-free on the hot path.
 
 import { forEachExport, findModuleId, getExport, getValueSource, waitForExport } from './webpack.ts';
+import { Store } from '../store.ts';
 
 const global = globalThis as any;
 
@@ -95,6 +96,49 @@ export function getComponent(name: string, all = false, filter?: Filter) {
 /** Resolves whenever the component turns up. Use outside of a render. */
 export function waitForComponent<P extends {}>(name: string, filter?: Filter): Promise<React.ComponentType<P>> {
   return waitForExport<React.ComponentType<P>>(componentFilter(name, filter));
+}
+
+/** How long a component may stay missing before it is worth a console warning. */
+const MISSING_MS = 30_000;
+
+/**
+ * A stand-in that renders the real component once its chunk arrives, and
+ * nothing until then. This is what the elements registry is built from: a
+ * plugin can reference `api.elements.Button` at start() time without caring
+ * whether Slack has loaded that chunk yet.
+ *
+ * The lookup is deferred to the first render rather than done eagerly, so
+ * building the registry costs nothing for components no plugin uses.
+ */
+export function lazyComponent<P extends {}>(name: string, filter?: Filter): React.ComponentType<P> {
+  const match = componentFilter(name, filter);
+  const component = new Store<React.ComponentType<P> | undefined>(undefined);
+  let looked = false;
+
+  const look = () => {
+    if (looked) return;
+    looked = true;
+
+    const loaded = getExport<React.ComponentType<P>>(match);
+    if (loaded) {
+      component.set(loaded);
+      return;
+    }
+    void waitForExport<React.ComponentType<P>>(match).then(component.set);
+    setTimeout(() => {
+      if (!component.get()) console.error(`[slick] "${name}" is unavailable`);
+    }, MISSING_MS);
+  };
+
+  function LazyComponent(props: P) {
+    // Looking on the first render, not at module scope, keeps an
+    // already-loaded component from flashing in a tick later.
+    look();
+    const Component = component.use();
+    return Component ? <Component {...props} /> : null;
+  }
+  LazyComponent.displayName = `Lazy(${name})`;
+  return LazyComponent;
 }
 
 // Slack never exports plenty of its components, and `connect` keeps no link

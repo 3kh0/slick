@@ -1,10 +1,11 @@
 # Handoff: Censorship
 
-**Status:** not implemented on v2. A first attempt was written and deleted
-because it patched the wrong shape (see [Trap](#trap-read-this-first)).
+**Status:** ported. Lives in `src/plugins/Censorship/`. Masking is pure
+(`censor.ts`) so it can be tested without Slack; the plugin itself is a
+two-level `messages` patch plus a `MessageListItem` search patch.
 
-**What it does:** masks configured words wherever they appear in Slack.
-"There is no war in Ba Sing Se."
+**What it does:** masks configured words in message bodies and search results,
+on this client only. "There is no war in Ba Sing Se."
 
 **v1 source (still on `main`):** `plugins/Censorship/{index.js,renderer.js}`
 (52 + 241 lines).
@@ -101,18 +102,26 @@ cannot blow up or match wildly.
 
 ---
 
-## Scope question worth deciding
+## Scope (decided)
 
 v1 censored **rendered text anywhere**, including channel names, the sidebar
-and search results. Patching `messages` covers message bodies only. Decide
-explicitly whether the v2 plugin should also cover:
+and search results. v2 is narrower:
 
-- channel names (`channels` slice)
-- member display names (`members` slice, via `members.modifyMemberObject`)
-- search results (Taut patches a `MessageListItem` component for these —
-  search keeps its own copies that never pass through the `messages` slice)
+- **Message bodies** — yes. Two-level `messages` patch. This is the rewrite.
+- **Search results** — yes. `MessageListItem` (`props.result.messages`), the
+  same component Taut ShowRealUser uses, because search keeps its own copies
+  that never pass through `messages`.
+- **Channel names** — no. Needs `channels` field knowledge (`name` /
+  `purpose.value` / `topic.value`) that a display-string walk does not have,
+  and a wrong key is a silent miss.
+- **Member display names** — no. Taut's `modifyMemberObject` also rewrites
+  derived name fields (`_display_name_lc`, …). That helper is not in v2 yet;
+  Nicknames will want it. Patching `profile.display_name` alone would leak
+  on other surfaces.
 
-If search matters, that is a `patchComponent`, not a slice patch.
+Drafts are not in `messages`, so the composer is left alone. Code in a
+message body is masked: the product is hiding the word, not preserving
+snippets that contain it.
 
 ---
 

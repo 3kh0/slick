@@ -12,7 +12,7 @@
     "render": "scripts/byoe/render-icon.sh",
     "test:perf": "node --test scripts/ci/performance.test.js",
     "test:early": "node --test scripts/early/*.test.js scripts/byoe/updater.test.js scripts/release/beta.test.js",
-    "test:app": "node --experimental-strip-types --test src/app/slack/messages.history.test.ts",
+    "test:app": "node --experimental-strip-types --test src/app/slack/messages.history.test.ts src/plugins/Censorship/censor.test.ts",
     "early:build": "node scripts/early/build.js",
     "validate": "node scripts/ci/validate.js",
     "check:electron": "node scripts/ci/electron-watch.js",

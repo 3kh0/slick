@@ -90,10 +90,11 @@ and how it was identified, so a break is diagnosable without re-deriving it.
 | `currentUserEndedTyping`                        | thunk         | `SilentTyping`                         | as above                                                                                                 |
 | `routeMessages`                                 | named export  | core (`src/app/slack/rtm.ts`)          | named function export; Slack routes every socket payload through it                                      |
 | `handleMessageImmediatelyWithoutPreprocessing`  | thunk         | core (`src/app/slack/rtm.ts`)          | degraded-mode path that skips `routeMessages`; present in the thunk registry                             |
-| `state.messages[channelId][ts]`                 | redux slice   | `MessageLogger`                        | Taut `getRawMessage`; two-level map, bodies not timestamps. Also Censorship / ShowRealUser               |
+| `state.messages[channelId][ts]`                 | redux slice   | `MessageLogger`, `Censorship`          | Taut `getRawMessage`; two-level map, bodies not timestamps. Also ShowRealUser                            |
 | `state.channelHistory[key].slices[].timestamps` | redux slice   | `MessageLogger` via `injectMessages`   | Slack renders from this array, not by enumerating `messages`; key is `channelId` or `channelId-threadTs` |
 | `MessageWrapper`                                | component     | `MessageLogger`                        | Taut ShowRealUser patches this with `props.msg`; channel message row                                     |
 | `ThreadRootGeneric`                             | component     | `MessageLogger`                        | as above; thread parent row                                                                              |
+| `MessageListItem`                               | component     | `Censorship`                           | Taut ShowRealUser; search result row with `props.result.messages` (search copies never hit `messages`)   |
 
 ## Still to identify
 

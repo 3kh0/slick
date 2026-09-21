@@ -12,6 +12,10 @@
 
     "jsx": "react",
 
+    // Slack's React is a global published by `app/slack/react.tsx`, not a bundled
+    // dependency, so JSX in a module has to reach the UMD global.
+    "allowUmdGlobalAccess": true,
+
     "paths": {
       "$slick": ["./src/shared/Plugin.ts"],
       "*": ["./*"]
