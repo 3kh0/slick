@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, v2-rewrite]
   pull_request:
 
 permissions:
@@ -15,9 +15,39 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        check: ['fmt:check', lint, 'lint:sh', validate]
+        # CI ran only the four static checks and no tests at all, so a broken
+        # test could be merged without anything noticing. typecheck and the
+        # test suites are the point of this job, not an extra.
+        check:
+          - 'fmt:check'
+          - lint
+          - 'lint:sh'
+          - validate
+          - typecheck
+          - 'test:app'
+          - 'test:early'
+          - 'test:perf'
     steps:
       - uses: actions/checkout@v7
       - uses: oven-sh/setup-bun@v2
       - run: bun install --frozen-lockfile
+        # Electron's postinstall downloads a ~100MB binary that no check needs.
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
       - run: bun run ${{ matrix.check }}
+
+  build:
+    name: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        # versions.ts reads the newest v<N> tag for the build number.
+        with:
+          fetch-depth: 0
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install --frozen-lockfile
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+      # Bundling is the check that a plugin actually compiles and default-exports
+      # a named class; typecheck alone does not catch that.
+      - run: bun run build

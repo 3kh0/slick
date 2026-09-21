@@ -362,7 +362,13 @@ test('custom CSS opens in Monaco and is kept in a final document style', () => {
   assert.equal(opened, true);
 
   const editorWindow = require('../byoe/custom-css-window');
-  assert.match(editorWindow.editorHtml(), /monaco-editor@0\.52\.2/);
+  // Derived from the source rather than pinned here: this assertion was left
+  // at 0.52.2 through a bump to 0.56.0 and nothing caught it, because CI did
+  // not run the tests.
+  const monacoSource = fs.readFileSync(path.join(__dirname, '../byoe/custom-css-window.js'), 'utf8');
+  const monacoVersion = /MONACO_VERSION = '([^']+)'/.exec(monacoSource)?.[1];
+  assert.ok(monacoVersion, 'custom-css-window.js should declare MONACO_VERSION');
+  assert.match(editorWindow.editorHtml(), new RegExp(`monaco-editor@${monacoVersion.replace(/\./g, '\\.')}`));
   const renderer = fs.readFileSync(path.join(__dirname, '../byoe/settings-renderer.js'), 'utf8');
   assert.match(renderer, /ctl\(\{ op: 'customcss-open' \}\)/);
   assert.doesNotMatch(renderer, /<textarea id="slick-customcss"/);
