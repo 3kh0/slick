@@ -77,13 +77,13 @@ Rules that matter:
 v1 declares none. The port should add them, because the parser has genuinely
 contentious cases:
 
-| key | type | default | notes |
-| --- | --- | --- | --- |
-| `bold` | boolean | `true` | `**text**` |
-| `italic` | boolean | `true` | `*text*` and `_text_` |
-| `strike` | boolean | `true` | `~~text~~` |
-| `code` | boolean | `true` | `` `text` `` |
-| `links` | boolean | `true` | `[text](url)` |
+| key      | type    | default | notes                 |
+| -------- | ------- | ------- | --------------------- |
+| `bold`   | boolean | `true`  | `**text**`            |
+| `italic` | boolean | `true`  | `*text*` and `_text_` |
+| `strike` | boolean | `true`  | `~~text~~`            |
+| `code`   | boolean | `true`  | `` `text` ``          |
+| `links`  | boolean | `true`  | `[text](url)`         |
 
 All five are `liveSettings`: they only change how the next message is parsed,
 and the transform reads `this.config` on each call.

@@ -31,13 +31,13 @@ these five is the whole risk.
 
 ## What each one is, as far as the call sites show
 
-| id | member | signature at the call site | what it does |
-| --- | --- | --- | --- |
-| `eh+y` | `qY` | `(dispatch, getState, channelId, [userIds]) → Promise<Record<userId, boolean>>` | is each user a member of this channel |
-| `M9P0` | `Kn` | thunk creator `({ channelId, prefName, reason })` | read a channel preference (used with `who_can_post`) |
-| `M9P0` | `Cw` | thunk creator `({ channelId, users, reason })` | invite users to a channel |
-| `Tid6` | `y` | thunk creator `({ channelId, newPrefs, reason })` | write channel preferences |
-| `DiPi` | `A` | — | **solved.** This is `convertDeltaToBlocks`; use `api.blocks.fromDelta`. |
+| id     | member | signature at the call site                                                      | what it does                                                            |
+| ------ | ------ | ------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| `eh+y` | `qY`   | `(dispatch, getState, channelId, [userIds]) → Promise<Record<userId, boolean>>` | is each user a member of this channel                                   |
+| `M9P0` | `Kn`   | thunk creator `({ channelId, prefName, reason })`                               | read a channel preference (used with `who_can_post`)                    |
+| `M9P0` | `Cw`   | thunk creator `({ channelId, users, reason })`                                  | invite users to a channel                                               |
+| `Tid6` | `y`    | thunk creator `({ channelId, newPrefs, reason })`                               | write channel preferences                                               |
+| `DiPi` | `A`    | —                                                                               | **solved.** This is `convertDeltaToBlocks`; use `api.blocks.fromDelta`. |
 
 Three of the four unsolved ones are dispatched through `store.dispatch(...)`,
 which means they are almost certainly **named thunk creators** and therefore
@@ -86,8 +86,8 @@ appears to work and then posts fail.
 
 ## Settings (port verbatim)
 
-| key | type | default |
-| --- | --- | --- |
+| key          | type | default                   |
+| ------------ | ---- | ------------------------- |
 | `serviceUrl` | text | `https://bc.deployor.dev` |
 
 ---

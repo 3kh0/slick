@@ -17,9 +17,9 @@ architecture — this is close to a direct port. Attribute what you lift.
 
 ## Settings (port verbatim from v1)
 
-| key | type | default | notes |
-| --- | --- | --- | --- |
-| `flaron` | boolean | `false` | show known private channel names when Slack has none |
+| key        | type    | default | notes                                                    |
+| ---------- | ------- | ------- | -------------------------------------------------------- |
+| `flaron`   | boolean | `false` | show known private channel names when Slack has none     |
 | `mentions` | boolean | `false` | autocomplete `#channel` for private channels Slack hides |
 
 Both default **off**, and both should stay off. `mentions` in particular sends

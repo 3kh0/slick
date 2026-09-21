@@ -36,45 +36,63 @@ A single-level `patchSlice('messages', (id, msg) => ...)` is therefore wrong:
 the entry it receives is a _channel bucket_, not a message. That mistake
 compiles, runs, and silently does nothing.
 
-### Caveat: the slice is empty until the client really loads a conversation
+### The slices keep their real keys on the prototype
 
-Measured again on **Slack 4.52.162** against a real signed-in session, from the
-packaged build (2026-09-21):
+**`Object.keys(slice)` returns 0 for a fully populated slice.** Slack builds
+several store slices as an object whose own properties are empty and whose
+**prototype** carries the entries. Measured on **Slack 4.52.162**, from the
+packaged build against a real signed-in session:
 
-| slice            | entries |
-| ---------------- | ------- |
-| `messages`       | **0**   |
-| `channels`       | 0       |
-| `members`        | 0       |
-| `view`           | 0       |
-| `channelHistory` | 1,929   |
-| `experiments`    | 1,859   |
+| slice            | `Object.keys()` | real keys                          |
+| ---------------- | --------------- | ---------------------------------- |
+| `messages`       | 0               | **622 channels / 85,977 messages** |
+| `channels`       | 0               | 1,766                              |
+| `members`        | 0               | 1,632                              |
+| `view`           | 0               | 80                                 |
+| `presence`       | 0               | 15                                 |
+| `channelHistory` | 1,932           | 1,932                              |
 
-The `messages` key **exists** (it is one of the 412 slices) and stays empty
-while the client is sitting on the activity feed with no conversation open. Of
-293 non-empty slices, exactly one is message-shaped -- `customStatus`, with a
-single entry -- so nothing else is quietly holding message bodies instead.
+Read them like this:
 
-So an empty `messages` does **not** mean Slack stopped using it; it means that
-client never opened a conversation. Verify message-shaped work with a focused
-window on an open channel, and treat "the slice is empty" as a probe problem
-until proven otherwise. An earlier pass here concluded message bodies were
-unreachable, purely because the probe read an unpopulated store.
+```ts
+const own = Object.keys(slice);
+const proto = Object.getPrototypeOf(slice);
+const keys = [...own, ...(proto && proto !== Object.prototype ? Object.keys(proto) : [])];
+```
 
-**Still unconfirmed:** that `messages[channelId][ts]` populates on this exact
-build. Taut reads it and pins 4.52.155, and the key is present, but no run of
-Slick has yet seen it filled. Opening any channel and re-reading the slice
-settles it.
+`channelHistory` is a plain object, so both forms agree — which is exactly why
+this is easy to miss. A probe that checks one slice and finds it sane concludes
+the store is fine.
+
+**This has caused three wrong conclusions in this project already**: that
+message bodies were unreachable, that the slice was empty because the window
+was unfocused, and that only `customStatus` was message-shaped. All three were
+one `Object.keys` call on a prototype-keyed object.
+
+`api.redux.mapEntries` handles this correctly — it proxies `getPrototypeOf` and
+runs entries through the prototype proxy — so `patchSlice` works on these
+slices. Only direct reads need care.
+
+## State shape: messages, confirmed
+
+`state.messages[channelId][ts]` holds message objects, and a sample from a live
+client looks like:
+
+```
+messages[C08HH2NSXC7][1789659565.070200]
+  text (string)  blocks  attachments  files  thread_ts  reply_count  replies
+  reply_users  latest_reply  is_ephemeral  source_team_id  blocksProcessed
+```
+
+So `text` is a real string on the message, `blocks` is present, and the nesting
+is two levels as documented above.
 
 ### The activity feed does not read `messages`
 
-`MessageWrapper`, `Blocks` and `ActivityItem` were all observed rendering while
-`state.messages` was still empty: the activity feed carries its own message
-payload. A `patchSlice('messages')` therefore does **not** cover it, and
-anything that rewrites message content needs an `ActivityItem` patch as well.
-Censorship was wrong about this until the run above caught it.
-
-Search is the same story, through `MessageListItem`.
+`ActivityItem` is handed its own message payload rather than reading the store,
+so a `patchSlice('messages')` does not cover the activity feed. Anything
+rewriting message content needs an `ActivityItem` patch as well. Search is the
+same story, through `MessageListItem`.
 
 ## Finding a name
 

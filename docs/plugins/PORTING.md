@@ -46,7 +46,7 @@ export default class Example extends SlickPlugin<typeof meta.settings> {
   static readonly liveSettings = ['someKey'];
 
   start() {}
-  stop() {}                       // only for what the API did not dispose
+  stop() {} // only for what the API did not dispose
   onSettingsChange(changed: string[]) {}
 }
 ```
@@ -70,14 +70,14 @@ A setting listed in `liveSettings` mutates `this.config` in place and calls
 
 ## The API
 
-| Area | Members |
-| --- | --- |
-| Discovery | `getExport` `waitForExport` `getByProps` `getComponent` `waitForComponent` `getRenderedComponent` `waitForRenderedComponent` `getComponentSource` `getValueSource` `getFiberFromNode` |
-| Components | `patchComponent(matcher, Original => props => JSX)` |
-| Redux | `redux.patchSlice` `mapEntries` `patchState` `patchThunk` `dispatchThunk` `getThunkCreator` `waitForThunkCreator` `getStore` `getRawState` `refresh` `useReduxState` `usePatchVersion` |
-| Slack | `members.*` `messages.*` `channels.*` `blocks.*` `files.upload` `rtm.on` `onMessageSendDelta` |
-| UI | `setStyle(css, key?)` `elements.*` `menu.Menu` `modal.openModal/confirm/alert` `onDocument` |
-| Lifecycle | `storage` `Cache` `settings.set` `signal` `fetch` `userAPI` `main.call/on` `log` |
+| Area       | Members                                                                                                                                                                                |
+| ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Discovery  | `getExport` `waitForExport` `getByProps` `getComponent` `waitForComponent` `getRenderedComponent` `waitForRenderedComponent` `getComponentSource` `getValueSource` `getFiberFromNode`  |
+| Components | `patchComponent(matcher, Original => props => JSX)`                                                                                                                                    |
+| Redux      | `redux.patchSlice` `mapEntries` `patchState` `patchThunk` `dispatchThunk` `getThunkCreator` `waitForThunkCreator` `getStore` `getRawState` `refresh` `useReduxState` `usePatchVersion` |
+| Slack      | `members.*` `messages.*` `channels.*` `blocks.*` `files.upload` `rtm.on` `onMessageSendDelta`                                                                                          |
+| UI         | `setStyle(css, key?)` `elements.*` `menu.Menu` `modal.openModal/confirm/alert` `onDocument`                                                                                            |
+| Lifecycle  | `storage` `Cache` `settings.set` `signal` `fetch` `userAPI` `main.call/on` `log`                                                                                                       |
 
 `React` is a global — Slack's own instance. Never import react.
 
@@ -99,11 +99,12 @@ A setting listed in `liveSettings` mutates `this.config` in place and calls
    must always return the original;
    `getRawState().messages[ch][ts].text` staying unmodified is a test.
 
-5. **An empty slice is usually a probe problem.** In an unattended
-   `npm run desktop:dev` run the window is never focused and `messages`,
-   `channels`, `members` and `view` all stay empty for the whole session, while
-   `experiments` and `channelLatests` fill normally. Test with a focused window
-   on an open channel.
+5. **`Object.keys(slice)` lies.** Several slices — `messages`, `channels`,
+   `members`, `view`, `presence` — keep their real keys on the object's
+   **prototype**, so `Object.keys` reports 0 for a slice holding tens of
+   thousands of entries. This has produced three wrong conclusions in this
+   project already. `mapEntries` handles it; direct reads must walk the
+   prototype.
 
 ## Things to prefer
 

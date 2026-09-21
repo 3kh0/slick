@@ -55,10 +55,9 @@ export default class Censorship extends SlickPlugin<typeof meta.settings> {
   }
 
   /**
-   * The activity feed renders from its own payload, not from `state.messages`
-   * -- verified against a live client, where `MessageWrapper` and `Blocks` had
-   * both rendered while `state.messages` was still empty. Without this, a
-   * censored term is masked in the channel and visible in the activity feed.
+   * The activity feed hands `ActivityItem` its own message payload rather than
+   * reading it back out of the store, so the `messages` patch does not cover
+   * it. ShowRealUser patches the same component for the same reason.
    */
   private patchActivityFeed() {
     this.api.patchComponent<{ msg?: SlackMessage }>('ActivityItem', (Original) => (props) => {

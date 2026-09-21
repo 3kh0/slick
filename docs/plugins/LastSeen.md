@@ -21,12 +21,12 @@ Two independent sources, each behind its own setting:
 **1. Observed activity (`showObservedPresence`).** Every RTM event that implies
 someone was at their keyboard, recorded with its timestamp:
 
-| event | who it implies |
-| --- | --- |
+| event             | who it implies                                           |
+| ----------------- | -------------------------------------------------------- |
 | `presence_change` | `users` or `user`, **only when `presence === 'active'`** |
-| `user_typing` | `user` |
-| `message` | `user`, unless a bot posted under it |
-| `reaction_added` | `user` |
+| `user_typing`     | `user`                                                   |
+| `message`         | `user`, unless a bot posted under it                     |
+| `reaction_added`  | `user`                                                   |
 
 The `presence_change` rule is the one that bites: an `away` batch arrives in
 bulk when you subscribe, so treating `away` as an observation records "last
@@ -44,12 +44,12 @@ rate-limited API and a profile can be opened repeatedly.
 
 ## Settings (port verbatim from v1)
 
-| key | type | default | notes |
-| --- | --- | --- | --- |
-| `showLastMessage` | boolean | `true` | look up their most recent visible message |
-| `showObservedPresence` | boolean | `true` | show when they were last observed active |
-| `trackWatchlist` | boolean | `false` | subscribe to presence for profiles you open; costs websocket traffic |
-| `cacheTtlHours` | number | `168` | how long cached lookups and observations live |
+| key                    | type    | default | notes                                                                |
+| ---------------------- | ------- | ------- | -------------------------------------------------------------------- |
+| `showLastMessage`      | boolean | `true`  | look up their most recent visible message                            |
+| `showObservedPresence` | boolean | `true`  | show when they were last observed active                             |
+| `trackWatchlist`       | boolean | `false` | subscribe to presence for profiles you open; costs websocket traffic |
+| `cacheTtlHours`        | number  | `168`   | how long cached lookups and observations live                        |
 
 `showLastMessage` and `showObservedPresence` are display-only, so `liveSettings`.
 `trackWatchlist` changes what the plugin subscribes to — simpler to restart.

@@ -12,7 +12,7 @@ Whisper-compatible transcription API, and shows the result as captions.
 
 ## Why it is Windows only
 
-It captures *system* audio, which Electron only supports through
+It captures _system_ audio, which Electron only supports through
 `setDisplayMediaRequestHandler` with a loopback audio source — and that path is
 Windows-only (`index.js:102` refuses anything else outright). A
 `main.ts` that declines to activate on macOS and Linux **must not be an
@@ -23,16 +23,16 @@ plugin that proves it.
 
 ## Settings (port verbatim from v1)
 
-| key | type | default | notes |
-| --- | --- | --- | --- |
-| `provider` | select | `openai` | `openai` \| `xai` \| `custom` |
-| `apiKey` | text | `''` | **a credential** |
-| `endpoint` | text | `''` | custom provider only; must be HTTPS |
-| `model` | text | `whisper-1` | |
-| `language` | text | `''` | ISO-639-1, blank auto-detects |
-| `mode` | select | `normal` | `normal` \| `australian` |
-| `transformModel` | text | `gpt-4o-mini` | text model for the fun modes |
-| `segmentSeconds` | number | — | see v1 |
+| key              | type   | default       | notes                               |
+| ---------------- | ------ | ------------- | ----------------------------------- |
+| `provider`       | select | `openai`      | `openai` \| `xai` \| `custom`       |
+| `apiKey`         | text   | `''`          | **a credential**                    |
+| `endpoint`       | text   | `''`          | custom provider only; must be HTTPS |
+| `model`          | text   | `whisper-1`   |                                     |
+| `language`       | text   | `''`          | ISO-639-1, blank auto-detects       |
+| `mode`           | select | `normal`      | `normal` \| `australian`            |
+| `transformModel` | text   | `gpt-4o-mini` | text model for the fun modes        |
+| `segmentSeconds` | number | —             | see v1                              |
 
 All were `restartRequired` in v1. In v2 that maps to leaving them out of
 `liveSettings`, which restarts the plugin on change — correct here, since the
