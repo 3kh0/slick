@@ -1,6 +1,6 @@
 # Handoff: MessageLogger
 
-**Status:** not started on v2.
+**Status:** ported. Lives in `src/plugins/MessageLogger/`, with `injectMessages` in `src/app/slack/messages.ts` and RTM in `src/app/slack/rtm.ts`.
 
 **What it does:** keeps deleted and edited messages visible, styled so it is
 obvious they are gone or changed.
@@ -113,19 +113,19 @@ start() {
 
   // style + the "edited" affordance
   this.api.setStyle(css(this.config.deletedStyle), 'deleted');
-  this.api.patchComponent(/* message row -- name NOT yet identified */, ...);
+  this.api.patchComponent('MessageWrapper' | 'ThreadRootGeneric', ...);
 }
 ```
 
-**Unknown that needs a discovery session:** the component to patch for the
-strikethrough / edit-history affordance. `docs/slack-internals.md` explains how
-to dump rendered component names; add whatever you settle on to the table there
-so a later Slack rename is a one-file fix.
+The row patch is `MessageWrapper` (channel) and `ThreadRootGeneric` (thread
+parent), the same names Taut's ShowRealUser wraps with `props.msg`. If Slack
+renames them, deleted messages still reappear (`injectMessages` does not depend
+on the component) but the red/opacity style and edit history go inert; the
+plugin logs a warning if neither has rendered after 20s. Update
+`docs/slack-internals.md` when that happens.
 
 Persistence goes through `api.storage` (plugin-scoped, enumerable, survives
-correctly) rather than `localStorage`. Keep a bound on it — v1 grew without
-limit. A TTL or a max-entries cap belongs in the settings schema if you want it
-user-visible.
+correctly) rather than `localStorage`. The log is capped at 1,000 entries.
 
 ---
 

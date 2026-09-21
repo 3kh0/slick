@@ -10,7 +10,9 @@ import type { SlickAPI } from '../app/pluginManager.ts';
 import type { PluginSettings, SettingsSchema } from './settings.ts';
 
 export type { SlickAPI } from '../app/pluginManager.ts';
+export type { SlackActivityItem, SlackAttachment, SlackBot, SlackMessage } from '../app/slack/messages.ts';
 export type { MapEntry, SlackStore } from '../app/slack/redux.ts';
+export type { RtmEvent } from '../app/slack/rtm.ts';
 export type { ComponentReplacer, ComponentType, PatchMatcher } from '../app/slack/react.tsx';
 export type { PluginSettings, Setting, SettingsSchema, SettingValue } from './settings.ts';
 export type { Capability, MainCtx, SlickMainPlugin } from './main.ts';

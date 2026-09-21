@@ -25,7 +25,9 @@ import {
   waitForComponent,
   waitForRenderedComponent,
 } from './slack/react.tsx';
+import { messagesReady } from './slack/messages.ts';
 import { reduxReady } from './slack/redux.ts';
+import { rtmReady } from './slack/rtm.ts';
 import { getByProps, getExport, getValueSource, waitForExport } from './slack/webpack.ts';
 
 const PLUGIN_ID = /^[A-Za-z0-9_.-]{1,100}$/;
@@ -112,6 +114,8 @@ async function createBaseAPI(bridge: SlickBridge) {
     // patching
     patchComponent,
     redux: await reduxReady,
+    rtm: await rtmReady,
+    messages: await messagesReady,
     // environment
     react: await reactReady,
     fetch: bridge.fetch.bind(bridge),
@@ -143,6 +147,12 @@ function createScopedAPI(base: BaseAPI, id: string, scope: PluginScope, blob: Bl
       patchState: tracked(base.redux.patchState),
       patchSlice: tracked(base.redux.patchSlice) as typeof base.redux.patchSlice,
       patchThunk: tracked(base.redux.patchThunk) as typeof base.redux.patchThunk,
+    },
+
+    rtm: { ...base.rtm, on: tracked(base.rtm.on) },
+    messages: {
+      ...base.messages,
+      injectMessages: tracked(base.messages.injectMessages),
     },
 
     onDocument: tracked(base.onDocument),

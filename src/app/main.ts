@@ -12,6 +12,9 @@ import { exposeDebugGlobals as exposeReactDebug, patchingReady } from './slack/r
 // Imported for its side effects: redux.ts wraps createStore and Slack's
 // thunk factory at module scope, which has to happen before Slack loads.
 import { exposeDebugGlobals as exposeReduxDebug, getStore, reduxReady } from './slack/redux.ts';
+// Same for rtm.ts: it wraps `routeMessages` and the degraded-mode thunk so
+// plugins can subscribe to websocket events without patching WebSocket.
+import './slack/rtm.ts';
 import {
   exposeDebugGlobals as exposeWebpackDebug,
   installWebpackHooks,
