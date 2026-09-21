@@ -26,18 +26,18 @@ open DevTools (`Cmd`/`Ctrl`+`Alt`+`I`) on the Slack window and use them:
 
 ```js
 // Everything that has rendered so far, by displayName
-[...__slickRenderedComponents.keys()]
+[...__slickRenderedComponents.keys()];
 
 // Every module export the registry has seen
-allExports()
+allExports();
 
 // Find by shape rather than name -- more durable
-getExport((e) => typeof e === 'function' && /someDistinctiveString/.test(e.toString()))
-getByProps(['someMethod', 'anotherMethod'])
+getExport((e) => typeof e === 'function' && /someDistinctiveString/.test(e.toString()));
+getByProps(['someMethod', 'anotherMethod']);
 
 // Read the original source of whatever exported a value
-getValueSource(someExport)
-getComponentSource(SomeComponent)
+getValueSource(someExport);
+getComponentSource(SomeComponent);
 ```
 
 Prefer a **filter** over a name for anything load-bearing:
@@ -50,20 +50,20 @@ does not.
 Filled in as plugins are ported. Each row should say which plugin depends on it
 and how it was identified, so a break is diagnosable without re-deriving it.
 
-| Name | Kind | Used by | How it was found |
-| ---- | ---- | ------- | ---------------- |
-| `createStore` | redux export | core (`src/app/slack/redux.ts`) | named function export, wrapped via `patchExportFunction` |
-| createThunk module | thunk factory | core (`src/app/slack/redux.ts`) | signature: the same module exports a kind enum with `Thunk: 'Thunk'` and `Fetcher: 'Fetcher'` |
-| `.p-client_container` | DOM anchor | core (redux store + fiber root lookup) | stable Slack client container class |
+| Name                  | Kind          | Used by                                | How it was found                                                                              |
+| --------------------- | ------------- | -------------------------------------- | --------------------------------------------------------------------------------------------- |
+| `createStore`         | redux export  | core (`src/app/slack/redux.ts`)        | named function export, wrapped via `patchExportFunction`                                      |
+| createThunk module    | thunk factory | core (`src/app/slack/redux.ts`)        | signature: the same module exports a kind enum with `Thunk: 'Thunk'` and `Fetcher: 'Fetcher'` |
+| `.p-client_container` | DOM anchor    | core (redux store + fiber root lookup) | stable Slack client container class                                                           |
 
 ## Still to identify
 
 These gate the Group C and D plugin ports and need a live discovery session:
 
-| Needed for | What is missing |
-| ---------- | --------------- |
-| `HcaStatus` | the member hover-card, member-list and search-result anchors |
-| `Click2Load` | the message-embed iframe wrapper component |
-| `CustomSounds` | the module that plays notification audio |
-| `BetterCaptions` | the huddle/call container to mount the overlay in |
-| `bChannel` | four modules addressed by literal id in v1 (`eh+y`, `M9P0`, `DiPi`, `Tid6`). `DiPi.A` is `convertDeltaToBlocks`; the other three must be re-found as named thunks via `waitForThunkCreator` |
+| Needed for       | What is missing                                                                                                                                                                             |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `HcaStatus`      | the member hover-card, member-list and search-result anchors                                                                                                                                |
+| `Click2Load`     | the message-embed iframe wrapper component                                                                                                                                                  |
+| `CustomSounds`   | the module that plays notification audio                                                                                                                                                    |
+| `BetterCaptions` | the huddle/call container to mount the overlay in                                                                                                                                           |
+| `bChannel`       | four modules addressed by literal id in v1 (`eh+y`, `M9P0`, `DiPi`, `Tid6`). `DiPi.A` is `convertDeltaToBlocks`; the other three must be re-found as named thunks via `waitForThunkCreator` |
