@@ -22,24 +22,33 @@ Verified against **Slack 4.52.155** (Electron 44, rspack build), 2026-09-21.
   **4,994 named thunk creators** -- so `waitForThunkCreator(name)` is a solid
   way to address Slack's actions without touching a module id.
 
-## State shape: what is NOT where you would expect
+## State shape: messages
 
-Verified 2026-09-21 against Slack 4.52.155, by dumping the raw store.
+**`state.messages[channelId][ts]` holds message objects** -- nested one level
+deeper than most slices. Taut's `getRawMessage` reads exactly this, and its
+ShowRealUser patches the slice two levels deep:
 
-- **`state.messages` is empty.** It exists, but held zero entries across the
-  whole session. A `patchSlice('messages', ...)` compiles, runs, and silently
-  does nothing. This is the single easiest way to write a plugin that looks
-  fine and has no effect.
-- **`state.channelHistory[channelId].slices` holds only timestamps** --
-  `{ timestamps, start, end }` -- not message bodies.
-- A scan of all 412 slices for an id-keyed object whose entries carry a string
-  `text` field found exactly one: `customStatus`. Message bodies are not
-  reachable as a top-level id-keyed slice in this build.
+```ts
+patchSlice('messages', (channelId, bucket) => mapEntries(bucket, (ts, msg) => transform(msg, channelId, ts)));
+```
 
-**Consequence:** any plugin that rewrites message text (Censorship,
-ShowRealUser, MessageLogger, and Taut's `injectMessages` equivalent) needs the
-real storage location found first. Treat "which slice holds message text" as
-an open discovery task, not a known quantity.
+A single-level `patchSlice('messages', (id, msg) => ...)` is therefore wrong:
+the entry it receives is a _channel bucket_, not a message. That mistake
+compiles, runs, and silently does nothing.
+
+### Caveat: the slice is empty until the client really loads a conversation
+
+In unattended runs of `npm run desktop:dev` (window opened but never focused),
+`state.messages` stayed empty for the whole session, and so did `channels`,
+`members` and `view` -- while `experiments` (1857), `channelCursors` (1076) and
+`channelLatests` (1076) filled normally. `channelHistory[channelId].slices`
+carries only `{ timestamps, start, end }`, never bodies.
+
+So an empty `messages` does **not** mean Slack stopped using it; it means that
+client never got far enough to load one. Verify message-shaped work with a
+focused window on an open channel, and treat "the slice is empty" as a probe
+problem until proven otherwise. An earlier pass here concluded message bodies
+were unreachable, purely because the probe read an unpopulated store.
 
 ## Finding a name
 
