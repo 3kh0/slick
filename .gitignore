@@ -1,7 +1,7 @@
 .DS_Store
 *.log
 work/
-build/
+/build/
 dist/
 node_modules/
 byoe/node_modules/

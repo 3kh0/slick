@@ -16,10 +16,19 @@
     "validate": "node scripts/ci/validate.js",
     "check:electron": "node scripts/ci/electron-watch.js",
     "check": "npm run fmt:check && npm run lint && npm run lint:sh && npm run validate && npm run test:perf && npm run test:early",
-    "test:early:electron": "npm run early:build && node scripts/early/test-electron.js"
+    "test:early:electron": "npm run early:build && node scripts/early/test-electron.js",
+    "build": "node scripts/build.ts",
+    "desktop:dev": "node scripts/desktop.ts",
+    "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
+    "@types/node": "^26.6.2",
+    "@types/react": "^19.3.0",
+    "electron": "44.2.0",
+    "electron-builder": "^26.15.3",
+    "esbuild": "^0.28.2",
     "oxfmt": "^0.67.0",
-    "oxlint": "^1.83.0"
+    "oxlint": "^1.83.0",
+    "typescript": "^7.0.2"
   }
 }

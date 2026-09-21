@@ -1,0 +1,69 @@
+// Slick App Entrypoint
+//
+// Runs as the first script in Slack's rebuilt document. Every precondition
+// below is a reason to do nothing at all: because we now run *before* Slack,
+// a Slick that half-starts can stop Slack booting entirely, and a Slack that
+// does not boot is much worse than a Slack without Slick.
+
+type Precondition = { name: string; ok: () => boolean; detail: string };
+
+const preconditions: Precondition[] = [
+  {
+    name: 'slack-client',
+    detail: 'not the Slack client',
+    ok: () => location.hostname === 'app.slack.com' && /^\/client(\/|$)/.test(location.pathname),
+  },
+  {
+    name: 'bridge',
+    detail: 'no SlickBridge: the loader did not expose it',
+    ok: () => {
+      const bridge = (globalThis as any).SlickBridge;
+      return !!bridge?.loader && typeof bridge.bridgeVersion === 'number';
+    },
+  },
+  {
+    name: 'csp-removed',
+    detail: 'Content Security Policy is still active: the loader did not rebuild the document',
+    ok: () => {
+      try {
+        // oxlint-disable-next-line no-eval
+        (0, eval)('1');
+        return true;
+      } catch {
+        return false;
+      }
+    },
+  },
+  {
+    name: 'before-slack',
+    detail: 'Slack loaded before Slick: injected too late to patch anything',
+    ok: () => !(globalThis as any).webpackChunkwebapp && !(globalThis as any).rspackChunkwebapp,
+  },
+];
+
+function main() {
+  const version = typeof __SLICK_VERSION__ === 'string' ? __SLICK_VERSION__ : 'dev';
+
+  for (const check of preconditions) {
+    let ok = false;
+    try {
+      ok = check.ok();
+    } catch {}
+    if (ok) continue;
+    // The first precondition failing is routine (sign-in pages, marketing
+    // pages); the rest mean the loader is broken and should be loud.
+    const log = check.name === 'slack-client' ? console.log : console.error;
+    log(`[slick] not starting (${check.name}): ${check.detail}. Slack will load normally.`);
+    return;
+  }
+
+  if ((globalThis as any).SlickBridge?.safeMode) {
+    console.warn('[slick] safe mode: plugins will not be loaded');
+  }
+
+  console.log(`[slick] ${version} running before Slack — preconditions passed`);
+
+  // Phase 2 lands src/app/slack/{webpack,react,redux}.ts here, then bootstrap().
+}
+
+main();
