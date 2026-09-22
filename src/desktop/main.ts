@@ -21,10 +21,11 @@ import {
 } from './pluginHost.js';
 import { readStoredSettings, watchSettings } from './settingsFile.js';
 import { applyPatches, setMenuHandlers } from './patch.js';
-import { findSlackAsar, slackElectronMajor } from './slackFinder.js';
+import { findSlackAsar, macSlackApp, slackElectronMajor } from './slackFinder.js';
 import { privilegedSchemes, setupSession } from './session.js';
 import { createSlackUpdater } from './slackUpdater.js';
 import { createUpdater } from './updater.js';
+import { prepareWindowsNatives } from './windowsNatives.js';
 
 const cjsRequire = createRequire(import.meta.url);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -40,7 +41,8 @@ const build = typeof __SLICK_BUILD__ === 'number' ? __SLICK_BUILD__ : 0;
 // Before findSlackAsar, because this can replace the very bundle it is about
 // to resolve. A staged Slack is only ever swapped in here, with nothing loaded
 // from it yet -- never under a running session.
-const slackUpdater = createSlackUpdater({ version });
+// The pinned Slack, not always /Applications: v1 updated whichever one it ran.
+const slackUpdater = createSlackUpdater({ version, slackApp: macSlackApp() });
 slackUpdater.applyStagedIfAny();
 
 const slackAsar = findSlackAsar();
@@ -110,6 +112,15 @@ function startSlack(asar: string) {
   if (mismatch && !launchAnyway(mismatch)) {
     app.exit(1);
     return;
+  }
+
+  if (process.platform === 'win32') {
+    try {
+      if (prepareWindowsNatives(asar)) console.log('[slick] mirrored Slack native modules');
+    } catch (error) {
+      // Slack's own require() reports the failure that matters, if any.
+      console.error('[slick] could not mirror Slack native modules:', error);
+    }
   }
 
   // Main halves boot before app-ready, because privileged schemes and

@@ -15,9 +15,15 @@
 // happens at the next launch, before the asar is required, so the bundle is
 // never replaced under a running session.
 //
-// Only macOS is implemented. Every step here is darwin-shaped -- the app path,
-// the plist reads, ditto, codesign, and the download URL -- so the other
-// platforms get inert stubs rather than a half-working implementation.
+// Windows is simpler, because the standalone Slack is a Squirrel install:
+// Squirrel's own Update.exe can be pointed at Slack's release feed, and it
+// verifies the package against the feed's hashes and installs a new `app-<ver>`
+// directory beside the running one. slackFinder.ts already picks the newest of
+// those, so the update takes effect at the next launch with no swap of ours.
+// The Microsoft Store (MSIX) Slack is updated by the Store and left alone.
+//
+// Linux Slack comes from a package manager, which keeps it current; Slick
+// has nothing to add there.
 
 import { execFile, execFileSync } from 'node:child_process';
 import fs from 'node:fs';
@@ -29,9 +35,14 @@ import { settingsDir } from './paths.js';
 const MAC = process.platform === 'darwin';
 const FRAMEWORK_PLIST_REL = 'Contents/Frameworks/Electron Framework.framework/Resources/Info.plist';
 const SLACK_BUNDLE_ID = 'com.tinyspeck.slackmacgap';
+// Slack Technologies' Developer ID team. A valid signature alone only proves
+// *someone* signed the bundle; this proves it was Slack.
+const SLACK_REQUIREMENT = 'anchor apple generic and certificate leaf[subject.OU] = "BQR82RBBHL"';
 const LATEST_REDIRECT = 'https://slack.com/ssb/download-osx-universal';
 const VERSION_RE = /desktop-releases\/mac\/[^/]+\/(\d+\.\d+\.\d+)\//;
 const CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;
+/** A download that stops delivering bytes for this long is abandoned. */
+const STALL_MS = 60_000;
 
 const log = (message: string) => console.log(`[slick-slack-updater] ${message}`);
 const reason = (error: unknown) => String((error as Error)?.message ?? error);
@@ -92,6 +103,7 @@ export function createSlackUpdater({
   const slackInfoPlist = path.join(slackApp, 'Contents/Info.plist');
   const installedVersion = () => plistValue(slackInfoPlist, 'CFBundleShortVersionString');
 
+  if (process.platform === 'win32') return createWindowsSlackUpdater(`Slick/${version || '0'}`);
   if (!MAC) {
     const noop = () => {};
     return {
@@ -159,7 +171,12 @@ export function createSlackUpdater({
             file.on('finish', () => file.close(() => resolve()));
             res.pipe(file);
           })
-          .on('error', reject);
+          .on('error', reject)
+          // Without this a stalled connection pends forever, and so does the
+          // check that owns it.
+          .setTimeout(STALL_MS, function (this: import('node:http').ClientRequest) {
+            this.destroy(new Error('download stalled'));
+          });
       };
       get(url, 0);
     });
@@ -172,7 +189,9 @@ export function createSlackUpdater({
 
   const verifyCodesign = (appPath: string) =>
     new Promise<boolean>((resolve) =>
-      execFile('/usr/bin/codesign', ['--verify', '--deep', '--strict', appPath], (error) => resolve(!error)),
+      execFile('/usr/bin/codesign', ['--verify', '--deep', '--strict', `-R=${SLACK_REQUIREMENT}`, appPath], (error) =>
+        resolve(!error),
+      ),
     );
 
   /**
@@ -201,6 +220,13 @@ export function createSlackUpdater({
       return;
     }
 
+    // The official app may be open alongside Slick. Moving the bundle out from
+    // under it breaks that session, so wait for a launch where it is not.
+    if (slackRunning()) {
+      log(`Slack is running; leaving staged ${marker.version} for the next launch`);
+      return;
+    }
+
     const backup = `${slackApp}.slick-old`;
     try {
       fs.rmSync(backup, { recursive: true, force: true });
@@ -219,7 +245,29 @@ export function createSlackUpdater({
     }
   }
 
+  const slackRunning = () => {
+    try {
+      execFileSync('/usr/bin/pgrep', ['-f', `${slackApp}/Contents/MacOS/Slack`], { stdio: 'ignore' });
+      return true;
+    } catch {
+      return false; // pgrep exits 1 when nothing matches
+    }
+  };
+
+  let checking = false;
+
   async function checkNow(): Promise<void> {
+    // A slow download must not overlap the next scheduled check.
+    if (checking) return;
+    checking = true;
+    try {
+      await check();
+    } finally {
+      checking = false;
+    }
+  }
+
+  async function check(): Promise<void> {
     let latest: string;
     try {
       latest = await latestVersion();
@@ -296,4 +344,93 @@ export function createSlackUpdater({
   }
 
   return { applyStagedIfAny, checkNow, scheduleChecks, latestVersion, installedVersion };
+}
+
+// Windows (Squirrel)
+
+const WIN_LATEST_REDIRECT = 'https://slack.com/ssb/download-win64';
+const WIN_VERSION_RE = /desktop-releases\/windows\/x64\/(\d+\.\d+\.\d+)\//;
+const WIN_FEED = (version: string) => `https://downloads.slack-edge.com/desktop-releases/windows/x64/${version}/`;
+/** Update.exe downloads ~160MB and unpacks it; give it room, but not forever. */
+const WIN_UPDATE_TIMEOUT_MS = 30 * 60 * 1000;
+
+function createWindowsSlackUpdater(ua: string): SlackUpdater {
+  const base = path.join(process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local'), 'slack');
+  const updateExe = path.join(base, 'Update.exe');
+
+  const installedVersion = () => {
+    try {
+      return (
+        fs
+          .readdirSync(base)
+          .filter((name) => /^app-\d+\.\d+\.\d+$/.test(name))
+          .map((name) => name.slice(4))
+          .toSorted((a, b) => cmpVersion(b, a))[0] ?? ''
+      );
+    } catch {
+      return '';
+    }
+  };
+
+  function latestVersion(): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const req = https.get(WIN_LATEST_REDIRECT, { headers: { 'User-Agent': ua } }, (res) => {
+        res.resume();
+        const match = WIN_VERSION_RE.exec(res.headers.location || '');
+        const status = res.statusCode ?? 0;
+        if (status >= 300 && status < 400 && match) resolve(match[1]);
+        else reject(new Error(`unexpected latest-version response HTTP ${status}`));
+      });
+      req.setTimeout(15000, () => req.destroy(new Error('latest-version check timed out')));
+      req.on('error', reject);
+    });
+  }
+
+  let checking = false;
+
+  async function checkNow(): Promise<void> {
+    if (checking) return;
+    // Only a standalone install has Update.exe; the Store build has neither
+    // it nor a need for it.
+    if (!fs.existsSync(updateExe)) return;
+    checking = true;
+    try {
+      const installed = installedVersion();
+      if (!installed) return;
+      let latest: string;
+      try {
+        latest = await latestVersion();
+      } catch (error) {
+        log(`latest-version check failed: ${reason(error)}`);
+        return;
+      }
+      if (cmpVersion(latest, installed) <= 0) return;
+
+      log(`Slack ${latest} available (installed ${installed}); updating through Squirrel`);
+      await new Promise<void>((resolve) =>
+        execFile(
+          updateExe,
+          ['--update', WIN_FEED(latest)],
+          { windowsHide: true, timeout: WIN_UPDATE_TIMEOUT_MS },
+          (error) => {
+            if (error) log(`Squirrel update failed: ${reason(error)}`);
+            else log(`installed Slack ${installedVersion()}; takes effect on the next launch`);
+            resolve();
+          },
+        ),
+      );
+    } finally {
+      checking = false;
+    }
+  }
+
+  function scheduleChecks(): void {
+    const run = () => {
+      checkNow().catch(() => {});
+      setTimeout(run, CHECK_INTERVAL_MS).unref?.();
+    };
+    setTimeout(run, 90_000).unref?.();
+  }
+
+  return { applyStagedIfAny: () => {}, checkNow, scheduleChecks, latestVersion, installedVersion };
 }

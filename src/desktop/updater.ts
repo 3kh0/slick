@@ -185,6 +185,30 @@ function releaseBuild(release: Release | null): number {
   return match ? Number.parseInt(match[1], 10) : 0;
 }
 
+/** The directory an update replaces: the .app bundle, or the unpacked app dir. */
+function installRoot(): string {
+  return MAC ? path.resolve(process.execPath, '..', '..', '..') : path.dirname(process.execPath);
+}
+
+/**
+ * Why Slick cannot replace itself here, or '' when it can. A Flatpak is
+ * updated by Flatpak and its /app is read-only; an install in a directory the
+ * user cannot write (/opt, /Applications without admin) would have the swap
+ * fail after the download, with nothing to show for it.
+ */
+function selfUpdateBlocker(): string {
+  if (PLATFORM === 'linux' && (process.env.FLATPAK_ID || fs.existsSync('/.flatpak-info'))) {
+    return 'This copy of Slick is a Flatpak, so it is updated through Flatpak.';
+  }
+  try {
+    fs.accessSync(path.dirname(installRoot()), fs.constants.W_OK);
+    fs.accessSync(installRoot(), fs.constants.W_OK);
+    return '';
+  } catch {
+    return `Slick cannot write to ${installRoot()}, so it cannot update itself there.`;
+  }
+}
+
 /** PowerShell single-quoted literal. */
 function psq(s: string): string {
   return `'${String(s).replace(/'/g, "''")}'`;
@@ -431,19 +455,20 @@ export function createUpdater({ version, build }: { version: string; build: numb
    * can be the extraction directory itself, and deriving the cleanup target
    * from it would delete a directory we do not own.
    */
-  function install(stage: string, dir: string): void {
+  function install(stage: string, dir: string, relaunch = true): Promise<void> {
+    const again = relaunch ? '1' : '';
     if (MAC) {
-      const appPath = path.resolve(process.execPath, '..', '..', '..');
+      const appPath = installRoot();
       const sh =
         'APP="$1"; STAGE="$2"; DIR="$3"; PID="$4"; while kill -0 "$PID" 2>/dev/null; do sleep 0.2; done; ' +
         'rm -rf "$APP.old"; mv "$APP" "$APP.old" 2>/dev/null || true; ' +
         'if /usr/bin/ditto "$STAGE" "$APP"; then rm -rf "$APP.old"; else rm -rf "$APP"; mv "$APP.old" "$APP" 2>/dev/null || true; fi; ' +
-        'rm -rf "$DIR"; open "$APP"';
-      spawn('/bin/sh', ['-c', sh, 'slick-updater', appPath, stage, dir, String(process.pid)], {
+        'rm -rf "$DIR"; [ -z "$5" ] || open "$APP"';
+      spawn('/bin/sh', ['-c', sh, 'slick-updater', appPath, stage, dir, String(process.pid), again], {
         detached: true,
         stdio: 'ignore',
       }).unref();
-      return;
+      return Promise.resolve();
     }
 
     if (PLATFORM === 'linux') {
@@ -452,18 +477,18 @@ export function createUpdater({ version, build }: { version: string; build: numb
         'APP="$1"; STAGE="$2"; DIR="$3"; PID="$4"; while kill -0 "$PID" 2>/dev/null; do sleep 0.2; done; ' +
         'rm -rf "$APP.old"; mv "$APP" "$APP.old" 2>/dev/null || true; ' +
         'if mv "$STAGE" "$APP"; then rm -rf "$APP.old"; else rm -rf "$APP"; mv "$APP.old" "$APP" 2>/dev/null || true; fi; ' +
-        'rm -rf "$DIR"; "$APP/slick" >/dev/null 2>&1 &';
-      spawn('/bin/sh', ['-c', sh, 'slick-updater', appDir, stage, dir, String(process.pid)], {
+        'rm -rf "$DIR"; [ -z "$5" ] || "$APP/slick" >/dev/null 2>&1 &';
+      spawn('/bin/sh', ['-c', sh, 'slick-updater', appDir, stage, dir, String(process.pid), again], {
         detached: true,
         stdio: 'ignore',
       }).unref();
-      return;
+      return Promise.resolve();
     }
 
     const appDir = path.dirname(process.execPath);
     const ps1 = path.join(dir, 'slick-update.ps1');
     const lines = [
-      'param([int]$ProcId,[string]$App,[string]$Stage,[string]$Dir)',
+      'param([int]$ProcId,[string]$App,[string]$Stage,[string]$Dir,[int]$Relaunch)',
       '$ErrorActionPreference = "SilentlyContinue"',
       'while (Get-Process -Id $ProcId -ErrorAction SilentlyContinue) { Start-Sleep -Milliseconds 200 }',
       '$deadline = (Get-Date).AddSeconds(20)',
@@ -471,29 +496,49 @@ export function createUpdater({ version, build }: { version: string; build: numb
       'Start-Sleep -Milliseconds 500',
       'robocopy $Stage $App /MIR /R:10 /W:1 /NFL /NDL /NJH /NJS /NP | Out-Null',
       '$env:ELECTRON_NO_ATTACH_CONSOLE = "1"',
-      'Start-Process -FilePath (Join-Path $App "Slick.exe") -WorkingDirectory $App',
+      'if ($Relaunch) { Start-Process -FilePath (Join-Path $App "Slick.exe") -WorkingDirectory $App }',
       'Remove-Item -Recurse -Force $Dir',
     ];
     fs.writeFileSync(ps1, lines.join('\r\n'));
-    spawn(
+
+    // The helper has to outlive Slick, since waiting for Slick to exit is its
+    // first job. libuv puts every child it spawns on Windows into a
+    // kill-on-close job, so a helper spawned directly dies with Slick and the
+    // update is downloaded, verified and never installed -- v1 shipped that
+    // bug. `detached` is no way out: powershell.exe never runs as a
+    // DETACHED_PROCESS. The job does let a child's own children break away,
+    // so a throwaway launcher starts the real helper with Start-Process.
+    // All three paths are ours and cannot contain a double quote.
+    const helperArgs = [
+      '-NoProfile -ExecutionPolicy Bypass',
+      `-File "${ps1}"`,
+      `-ProcId ${process.pid}`,
+      `-App "${appDir}"`,
+      `-Stage "${stage}"`,
+      `-Dir "${dir}"`,
+      `-Relaunch ${relaunch ? 1 : 0}`,
+    ].join(' ');
+    const launcher = spawn(
       'powershell.exe',
       [
         '-NoProfile',
-        '-ExecutionPolicy',
-        'Bypass',
-        '-File',
-        ps1,
-        '-ProcId',
-        String(process.pid),
-        '-App',
-        appDir,
-        '-Stage',
-        stage,
-        '-Dir',
-        dir,
+        '-NonInteractive',
+        '-Command',
+        `Start-Process powershell.exe -WindowStyle Hidden -ArgumentList ${psq(helperArgs)}`,
       ],
       { stdio: 'ignore', windowsHide: true },
-    ).unref();
+    );
+    // The launcher is still in the job, so Slick must not exit before it has
+    // handed off. It normally takes well under a second.
+    return new Promise((resolve) => {
+      const timer = setTimeout(resolve, 10_000);
+      const done = () => {
+        clearTimeout(timer);
+        resolve();
+      };
+      launcher.once('exit', done);
+      launcher.once('error', done);
+    });
   }
 
   let progressWin: BrowserWindow | null = null;
@@ -570,7 +615,7 @@ export function createUpdater({ version, build }: { version: string; build: numb
 
   async function perform(release: Release): Promise<void> {
     const asset = pickAsset(release);
-    if (!asset?.browser_download_url) {
+    if (!asset?.browser_download_url || selfUpdateBlocker()) {
       await shell.openExternal(release.html_url || RELEASES_URL);
       return;
     }
@@ -673,23 +718,31 @@ export function createUpdater({ version, build }: { version: string; build: numb
       cancelId: 1,
     });
     if (response === 0) {
-      install(stage, dir);
+      await install(stage, dir);
       app.quit();
       return;
     }
-    try {
-      fs.rmSync(dir, { recursive: true, force: true });
-    } catch {}
+    // "Later" keeps the promise the download prompt made: the verified update
+    // is installed when Slick next quits, without relaunching it. The quit is
+    // held until the helper is launched, then finished with exit(), since
+    // every other will-quit listener has already run.
+    app.once('will-quit', (event) => {
+      event.preventDefault();
+      void install(stage, dir, false).finally(() => app.exit(0));
+    });
   }
 
   async function promptDownload(release: Release, latestBuild: number): Promise<void> {
+    const blocker = selfUpdateBlocker();
     try {
       const { response } = await dialog.showMessageBox({
         type: 'info',
         title: 'Slick update available',
         message: `Slick Build ${latestBuild} is available`,
-        detail: `You are running Build ${build}. Download it now and Slick will install it on the next restart.`,
-        buttons: ['Download', 'Later'],
+        detail: blocker
+          ? `You are running Build ${build}. ${blocker}`
+          : `You are running Build ${build}. Download it now and Slick will install it on the next restart.`,
+        buttons: [blocker ? 'Open Release Page' : 'Download', 'Later'],
         defaultId: 0,
         cancelId: 1,
       });
@@ -699,7 +752,9 @@ export function createUpdater({ version, build }: { version: string; build: numb
 
   /** The background check: silent unless there is something to offer. */
   async function checkForUpdates(): Promise<void> {
-    if (!build) return;
+    // Unprompted checks stay quiet where the answer could only be "update it
+    // yourself"; the menu item still reports availability.
+    if (!build || selfUpdateBlocker()) return;
     const now = Date.now();
     const state = readState();
     if (state.lastCheckedAt && now - state.lastCheckedAt < CHECK_INTERVAL_MS) return;

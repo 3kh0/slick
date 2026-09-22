@@ -22,7 +22,8 @@
 // about that changes here -- this packages Slick's own Electron and loader,
 // exactly as the dev stage runs them.
 
-import { readFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { existsSync, readFileSync } from 'node:fs';
 import { copyFile, cp, mkdir, rename, rm } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import path from 'node:path';
@@ -44,6 +45,35 @@ const OUTPUT = path.join(DIST, 'release');
 const { archive } = createRequire(import.meta.url)('app-builder-lib/out/targets/archive.js') as {
   archive(format: string, outFile: string, dirToArchive: string): Promise<string>;
 };
+
+/**
+ * Finish the macOS bundle before electron-builder zips it.
+ *
+ * With `identity: null` electron-builder signs nothing, and its edits to
+ * Info.plist and Resources leave Electron's original seal broken
+ * (`codesign --verify` fails: "code has no resources but signature indicates
+ * they must be present"). v1's builder always ad-hoc signed, and install.sh
+ * still does for source builds, but the release zip and the auto-updater path
+ * never pass through install.sh -- so this is where a downloaded or
+ * self-updated Slick gets a valid signature. The macOS 26 icon variants go in
+ * first, since they are sealed resources too.
+ */
+function finishMacApp(appPath: string) {
+  const car = path.join(ASSETS, 'Assets.car');
+  if (existsSync(car)) {
+    execFileSync('/bin/cp', [car, path.join(appPath, 'Contents', 'Resources', 'Assets.car')]);
+    execFileSync('/usr/bin/plutil', [
+      '-replace',
+      'CFBundleIconName',
+      '-string',
+      'desktop',
+      path.join(appPath, 'Contents', 'Info.plist'),
+    ]);
+  }
+  const entitlements = path.join(ROOT, 'scripts', 'release', 'entitlements.plist');
+  execFileSync('/usr/bin/codesign', ['--force', '--deep', '--sign', '-', '--entitlements', entitlements, appPath]);
+  execFileSync('/usr/bin/codesign', ['--verify', '--deep', '--strict', appPath]);
+}
 
 type PackageOptions = { debug?: boolean; platform?: NodeJS.Platform; arch?: string };
 
@@ -83,7 +113,10 @@ async function legacyArchive(platform: NodeJS.Platform, arch: string): Promise<s
   } else {
     const temporaryArtifact = path.join(stage, 'Slick.tar.gz');
     await rm(artifact, { force: true });
-    await archive('tar.gz', temporaryArtifact, app);
+    // app-builder-lib's archive helper invokes 7za with a .tar.gz target on
+    // Linux, which fails with E_INVALIDARG (seen on Arch). tar also preserves
+    // the executable bits and symlinks in Electron's unpacked distribution.
+    execFileSync('tar', ['-czf', temporaryArtifact, '-C', stage, 'Slick']);
     await rename(temporaryArtifact, artifact);
   }
   await rm(stage, { recursive: true, force: true });
@@ -145,6 +178,11 @@ export async function packageDesktop({ debug = false, platform = process.platfor
         icon: path.join(ASSETS, 'icon.png'),
         target: [{ target: 'tar.gz', arch: ['x64', 'arm64'] }],
         artifactName: 'Slick-${version}-linux-${arch}.${ext}',
+      },
+
+      afterPack: async (context) => {
+        if (context.electronPlatformName !== 'darwin') return;
+        finishMacApp(path.join(context.appOutDir, `${context.packager.appInfo.productFilename}.app`));
       },
 
       // Nothing here is published from the build; release.yml uploads and

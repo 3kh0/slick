@@ -414,14 +414,14 @@ else
   echo "    xdg-mime not found; could not register slack:// automatically."
 fi
 
+LAUNCH_BIN="electron"
+[ -x "$TARGET/slick" ] && LAUNCH_BIN="slick"
 if [ "$NO_LAUNCH" -eq 0 ]; then
   step "Launching Slick"
   SLICK_LAUNCH_T0="$(date +%s%3N 2>/dev/null || echo '')"
   export SLICK_LAUNCH_T0
   LOG_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/slick"
   mkdir -p "$LOG_DIR"
-  LAUNCH_BIN="electron"
-  [ -x "$TARGET/slick" ] && LAUNCH_BIN="slick"
   setsid "$TARGET/$LAUNCH_BIN" --no-sandbox >"$LOG_DIR/launch.log" 2>&1 </dev/null &
   disown
   echo "    launched in the background (log: $LOG_DIR/launch.log)"
@@ -432,7 +432,7 @@ cat <<EOF
 Things to know:
 - First launch shows a sign-in screen (separate profile from official Slack). Sign in once; it persists.
 - Configure at Preferences -> Slick.
-- Manual launch: $TARGET/electron --no-sandbox
+- Manual launch: $TARGET/$LAUNCH_BIN --no-sandbox
 - Uninstall: ./install-linux.sh --uninstall (or curl -fsSL $RAW_BASE/install-linux.sh | bash -s -- --uninstall)
 - Make slack:// open the official Slack again: ./install-linux.sh --restore-handler
 EOF

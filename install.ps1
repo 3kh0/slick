@@ -44,6 +44,22 @@ function Assert-ReleaseAttestation([string]$Path) {
   Die "refusing to install an unattested or mismatched build"
 }
 
+# Windows PowerShell 5.1 turns every stderr line of a native command into an
+# ErrorRecord once it is redirected, and under $ErrorActionPreference = 'Stop'
+# the first one is fatal -- so a Node warning aborted the build. Run the tool
+# with errors non-terminating and judge it by its exit code alone; its output
+# goes to a log that is shown only when it fails.
+function Invoke-Logged([string]$Log, [scriptblock]$Command) {
+  $prevEap = $ErrorActionPreference
+  $ErrorActionPreference = 'Continue'
+  try {
+    & $Command *> $Log
+    return $LASTEXITCODE
+  } finally {
+    $ErrorActionPreference = $prevEap
+  }
+}
+
 function Get-File($url, $dest, $label) {
   $ProgressPreference = 'Continue'
   $resp = $null; $stream = $null; $out = $null
@@ -193,7 +209,17 @@ function Stop-Slick([string]$InstalledAt) {
 }
 
 function Restore-OfficialHandler {
-  $exe = Slack-Exe (Find-SlackResources)
+  $res = Find-SlackResources
+  # The Store build registers slack:// through its package, under a path that
+  # changes with every Store update. Pointing the key at today's Slack.exe
+  # would break on the next one; deleting our override lets the package's own
+  # registration answer again.
+  if ($res -match '\\WindowsApps\\') {
+    Remove-Item "HKCU:\Software\Classes\$Protocol" -Recurse -Force -EA SilentlyContinue
+    & ie4uinit.exe -show 2>$null
+    return $true
+  }
+  $exe = Slack-Exe $res
   if ($exe) {
     Reg "HKCU:\Software\Classes\$Protocol\shell\open\command" @{ '(default)' = "`"$($exe.FullName)`" `"%1`"" }
     & ie4uinit.exe -show 2>$null
@@ -271,8 +297,12 @@ if ($V2) {
   Step "Building Slick v2 (this bundles Electron; give it a minute)"
   Push-Location $Root
   try {
-    & node (Join-Path $Root 'scripts\build.ts') package --arch $slackArch 2>&1 | Out-Null
-    if ($LASTEXITCODE -ne 0) { Die "build failed; run 'node scripts/build.ts package --arch $slackArch' to see why" }
+    $log = Join-Path $env:TEMP 'slick-build.log'
+    $code = Invoke-Logged $log { node (Join-Path $Root 'scripts\build.ts') package --arch $slackArch }
+    if ($code -ne 0) {
+      Get-Content $log -Tail 30 -EA SilentlyContinue | Write-Host
+      Die "build failed (full log: $log)"
+    }
   } finally { Pop-Location }
 
   $built = Join-Path $Root "dist\release\$unpacked"

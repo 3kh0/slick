@@ -11,7 +11,7 @@ import crypto from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import path from 'node:path';
-import { app, ipcMain, Menu, shell } from 'electron';
+import { app, ipcMain, Menu, MenuItem, shell } from 'electron';
 import { profileDir } from './paths.js';
 
 const cjsRequire = createRequire(import.meta.url);
@@ -90,10 +90,15 @@ function slickMenuTemplate(): Electron.MenuItemConstructorOptions {
 
 // v1 only patched the menu on macOS (inside build-handoff-app.js); doing it
 // here gets it on Windows and Linux too.
-function injectSlickMenu(items: (Electron.MenuItem | Electron.MenuItemConstructorOptions)[]) {
+type AnyItem = Electron.MenuItem | Electron.MenuItemConstructorOptions;
+/** Slack's Windows labels carry access keys (`&Help`), and its Help item has no role. */
+const labelled = (item: AnyItem, name: string) => (item.label ?? '').replace('&', '') === name;
+const isHelp = (item: AnyItem) => item.role === 'help' || labelled(item, 'Help');
+
+function injectSlickMenu(items: AnyItem[]) {
   const out = [...items];
-  if (out.some((item) => (item as Electron.MenuItem).label === 'Slick')) return out;
-  const helpIndex = out.findIndex((item) => (item as Electron.MenuItem).role === 'help');
+  if (out.some((item) => item.label === 'Slick')) return out;
+  const helpIndex = out.findIndex(isHelp);
   if (helpIndex === -1) out.push(slickMenuTemplate());
   else out.splice(helpIndex, 0, slickMenuTemplate());
   return out;
@@ -211,6 +216,19 @@ export function applyPatches(
   OrigBrowserWindow.prototype.setMenu = function (this: Electron.BrowserWindow, menu: Electron.Menu | null) {
     if (!menu) return origSetMenu.call(this, menu);
     return origSetMenu.call(this, Menu.buildFromTemplate(injectSlickMenu(menu.items)));
+  };
+
+  // On Windows Slack sets neither of those: its title-bar button builds the
+  // File/Edit/.../Help menu afresh and pops it up, so without this the Slick
+  // menu -- and with it Settings and Check for Updates -- never appeared there.
+  // Only a menu shaped like the app menu is touched, never a context menu.
+  const origPopup = Menu.prototype.popup;
+  Menu.prototype.popup = function (this: Electron.Menu, options?: Electron.PopupOptions) {
+    const items = this.items;
+    if (items.some((item) => labelled(item, 'File')) && items.some(isHelp) && !items.some((i) => i.label === 'Slick')) {
+      this.insert(items.findIndex(isHelp), new MenuItem(slickMenuTemplate()));
+    }
+    return origPopup.call(this, options);
   };
 
   app.setAboutPanelOptions({

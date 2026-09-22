@@ -8,11 +8,18 @@ import { settingsDir } from './paths.js';
 
 const MAX_VALUE_BYTES = 8 * 1024 * 1024;
 
+// Plugins namespace their keys with `:` (`plugin:ShowRealUser`,
+// `cache:relay_senders:...`), which Windows forbids in file names, so every
+// write there failed. `%` never survives safeSegment, which makes `%3A` an
+// unambiguous stand-in that list() can reverse. Only on Windows: elsewhere the
+// colon is legal and existing stores already use it.
+const COLON = process.platform === 'win32' ? '%3A' : ':';
+
 /** Namespaces and keys become path segments, so they must not escape the root. */
 function safeSegment(value: string): string {
   const cleaned = value.replace(/[^A-Za-z0-9_.:-]/g, '_');
   if (!cleaned || cleaned === '.' || cleaned === '..') throw new Error('[slick] invalid storage segment');
-  return cleaned.slice(0, 200);
+  return cleaned.slice(0, 200).replaceAll(':', COLON);
 }
 
 function storeDir(namespace: string): string {
@@ -26,7 +33,9 @@ function keyPath(namespace: string, key: string): string {
 export async function list(namespace: string): Promise<string[]> {
   try {
     const entries = await fs.readdir(storeDir(namespace));
-    return entries.filter((name) => name.endsWith('.json')).map((name) => name.slice(0, -'.json'.length));
+    return entries
+      .filter((name) => name.endsWith('.json'))
+      .map((name) => name.slice(0, -'.json'.length).replaceAll(COLON, ':'));
   } catch {
     return [];
   }

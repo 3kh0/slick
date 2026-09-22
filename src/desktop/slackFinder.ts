@@ -19,6 +19,8 @@ const LINUX_CANDIDATES = [
   '/usr/lib/slack',
   '/opt/Slack',
   '/opt/slack',
+  // Ubuntu's default route to Slack. Last, so a native package wins when both exist.
+  '/snap/slack/current/usr/lib/slack',
 ];
 
 /** Descending numeric compare of dotted version strings. */
@@ -45,9 +47,13 @@ function pinnedSlackApp(): string {
 
 // macOS
 
+/** The Slack.app Slick runs on: the installer's pin, else /Applications. */
+export function macSlackApp(): string {
+  return pinnedSlackApp() || MAC_DEFAULT_APP;
+}
+
 function findMac(): string {
-  const app = pinnedSlackApp() || MAC_DEFAULT_APP;
-  const resources = path.join(app, 'Contents', 'Resources');
+  const resources = path.join(macSlackApp(), 'Contents', 'Resources');
   return hasAsar(resources) ? resources : '';
 }
 
