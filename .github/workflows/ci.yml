@@ -1,9 +1,6 @@
 name: CI
 
 on:
-  # push is main only. Every other branch is covered by pull_request, and
-  # listing one here too (v2-rewrite did) runs the whole matrix twice on an
-  # open PR.
   push:
     branches: [main]
   pull_request:
@@ -18,22 +15,18 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # CI ran only the four static checks and no tests at all, so a broken
-        # test could be merged without anything noticing. typecheck and the
-        # test suites are the point of this job, not an extra.
         check:
-          - 'fmt:check'
+          - "fmt:check"
           - lint
-          - 'lint:sh'
+          - "lint:sh"
           - typecheck
-          - 'test:app'
+          - "test:app"
     steps:
       - uses: actions/checkout@v7
       - uses: oven-sh/setup-bun@v2
       - run: bun install --frozen-lockfile
-        # Electron's postinstall downloads a ~100MB binary that no check needs.
         env:
-          ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+          ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
       - run: bun run ${{ matrix.check }}
 
   build:
@@ -41,15 +34,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-        # versions.ts reads the newest v<N> tag for the build number.
         with:
           fetch-depth: 0
       - uses: oven-sh/setup-bun@v2
       - run: bun install --frozen-lockfile
         env:
-          ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
-      # Bundling is the check that a plugin actually compiles and default-exports
-      # a named class; typecheck alone does not catch that.
+          ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
       - run: bun run build
 
   package:
@@ -75,4 +65,4 @@ jobs:
       - run: bun install --frozen-lockfile
       - run: bun run build -- package --arch ${{ matrix.arch }}
         env:
-          SLICK_BUILD: '86'
+          SLICK_BUILD: "86"
