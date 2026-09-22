@@ -1,7 +1,0 @@
-{
-  "private": true,
-  "description": "only used for release signing and notarization",
-  "dependencies": {
-    "@electron/osx-sign": "^2.7.0"
-  }
-}

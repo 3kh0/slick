@@ -1,15 +1,18 @@
-// Dev runner: build the loader, then launch it with the vendored Electron.
+// Dev runner: build the loader, then launch it with the project's Electron.
 // `node scripts/desktop.ts [--safe-mode]`
 
 import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import path from 'node:path';
 import { buildDesktop } from './build/desktop.ts';
 import { DIST_DESKTOP, ROOT } from './lib/paths.ts';
 
-const electron = path.join(ROOT, 'byoe', 'node_modules', '.bin', 'electron');
+// The same Electron electron-builder packages, so dev and release agree. The
+// package's main export is the path to its binary.
+const electron = String(createRequire(import.meta.url)('electron'));
 if (!existsSync(electron)) {
-  console.error(`No vendored Electron at ${electron}. Run: cd byoe && bun install`);
+  console.error(`No Electron at ${electron}. Run: bun install`);
   process.exit(1);
 }
 

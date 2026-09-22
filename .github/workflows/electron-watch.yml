@@ -32,7 +32,7 @@ jobs:
           set -euo pipefail
 
           gh label create electron-mismatch --color BFD4F2 \
-            --description "Slack's bundled Electron major moved ahead of byoe/" 2>/dev/null || true
+            --description "Slack's bundled Electron major moved ahead of Slick's" 2>/dev/null || true
 
           # One issue per major: the daily run finds its own issue instead of duplicating it.
           existing="$(gh issue list --state all --label electron-mismatch --limit 100 --json number,title \
@@ -45,7 +45,7 @@ jobs:
           cat > body.md <<BODY
           Slack **$SLACK_VERSION** bundles Electron **$SLACK_ELECTRON**, but \`package.json\` pins Electron **$BYOE_ELECTRON**.
 
-          Slack's native modules are built against the Electron major Slack shipped, so running them under a BYOE across a major boundary ABI-crashes: \`scripts/launch-byoe.sh\` refuses to launch, and \`scripts/byoe/slack-updater.js\` stops staging Slack updates until the pin catches up. Source installs through \`install.sh\` self-heal — they install whatever Slack ships — but the prebuilt releases bake this pin, so they need a new build.
+          Slack's native modules are built against the Electron major Slack shipped, so running them under a BYOE across a major boundary ABI-crashes: Slick's boot preflight (\`src/desktop/main.ts\`) warns before loading Slack, and the macOS Slack updater (\`src/desktop/slackUpdater.ts\`) stops staging Slack updates until the pin catches up. Every Slick build, source or release, bakes this pin, so it needs a new release.
 
           To fix:
 

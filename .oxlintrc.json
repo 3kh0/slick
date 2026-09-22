@@ -8,11 +8,5 @@
     "no-underscore-dangle": "off",
     "unicorn/consistent-function-scoping": "off"
   },
-  "ignorePatterns": ["plugins/*/vendor/**", "byoe/**", "work/**", "node_modules/**"],
-  "overrides": [
-    {
-      "files": ["plugins/*/renderer.js", "scripts/byoe/inject.js", "scripts/byoe/settings-*.js"],
-      "env": { "browser": true }
-    }
-  ]
+  "ignorePatterns": ["work/**", "node_modules/**"]
 }

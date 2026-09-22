@@ -70,7 +70,7 @@ function finishMacApp(appPath: string) {
       path.join(appPath, 'Contents', 'Info.plist'),
     ]);
   }
-  const entitlements = path.join(ROOT, 'scripts', 'release', 'entitlements.plist');
+  const entitlements = path.join(ROOT, 'packaging', 'mac', 'entitlements.plist');
   execFileSync('/usr/bin/codesign', ['--force', '--deep', '--sign', '-', '--entitlements', entitlements, appPath]);
   execFileSync('/usr/bin/codesign', ['--verify', '--deep', '--strict', appPath]);
 }
