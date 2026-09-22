@@ -14,29 +14,13 @@
 
 ![screenshot](https://github.com/user-attachments/assets/a5cc6152-cd94-4894-9bc0-cd7c605c291c)
 
-Slick runs Slack's own `app.asar` with a custom Electron (with the handy BYOE acronym, bring your own electron) preload that injects themes and plugins. This method allows us to modify Slack's interface and behavior without altering its files, so auto-updates still work and there's no open debug port or resident watcher.
+Slick runs Slack's own `app.asar` inside its own Electron (with the handy BYOE acronym, bring your own electron). Slick's code runs before Slack's bundle and patches Slack from the inside, through its module system, React, and Redux, rather than by poking at the page afterwards. Slack's files are never altered, both apps keep updating, and there's no open debug port or resident watcher.
 
 ## Installation
 
 Slick runs on MacOS, Windows, and Linux. Linux is still in beta.
 
 Whatever platform you use, you'll need the official Slack app installed first, since Slick runs Slack's own code.
-
-### Slick v2 beta
-
-We have a new early-injection beta prototype that runs plugins and themes in Slack's own runtime instead of the stable loader. This is a work-in-progress and not yet ready for general use, but you can try it out if you want to help test it.
-
-Use a **source checkout containing the beta changes** until the updated installers and release payloads are published. From that checkout's root:
-
-- **macOS:** `bash ./install.sh --beta`
-- **Windows (PowerShell):** `powershell -ExecutionPolicy Bypass -File .\install.ps1 -Beta`
-- **Linux:** `bash ./install-linux.sh --beta`
-
-PowerShell's native named switch is `-Beta` (the installer also declares a `--beta` alias). These commands opt the installed runtime into beta using its root `.slick-beta` marker. Reinstall without the beta switch to remove the marker and return to the stable loader without deleting Slick settings.
-
-Source installers build and configure beta in staging before replacing the existing app. **macOS beta requires a source build**: downloaded macOS apps reject `--beta` because modifying a notarized bundle invalidates its signing; source builds add the marker before signing. Linux and Windows can configure beta-capable prebuilt releases in staging once those releases are published.
-
-Claude wrote up a wonderful [beta testing guide](docs/beta.md) first for requirements, source checkout instructions, rollback, browser unpacked installation, diagnostics, and the manual test checklist. Don't use the beta unless you read it and understand the risks.
 
 ### MacOS
 
@@ -60,8 +44,8 @@ curl -fsSL https://raw.githubusercontent.com/3kh0/slick/main/install.sh | bash -
 
 If you prefer doing it by hand, grab the latest prebuilt app from the [releases page](https://github.com/3kh0/slick/releases/latest) and pick the build for your Mac (check > About This Mac > Chip if unsure):
 
-- `Slick-build-N-mac-arm64` — **Apple Silicon** (if there is a M in the name)
-- `Slick-build-N-mac-x64` — **Intel** Macs
+- `Slick-2.0.N-mac-arm64` — **Apple Silicon** (if there is a M in the name)
+- `Slick-2.0.N-mac-x64` — **Intel** Macs
 
 Each comes as a `.dmg` (open it and drag Slick to Applications) or a `.zip`.
 
@@ -74,7 +58,7 @@ If you'd rather build it yourself (or hack on it), clone the repo and run:
 ### Windows
 
 > [!NOTE]
-> Both the standalone Slack download and the Microsoft Store version are supported. On ARM PCs the x64 Slack runs via emulation magic and Slick works, but expect a big performance hit. Slick is primary for those on x64 Windows.
+> Both the standalone Slack download and the Microsoft Store version are supported. On ARM PCs the x64 Slack runs via emulation magic and Slick works, but expect a big performance hit. Slick is primarily for those on x64 Windows.
 
 Install the official [Slack app](https://slack.com/downloads/windows) first, then run this in PowerShell:
 
@@ -120,11 +104,11 @@ If you'd rather build it yourself (or hack on it), clone the repo and run:
 This builds from source into the same `~/.local/share/slick/app` location instead of using a prebuilt release. For manual launch or debugging:
 
 ```bash
-./scripts/launch-linux.sh
-./scripts/launch-linux.sh --debug 9223
+~/.local/share/slick/app/slick --no-sandbox
+~/.local/share/slick/app/slick --no-sandbox --remote-debugging-port=9223
 ```
 
-You also have some nice flags to play around with: `--restore-handler` on `install-linux.sh` to give `slack://` back to the official Slack app, `--from-release` to use a prebuilt tarball instead of building from source, and `--uninstall` (or `./scripts/uninstall-linux.sh`) to remove Slick entirely.
+You also have some nice flags to play around with: `--restore-handler` on `install-linux.sh` to give `slack://` back to the official Slack app, `--from-release` to use a prebuilt tarball instead of building from source, and `--uninstall` (or `./scripts/uninstall-linux.sh`) to remove Slick. Your sign-in and settings are kept unless you add `--purge`.
 
 #### Flatpak
 
@@ -142,14 +126,12 @@ The sandbox has read-only access to the common Slack install locations and store
 
 ## Release versioning
 
-Slick releases use integer build tags: `v13`, `v14`, `v15`, and so on. The GitHub Release title should read like `Slick Build 67`.
-
-Internally, release builds use a normal macOS short version (`1.0.<build>`, e.g. `1.0.67` for build 67), while the bundle build number (`CFBundleVersion`) is just the integer `67`.
+Slick releases use integer build tags: `v100`, `v101`, and so on. The GitHub Release title reads like `Slick Build 100`, and the app version is `2.0.<build>` (e.g. `2.0.100`). v1 ended at build 85; v2 starts at build 100, and the release workflow refuses anything at or below 85. The updater compares build numbers only, so every v1 install sees v2 as an update.
 
 To ship the next build, tag and push the next integer:
 
 ```bash
-BUILD=67 # replace with the next build number
+BUILD=100 # replace with the next build number
 git tag "v$BUILD"
 git push origin "v$BUILD"
 ```
@@ -163,7 +145,7 @@ Install scripts check this automatically when they download a prebuilt release *
 You can also verify a download by hand:
 
 ```bash
-gh attestation verify path/to/Slick-build-N-….zip -R 3kh0/slick
+gh attestation verify path/to/Slick-2.0.N-….zip -R 3kh0/slick
 # same idea for .dmg or .tar.gz
 ```
 
@@ -189,17 +171,13 @@ Prefer to write your own CSS instead? Slick also has a "Custom CSS" option at th
 
 ## Plugins
 
-Please refer to [`plugins/README.md`](plugins/README.md) for the plugins documentation. I promise it is not boring.
+Plugins live in `src/plugins/<Name>/`: `index.ts` for the part that runs in Slack's page, `meta.ts` for the name, description and settings, and an optional `main.ts` for anything that needs Electron's main process. [`docs/plugins/PORTING.md`](docs/plugins/PORTING.md) covers the plugin API and the traps, [`docs/plugins/`](docs/plugins/) has notes on the trickier plugins, and [`docs/slack-internals.md`](docs/slack-internals.md) records every Slack-private name Slick depends on.
 
 ## Updates
 
-Stable Slick installations check for new builds on their own every few hours. Early-injection beta installations disable automatic Slick updates; update the source checkout and rerun the installer with the beta switch instead (see the [beta guide](docs/beta.md)). To check manually, use **Preferences > Slick > Updates > Check for updates** (or **Slick > Check for Updates…** in the menu bar on macOS). The panel shows the running version, its build number, and when the last check happened.
+Slick checks for new builds on its own every few hours, and every update is verified against its build attestation before it is installed. To check manually, use **Slick > Check for Updates…**, in the menu bar on macOS and in the menu behind the title-bar button on Windows. Choosing **Later** installs the downloaded update the next time Slick quits.
 
-## Performance diagnostics
-
-Slick records lightweight local startup and responsiveness metrics. You can export a redacted report from **Preferences → Slick → Performance diagnostics**; nothing is uploaded automatically.
-
-Maintainers can compare stock Slack, Slick core, defaults, and individual plugins with disposable profile clones using the [performance testing guide](docs/performance.md).
+Slick also keeps Slack itself current where nothing else does: on macOS it stages Slack updates and swaps them in at the next launch, and on Windows it updates the standalone Slack through Slack's own updater. The Microsoft Store and Linux package managers update Slack themselves.
 
 ## Credits
 
