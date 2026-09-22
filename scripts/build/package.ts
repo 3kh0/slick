@@ -126,6 +126,7 @@ export async function packageDesktop({ debug = false, platform = process.platfor
       extraMetadata: {
         description: 'Slack client mod using your installed Slack',
         homepage: 'https://github.com/3kh0/slick',
+        license: 'GPL-3.0-only',
       },
       electronVersion: electronVersion(),
       // The static AppImage runtime does not require libfuse.so.2 on Arch/Omarchy.
@@ -181,12 +182,12 @@ export async function packageDesktop({ debug = false, platform = process.platfor
       deb: {
         artifactName: 'slick_${version}_amd64.deb',
         packageName: 'slick',
-        maintainer: 'Slick contributors <support@hackclub.com>',
+        maintainer: 'Echo <github@3kh0.net>',
       },
       rpm: {
         artifactName: 'slick-${version}.x86_64.rpm',
         packageName: 'slick',
-        maintainer: 'Slick contributors <support@hackclub.com>',
+        maintainer: 'Echo <github@3kh0.net>',
       },
 
       afterPack: async (context) => {
