@@ -1,6 +1,7 @@
 // Runs as the first script in Slack's rebuilt document. Any failed
 // precondition means do nothing: a half-started Slick can stop Slack booting.
 
+import { applyPendingAccountSwitch } from './api/accounts.ts';
 import { registerDocument } from './api/css.ts';
 import { installResizeGate } from './api/resize.ts';
 import { bootstrap } from './bootstrap.ts';
@@ -76,6 +77,7 @@ function main() {
 
   // Must be synchronous: the next <script> is Slack's bundle.
   try {
+    applyPendingAccountSwitch();
     installWebpackHooks();
     exposeWebpackDebug();
     exposeReactDebug();

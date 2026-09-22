@@ -7,6 +7,7 @@ import type { Capability, MainCtx, ProtocolPrivileges, SlickMainPlugin } from '.
 import { type PluginSettings, resolveSettings, type SettingsSchema } from '../shared/settings.ts';
 import * as blobStore from './blobStore.js';
 import { isSlackClient, safeMode } from './bridge.js';
+import * as secretStore from './secretStore.js';
 
 type Registered = {
   plugin: SlickMainPlugin;
@@ -259,6 +260,36 @@ function createCtx(plugin: SlickMainPlugin, entry: () => Registered): MainCtx {
         need('dialog');
         const result = await dialog.showOpenDialog({ properties: ['openFile'], ...options });
         return result.canceled ? '' : (result.filePaths[0] ?? '');
+      },
+    },
+
+    cookies: {
+      async get(details) {
+        need('cookies');
+        return (await session.defaultSession.cookies.get(details))[0] ?? null;
+      },
+      set(details) {
+        need('cookies');
+        return session.defaultSession.cookies.set(details);
+      },
+      remove(url, name) {
+        need('cookies');
+        return session.defaultSession.cookies.remove(url, name);
+      },
+    },
+
+    secrets: {
+      read(key) {
+        need('secrets');
+        return secretStore.read(id, key);
+      },
+      write(key, value) {
+        need('secrets');
+        return secretStore.write(id, key, value);
+      },
+      delete(key) {
+        need('secrets');
+        return secretStore.remove(id, key);
       },
     },
   } as MainCtx;

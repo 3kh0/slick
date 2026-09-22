@@ -17,7 +17,9 @@ export type Capability =
   | 'shell' // open external URLs
   | 'net' // privileged HTTP, bypassing page CORS
   | 'media' // handle display-media (screen/audio capture) requests
-  | 'dialog'; // native file pickers
+  | 'dialog' // native file pickers
+  | 'cookies' // read or replace Slack session cookies
+  | 'secrets'; // encrypted plugin-scoped storage
 
 export type ProtocolPrivileges = {
   standard?: boolean;
@@ -97,6 +99,20 @@ export interface MainCtx {
   /** requires `dialog` */
   dialog: {
     openFile(options?: Electron.OpenDialogOptions): Promise<string>;
+  };
+
+  /** requires `cookies` */
+  cookies: {
+    get(details: Electron.CookiesGetFilter): Promise<Electron.Cookie | null>;
+    set(details: Electron.CookiesSetDetails): Promise<void>;
+    remove(url: string, name: string): Promise<void>;
+  };
+
+  /** requires `secrets`; values are encrypted when Electron supports it. */
+  secrets: {
+    read(key: string): Promise<string | null>;
+    write(key: string, value: string): Promise<boolean>;
+    delete(key: string): Promise<boolean>;
   };
 }
 
