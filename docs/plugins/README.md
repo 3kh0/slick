@@ -8,6 +8,7 @@ replaced, the traps, and how to verify it.
 | --------------------------------- | ------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | [Censorship](Censorship.md)       | Ported | Mask configured words in message bodies (two-level `messages` patch) and search (`MessageListItem`). Channel/member names are out of scope.                 |
 | [MessageLogger](MessageLogger.md) | Ported | Keep deleted and edited messages visible. Uses `api.rtm`, `api.messages.injectMessages`, `api.storage`, and a `MessageWrapper` / `ThreadRootGeneric` patch. |
+| [bChannel](bChannel.md)           | Ported | Relay `@channel` / `@here`. Named thunks + `userAPI` for invite/prefs; `api.blocks.fromDelta`; composer send intercept. No module ids.                      |
 
 Both depend on the shape of the `messages` slice — see `../slack-internals.md`.
 A single-level `patchSlice('messages', …)` starts cleanly, logs happily, and

@@ -1,6 +1,10 @@
 # Handoff: bChannel
 
-**Status:** not ported, and the only plugin it is reasonable to ship v2 without.
+**Status:** ported. Lives in `src/plugins/bChannel/`. No minified module ids:
+preflight is named thunks (`getChannelPrefByApi`, `setChannelPrefsByApi`,
+`inviteUsersToChannelByApi`) with `userAPI` as the fallback; Block Kit is
+`api.blocks.fromDelta`; send is a `MessagePaneInput` / `InputContainer` patch.
+
 v1 lives at `plugins/bChannel/{index.js,renderer.js}` (166 + **1538** lines).
 
 Read `PORTING.md` first.

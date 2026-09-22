@@ -27,16 +27,20 @@ function recentlyUnknown(key: string): boolean {
   return true;
 }
 
-async function ask(ctx: MainCtx, path: string, key: string): Promise<unknown> {
-  if (recentlyUnknown(key)) return null;
+function record(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : undefined;
+}
+
+async function ask(ctx: MainCtx, path: string, key: string): Promise<Record<string, unknown> | undefined> {
+  if (recentlyUnknown(key)) return undefined;
 
   const response = await ctx.net.fetch(`${FLARON}${path}`);
   if (response.status < 200 || response.status >= 300) throw new Error(`HTTP ${response.status}`);
 
-  const data = JSON.parse(response.body);
+  const data = record(JSON.parse(response.body));
   if (data?.error === 'unknown') {
     unknown.set(key, Date.now());
-    return null;
+    return undefined;
   }
   return data;
 }
@@ -48,12 +52,15 @@ const plugin: SlickMainPlugin = {
   rpc: {
     /** The name of one channel Slack will not name. */
     async channel(ctx, args) {
-      if (ctx.settings.flaron !== true) throw new Error('flaron lookups are disabled');
+      // Mention candidates also need verification by id before they become a
+      // shadow, even when general missing-name lookups are disabled.
+      if (ctx.settings.flaron !== true && ctx.settings.mentions !== true)
+        throw new Error('flaron lookups are disabled');
       const [id] = args;
       if (typeof id !== 'string' || !CHANNEL_ID.test(id)) throw new Error('bad channel id');
 
       const data = await ask(ctx, `/channel/${id}`, `id:${id}`);
-      const name = typeof (data as any)?.name === 'string' ? (data as any).name.trim().slice(0, 100) : '';
+      const name = typeof data?.name === 'string' ? data.name.trim().slice(0, 100) : '';
       return name || null;
     },
 
@@ -64,7 +71,7 @@ const plugin: SlickMainPlugin = {
       if (typeof name !== 'string' || !CHANNEL_NAME.test(name)) throw new Error('bad channel name');
 
       const data = await ask(ctx, `/cname/${encodeURIComponent(name)}`, `name:${name}`);
-      const id = typeof (data as any)?.id === 'string' ? (data as any).id : '';
+      const id = typeof data?.id === 'string' ? data.id : '';
       return CHANNEL_ID.test(id) ? id : null;
     },
   },
