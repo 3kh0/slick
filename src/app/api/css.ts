@@ -12,12 +12,42 @@ type Sheet = {
   elements: WeakMap<Document, HTMLStyleElement>;
 };
 
-// Windows Slack opens with window.open get their own Slick instance, because
-// patch.ts substitutes the preload on those too -- so there is no second
-// document to mirror into from here.
+// Windows Slack opens by navigating -- ctrl-clicked links, the in-app browser
+// -- get their own Slick instance, because patch.ts substitutes the preload on
+// those too. Pop-outs are the other kind: Slack renders into an about:blank
+// window from the opener, so no preload ever runs there and the only way those
+// documents get Slick's styles is for us to mirror them in. See
+// slack/childWindows.ts, which is what calls registerDocument.
 
 const sheets = new Set<Sheet>();
 const keyed = new Map<string, Sheet>();
+
+const extraDocuments = new Set<Document>();
+const documentListeners = new Set<(doc: Document) => void>();
+
+function liveDocuments(): Document[] {
+  return [document, ...[...extraDocuments].filter((doc) => doc.defaultView)];
+}
+
+/** Start mirroring every stylesheet, current and future, into `doc`. */
+export function registerDocument(doc: Document) {
+  if (doc === document || extraDocuments.has(doc)) return;
+  extraDocuments.add(doc);
+  for (const sheet of sheets) render(sheet, doc);
+  for (const listener of documentListeners) {
+    try {
+      listener(doc);
+    } catch (error) {
+      console.error('[slick] document listener threw:', error);
+    }
+  }
+}
+
+/** Notified for each additional document, so plugins can set their own up. */
+export function onDocument(cb: (doc: Document) => void): () => void {
+  documentListeners.add(cb);
+  return () => void documentListeners.delete(cb);
+}
 
 function render(sheet: Sheet, doc: Document) {
   let element = sheet.elements.get(doc);
@@ -31,8 +61,10 @@ function render(sheet: Sheet, doc: Document) {
 }
 
 function drop(sheet: Sheet) {
-  sheet.elements.get(document)?.remove();
-  sheet.elements.delete(document);
+  for (const doc of liveDocuments()) {
+    sheet.elements.get(doc)?.remove();
+    sheet.elements.delete(doc);
+  }
   sheets.delete(sheet);
   if (sheet.key !== undefined) keyed.delete(sheet.key);
 }
@@ -55,7 +87,7 @@ export function setStyle(css: string | null, key?: string): () => void {
     if (key !== undefined) keyed.set(key, sheet);
   }
   sheet.css = css;
-  render(sheet, document);
+  for (const doc of liveDocuments()) render(sheet, doc);
 
   const added = sheet;
   return () => drop(added);

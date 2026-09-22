@@ -5,10 +5,12 @@
 // a Slick that half-starts can stop Slack booting entirely, and a Slack that
 // does not boot is much worse than a Slack without Slick.
 
+import { registerDocument } from './api/css.ts';
 import { installResizeGate } from './api/resize.ts';
 import { bootstrap } from './bootstrap.ts';
 import { getBridge } from './bridge.ts';
 import { SlickPlugin } from '../shared/Plugin.ts';
+import { installChildWindows, onChildWindow } from './slack/childWindows.ts';
 import { exposeDebugGlobals as exposeReactDebug, patchingReady } from './slack/react.tsx';
 // Imported for its side effects: redux.ts wraps createStore and Slack's
 // thunk factory at module scope, which has to happen before Slack loads.
@@ -89,6 +91,10 @@ function main() {
     // if it is registered ahead of Slack's own resize listeners. It stays
     // inert until a plugin registers with it.
     installResizeGate();
+    // Also here rather than in bootstrap: this wraps window.open, which Slack
+    // must not be able to capture a reference to before we patch it.
+    installChildWindows();
+    onChildWindow(registerDocument);
   } catch (error) {
     console.error('[slick] failed to install interception; Slack will run unmodified:', error);
     return;

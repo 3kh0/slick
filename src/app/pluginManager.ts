@@ -12,7 +12,7 @@ import { SlickPlugin, type SlickPluginConstructor } from '../shared/Plugin.ts';
 import { changedKeys, type PluginSettings } from '../shared/settings.ts';
 import { type BlobStore, Cache, ScopedStorage } from './api/storage.ts';
 import { Store } from './store.ts';
-import { setStyle } from './api/css.ts';
+import { onDocument, setStyle } from './api/css.ts';
 import { deferResizeWork } from './api/resize.ts';
 import type { PluginChannel, SlickBridge } from './bridge.ts';
 import type { ConfigStore } from './configStore.ts';
@@ -144,6 +144,7 @@ async function createBaseAPI(bridge: SlickBridge) {
     react: await reactReady,
     fetch: bridge.fetch.bind(bridge),
     userAPI,
+    onDocument,
     deferResizeWork,
   };
 }
@@ -188,6 +189,9 @@ function createScopedAPI(
     },
 
     onMessageSendDelta: tracked(base.onMessageSendDelta),
+
+    /** Notified for each of Slack's pop-out documents (slack/childWindows.ts). */
+    onDocument: tracked(base.onDocument),
 
     /** Hold Slack's resize handlers until the window stops moving. */
     deferResizeWork: tracked(base.deferResizeWork),
