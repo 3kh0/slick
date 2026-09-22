@@ -97,35 +97,80 @@ function SlickSettings({
   );
 }
 
+/**
+ * The cog, inlined rather than drawn with `SvgIcon name="cog"`. v1 inlined it
+ * too: an icon name is a guess about Slack's icon set, and a wrong one renders
+ * nothing at all, which is exactly the failure this row already had once.
+ */
+function CogIcon() {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 20 20"
+      width="15"
+      height="15"
+      aria-hidden="true"
+      style={{ display: 'block' }}
+    >
+      <path
+        fill="currentColor"
+        fillRule="evenodd"
+        clipRule="evenodd"
+        d="M11.486 1.286a4 4 0 0 0-2.972 0 .75.75 0 0 0-.45.518l-.372 1.523-.004.018a.5.5 0 0 1-.758.314l-.016-.01-1.34-.813a.75.75 0 0 0-.685-.048 4 4 0 0 0-2.1 2.1.75.75 0 0 0 .047.685l.814 1.34.01.016a.5.5 0 0 1-.314.759l-.018.004-1.523.372a.75.75 0 0 0-.519.45 4 4 0 0 0 0 2.971.75.75 0 0 0 .519.45l1.523.373.018.004a.5.5 0 0 1 .314.758l-.01.016-.814 1.34a.75.75 0 0 0-.048.685 4 4 0 0 0 2.101 2.1.75.75 0 0 0 .685-.048l1.34-.813.016-.01a.5.5 0 0 1 .758.314l.004.018.372 1.523a.75.75 0 0 0 .45.518 4 4 0 0 0 2.972 0 .75.75 0 0 0 .45-.518l.372-1.523.004-.018a.5.5 0 0 1 .758-.314l.016.01 1.34.813a.75.75 0 0 0 .685.049 4 4 0 0 0 2.101-2.101.75.75 0 0 0-.048-.685l-.814-1.34-.01-.016a.5.5 0 0 1 .314-.758l.018-.004 1.523-.373a.75.75 0 0 0 .519-.45 4 4 0 0 0 0-2.97.75.75 0 0 0-.519-.45l-1.523-.373-.018-.004a.5.5 0 0 1-.314-.759l.01-.015.814-1.34a.75.75 0 0 0 .048-.685 4 4 0 0 0-2.101-2.101.75.75 0 0 0-.685.048l-1.34.814-.016.01a.5.5 0 0 1-.758-.315l-.004-.017-.372-1.524a.75.75 0 0 0-.45-.518M8 10a2 2 0 1 1 4 0 2 2 0 0 1-4 0m2-3.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7"
+      />
+    </svg>
+  );
+}
+
 function PluginRow({ info, config, bridge }: { info: PluginInfo; config: ConfigStore; bridge: SlickBridge }) {
   const [expanded, setExpanded] = React.useState(false);
   const values = config.settingsFor(info.id);
   const entries = Object.entries(info.settings);
+  const inputId = `slick-plugin-${info.id}`;
 
   return (
     <div style={{ borderTop: '1px solid rgba(127,127,127,.2)', padding: '14px 0' }}>
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
-        <elements.Checkbox
-          id={`slick-plugin-${info.id}`}
+        {/*
+          A plain input with Slack's own class, as v1 used. The name used to be
+          passed to Slack's Checkbox as a `label` prop, which it ignores -- so
+          every row rendered as an anonymous checkbox next to the word
+          "Settings". Owning the markup means the name cannot go missing again.
+        */}
+        <input
+          id={inputId}
+          className="c-input_checkbox"
+          type="checkbox"
           checked={info.enabled}
-          onChange={(event) => void config.setPluginEnabled(info.id, event.target.checked)}
-          label={
-            <span>
-              <strong>{info.name}</strong>
-              {info.description && <span style={{ display: 'block', fontWeight: 'normal' }}>{info.description}</span>}
-              {info.authors && <span style={{ display: 'block', opacity: 0.7 }}>By {info.authors}</span>}
-            </span>
-          }
+          onChange={(event) => void config.setPluginEnabled(info.id, event.currentTarget.checked)}
+          style={{ marginTop: '2px', flex: '0 0 auto' }}
         />
+        <label htmlFor={inputId} style={{ flex: '1 1 auto', cursor: 'pointer', margin: 0 }}>
+          <span style={{ fontWeight: 700 }}>{info.name}</span>
+          {info.description && (
+            <span style={{ display: 'block', fontWeight: 400, opacity: 0.85 }}>{info.description}</span>
+          )}
+          {info.authors && <span style={{ display: 'block', fontSize: '12px', opacity: 0.6 }}>By {info.authors}</span>}
+        </label>
         {!!entries.length && (
-          <elements.Button
-            type="ghost"
-            size="small"
+          <button
+            type="button"
+            className="c-button-unstyled"
             aria-expanded={expanded}
+            aria-label={`Configure ${info.name}`}
+            title={`Configure ${info.name}`}
             onClick={() => setExpanded((value) => !value)}
+            style={{
+              flex: '0 0 auto',
+              padding: '4px',
+              borderRadius: '4px',
+              cursor: 'pointer',
+              opacity: expanded ? 1 : 0.55,
+              color: 'currentColor',
+            }}
           >
-            {expanded ? 'Hide settings' : 'Settings'}
-          </elements.Button>
+            <CogIcon />
+          </button>
         )}
       </div>
       {expanded && (
@@ -215,7 +260,17 @@ function SettingControl({
 }) {
   switch (setting.type) {
     case 'boolean':
-      return <elements.Checkbox checked={value === true} onChange={(event) => save(event.target.checked)} />;
+      // Slack's own class on a plain input, for the same reason PluginRow uses
+      // one: this component's real prop shape is not known, and a wrong guess
+      // renders nothing rather than failing.
+      return (
+        <input
+          className="c-input_checkbox"
+          type="checkbox"
+          checked={value === true}
+          onChange={(event) => save(event.currentTarget.checked)}
+        />
+      );
     case 'number':
       return <NumberControl setting={setting} value={value} save={save} />;
     case 'text':

@@ -128,15 +128,6 @@ export type BasicSelectProps = {
   isDisabled?: boolean;
 };
 
-export type CheckboxProps = {
-  id?: string;
-  checked?: boolean;
-  onChange?: (event: { target: { checked: boolean } }) => void;
-  isDisabled?: boolean;
-  label?: React.ReactNode;
-  children?: React.ReactNode;
-};
-
 export type BlocksProps = {
   msg: { blocks?: unknown[]; [key: string]: unknown };
   blocksContainerContext?: 'message' | string;
@@ -225,7 +216,6 @@ export const elementsReady = (async () => {
     Legend: lazyComponent<LegendProps>('Legend'),
     Hint: lazyComponent<HintProps>('Hint'),
     BasicSelect: lazyComponent<BasicSelectProps>('BasicSelect'),
-    Checkbox: lazyComponent<CheckboxProps>('Checkbox'),
     Blocks: lazyComponent<BlocksProps>('Blocks'),
     MenuTrigger: lazyComponent<MenuTriggerProps>('MenuTrigger'),
     MenuFromTemplate: lazyComponent<MenuFromTemplateProps>('MenuFromTemplate'),
