@@ -216,6 +216,34 @@ happens when it stops matching.
 | `.p-member_profile_hover_card__banner_deactivated_dark` / `_light`, `.p-member_profile_restriction_deleted`, `.c-avatar` inside the card | as above                                        | the "Deactivated account" strip on the hover card and on the profile pane, plus the card's avatar, all painted from `--sk_foreground_low_solid` (`#35373b`)                                    | the strip and the avatar placeholder stay a lighter grey than the rest of the client                   |
 | `.c-menu_item__li`, `.c-menu_item__button`, `.c-menu_item__label`                                                                        | `MessageLogger`                                 | Slack's menu-row markup, reproduced for the rows the plugin appends to the message overflow menu                                                                                               | the rows still render and still work; they lose Slack's padding, hover and type                        |
 
+## Layout research (Slack 4.52.162, 2026-09-22)
+
+These are observations for `work/fx-layout-report.md`, **not** patched dependencies.
+The module IDs are build-local and must be reidentified after Slack updates.
+
+- `rl6a` exports `AutoSizer` (react-virtualized-style component). Its mount
+  attaches `ResizeObserver` when available (fallback: element resize sensor),
+  schedules `setTimeout(this._onResize, 0)` from observer notifications, and
+  synchronously calls `_onResize()` on mount. That method reads computed parent
+  padding and `parentNode.getBoundingClientRect()` before changing state.
+  Observed parents include `.p-channel_sidebar__list` and `[data-qa="message_pane"]`.
+- `MOtw` defines `ListItem`: its `componentDidMount` calls `updateHeight()`
+  unless `isCachedHeightValid` or `useStaticHeight`; `updateHeight()` reads
+  `node.getBoundingClientRect().height` and calls `onHeightChange(itemKey,height)`
+  when the prior height differs by >0.5px or the cache is invalid. Observed
+  nodes are `[data-qa="virtual-list-item"]`, including sidebar items.
+- `Dk9U` defines `BaseList`: `getSiblingNodeHeight()` reads
+  `.c-virtual_list__sibling_container.getBoundingClientRect().height` from
+  `getContentHeight()` during render, scrolling and list relayout.
+  `onItemResize` reads `ResizeObserverEntry.borderBoxSize` when available,
+  otherwise falls back to the row's bounding rect; `setHeight` relayouts.
+  `scrollToOffset` writes scrollbar `scrollTop`. These names/DOM classes are
+  **not** safe to use for a cache across DOM mutations or resize without
+  additional invalidation: list data, fonts and siblings can change mid-frame.
+- `m97I` exports `CellMeasurer` / `CellMeasurerCache`: for uncached cells it
+  temporarily sets width/height to `auto`, reads `offsetHeight`/`offsetWidth`,
+  restores styles and invalidates the virtual grid size. No patch was made.
+
 ## Still to identify
 
 These gate the Group C and D plugin ports and need a live discovery session:
