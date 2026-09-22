@@ -6,6 +6,7 @@ import fs from 'node:fs';
 import https from 'node:https';
 import path from 'node:path';
 import { app, BrowserWindow, dialog, nativeTheme, shell } from 'electron';
+import { stageAppImage, swapAppImage } from './appImageUpdate.js';
 import { AttestationError, sha256File, verifyBundle } from './attestation.js';
 import { settingsDir } from './paths.js';
 
@@ -64,8 +65,22 @@ function installRoot(): string {
  * read-only, and an unwritable install dir would fail the swap after download.
  */
 function selfUpdateBlocker(): string {
-  if (PLATFORM === 'linux' && (process.env.FLATPAK_ID || fs.existsSync('/.flatpak-info'))) {
-    return 'This copy of Slick is a Flatpak, so it is updated through Flatpak.';
+  if (PLATFORM === 'linux') {
+    if (process.env.FLATPAK_ID || fs.existsSync('/.flatpak-info')) {
+      return 'This copy of Slick is a Flatpak, so it is updated through Flatpak.';
+    }
+    if (installRoot() === '/opt/Slick') {
+      return 'This copy of Slick is a system package. Update it with your package manager or download a new package from the release page.';
+    }
+    if (process.env.APPIMAGE) {
+      try {
+        fs.accessSync(path.dirname(process.env.APPIMAGE), fs.constants.W_OK);
+        fs.accessSync(process.env.APPIMAGE, fs.constants.W_OK);
+        return '';
+      } catch {
+        return `Slick cannot replace ${process.env.APPIMAGE}. Move the AppImage to a writable directory to enable self-updates.`;
+      }
+    }
   }
   try {
     fs.accessSync(path.dirname(installRoot()), fs.constants.W_OK);
@@ -223,7 +238,9 @@ export function createUpdater({ version, build }: { version: string; build: numb
         ? `-mac-${arch}.zip`
         : PLATFORM === 'win32'
           ? `-win32-${arch}.zip`
-          : `-linux-${arch}.tar.gz`;
+          : process.env.APPIMAGE
+            ? '-linux-x86_64.AppImage'
+            : `-linux-${arch}.tar.gz`;
     return (release.assets ?? []).find((a) => typeof a?.name === 'string' && a.name.endsWith(suffix)) ?? null;
   }
 
@@ -330,6 +347,21 @@ export function createUpdater({ version, build }: { version: string; build: numb
         detached: true,
         stdio: 'ignore',
       }).unref();
+      return Promise.resolve();
+    }
+
+    if (PLATFORM === 'linux' && process.env.APPIMAGE) {
+      const image = process.env.APPIMAGE;
+      swapAppImage(stage, image);
+      fs.rmSync(dir, { recursive: true, force: true });
+      if (relaunch) {
+        const sh =
+          'IMAGE="$1"; PID="$2"; while kill -0 "$PID" 2>/dev/null; do sleep 0.2; done; exec "$IMAGE" >/dev/null 2>&1';
+        spawn('/bin/sh', ['-c', sh, 'slick-updater', image, String(process.pid)], {
+          detached: true,
+          stdio: 'ignore',
+        }).unref();
+      }
       return Promise.resolve();
     }
 
@@ -533,11 +565,22 @@ export function createUpdater({ version, build }: { version: string; build: numb
       await verifyReleaseArtifact(archive);
 
       setTaskbarProgress(0.95);
-      setProgress({ title: 'Installing update', status, indeterminate: true, pctText: '', detail: 'Extracting…' });
-      await extract(archive, dir);
-      const found = findStage(dir);
-      if (!found) throw new Error('the update archive did not contain a Slick application');
-      stage = found;
+      if (PLATFORM === 'linux' && process.env.APPIMAGE) {
+        setProgress({
+          title: 'Installing update',
+          status,
+          indeterminate: true,
+          pctText: '',
+          detail: 'Staging AppImage…',
+        });
+        stage = stageAppImage(archive, process.env.APPIMAGE);
+      } else {
+        setProgress({ title: 'Installing update', status, indeterminate: true, pctText: '', detail: 'Extracting…' });
+        await extract(archive, dir);
+        const found = findStage(dir);
+        if (!found) throw new Error('the update archive did not contain a Slick application');
+        stage = found;
+      }
 
       setTaskbarProgress(1);
       setProgress({ title: 'Update ready', status, percent: 100, pctText: '100%', detail: 'Ready to restart.' });

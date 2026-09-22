@@ -124,19 +124,29 @@ jobs:
       - uses: actions/checkout@v7
       - uses: oven-sh/setup-bun@v2
       - run: bun install --frozen-lockfile
-      - name: Build release artifact
+      - name: Install Linux packaging tools
+        run: sudo apt-get update && sudo apt-get install -y rpm fakeroot dpkg
+      - name: Build release artifacts
         run: bun run build -- package --arch "${{ matrix.arch }}"
         env:
           SLICK_BUILD: ${{ needs.validate-tag.outputs.build }}
       - name: Attest build provenance
         uses: actions/attest@v4.2.2
         with:
-          subject-path: dist/release/Slick-*-linux-*.tar.gz
+          subject-path: |
+            dist/release/Slick-*-linux-*.tar.gz
+            dist/release/Slick-*.AppImage
+            dist/release/slick_*.deb
+            dist/release/slick-*.rpm
       - name: Upload artifacts
         uses: actions/upload-artifact@v7
         with:
           name: slick-linux-${{ matrix.arch }}
-          path: dist/release/Slick-*-linux-*.tar.gz
+          path: |
+            dist/release/Slick-*-linux-*.tar.gz
+            dist/release/Slick-*.AppImage
+            dist/release/slick_*.deb
+            dist/release/slick-*.rpm
           if-no-files-found: error
           retention-days: 1
 
@@ -159,4 +169,7 @@ jobs:
             dist/Slick-*.zip
             dist/Slick-*.dmg
             dist/Slick-*.tar.gz
+            dist/Slick-*.AppImage
+            dist/slick_*.deb
+            dist/slick-*.rpm
           generate_release_notes: true

@@ -49,7 +49,9 @@ if (!slackAsar) {
       message: 'Slack is not installed',
       detail:
         'Slick runs the official Slack app’s own code, so Slack has to be installed first. ' +
-        'Install Slack, then open Slick again.',
+        (process.platform === 'linux'
+          ? 'Install the official Slack desktop app from https://slack.com/downloads/linux (or your distro’s Slack package), then open Slick again. Slick looks for Slack in /usr/lib/slack and /opt/Slack.'
+          : 'Install Slack, then open Slick again.'),
       buttons: ['Quit'],
     });
     app.exit(1);
