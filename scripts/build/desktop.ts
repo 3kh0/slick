@@ -3,11 +3,11 @@
 // Phase 1 stages a runnable app directory (main.js + preload.js + slick.js);
 // electron-builder packaging lands in Phase 6 and consumes this same stage.
 
-import { copyFile, mkdir, writeFile } from 'node:fs/promises';
+import { copyFile, mkdir, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { build } from 'esbuild';
 import { mainHalvesModule, slickSharedAlias } from '../lib/plugin.ts';
-import { DESKTOP, DIST_DESKTOP, ROOT, SLICK_JS, SRC } from '../lib/paths.ts';
+import { DESKTOP, DIST_DESKTOP, MONACO, ROOT, SLICK_JS, SRC } from '../lib/paths.ts';
 import { versions } from '../lib/versions.ts';
 import { buildApp } from './app.ts';
 
@@ -21,6 +21,36 @@ const define = {
 const entries = [
   { entry: 'main.ts', out: 'main.js', format: 'esm' },
   { entry: 'preload.ts', out: 'preload.js', format: 'cjs' },
+  { entry: 'windows/cssEditorPreload.ts', out: 'cssEditorPreload.js', format: 'cjs' },
+] as const;
+
+// Files requested by Monaco 0.56 while opening a CSS model, starting its CSS
+// worker, and requesting validation/completions. The full min/vs tree is ~24 MB.
+const MONACO_CSS_FILES = [
+  'assets/css.worker-URu8fCFR.js',
+  'assets/editor.worker-lj3bdIIn.js',
+  'basic-languages/monaco.contribution.js',
+  'css-CaeNmE3S.js',
+  'css.worker-CyhWkhHo.js',
+  'cssMode-CV6Ay48H.js',
+  'editor-KLE6jdfb.js',
+  'editor/editor.main.css',
+  'editor/editor.main.js',
+  'editorWorkerHost-fVE1cjcC.js',
+  'html.worker-CA3iAimZ.js',
+  'index-CBVt3dzv.js',
+  'json.worker-BizpAl9O.js',
+  'loader.js',
+  'lspLanguageFeatures-BIkJOWLw.js',
+  'main-DsK8pnKg.js',
+  'monaco.contribution-9cKT3C7t.js',
+  'monaco.contribution-BE88ZNGY.js',
+  'monaco.contribution-BPhsneLd.js',
+  'monaco.contribution-BgRy6xDf.js',
+  'nls.messages-loader.js',
+  'toggleHighContrast-qGX7E9o7.js',
+  'ts.worker-2QLmBukE.js',
+  'workers-BBttULjf.js',
 ] as const;
 
 export async function buildDesktop({ debug = false } = {}) {
@@ -51,9 +81,17 @@ export async function buildDesktop({ debug = false } = {}) {
     console.log(`[build:desktop] ${out}`);
   }
 
-  // slick.js is served from resources over slick://; session.ts resolves it
-  // relative to process.resourcesPath, which in the dev stage is this directory.
+  // slick.js and the trimmed Monaco runtime are served from resources over
+  // slick://; session.ts resolves them relative to this directory in dev.
   await copyFile(SLICK_JS, path.join(DIST_DESKTOP, 'slick.js'));
+
+  const monacoStage = path.join(DIST_DESKTOP, 'monaco', 'vs');
+  await rm(path.dirname(monacoStage), { recursive: true, force: true });
+  for (const relative of MONACO_CSS_FILES) {
+    const destination = path.join(monacoStage, relative);
+    await mkdir(path.dirname(destination), { recursive: true });
+    await copyFile(path.join(MONACO, relative), destination);
+  }
 
   await writeFile(
     path.join(DIST_DESKTOP, 'package.json'),

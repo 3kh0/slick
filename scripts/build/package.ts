@@ -67,6 +67,7 @@ export async function packageDesktop({ debug = false, platform = process.platfor
         // Served over slick:// from Slick's own resources. main.ts captures
         // `process.resourcesPath` before patch.ts spoofs it to Slack's.
         { from: path.join(DIST_DESKTOP, 'slick.js'), to: 'slick.js' },
+        { from: path.join(DIST_DESKTOP, 'monaco'), to: 'monaco' },
         { from: THEMES, to: 'themes', filter: ['**/*.json'] },
       ],
 

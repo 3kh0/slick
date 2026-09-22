@@ -8,6 +8,7 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { session } from 'electron';
+import { editorHtml, MONACO_URL_PREFIX } from './windows/cssEditor.ts';
 
 export const SLICK_SCHEME = 'slick';
 
@@ -33,14 +34,53 @@ export function appUrl(): string {
  * unpackaged dev run finds it next to main.js, because there `resourcesPath`
  * belongs to the Electron binary rather than to us.
  */
+/** Monaco ships .js and .css only; anything else is not ours to serve. */
+const MONACO_TYPES: Record<string, string> = {
+  '.js': 'application/javascript',
+  '.css': 'text/css',
+  '.ttf': 'font/ttf',
+  '.woff': 'font/woff',
+  '.woff2': 'font/woff2',
+};
+
+const notFound = () => new Response('Not found', { status: 404 });
+
 export function setupSession(dirs: string[]) {
   const candidates = dirs.map((dir) => path.join(dir, 'slick.js'));
+  const monacoDirs = dirs.map((dir) => path.join(dir, 'monaco'));
 
   session.defaultSession.protocol.handle(SLICK_SCHEME, (request) => {
-    const file = new URL(request.url).pathname.replace(/^\//, '');
-    if (file !== 'app/slick.js' && file !== 'slick.js') {
-      return new Response('Not found', { status: 404 });
+    const url = new URL(request.url);
+    const file = url.pathname.replace(/^\//, '');
+
+    // The custom-CSS editor. Its HTML is generated rather than stored, so the
+    // Monaco base URL and the version stay in one place.
+    if (url.hostname === 'editor') {
+      if (file === '' || file === 'index.html') {
+        return new Response(editorHtml(), { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
+      }
+
+      const prefix = MONACO_URL_PREFIX.replace(/^\//, '');
+      if (!file.startsWith(prefix)) return notFound();
+
+      // Resolved and re-checked against the root, so a `..` in the request
+      // cannot walk out of the Monaco directory.
+      const relative = file.slice(prefix.length);
+      const type = MONACO_TYPES[path.extname(relative).toLowerCase()];
+      if (!type) return notFound();
+
+      for (const root of monacoDirs) {
+        const target = path.resolve(root, 'vs', relative);
+        if (target !== path.resolve(root, 'vs') && !target.startsWith(path.resolve(root, 'vs') + path.sep)) continue;
+        try {
+          return new Response(readFileSync(target), { headers: { 'Content-Type': type } });
+        } catch {}
+      }
+      return notFound();
     }
+
+    if (file !== 'app/slick.js' && file !== 'slick.js') return notFound();
+
     for (const bundle of candidates) {
       try {
         return new Response(readFileSync(bundle), {

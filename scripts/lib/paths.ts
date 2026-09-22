@@ -16,6 +16,7 @@ export const DIST_APP = path.join(DIST, 'app');
 export const DIST_DESKTOP = path.join(DIST, 'desktop');
 
 export const SLICK_JS = path.join(DIST_APP, 'slick.js');
+export const MONACO = path.join(ROOT, 'node_modules', 'monaco-editor', 'min', 'vs');
 
 export const ASSETS = path.join(ROOT, 'assets');
 export const THEMES = path.join(ROOT, 'themes');

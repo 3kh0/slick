@@ -11,6 +11,7 @@ import { dialog, ipcMain, webContents } from 'electron';
 import { configDir, profileDir, settingsDir } from './paths.js';
 import { setupBlobRpc } from './pluginHost.js';
 import { appUrl } from './session.js';
+import { createCssEditor } from './windows/cssEditor.js';
 
 const SETTINGS_FILE = 'settings.json';
 const USER_CSS_FILE = 'custom.css';
@@ -49,6 +50,28 @@ async function writeFile(name: string, text: string): Promise<boolean> {
   }
 }
 
+/**
+ * The custom-CSS editor window, built on first use. Constructing it eagerly
+ * would register its ipcMain handlers in every session, and most never open it.
+ *
+ * Saving goes through the same file the renderer's writeUserCss uses, so an
+ * edit reaches the live client over the existing change broadcast rather than
+ * through a second path that could disagree with it.
+ */
+let editor: ReturnType<typeof createCssEditor> | null = null;
+function cssEditor() {
+  editor ??= createCssEditor({
+    preload: path.join(import.meta.dirname, 'cssEditorPreload.js'),
+    read: () => readFile(USER_CSS_FILE, ''),
+    write: async (css: string) => {
+      const ok = await writeFile(USER_CSS_FILE, css);
+      if (ok) broadcast('slick:user-css-changed', css);
+      return ok;
+    },
+  });
+  return editor;
+}
+
 /** Push to every live Slack client renderer. */
 export function broadcast(channel: string, ...args: unknown[]) {
   for (const contents of webContents.getAllWebContents()) {
@@ -64,7 +87,13 @@ const methods: Record<string, (args: any[]) => unknown> = {
   readSettings: () => readFile(SETTINGS_FILE, '{}'),
   writeSettings: ([text]) => writeFile(SETTINGS_FILE, String(text ?? '')),
   readUserCss: () => readFile(USER_CSS_FILE, ''),
-  writeUserCss: ([css]) => writeFile(USER_CSS_FILE, String(css ?? '')),
+  writeUserCss: async ([css]) => {
+    const text = String(css ?? '');
+    const ok = await writeFile(USER_CSS_FILE, text);
+    // Keep an open editor window in step, so the two cannot drift apart.
+    if (ok && editor) editor.update(text);
+    return ok;
+  },
 
   async openFile([title, accept]) {
     const extensions =
@@ -84,8 +113,7 @@ const methods: Record<string, (args: any[]) => unknown> = {
     return result.canceled ? '' : (result.filePaths[0] ?? '');
   },
 
-  // Phase 4 part 3 will replace this with the CSS editor window.
-  openCssEditor: () => false,
+  openCssEditor: () => cssEditor().open(),
 
   // Page-origin fetch, for the cross-origin requests plugins cannot make
   // themselves. Returns text only; plugins parse it.
