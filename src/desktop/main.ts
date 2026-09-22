@@ -20,9 +20,11 @@ import {
   windowCreated,
 } from './pluginHost.js';
 import { readStoredSettings, watchSettings } from './settingsFile.js';
-import { applyPatches } from './patch.js';
+import { applyPatches, setMenuHandlers } from './patch.js';
 import { findSlackAsar, slackElectronMajor } from './slackFinder.js';
 import { privilegedSchemes, setupSession } from './session.js';
+import { createSlackUpdater } from './slackUpdater.js';
+import { createUpdater } from './updater.js';
 
 const cjsRequire = createRequire(import.meta.url);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -31,6 +33,15 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const slickResourcesPath = process.resourcesPath;
 
 protocol.registerSchemesAsPrivileged(privilegedSchemes());
+
+const version = typeof __SLICK_VERSION__ === 'string' ? __SLICK_VERSION__ : 'dev';
+const build = typeof __SLICK_BUILD__ === 'number' ? __SLICK_BUILD__ : 0;
+
+// Before findSlackAsar, because this can replace the very bundle it is about
+// to resolve. A staged Slack is only ever swapped in here, with nothing loaded
+// from it yet -- never under a running session.
+const slackUpdater = createSlackUpdater({ version });
+slackUpdater.applyStagedIfAny();
 
 const slackAsar = findSlackAsar();
 
@@ -114,6 +125,13 @@ function startSlack(asar: string) {
   setupBridge();
   setupPluginRpc();
 
+  // patch.ts no-ops Slack's own autoUpdater, so both of these are Slick's job:
+  // its own builds, and the Slack install it runs on top of.
+  const updater = createUpdater({ version, build });
+  setMenuHandlers({ checkForUpdates: () => void updater.manualCheckForUpdates() });
+  updater.scheduleUpdateChecks();
+  slackUpdater.scheduleChecks();
+
   app.whenReady().then(async () => {
     setupSession([slickResourcesPath, __dirname]);
     await readyMainPlugins();
@@ -128,7 +146,6 @@ function startSlack(asar: string) {
   process.on('uncaughtException', (error) => console.error('[slick] uncaught exception:', error));
   process.on('unhandledRejection', (reason) => console.error('[slick] unhandled rejection:', reason));
 
-  const version = typeof __SLICK_VERSION__ === 'string' ? __SLICK_VERSION__ : 'dev';
   console.log(`[slick] ${version} loading Slack from ${asar}`);
 
   try {
