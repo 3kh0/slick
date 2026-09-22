@@ -20,12 +20,45 @@ type EditProps = { prepareAndSaveEditMessage: (opts: { delta: Delta }) => Promis
 
 export type DeltaTransform = (delta: Delta) => Delta;
 
+type RegisteredTransform = { transform: DeltaTransform; label: string };
+
+function isUsableDelta(value: unknown, input: Delta): value is Delta {
+  if (!value || typeof value !== 'object' || !Array.isArray((value as Delta).ops)) return false;
+
+  const InputDelta = input.constructor;
+  if (typeof InputDelta !== 'function' || !(value instanceof InputDelta)) return false;
+
+  return (value as Delta).ops.every((op) => {
+    if (!op || typeof op !== 'object' || Array.isArray(op)) return false;
+    const kinds = ['insert', 'delete', 'retain'].filter((key) => key in op);
+    if (kinds.length !== 1) return false;
+    if ('insert' in op && typeof op.insert !== 'string' && (typeof op.insert !== 'object' || !op.insert)) return false;
+    if ('delete' in op && (typeof op.delete !== 'number' || !Number.isFinite(op.delete) || op.delete < 0)) return false;
+    if ('retain' in op && (typeof op.retain !== 'number' || !Number.isFinite(op.retain) || op.retain < 0)) return false;
+    return !('attributes' in op) || (typeof op.attributes === 'object' && op.attributes !== null);
+  });
+}
+
 export function setupMessageSendDelta(patchComponent: PatchComponent) {
-  const transforms = new Set<DeltaTransform>();
+  const transforms = new Map<DeltaTransform, RegisteredTransform>();
+  let nextTransformId = 1;
 
   function applyTransforms(delta: Delta): Delta {
     let result = delta;
-    for (const transform of transforms) result = transform(result);
+    // Map iteration is registration order, including after removals.
+    for (const registered of transforms.values()) {
+      const input = result;
+      try {
+        const transformed = registered.transform(input);
+        if (isUsableDelta(transformed, input)) {
+          result = transformed;
+        } else {
+          console.error(`[slick] message transform ${registered.label} returned an invalid Delta; ignoring it`);
+        }
+      } catch (error) {
+        console.error(`[slick] message transform ${registered.label} failed; ignoring it:`, error);
+      }
+    }
     return result;
   }
 
@@ -49,7 +82,17 @@ export function setupMessageSendDelta(patchComponent: PatchComponent) {
 
   /** Register a transform run over every outgoing message and edit. */
   return function onMessageSendDelta(transform: DeltaTransform): () => void {
-    transforms.add(transform);
+    const registrationSite = new Error().stack
+      ?.split('\n')
+      .find((line) => line.includes(' at ') && !/messageSend|pluginManager/.test(line))
+      ?.trim();
+    // The registration site names the plugin bundle even when a malformed
+    // return gives us no thrown stack of its own.
+    const registered = {
+      transform,
+      label: `${transform.name || 'anonymous'} (#${nextTransformId++}${registrationSite ? `, ${registrationSite}` : ''})`,
+    };
+    transforms.set(transform, registered);
     return () => {
       transforms.delete(transform);
     };

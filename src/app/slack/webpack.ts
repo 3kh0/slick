@@ -243,7 +243,6 @@ const CHUNK_GLOBALS = ['webpackChunkwebapp', 'rspackChunkwebapp'];
 
 function installHook(globalName: string) {
   let backing: Chunk[] | null = null;
-  let wrappedPush: PushFn | null = null;
 
   Object.defineProperty(global, globalName, {
     configurable: true,
@@ -253,26 +252,48 @@ function installHook(globalName: string) {
     },
     set(array: Chunk[]) {
       backing = array;
-      wrappedPush = wrapPush(array.push.bind(array));
+      let wrappedPush = wrapPush(array.push.bind(array));
 
       // Webpack reassigns `push` when the runtime installs; keep wrapping
       // whatever it replaces ours with.
-      Object.defineProperty(array, 'push', {
-        configurable: true,
-        enumerable: false,
-        get() {
-          return wrappedPush;
-        },
-        set(nextPush: PushFn) {
-          wrappedPush = wrapPush(nextPush);
-        },
-      });
+      try {
+        Object.defineProperty(array, 'push', {
+          configurable: true,
+          enumerable: false,
+          get() {
+            return wrappedPush;
+          },
+          set(nextPush: PushFn) {
+            wrappedPush = wrapPush(nextPush);
+          },
+        });
+      } catch (error) {
+        console.error(`[slick] could not intercept ${globalName}.push; this chunk array will run unmodified:`, error);
+      }
     },
   });
 }
 
 export function installWebpackHooks() {
-  for (const name of CHUNK_GLOBALS) installHook(name);
+  const descriptors = new Map(CHUNK_GLOBALS.map((name) => [name, Object.getOwnPropertyDescriptor(global, name)]));
+  for (const [name, descriptor] of descriptors) {
+    if (descriptor && !descriptor.configurable) throw new Error(`[slick] ${name} cannot be intercepted`);
+  }
+
+  const installed: string[] = [];
+  try {
+    for (const name of CHUNK_GLOBALS) {
+      installHook(name);
+      installed.push(name);
+    }
+  } catch (error) {
+    for (const name of installed) {
+      const descriptor = descriptors.get(name);
+      if (descriptor) Object.defineProperty(global, name, descriptor);
+      else delete global[name];
+    }
+    throw error;
+  }
 }
 
 // Lookups
@@ -340,7 +361,7 @@ export const stats = () => ({ modules: moduleRegistry.size, hasRequire: !!webpac
 // Exposed for the discovery sessions that find the component and thunk names
 // plugins patch. See docs/slack-internals.md.
 export function exposeDebugGlobals() {
-  Object.assign(global, {
+  const debug = {
     __slickModuleRegistry: moduleRegistry,
     __slickModuleFactories: moduleFactories,
     allExports,
@@ -349,5 +370,12 @@ export function exposeDebugGlobals() {
     getModuleSource,
     findModuleId,
     getValueSource,
-  });
+  };
+  for (const [name, value] of Object.entries(debug)) {
+    try {
+      global[name] = value;
+    } catch (error) {
+      console.error(`[slick] could not expose webpack debug global ${name}:`, error);
+    }
+  }
 }

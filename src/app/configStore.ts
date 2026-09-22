@@ -18,6 +18,7 @@ type SchemaEntry = { schema: SettingsSchema; defaultEnabled: boolean };
 
 export class ConfigStore {
   private stored: StoredConfig = {};
+  private storedIsValid = true;
   private schemas = new Map<string, SchemaEntry>();
   private resolved = new Map<string, PluginSettings>();
   private userCss = '';
@@ -28,11 +29,16 @@ export class ConfigStore {
   constructor(private bridge: SlickBridge) {}
 
   async init() {
-    this.stored = this.parse(await this.bridge.readSettings().catch(() => '{}'));
+    const initial = this.parse(await this.bridge.readSettings().catch(() => '{}'));
+    this.stored = initial.config;
+    this.storedIsValid = initial.valid;
     this.userCss = await this.bridge.readUserCss().catch(() => '');
 
     this.bridge.onSettingsChange((text) => {
-      this.stored = this.parse(text);
+      const next = this.parse(text);
+      if (!next.valid) return;
+      this.stored = next.config;
+      this.storedIsValid = true;
       this.resolved.clear();
       for (const notify of this.configListeners) {
         try {
@@ -55,14 +61,17 @@ export class ConfigStore {
     });
   }
 
-  private parse(text: string): StoredConfig {
+  private parse(text: string): { config: StoredConfig; valid: boolean } {
     try {
       const parsed = JSON.parse(text);
-      return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+      return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+        ? { config: parsed, valid: true }
+        : { config: {}, valid: false };
     } catch {
-      // A corrupt settings file must not stop Slick booting; defaults are fine.
-      console.error('[slick] settings file is not valid JSON, using defaults');
-      return {};
+      // Defaults let Slick boot, but are only a guess. Refuse to persist them
+      // over a file whose surviving contents may still be recoverable.
+      console.error('[slick] settings file is not valid JSON; changes will not be saved');
+      return { config: {}, valid: false };
     }
   }
 
@@ -113,6 +122,10 @@ export class ConfigStore {
   }
 
   async update(mutate: (config: StoredConfig) => void): Promise<boolean> {
+    if (!this.storedIsValid) {
+      console.error('[slick] refusing to overwrite an unreadable settings file');
+      return false;
+    }
     const next: StoredConfig = structuredClone(this.stored);
     mutate(next);
     this.stored = next;

@@ -23,7 +23,7 @@ export default class CustomSounds extends SlickPlugin<typeof meta.settings> {
 
   private restore: (() => void) | null = null;
   /** The source each element had before it was swapped, so stop() can undo it. */
-  private readonly originals = new WeakMap<HTMLMediaElement, string>();
+  private readonly originals = new Map<HTMLMediaElement, string>();
 
   private get soundPath(): string {
     return String(this.config.soundPath ?? '').trim();
@@ -60,6 +60,10 @@ export default class CustomSounds extends SlickPlugin<typeof meta.settings> {
   stop() {
     this.restore?.();
     this.restore = null;
+    for (const [element, source] of this.originals) {
+      if (element.src !== source) element.src = source;
+    }
+    this.originals.clear();
   }
 
   private swap(element: HTMLMediaElement) {
@@ -69,6 +73,7 @@ export default class CustomSounds extends SlickPlugin<typeof meta.settings> {
     if (!path) {
       // Turned off while an element was already swapped: put it back.
       if (remembered !== undefined && element.src !== remembered) element.src = remembered;
+      this.originals.delete(element);
       return;
     }
 

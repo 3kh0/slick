@@ -23,8 +23,10 @@
 // exactly as the dev stage runs them.
 
 import { readFileSync } from 'node:fs';
+import { copyFile, cp, mkdir, rename, rm } from 'node:fs/promises';
+import { createRequire } from 'node:module';
 import path from 'node:path';
-import { build as electronBuild, Platform } from 'electron-builder';
+import { Arch, archFromString, build as electronBuild, Platform } from 'electron-builder';
 import { ASSETS, DIST, DIST_DESKTOP, ROOT, THEMES } from '../lib/paths.ts';
 import { versions } from '../lib/versions.ts';
 import { buildDesktop } from './desktop.ts';
@@ -39,16 +41,62 @@ function electronVersion(): string {
 }
 
 const OUTPUT = path.join(DIST, 'release');
+const { archive } = createRequire(import.meta.url)('app-builder-lib/out/targets/archive.js') as {
+  archive(format: string, outFile: string, dirToArchive: string): Promise<string>;
+};
 
-export async function packageDesktop({ debug = false, platform = process.platform } = {}) {
+type PackageOptions = { debug?: boolean; platform?: NodeJS.Platform; arch?: string };
+
+function targetArch(value?: string): Arch {
+  const chosen = value ?? process.arch;
+  if (chosen !== 'x64' && chosen !== 'arm64') throw new Error(`[build:package] unsupported architecture: ${chosen}`);
+  return archFromString(chosen);
+}
+
+async function legacyArchive(platform: NodeJS.Platform, arch: string): Promise<string> {
+  const unpacked =
+    platform === 'win32'
+      ? arch === 'arm64'
+        ? 'win-arm64-unpacked'
+        : 'win-unpacked'
+      : arch === 'arm64'
+        ? 'linux-arm64-unpacked'
+        : 'linux-unpacked';
+  const built = path.join(OUTPUT, unpacked);
+  const stage = path.join(OUTPUT, `.archive-${platform}-${arch}`);
+  const app = path.join(stage, 'Slick');
+
+  await rm(stage, { recursive: true, force: true });
+  await mkdir(stage, { recursive: true });
+  await cp(built, app, { recursive: true, verbatimSymlinks: true });
+
+  if (platform === 'linux') {
+    // v1's installed launcher and updater invoke Slick/electron after replacing
+    // the app. Keep that entry point for the one-way migration to v2.
+    await copyFile(path.join(app, 'slick'), path.join(app, 'electron'));
+  }
+
+  const suffix = platform === 'win32' ? `win32-${arch}.zip` : `linux-${arch}.tar.gz`;
+  const artifact = path.join(OUTPUT, `Slick-${versions.version}-${suffix}`);
+  if (platform === 'win32') {
+    await archive('zip', artifact, app);
+  } else {
+    const temporaryArtifact = path.join(stage, 'Slick.tar.gz');
+    await rm(artifact, { force: true });
+    await archive('tar.gz', temporaryArtifact, app);
+    await rename(temporaryArtifact, artifact);
+  }
+  await rm(stage, { recursive: true, force: true });
+  return artifact;
+}
+
+export async function packageDesktop({ debug = false, platform = process.platform, arch }: PackageOptions = {}) {
   await buildDesktop({ debug });
 
-  const targets =
-    platform === 'darwin'
-      ? Platform.MAC.createTarget()
-      : platform === 'win32'
-        ? Platform.WINDOWS.createTarget()
-        : Platform.LINUX.createTarget();
+  const selectedArch = targetArch(arch);
+  const selectedPlatform =
+    platform === 'darwin' ? Platform.MAC : platform === 'win32' ? Platform.WINDOWS : Platform.LINUX;
+  const targets = selectedPlatform.createTarget(platform === 'darwin' ? ['zip', 'dmg'] : 'dir', selectedArch);
 
   const results = await electronBuild({
     targets,
@@ -105,6 +153,7 @@ export async function packageDesktop({ debug = false, platform = process.platfor
     },
   });
 
+  if (platform !== 'darwin') results.push(await legacyArchive(platform, Arch[selectedArch]));
   for (const artifact of results) console.log(`[build:package] ${path.relative(ROOT, artifact)}`);
   console.log(`[build:package] version ${versions.version} (build ${versions.build})`);
   return results;

@@ -53,24 +53,49 @@ export default class ClearURLs extends SlickPlugin<typeof meta.settings> {
   private clean(delta: Delta): Delta {
     if (!this.providers.length && !this.extra.length) return delta;
 
+    let fenced = false;
     for (const op of delta.ops) {
       const insert = (op as { insert?: unknown }).insert;
       // An object insert is an embed -- a mention, an emoji, a file. Nothing
-      // to clean, and rewriting it would break it.
-      if (typeof insert === 'string') {
-        const cleaned = cleanText(insert, this.providers, this.extra);
+      // to clean. Code is source text, not a link, even when it contains a URL.
+      const code = op.attributes?.code === true || op.attributes?.['code-block'] === true;
+      const touchesFence = typeof insert === 'string' && (fenced || insert.includes('```'));
+      if (typeof insert === 'string' && !code) {
+        const cleaned = this.cleanOutsideFences(insert, fenced);
         if (cleaned !== insert) (op as { insert?: unknown }).insert = cleaned;
+        fenced = this.fenceState(insert, fenced);
       }
 
       // A link the user pasted over text carries the URL as an attribute, so
       // the visible text and the href have to be cleaned separately.
       const link = op.attributes?.link;
-      if (typeof link === 'string') {
+      if (typeof link === 'string' && !code && !touchesFence) {
         const cleaned = cleanUrl(link, this.providers, this.extra);
         if (cleaned !== link) op.attributes!.link = cleaned;
       }
     }
 
     return delta;
+  }
+
+  private cleanOutsideFences(text: string, initiallyFenced: boolean): string {
+    let fenced = initiallyFenced;
+    let at = 0;
+    let out = '';
+    for (let fence = text.indexOf('```'); fence !== -1; fence = text.indexOf('```', at)) {
+      const part = text.slice(at, fence);
+      out += fenced ? part : cleanText(part, this.providers, this.extra);
+      out += '```';
+      fenced = !fenced;
+      at = fence + 3;
+    }
+    const rest = text.slice(at);
+    return out + (fenced ? rest : cleanText(rest, this.providers, this.extra));
+  }
+
+  private fenceState(text: string, initiallyFenced: boolean): boolean {
+    let fenced = initiallyFenced;
+    for (let at = text.indexOf('```'); at !== -1; at = text.indexOf('```', at + 3)) fenced = !fenced;
+    return fenced;
   }
 }

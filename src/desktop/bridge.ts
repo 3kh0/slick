@@ -40,11 +40,17 @@ async function readFile(name: string, fallback: string): Promise<string> {
 }
 
 async function writeFile(name: string, text: string): Promise<boolean> {
+  let temp = '';
   try {
     await fs.mkdir(settingsDir(), { recursive: true });
-    await fs.writeFile(path.join(settingsDir(), name), text, 'utf8');
+    const file = path.join(settingsDir(), name);
+    temp = `${file}.${process.pid}.${Date.now()}.tmp`;
+    // Keep the old inode intact until the complete replacement is durable.
+    await fs.writeFile(temp, text, 'utf8');
+    await fs.rename(temp, file);
     return true;
   } catch (error) {
+    if (temp) await fs.rm(temp, { force: true }).catch(() => {});
     console.error(`[slick] could not write ${name}:`, error);
     return false;
   }

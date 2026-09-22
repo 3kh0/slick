@@ -30,13 +30,21 @@ const frameScript = (volume: number) => `(function (volume) {
     window.__slickQuietSpotify.volume = volume;
     return;
   }
-  const state = (window.__slickQuietSpotify = { volume });
   const play = Audio.prototype.play;
-  Audio.prototype.play = function () {
+  const state = (window.__slickQuietSpotify = { volume, play });
+  state.wrapper = function () {
     this.volume = state.volume;
     return play.apply(this, arguments);
   };
+  Audio.prototype.play = state.wrapper;
 })(${volume});`;
+
+const restoreScript = `(function () {
+  const state = window.__slickQuietSpotify;
+  if (!state) return;
+  if (Audio.prototype.play === state.wrapper) Audio.prototype.play = state.play;
+  delete window.__slickQuietSpotify;
+})();`;
 
 const plugin: SlickMainPlugin = {
   id: 'QuietSpotify',
@@ -52,7 +60,7 @@ const plugin: SlickMainPlugin = {
         .catch((error: Error) => ctx.log('could not set the embed volume:', error.message));
     };
 
-    ctx.onSettingsChange((settings) => {
+    const disposeSettings = ctx.onSettingsChange((settings) => {
       volume = volumeFraction(settings.volume);
       // Already-open embeds pick the new volume up on their next play.
       for (const frame of frames) {
@@ -65,11 +73,22 @@ const plugin: SlickMainPlugin = {
       }
     });
 
-    ctx.frames.onFrame((frame) => {
+    const disposeFrames = ctx.frames.onFrame((frame) => {
       if (!frame.url.startsWith(EMBED_PREFIX)) return;
       frames.add(frame);
       apply(frame);
     });
+
+    return () => {
+      disposeSettings();
+      disposeFrames();
+      for (const frame of frames) {
+        try {
+          if (frame.url.startsWith(EMBED_PREFIX)) void frame.executeJavaScript(restoreScript).catch(() => {});
+        } catch {}
+      }
+      frames.clear();
+    };
   },
 };
 

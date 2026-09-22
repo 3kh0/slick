@@ -26,6 +26,9 @@ export function themeToCss(theme: ThemeJson): string {
   }
   for (const [key, value] of Object.entries(theme.vars ?? {})) vars[key] = String(value);
 
+  // Keys and values stay verbatim for v1 theme compatibility. They are not a
+  // security boundary: the same theme format deliberately accepts arbitrary
+  // CSS through `css`, and setStyle installs the result via textContent.
   const declarations = Object.entries(vars)
     .map(([key, value]) => `${key}:${value} !important`)
     .join(';');

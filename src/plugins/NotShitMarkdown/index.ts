@@ -15,6 +15,15 @@ export default class NotShitMarkdown extends SlickPlugin<typeof meta.settings> {
 
   start() {
     this.api.onMessageSendDelta((delta) => {
+      // The inline parser has no lossless fenced-block representation. Leave
+      // fenced source alone unless Slack has already represented it as code.
+      if (
+        delta.ops.some((op) => {
+          const insert = 'insert' in op ? op.insert : undefined;
+          return typeof insert === 'string' && insert.includes('```');
+        })
+      )
+        return delta;
       const ops = transformOps(delta.ops, this.config);
       if (ops === delta.ops) return delta;
       // The send hook is synchronous, so the async blocks.makeDelta helper cannot

@@ -1,13 +1,12 @@
 // Slack's modal system, reduced to `openModal` plus confirm/alert helpers.
 //
-// The modal is opened by dispatching Slack's own `openModal` thunk with a
-// rendered element, so it stacks, traps focus and themes exactly like every
-// other Slack dialog.
+// The modal is opened by dispatching Slack's own `openModal` thunk with owned
+// dialog markup. The host still provides the modal stack and focus trap without
+// making the controls depend on an unverified private component contract.
 
 import { reactReady } from '../slack/react.tsx';
 import { getStore } from '../slack/redux.ts';
 import { waitForExport } from '../slack/webpack.ts';
-import { elementsReady } from './elements.ts';
 
 type RawModalHandle = { close: () => void; render: (props: unknown) => void };
 type OpenModalThunk = (opts: { element: React.ReactElement; name?: string }) => unknown;
@@ -93,7 +92,6 @@ export function dialogHelpersFor(openModal: (options: OpenModalOptions) => Modal
 
 export const modalReady = (async () => {
   await reactReady;
-  const elements = await elementsReady;
 
   let openModalThunk: OpenModalThunk | undefined;
   void waitForExport<OpenModalThunk>((exp: any) => typeof exp === 'function' && exp.meta?.name === 'openModal').then(
@@ -101,8 +99,6 @@ export const modalReady = (async () => {
       openModalThunk = found;
     },
   );
-
-  const Confirmation = elements.ConfirmationModal;
 
   function openModal(options: OpenModalOptions): ModalHandle | null {
     const store = getStore();
@@ -115,29 +111,45 @@ export const modalReady = (async () => {
     // The close function only exists after dispatch, but the element's
     // handlers need it, so it is reached through a box rather than captured.
     const closeRef = { current: () => {} };
+    const finish = (kind: string, callback: (() => void) | undefined) => {
+      try {
+        callback?.();
+      } catch (error) {
+        console.error(`[slick] modal ${kind} callback failed:`, error);
+      } finally {
+        closeRef.current();
+      }
+    };
     const element = (
-      <Confirmation
-        title={options.title}
-        submitButtonText={options.submitText ?? 'Save'}
-        cancelButtonText={options.cancelText ?? 'Cancel'}
-        submitButtonType={options.danger ? 'danger' : 'primary'}
-        showCancelButton={options.showCancelButton ?? true}
-        showSubmitButton={options.showSubmitButton ?? true}
-        onSubmit={() => {
-          options.onSubmit?.();
-          closeRef.current();
-        }}
-        onCancel={() => {
-          options.onCancel?.();
-          closeRef.current();
-        }}
-        onClose={() => {
-          options.onClose?.();
-          closeRef.current();
-        }}
+      <section
+        role="dialog"
+        aria-modal="true"
+        aria-label={typeof options.title === 'string' ? options.title : 'Slick dialog'}
       >
-        {options.body}
-      </Confirmation>
+        <header style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+          <h2 style={{ flex: 1, margin: 0 }}>{options.title}</h2>
+          <button type="button" aria-label="Close" onClick={() => finish('close', options.onClose)}>
+            ×
+          </button>
+        </header>
+        <div style={{ marginBlock: 20 }}>{options.body}</div>
+        <footer style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+          {(options.showCancelButton ?? true) && (
+            <button type="button" onClick={() => finish('cancel', options.onCancel)}>
+              {options.cancelText ?? 'Cancel'}
+            </button>
+          )}
+          {(options.showSubmitButton ?? true) && (
+            <button
+              type="button"
+              onClick={() => finish('submit', options.onSubmit)}
+              style={options.danger ? { color: 'var(--dt_color-content-destructive)' } : undefined}
+            >
+              {options.submitText ?? 'Save'}
+            </button>
+          )}
+        </footer>
+      </section>
     );
 
     const name = typeof options.title === 'string' ? options.title : 'modal';

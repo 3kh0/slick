@@ -1,10 +1,8 @@
 // Replace third-party embeds with a click-to-load placeholder.
 //
-// The frame's `src` is intercepted before it is ever set, so the third party
-// is never contacted -- which is the entire point. v1 did the same thing, but
-// it was injected at dom-ready, so any embed already on screen had already
-// phoned home before the plugin existed. Running before Slack's first script
-// is what makes this actually private rather than mostly private.
+// Property and setAttribute writes are intercepted before navigation. A scan
+// also replaces parser-created frames; the main half blocks known providers
+// while that scan catches up.
 //
 // Clicking the placeholder asks the main half to allow that one URL, then sets
 // the real source. v1 routed the click through a fake `slick.click2load`
@@ -34,7 +32,8 @@ export default class Click2Load extends SlickPlugin<typeof meta.settings> {
 
   private restore: (() => void) | null = null;
   /** The real source of each gated frame, until someone asks for it. */
-  private readonly gated = new WeakMap<HTMLIFrameElement, string>();
+  private readonly gated = new Map<HTMLIFrameElement, string>();
+  private observer: MutationObserver | null = null;
 
   start() {
     const descriptor = Object.getOwnPropertyDescriptor(HTMLIFrameElement.prototype, 'src');
@@ -44,6 +43,7 @@ export default class Click2Load extends SlickPlugin<typeof meta.settings> {
     }
 
     const setSrc = descriptor.set;
+    const setAttribute = Element.prototype.setAttribute;
     // Captured in the closure rather than reached through `this`: the setter
     // has to be a plain function so its `this` stays the frame being written.
     const gate = (frame: HTMLIFrameElement, value: string) => this.gate(frame, value);
@@ -56,7 +56,32 @@ export default class Click2Load extends SlickPlugin<typeof meta.settings> {
       },
     });
 
-    this.restore = () => Object.defineProperty(HTMLIFrameElement.prototype, 'src', descriptor);
+    Element.prototype.setAttribute = function (this: Element, name: string, value: string) {
+      if (this instanceof HTMLIFrameElement && name.toLowerCase() === 'src' && gate(this, value)) return;
+      setAttribute.call(this, name, value);
+    };
+
+    this.restore = () => {
+      Object.defineProperty(HTMLIFrameElement.prototype, 'src', descriptor);
+      Element.prototype.setAttribute = setAttribute;
+    };
+
+    const scan = (root: ParentNode) => {
+      const frames: HTMLIFrameElement[] =
+        root instanceof HTMLIFrameElement ? [root] : [...root.querySelectorAll<HTMLIFrameElement>('iframe[src]')];
+      for (const frame of frames) {
+        const source = frame.getAttribute('src');
+        if (source && this.gate(frame, source)) setAttribute.call(frame, 'src', 'about:blank');
+      }
+    };
+    scan(document);
+    this.observer = new MutationObserver((records) => {
+      for (const record of records) {
+        if (record.type === 'attributes') scan(record.target as HTMLIFrameElement);
+        else for (const node of record.addedNodes) if (node instanceof Element) scan(node);
+      }
+    });
+    this.observer.observe(document, { subtree: true, childList: true, attributes: true, attributeFilter: ['src'] });
 
     // The placeholder cannot reach the page directly, so it posts instead.
     const onMessage = (event: MessageEvent) => {
@@ -71,8 +96,16 @@ export default class Click2Load extends SlickPlugin<typeof meta.settings> {
   }
 
   stop() {
+    this.observer?.disconnect();
+    this.observer = null;
     this.restore?.();
     this.restore = null;
+    const descriptor = Object.getOwnPropertyDescriptor(HTMLIFrameElement.prototype, 'src');
+    for (const [frame, source] of this.gated) {
+      frame.removeAttribute('srcdoc');
+      descriptor?.set?.call(frame, source);
+    }
+    this.gated.clear();
   }
 
   /** True if the frame was gated and the caller should not set the source. */

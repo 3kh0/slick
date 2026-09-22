@@ -1,5 +1,5 @@
 // Name the private channels Slack will not name, and mention ones you are not
-// in. Names come from the Flaron index.
+// in. Names can stay local or come from the Flaron index.
 //
 // v1 rewrote label text nodes after React rendered them. v2 layers synthesized
 // channels over Slack's store and patches the two missing-channel renderers, so
@@ -61,10 +61,10 @@ export default class PrivateChannelMapper extends SlickPlugin<typeof meta.settin
 
   /** Every Flaron name learned so far; names alone do not prove inaccessibility. */
   private names = new Map<string, ChannelName>();
+  /** Names the user chose locally; these never go to Flaron. */
+  private localNames = new Map<string, string>();
   /** Only Slack failures or a successful name lookup become added store keys. */
   private shadows = new Map<string, ConfirmedShadow>();
-  /** Lets rendering distinguish Slick's claim from a channel Slack resolved. */
-  private synthesized = new WeakSet<object>();
   private askedIds = new Set<string>();
   private askedNames = new Set<string>();
   private pendingIds = new Map<string, Promise<string | undefined>>();
@@ -72,17 +72,21 @@ export default class PrivateChannelMapper extends SlickPlugin<typeof meta.settin
   private expiryTimer: ReturnType<typeof setTimeout> | null = null;
 
   async start() {
-    if (this.config.flaron !== true && this.config.mentions !== true) {
-      this.log('flaron lookups and private mentions are off; nothing to do');
-      return;
-    }
-
-    const [storedNames, storedShadows] = await Promise.all([
+    const [storedNames, storedShadows, storedLocalNames] = await Promise.all([
       this.api.storage.get<Record<string, string>>('names', {}),
       this.api.storage.get<Record<string, ConfirmedShadow>>('shadows', {}),
+      this.api.storage.get<Record<string, string>>('localNames', {}),
     ]);
     if (this.api.signal.aborted) return;
 
+    const legacyLocalNames = this.legacyLocalNames();
+    const localNames = { ...legacyLocalNames, ...storedLocalNames };
+    for (const [id, name] of Object.entries(localNames)) {
+      if (CHANNEL_ID.test(id) && typeof name === 'string' && name.trim()) this.localNames.set(id, name.trim());
+    }
+    if (Object.keys(legacyLocalNames).length) {
+      void this.api.storage.set('localNames', Object.fromEntries(this.localNames));
+    }
     for (const [id, name] of Object.entries(storedNames)) {
       if (CHANNEL_ID.test(id) && typeof name === 'string' && name) this.names.set(id, { name });
     }
@@ -99,12 +103,13 @@ export default class PrivateChannelMapper extends SlickPlugin<typeof meta.settin
     this.api.redux.patchSlice<SlackChannel>(
       'channels',
       (id, channel) => this.channelFor(id, channel),
-      this.config.mentions === true ? () => this.activeShadowIds() : undefined,
+      () => this.addedChannelIds(),
     );
     this.api.redux.refresh();
 
     if (this.config.mentions === true) this.patchThunks();
     this.patchChannelRendering();
+    this.editLocalNames();
   }
 
   stop() {
@@ -122,6 +127,7 @@ export default class PrivateChannelMapper extends SlickPlugin<typeof meta.settin
     // An unconfirmed name may fill a stub Slack already gave up on, but it
     // must not create an absent key: Slack still gets a chance to fetch it.
     const record =
+      (this.localNames.has(id) ? { name: this.localNames.get(id)! } : undefined) ??
       (this.config.mentions === true ? this.activeShadow(id) : undefined) ??
       (this.config.flaron === true && channel ? this.names.get(id) : undefined);
     if (!record) {
@@ -129,14 +135,12 @@ export default class PrivateChannelMapper extends SlickPlugin<typeof meta.settin
       return channel;
     }
 
-    const synthesized = this.api.channels.makeChannelObject({
+    return this.api.channels.makeChannelObject({
       id,
       name: record.name,
       isPrivate: true,
       previousNames: record.previousNames,
     });
-    this.synthesized.add(synthesized);
-    return synthesized;
   }
 
   private rawChannel(id: string): SlackChannel | undefined {
@@ -157,6 +161,11 @@ export default class PrivateChannelMapper extends SlickPlugin<typeof meta.settin
 
   private *activeShadowIds(): Iterable<string> {
     for (const id of this.shadows.keys()) if (this.activeShadow(id)) yield id;
+  }
+
+  private *addedChannelIds(): Iterable<string> {
+    yield* this.localNames.keys();
+    if (this.config.mentions === true) yield* this.activeShadowIds();
   }
 
   private confirm(id: string, record: ChannelName): boolean {
@@ -309,10 +318,14 @@ export default class PrivateChannelMapper extends SlickPlugin<typeof meta.settin
     });
   }
 
-  private renderMissing(name: string) {
+  private renderMissing(id: string, name: string) {
     const { SvgIcon } = this.api.elements;
     return (
-      <span className="c-missing_channel--private slick-pcm--flaron">
+      <span
+        className="c-missing_channel--private slick-pcm--flaron"
+        data-slick-pcm-id={id}
+        title="Double-click to name locally"
+      >
         <SvgIcon inline name="lock" />
         {name}
       </span>
@@ -325,8 +338,8 @@ export default class PrivateChannelMapper extends SlickPlugin<typeof meta.settin
       const channel = props.id ? this.api.channels.getCachedChannel(props.id) : undefined;
       const inaccessible =
         props.isNonExistent || props.isUnknown || (props.isPrivate === true && props.isMember !== true);
-      if (inaccessible && channel && this.synthesized.has(channel)) {
-        return this.renderMissing(channel.name || props.channelName || props.id || '');
+      if (inaccessible && props.id) {
+        return this.renderMissing(props.id, channel?.name || props.channelName || props.id);
       }
       return <Original {...props} />;
     });
@@ -342,11 +355,39 @@ export default class PrivateChannelMapper extends SlickPlugin<typeof meta.settin
         (channel.isNonExistent === true ||
           channel.isUnknown === true ||
           (channel.is_private === true && channel.is_member !== true));
-      if (inaccessible && id && channel && this.synthesized.has(channel)) {
-        return this.renderMissing(channel.name || id);
+      if (inaccessible && id && channel) {
+        return this.renderMissing(id, channel.name || id);
       }
       return <Original {...props} />;
     });
+  }
+
+  private editLocalNames() {
+    const edit = (event: MouseEvent) => {
+      const target = event.target instanceof Element ? event.target.closest<HTMLElement>('[data-slick-pcm-id]') : null;
+      const id = target?.dataset.slickPcmId;
+      if (!id || !CHANNEL_ID.test(id)) return;
+
+      const current = this.localNames.get(id) ?? '';
+      const answer = window.prompt(`Local name for ${id} (leave blank to remove)`, current);
+      if (answer === null) return;
+      const name = answer.trim();
+      if (name) this.localNames.set(id, name);
+      else this.localNames.delete(id);
+      void this.api.storage.set('localNames', Object.fromEntries(this.localNames));
+      this.api.redux.refresh();
+    };
+    document.addEventListener('dblclick', edit);
+    this.api.signal.addEventListener('abort', () => document.removeEventListener('dblclick', edit));
+  }
+
+  private legacyLocalNames(): Record<string, string> {
+    try {
+      const value = JSON.parse(localStorage.getItem('slick:pcm:names') ?? '{}') as unknown;
+      return value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, string>) : {};
+    } catch {
+      return {};
+    }
   }
 
   /** Repaint immediately, but batch the large maps into one storage write. */

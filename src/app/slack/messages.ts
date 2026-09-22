@@ -108,18 +108,24 @@ export function modifyMessageObject(
   return next;
 }
 
-let historyShapeWarned = false;
+export const messageDiagnostics = { historyShapeFailures: 0 };
+let historyShapeAsserted = false;
 
-function warnHistoryShape(detail: string): void {
-  if (historyShapeWarned) return;
-  historyShapeWarned = true;
-  console.warn(`[slick] injectMessages: ${detail}. Deleted messages will stop appearing until this is updated.`);
+function failHistoryShape(detail: string): void {
+  messageDiagnostics.historyShapeFailures++;
+  if (historyShapeAsserted) return;
+  historyShapeAsserted = true;
+  console.assert(
+    false,
+    `[slick] injectMessages: ${detail}. Deleted messages will stop appearing until this is updated. ` +
+      `Failure count: ${messageDiagnostics.historyShapeFailures}.`,
+  );
 }
 
 function diagnoseHistory(entry: ChannelHistory, added: string[], next: HistorySlice[]): void {
   if (!added.length) return;
   if (!Array.isArray(entry.slices)) {
-    warnHistoryShape('channelHistory.slices is not an array');
+    failHistoryShape('channelHistory.slices is not an array');
     return;
   }
 
@@ -139,7 +145,7 @@ function diagnoseHistory(entry: ChannelHistory, added: string[], next: HistorySl
   }
 
   if (expected > 0 && placed === 0) {
-    warnHistoryShape(
+    failHistoryShape(
       `placed 0/${expected} injected timestamps into channelHistory (injected=${added.length}); slices[].timestamps may have changed shape`,
     );
   }
@@ -183,8 +189,7 @@ export function injectMessages(getMessages: () => Iterable<SlackMessage>): () =>
     const injected = index().get(historyKeyChannel(key));
     if (!injected?.size) return entry;
     if (!entry || !Array.isArray(entry.slices)) {
-      if (entry && entry.slices !== undefined)
-        warnHistoryShape('channelHistory entry exists but slices is not an array');
+      if (entry) failHistoryShape('channelHistory entry exists but slices is missing or is not an array');
       return entry;
     }
     const thread = historyKeyThread(key);
@@ -237,6 +242,7 @@ export const messagesReady = (async () => {
     asRawMessage,
     getMessageBotId,
     injectMessages,
+    diagnostics: messageDiagnostics,
     modifyMessageObject,
     useActivityMessage,
     useMessageBot,

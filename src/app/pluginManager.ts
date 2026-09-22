@@ -225,12 +225,15 @@ type Entry = {
   instance: SlickPlugin | null;
   scope: PluginScope | null;
   settings: PluginSettings;
+  running: boolean;
+  startError: string | null;
 };
 
 export class PluginManager {
   readonly plugins = new Map<string, Entry>();
   private baseAPI: Promise<BaseAPI>;
   private queues = new Map<string, Promise<unknown>>();
+  private statusListeners = new Set<() => void>();
 
   constructor(
     private bridge: SlickBridge,
@@ -286,8 +289,25 @@ export class PluginManager {
       instance: null,
       scope: null,
       settings: this.config.settingsFor(id),
+      running: false,
+      startError: null,
     });
     return id;
+  }
+
+  onStatusChange(cb: () => void): () => void {
+    this.statusListeners.add(cb);
+    return () => void this.statusListeners.delete(cb);
+  }
+
+  private notifyStatus(): void {
+    for (const notify of this.statusListeners) {
+      try {
+        notify();
+      } catch (error) {
+        console.error('[slick] plugin status listener threw:', error);
+      }
+    }
   }
 
   /** Bring every plugin's running state in line with its configuration. */
@@ -309,21 +329,29 @@ export class PluginManager {
     const next = this.config.settingsFor(id);
     const previous = entry.settings;
     entry.settings = next;
+    const changed = changedKeys(previous, next);
 
     if (!wanted) {
       if (entry.instance) await this.stop(id, entry);
+      if (entry.startError) {
+        entry.startError = null;
+        this.notifyStatus();
+      }
       return;
     }
     if (!entry.instance) {
+      // A failed start stays failed until this plugin's own configuration
+      // changes. Unrelated settings broadcasts must not create a retry loop.
+      if (entry.startError && !changed.length) return;
       await this.start(id, entry);
       return;
     }
 
-    const changed = changedKeys(previous, next).filter((key) => key !== 'enabled');
-    if (!changed.length) return;
+    const settingChanges = changed.filter((key) => key !== 'enabled');
+    if (!settingChanges.length) return;
 
     const live = new Set(entry.PluginClass.liveSettings ?? []);
-    const allLive = changed.every((key) => live.has(key));
+    const allLive = settingChanges.every((key) => live.has(key));
 
     if (!allLive) {
       // Anything not declared live restarts the plugin: simpler than asking
@@ -338,14 +366,18 @@ export class PluginManager {
     // its closures already captured it.
     Object.assign(entry.instance['config' as keyof SlickPlugin] as object, next);
     try {
-      await withTimeout(id, 'onSettingsChange', Promise.resolve(entry.instance.onSettingsChange(changed)));
-      console.log(`[slick] ${id} applied live settings: ${changed.join(', ')}`);
+      await withTimeout(id, 'onSettingsChange', Promise.resolve(entry.instance.onSettingsChange(settingChanges)));
+      console.log(`[slick] ${id} applied live settings: ${settingChanges.join(', ')}`);
     } catch (error) {
       console.error(`[slick] ${id} onSettingsChange failed:`, error);
     }
   }
 
   private async start(id: string, entry: Entry): Promise<void> {
+    entry.startError = null;
+    entry.running = false;
+    this.notifyStatus();
+
     const base = await this.baseAPI;
     const scope = createScope();
     const api = createScopedAPI(
@@ -363,6 +395,8 @@ export class PluginManager {
     } catch (error) {
       console.error(`[slick] ${id} failed to construct:`, error);
       scope.dispose();
+      entry.startError = error instanceof Error ? error.message : String(error);
+      this.notifyStatus();
       return;
     }
 
@@ -371,12 +405,16 @@ export class PluginManager {
 
     try {
       await withTimeout(id, 'start', Promise.resolve(instance.start()));
+      entry.running = true;
+      this.notifyStatus();
       console.log(`[slick] started ${id}`);
     } catch (error) {
       console.error(`[slick] ${id} failed to start:`, error);
       // A plugin that threw halfway through start has probably registered
       // some of its hooks; tear them down rather than leaving it half-applied.
       await this.stop(id, entry);
+      entry.startError = error instanceof Error ? error.message : String(error);
+      this.notifyStatus();
     }
   }
 
@@ -384,6 +422,7 @@ export class PluginManager {
     const { instance, scope } = entry;
     entry.instance = null;
     entry.scope = null;
+    entry.running = false;
 
     if (instance) {
       try {
@@ -395,6 +434,7 @@ export class PluginManager {
     // Always dispose, even if stop() threw: the tracked registrations are the
     // ones that actually change Slack, and they have to come off.
     scope?.dispose();
+    this.notifyStatus();
     console.log(`[slick] stopped ${id}`);
   }
 
@@ -406,8 +446,9 @@ export class PluginManager {
       authors: entry.PluginClass.authors,
       settings: entry.PluginClass.settings,
       relaunchSettings: entry.PluginClass.relaunchSettings,
-      running: !!entry.instance,
+      running: entry.running,
       enabled: this.config.isActive(id),
+      startError: entry.startError,
     }));
   }
 }

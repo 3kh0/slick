@@ -19,7 +19,7 @@ import {
   updateSettings,
   windowCreated,
 } from './pluginHost.js';
-import { readStoredPlugins, watchSettings } from './settingsFile.js';
+import { readStoredSettings, watchSettings } from './settingsFile.js';
 import { applyPatches } from './patch.js';
 import { findSlackAsar, macSlackElectronMajor } from './slackFinder.js';
 import { privilegedSchemes, setupSession } from './session.js';
@@ -87,7 +87,10 @@ function startSlack(asar: string) {
   // Main halves boot before app-ready, because privileged schemes and
   // Chromium switches can only be registered that early.
   registerMainPlugins(mainPlugins, pluginMeta);
-  updateSettings(readStoredPlugins());
+  // Null means the file exists but did not parse: leave the resolved defaults
+  // alone rather than treating a damaged file as an instruction.
+  const stored = readStoredSettings();
+  if (stored) updateSettings(stored);
   bootMainPlugins();
 
   applyPatches(asar, path.join(__dirname, 'preload.js'), windowCreated);
@@ -99,8 +102,8 @@ function startSlack(asar: string) {
     await readyMainPlugins();
     // Edits to the settings file reach both halves: the main plugins through
     // their ctx, the renderer through the bridge's change event.
-    watchSettings((text, plugins) => {
-      updateSettings(plugins);
+    watchSettings((text, settings) => {
+      updateSettings(settings);
       broadcast('slick:settings-changed', text);
     });
   });

@@ -29,6 +29,8 @@ type RowProps = {
 
 const STORAGE_KEY = 'log';
 const MAX_ENTRIES = 1000;
+const MAX_EDITS_PER_MESSAGE = 100;
+const MAX_EDIT_TEXT = 4000;
 const RECENT_CAP = 400;
 const ROW_COMPONENTS = ['MessageWrapper', 'ThreadRootGeneric'] as const;
 
@@ -241,7 +243,8 @@ export default class MessageLogger extends SlickPlugin<typeof meta.settings> {
     const edits = existing?.edits ? [...existing.edits] : [];
     const last = edits[edits.length - 1];
     if (last && last.oldText === oldText && last.newText === newText) return;
-    edits.push({ oldText, newText });
+    edits.push({ oldText: oldText.slice(0, MAX_EDIT_TEXT), newText: newText.slice(0, MAX_EDIT_TEXT) });
+    if (edits.length > MAX_EDITS_PER_MESSAGE) edits.splice(0, edits.length - MAX_EDITS_PER_MESSAGE);
 
     this.entries.set(key, {
       ...(existing ?? { channel, ts, at: Date.now() }),
@@ -320,6 +323,7 @@ export default class MessageLogger extends SlickPlugin<typeof meta.settings> {
       .slick-ml-edited-original { display: block; margin-bottom: 2px; opacity: .62; white-space: pre-wrap; word-break: break-word; }
       .slick-ml-edited-original s { text-decoration: line-through; }
       .slick-ml-edited-marker { margin-left: 4px; font-size: .85em; opacity: .72; }
+      .slick-ml-forget { margin: 2px 8px 2px 0; font-size: 12px; text-decoration: underline; }
     `;
   }
 
@@ -351,8 +355,37 @@ export default class MessageLogger extends SlickPlugin<typeof meta.settings> {
       'div',
       { className: classes || undefined },
       entry.edits?.length ? this.editHistory(entry.edits) : null,
+      entry.edits?.length
+        ? React.createElement(
+            'button',
+            { className: 'c-button-unstyled slick-ml-forget', type: 'button', onClick: () => this.hideEdits(entry) },
+            'Hide edit history',
+          )
+        : null,
+      entry.deleted
+        ? React.createElement(
+            'button',
+            { className: 'c-button-unstyled slick-ml-forget', type: 'button', onClick: () => this.acceptDelete(entry) },
+            'Accept deletion',
+          )
+        : null,
       React.createElement(Original, props),
     );
+  }
+
+  private hideEdits(entry: LogEntry) {
+    const current = this.entries.get(this.key(entry.channel, entry.ts));
+    if (!current) return;
+    if (current.deleted) this.entries.set(this.key(entry.channel, entry.ts), { ...current, edits: undefined });
+    else this.entries.delete(this.key(entry.channel, entry.ts));
+    this.persist();
+    this.api.redux.refresh();
+  }
+
+  private acceptDelete(entry: LogEntry) {
+    this.entries.delete(this.key(entry.channel, entry.ts));
+    this.persist();
+    this.api.redux.refresh();
   }
 
   private editHistory(edits: StoredEdit[]) {

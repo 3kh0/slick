@@ -6,8 +6,8 @@
 // to change Slack's UI, and it is why v2 needs no MutationObserver at all:
 // work happens when React renders, not when the DOM changes.
 //
-// The cost of an unpatched element is one WeakSet lookup, so this has to stay
-// allocation-free on the hot path.
+// Object and function types that miss are cached after one matcher pass. Host
+// strings cannot be WeakSet keys, so keep their matcher path small.
 
 import { forEachExport, findModuleId, getExport, getValueSource, waitForExport } from './webpack.ts';
 import { Store } from '../store.ts';
@@ -126,7 +126,13 @@ export function lazyComponent<P extends {}>(name: string, filter?: Filter): Reac
     }
     void waitForExport<React.ComponentType<P>>(match).then(component.set);
     setTimeout(() => {
-      if (!component.get()) console.error(`[slick] "${name}" is unavailable`);
+      if (component.get()) return;
+      console.error(`[slick] "${name}" is unavailable`);
+      const MissingComponent = () => (
+        <span title={`Slick could not find Slack's ${name} component`}>{name} unavailable</span>
+      );
+      MissingComponent.displayName = `Missing(${name})`;
+      component.set(MissingComponent as React.ComponentType<P>);
     }, MISSING_MS);
   };
 
@@ -217,8 +223,8 @@ function getRootFiber(): any | null {
 }
 
 /**
- * Patching after mount does nothing on its own: React's memoized props mean
- * already-rendered subtrees never re-run. Poisoning the cache forces them to.
+ * Poisoning memoized props makes an already-mounted subtree re-run when React
+ * next visits it. This does not itself schedule an update.
  */
 function dirtyMemoizationCache() {
   const root = getRootFiber();
@@ -250,7 +256,7 @@ function invalidateCaches() {
   resolved = new WeakMap<object, ComponentType>();
 }
 
-const originalObjectCache = new WeakMap<any, OriginalComponentObject>();
+const originalObjectCache = new Map<ComponentType, OriginalComponentObject>();
 
 function getOriginalComponentObject(component: ComponentType): OriginalComponentObject {
   const cached = originalObjectCache.get(component);
@@ -343,10 +349,10 @@ function resolveType(type: any, props: any): any {
     rememberRendered(type);
   }
 
-  const matched: ComponentReplacer[] = [];
+  const matched: [ComponentMatcher, ComponentReplacer][] = [];
   for (const [matches, replacer] of replacements) {
     try {
-      if (matches(type)) matched.push(replacer);
+      if (matches(type)) matched.push([matches, replacer]);
     } catch {}
   }
 
@@ -357,7 +363,20 @@ function resolveType(type: any, props: any): any {
 
   // Start from the marker object so several plugins can stack on one component.
   const original = getOriginalComponentObject(type) as unknown as ComponentType;
-  const replaced = matched.reduce((current, replacer) => applyReplacer(replacer, current), original);
+  let replaced = original;
+  for (const [matches, replacer] of matched) {
+    try {
+      replaced = applyReplacer(replacer, replaced);
+    } catch (error) {
+      replacements.delete(matches);
+      invalidateCaches();
+      console.error(`[slick] component patch for "${getDisplayName(type)}" threw and was disabled:`, replacer, error);
+    }
+  }
+  if (replaced === original) {
+    if (cacheable) notPatched.add(type);
+    return type;
+  }
   hoistStatics(replaced, type);
   if (cacheable) resolved.set(type, replaced);
   return replaced;
@@ -423,7 +442,7 @@ export const patchingReady = (async () => {
 })();
 
 export function exposeDebugGlobals() {
-  Object.assign(global, {
+  const debug = {
     getComponent,
     waitForComponent,
     getRenderedComponent,
@@ -432,5 +451,12 @@ export function exposeDebugGlobals() {
     getFiberFromNode,
     patchComponent,
     __slickRenderedComponents: renderedComponents,
-  });
+  };
+  for (const [name, value] of Object.entries(debug)) {
+    try {
+      global[name] = value;
+    } catch (error) {
+      console.error(`[slick] could not expose React debug global ${name}:`, error);
+    }
+  }
 }

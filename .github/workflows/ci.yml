@@ -51,3 +51,28 @@ jobs:
       # Bundling is the check that a plugin actually compiles and default-exports
       # a named class; typecheck alone does not catch that.
       - run: bun run build
+
+  package:
+    name: package (${{ matrix.os }}, ${{ matrix.arch }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-26
+            arch: arm64
+          - os: macos-26
+            arch: x64
+          - os: windows-latest
+            arch: arm64
+          - os: windows-latest
+            arch: x64
+          - os: ubuntu-latest
+            arch: x64
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install --frozen-lockfile
+      - run: bun run build -- package --arch ${{ matrix.arch }}
+        env:
+          SLICK_BUILD: '86'

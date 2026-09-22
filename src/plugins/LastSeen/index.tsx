@@ -30,8 +30,6 @@ export default class LastSeen extends SlickPlugin<typeof meta.settings> {
   static readonly description = meta.description;
   static readonly defaultEnabled = meta.defaultEnabled;
   static readonly settings = meta.settings;
-  // Both display toggles only change what is drawn.
-  static readonly liveSettings = ['showLastMessage', 'showObservedPresence'];
 
   /** userId -> when we last saw them do something, in ms. */
   private seen = new Map<string, number>();

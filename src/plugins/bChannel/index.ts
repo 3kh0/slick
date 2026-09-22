@@ -385,21 +385,19 @@ export default class BChannel extends SlickPlugin<typeof meta.settings> {
     } catch (error) {
       const code = apiErrorCode(error);
       if (code === 'already_in_channel' || /already_in_channel/.test(code)) return 'already';
-      if (/not found|missing thunk/i.test(code)) {
-        try {
-          await this.api.userAPI(
-            'conversations.invite',
-            { channel: channelId, users: botUserId },
-            { signal: this.api.signal },
-          );
-          return 'invited';
-        } catch (fallback) {
-          const fallbackCode = apiErrorCode(fallback);
-          if (fallbackCode === 'already_in_channel' || /already_in_channel/.test(fallbackCode)) return 'already';
-          throw fallback;
-        }
+      this.log('invite thunk missing or failed; trying conversations.invite', code);
+      try {
+        await this.api.userAPI(
+          'conversations.invite',
+          { channel: channelId, users: botUserId },
+          { signal: this.api.signal },
+        );
+        return 'invited';
+      } catch (fallback) {
+        const fallbackCode = apiErrorCode(fallback);
+        if (fallbackCode === 'already_in_channel' || /already_in_channel/.test(fallbackCode)) return 'already';
+        throw fallback;
       }
-      throw error;
     }
   }
 

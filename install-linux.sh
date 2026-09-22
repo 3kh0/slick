@@ -202,12 +202,15 @@ write_desktop_file() {
   # v2 (electron-builder) names the binary `slick`; v1 shipped Electron's own.
   local binary="electron"
   [ -x "$target/slick" ] && binary="slick"
+  local executable="${target}/${binary}"
+  executable="${executable//\\/\\\\}"
+  executable="${executable//\"/\\\"}"
   cat >"$target/slick.desktop" <<EOF
 [Desktop Entry]
 Type=Application
 Name=Slick
 Comment=Slack client mod (BYOE)
-Exec=${target}/${binary} --no-sandbox %U
+Exec="$executable" --no-sandbox %U
 Icon=slick
 Terminal=false
 Categories=Network;InstantMessaging;
@@ -266,9 +269,20 @@ elif [ "$V2" -eq 1 ]; then
     die "Node.js 22+ is required to build Slick v2 (found: $(node -v 2>/dev/null || echo none))."
   [ "$BETA" -eq 0 ] || die "--beta is a v1 mechanism; in v2 the early path is the only path."
 
+  if [ ! -d "$ROOT/node_modules/electron-builder" ]; then
+    step "Installing build dependencies"
+    if command -v bun >/dev/null 2>&1; then
+      (cd "$ROOT" && bun install --frozen-lockfile) || die "dependency install failed"
+    elif command -v npm >/dev/null 2>&1; then
+      (cd "$ROOT" && npm install --no-audit --no-fund) || die "dependency install failed"
+    else
+      die "npm or bun is required to install build dependencies."
+    fi
+  fi
+
   case "$(uname -m)" in
-  aarch64 | arm64) UNPACKED="linux-arm64-unpacked" ;;
-  *) UNPACKED="linux-unpacked" ;;
+  aarch64 | arm64) UNPACKED="linux-arm64-unpacked"; BUILD_ARCH="arm64" ;;
+  *) UNPACKED="linux-unpacked"; BUILD_ARCH="x64" ;;
   esac
 
   mkdir -p "$(dirname "$TARGET")"
@@ -277,8 +291,8 @@ elif [ "$V2" -eq 1 ]; then
   STAGED_APP="$TMP/Slick"
 
   step "Building Slick v2 (this bundles Electron; give it a minute)"
-  (cd "$ROOT" && node scripts/build.ts package) >/dev/null ||
-    die "build failed; run 'node scripts/build.ts package' to see why"
+  (cd "$ROOT" && node scripts/build.ts package --arch "$BUILD_ARCH") >/dev/null ||
+    die "build failed; run 'node scripts/build.ts package --arch $BUILD_ARCH' to see why"
 
   BUILT="$ROOT/dist/release/$UNPACKED"
   [ -d "$BUILT" ] || die "electron-builder produced no app at $BUILT"

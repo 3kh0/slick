@@ -35,7 +35,11 @@ const plugin: SlickMainPlugin = {
     };
 
     apply(ctx.settings.enabled, ctx.settings.disableSpellcheck);
-    ctx.onSettingsChange((settings) => apply(settings.enabled, settings.disableSpellcheck));
+    const dispose = ctx.onSettingsChange((settings) => apply(settings.enabled, settings.disableSpellcheck));
+    return () => {
+      dispose();
+      apply(false, false);
+    };
   },
 };
 

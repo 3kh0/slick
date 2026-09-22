@@ -67,24 +67,40 @@ patchExportFunction('createStore', (originalCreateStore) => (...args: any[]) => 
   return store;
 });
 
-let cachedStore: SlackStore | null = null;
-
 /** Slack's store, found through the <Provider> value on the fiber tree. */
 export function getStore(): SlackStore | null {
-  if (cachedStore) return cachedStore;
-
   const start = document.querySelector('.p-client_container')?.firstElementChild;
   if (!start) return null;
 
   for (let fiber = getFiberFromNode(start); fiber; fiber = fiber.return) {
     const value = fiber.memoizedProps?.value;
     const store = value?.store ?? value;
-    if (store && typeof store.getState === 'function' && typeof store.subscribe === 'function') {
-      cachedStore = store;
-      return store;
-    }
+    if (store && typeof store.getState === 'function' && typeof store.subscribe === 'function') return store;
   }
   return null;
+}
+
+const storeListeners = new Set<() => void>();
+let storePoll: ReturnType<typeof setInterval> | undefined;
+let observedStore: SlackStore | null = null;
+
+function subscribeStore(listener: () => void): () => void {
+  storeListeners.add(listener);
+  if (!storePoll) {
+    observedStore = getStore();
+    storePoll = setInterval(() => {
+      const store = getStore();
+      if (store === observedStore) return;
+      observedStore = store;
+      for (const notify of storeListeners) notify();
+    }, 500);
+  }
+  return () => {
+    storeListeners.delete(listener);
+    if (storeListeners.size || !storePoll) return;
+    clearInterval(storePoll);
+    storePoll = undefined;
+  };
 }
 
 /** Slack's state as Slack stores it, with Slick's transforms left off. */
@@ -148,6 +164,8 @@ type Memo = {
 };
 
 const memos = new WeakMap<MapEntry<any>, Memo>();
+const failedEntryPatches = new WeakSet<MapEntry<any>>();
+const failedAddedKeys = new WeakSet<() => Iterable<string>>();
 
 function memoFor(mapEntry: MapEntry<any>): Memo {
   let memo = memos.get(mapEntry);
@@ -158,19 +176,27 @@ function memoFor(mapEntry: MapEntry<any>): Memo {
   return memo;
 }
 
-export function mapEntries<T = any>(object: object, mapEntry: MapEntry<T>, addedKeys?: () => Iterable<string>): object {
+export function mapEntries<T = any>(
+  object: object,
+  mapEntry: MapEntry<T>,
+  addedKeys?: () => Iterable<string>,
+  patchName = 'anonymous',
+): object {
   const memo = memoFor(mapEntry);
+  let failed = false;
 
   // A version bump means the closure's inputs may have changed, so memoized
   // results and the added-key set are dropped.
   const sync = () => {
     if (memo.version === patchVersion) return;
     memo.cache = new Map();
-    if (addedKeys) {
+    if (addedKeys && !failedAddedKeys.has(addedKeys)) {
       try {
         memo.added = new Set(addedKeys());
-      } catch {
+      } catch (error) {
         memo.added = new Set();
+        failedAddedKeys.add(addedKeys);
+        console.error('[slick] added-keys callback threw; no virtual entries will be enumerated:', addedKeys, error);
       }
     }
     memo.version = patchVersion;
@@ -179,11 +205,41 @@ export function mapEntries<T = any>(object: object, mapEntry: MapEntry<T>, added
   const run = (key: PropertyKey, value: any): any => {
     if (typeof key !== 'string') return value;
     sync();
+    if (failed || failedEntryPatches.has(mapEntry)) return value;
     const hit = memo.cache.get(key);
     if (hit && hit.input === value) return hit.output;
-    const output = mapEntry(key, value as T | undefined);
+    let output: T | undefined;
+    try {
+      output = mapEntry(key, value as T | undefined);
+    } catch (error) {
+      failed = true;
+      failedEntryPatches.add(mapEntry);
+      memo.cache.clear();
+      console.error(`[slick] entry patch "${patchName}" threw for key "${key}" and was disabled:`, mapEntry, error);
+      return value;
+    }
     memo.cache.set(key, { input: value, output });
     return output;
+  };
+
+  const read = (target: object, key: PropertyKey): any => {
+    const descriptor = Object.getOwnPropertyDescriptor(target, key);
+    const value = (target as any)[key];
+    if (
+      descriptor &&
+      descriptor.configurable === false &&
+      (('value' in descriptor && descriptor.writable === false) || (!('value' in descriptor) && !descriptor.get))
+    ) {
+      return value;
+    }
+    return run(key, value);
+  };
+
+  const hasMapped = (target: object, key: PropertyKey): boolean => {
+    if (typeof key !== 'string') return Reflect.has(target, key);
+    const descriptor = Object.getOwnPropertyDescriptor(target, key);
+    if (descriptor && (descriptor.configurable === false || !Object.isExtensible(target))) return true;
+    return run(key, (target as any)[key]) !== undefined;
   };
 
   const describe = (target: object, key: PropertyKey) => {
@@ -194,7 +250,8 @@ export function mapEntries<T = any>(object: object, mapEntry: MapEntry<T>, added
     }
     sync();
     if (typeof key === 'string' && memo.added.has(key) && Object.isExtensible(target)) {
-      return { value: run(key, undefined), enumerable: true, configurable: true, writable: true };
+      const value = run(key, undefined);
+      if (value !== undefined) return { value, enumerable: true, configurable: true, writable: true };
     }
     return undefined;
   };
@@ -203,7 +260,7 @@ export function mapEntries<T = any>(object: object, mapEntry: MapEntry<T>, added
     const keys = Reflect.ownKeys(target);
     if (!addedKeys || !Object.isExtensible(target)) return keys;
     sync();
-    const extra = [...memo.added].filter((key) => !hasOwn(target, key));
+    const extra = [...memo.added].filter((key) => !hasOwn(target, key) && run(key, undefined) !== undefined);
     return extra.length ? [...keys, ...extra] : keys;
   };
 
@@ -212,7 +269,8 @@ export function mapEntries<T = any>(object: object, mapEntry: MapEntry<T>, added
     let proxied = protoProxies.get(proto);
     if (!proxied) {
       proxied = new Proxy(proto, {
-        get: (target, key) => run(key, (target as any)[key]),
+        get: read,
+        has: hasMapped,
         getOwnPropertyDescriptor: describe,
         ownKeys: ownKeysWith,
       });
@@ -222,7 +280,8 @@ export function mapEntries<T = any>(object: object, mapEntry: MapEntry<T>, added
   };
 
   return new Proxy(object, {
-    get: (target, key) => run(key, (target as any)[key]),
+    get: read,
+    has: hasMapped,
     getOwnPropertyDescriptor: (target, key) => {
       const descriptor = Object.getOwnPropertyDescriptor(target, key);
       if (!descriptor || !('value' in descriptor) || descriptor.configurable === false) return descriptor;
@@ -230,7 +289,8 @@ export function mapEntries<T = any>(object: object, mapEntry: MapEntry<T>, added
     },
     getPrototypeOf: (target) => {
       const proto = Object.getPrototypeOf(target);
-      if (!proto || typeof proto !== 'object' || proto === Object.prototype) return proto;
+      if (!Object.isExtensible(target) || !proto || typeof proto !== 'object' || proto === Object.prototype)
+        return proto;
       return proxyProto(proto);
     },
   });
@@ -245,7 +305,7 @@ export function patchSlice<T = any>(
   return patchState((state) => {
     const slice = state?.[sliceName];
     if (!slice || typeof slice !== 'object') return state;
-    return { ...state, [sliceName]: mapEntries(slice, mapEntry, addedKeys) };
+    return { ...state, [sliceName]: mapEntries(slice, mapEntry, addedKeys, sliceName) };
   });
 }
 
@@ -263,7 +323,9 @@ type ThunkWrap = {
 
 const thunkWraps = new Set<ThunkWrap>();
 const thunkCreators = new Map<string, ThunkCreator>();
-const waitingForThunk = new Map<string, Set<(creator: ThunkCreator) => void>>();
+type ThunkWaiter = { resolve: (creator: ThunkCreator) => void; timer: ReturnType<typeof setTimeout> };
+const waitingForThunk = new Map<string, Set<ThunkWaiter>>();
+const THUNK_WAIT_MS = 30_000;
 
 const wrapCreator = (original: ThunkCreator): ThunkCreator =>
   new Proxy(original, {
@@ -296,7 +358,10 @@ function registerCreator(creator: ThunkCreator): void {
     const waiting = waitingForThunk.get(name);
     if (!waiting) return;
     waitingForThunk.delete(name);
-    for (const resolve of waiting) resolve(creator);
+    for (const waiter of waiting) {
+      clearTimeout(waiter.timer);
+      waiter.resolve(creator);
+    }
   });
 }
 
@@ -346,13 +411,21 @@ export function waitForThunkCreator(name: string): Promise<ThunkCreator> {
   const known = thunkCreators.get(name);
   if (known) return Promise.resolve(known);
 
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     let waiting = waitingForThunk.get(name);
     if (!waiting) {
       waiting = new Set();
       waitingForThunk.set(name, waiting);
     }
-    waiting.add(resolve);
+    const waiter: ThunkWaiter = {
+      resolve,
+      timer: setTimeout(() => {
+        waiting?.delete(waiter);
+        if (waiting?.size === 0) waitingForThunk.delete(name);
+        reject(new Error(`[slick] timed out waiting for Slack thunk: ${name}`));
+      }, THUNK_WAIT_MS),
+    };
+    waiting.add(waiter);
   });
 }
 
@@ -377,7 +450,7 @@ export const reduxReady = (async () => {
   const React = await reactReady;
 
   function useReduxState<T>(selector: (state: any) => T): T | undefined {
-    const store = getStore();
+    const store = React.useSyncExternalStore(subscribeStore, getStore);
     const selectorRef = React.useRef(selector);
     selectorRef.current = selector;
 
@@ -415,10 +488,17 @@ export type ReduxAPI = Awaited<typeof reduxReady>;
 
 /** Discovery aids; see docs/slack-internals.md. */
 export function exposeDebugGlobals() {
-  Object.assign(globalThis as any, {
+  const debug = {
     getStore,
     getRawState,
     getThunkCreator,
     thunkNames: () => [...thunkCreators.keys()],
-  });
+  };
+  for (const [name, value] of Object.entries(debug)) {
+    try {
+      (globalThis as any)[name] = value;
+    } catch (error) {
+      console.error(`[slick] could not expose Redux debug global ${name}:`, error);
+    }
+  }
 }

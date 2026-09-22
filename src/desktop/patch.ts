@@ -7,6 +7,7 @@
 // scripts/byoe/build-handoff-app{,-win,-linux}.js and scripts/byoe/inject.js.
 
 import { EventEmitter } from 'node:events';
+import crypto from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import path from 'node:path';
@@ -109,24 +110,39 @@ export function applyPatches(
 
   // The preload we substitute has to be able to run Slack's original one, or
   // Slack's contextBridge surface never appears. See preload.ts.
-  let originalPreload: string | null = null;
-  ipcMain.handle('slick:get-original-preload', () => originalPreload);
+  const originalPreloads = new Map<string, string>();
+  ipcMain.handle('slick:get-original-preload', (_event, key: string) => originalPreloads.get(key) ?? null);
 
   const OrigBrowserWindow = electronCjs.BrowserWindow;
   overrides.BrowserWindow = new Proxy(OrigBrowserWindow, {
     construct(Target: any, [opts = {}]: any[]) {
       const slackPreload: string | undefined = opts.webPreferences?.preload;
-      if (slackPreload && originalPreload === null) {
+      let originalPreload: string | null = null;
+      if (slackPreload) {
         try {
           originalPreload = readFileSync(slackPreload, 'utf8');
+          if (!originalPreload.trim()) throw new Error('preload is empty');
         } catch (error) {
           console.error('[slick] could not read Slack preload:', error);
         }
       }
+      // A window whose preload cannot be displaced safely keeps Slack's own
+      // path. Substituting ours without source to evaluate would strand it
+      // without the desktop API its renderer expects.
+      const preloadKey = originalPreload ? crypto.randomUUID() : '';
+      if (preloadKey) originalPreloads.set(preloadKey, originalPreload as string);
       const window = new Target({
         ...opts,
-        webPreferences: { ...opts.webPreferences, preload: slickPreloadPath, devTools: true },
+        webPreferences: {
+          ...opts.webPreferences,
+          preload: preloadKey ? slickPreloadPath : slackPreload,
+          additionalArguments: preloadKey
+            ? [...(opts.webPreferences?.additionalArguments ?? []), `--slick-preload-key=${preloadKey}`]
+            : opts.webPreferences?.additionalArguments,
+          devTools: true,
+        },
       });
+      if (preloadKey) window.once('closed', () => originalPreloads.delete(preloadKey));
       try {
         onWindow?.(window);
       } catch (error) {

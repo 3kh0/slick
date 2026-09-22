@@ -5,11 +5,11 @@
 // before any of Slack's scripts do.
 //
 // Order matters and is not negotiable:
-//   1. blank the document synchronously, before Slack's markup can be parsed
-//   2. eval Slack's original preload, so its contextBridge.exposeInMainWorld
+//   1. eval Slack's original preload, so its contextBridge.exposeInMainWorld
 //      calls land before any Slack script looks for them
+//   2. fetch and validate a complete replacement without touching the live DOM
 //   3. expose SlickBridge
-//   4. rebuild the document from a fresh fetch, CSP meta removed, with
+//   4. commit the rebuilt document, CSP meta removed, with
 //      slick.js ahead of Slack's own <script> tags
 //
 // If any of this fails we bail out and let Slack load normally. A broken Slack
@@ -19,43 +19,55 @@ const { contextBridge, ipcRenderer } = require('electron');
 
 // Every async dependency starts now, in parallel, because all of it blocks the
 // document rebuild and therefore Slack's first paint.
-const originalPreloadPromise = ipcRenderer.invoke('slick:get-original-preload') as Promise<string | null>;
-const originalHtmlPromise = fetch(location.href).then((response) => response.text());
+const preloadKey = process.argv.find((arg: string) => arg.startsWith('--slick-preload-key='))?.slice(20) ?? '';
+const originalPreloadPromise = ipcRenderer.invoke('slick:get-original-preload', preloadKey) as Promise<string | null>;
+const originalResponsePromise = fetch(location.href);
 const appUrlPromise = ipcRenderer.invoke('slick:get-app-url') as Promise<string>;
 const pathsPromise = ipcRenderer.invoke('slick:get-paths') as Promise<Record<string, string>>;
 const safeModePromise = ipcRenderer.invoke('slick:get-safe-mode') as Promise<boolean>;
 
 const isClientPage = location.hostname === 'app.slack.com' && /\/client(\/|$)/.test(location.pathname);
 
-// Synchronous, and before the `await` below, so Slack's markup never renders a
-// frame we are about to throw away.
-if (isClientPage) {
-  document.open();
-  document.write('<!DOCTYPE html>');
-  document.close();
-}
-
 const call = (method: string, args: unknown[] = []) => ipcRenderer.invoke('slick:rpc', method, args);
 
 void (async () => {
   try {
     const originalPreload = await originalPreloadPromise;
-    if (originalPreload) {
-      // biome-ignore lint/security/noGlobalEval: the preload we displaced has to run
-      // oxlint-disable-next-line no-eval
-      eval(originalPreload);
-    }
+    if (!originalPreload) throw new Error('Slack preload source is unavailable');
+    // biome-ignore lint/security/noGlobalEval: the preload we displaced has to run
+    // oxlint-disable-next-line no-eval
+    eval(originalPreload);
   } catch (error) {
     console.error('[slick] failed to evaluate Slack preload:', error);
+    return;
   }
 
   if (!isClientPage) return;
 
-  let html: string;
+  let doc: Document;
   try {
-    html = await originalHtmlPromise;
+    const response = await originalResponsePromise;
+    const responseUrl = new URL(response.url);
+    const contentType = response.headers.get('content-type') ?? '';
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    if (
+      responseUrl.origin !== location.origin ||
+      !/\/client(\/|$)/.test(responseUrl.pathname) ||
+      !/^text\/html(?:;|$)/i.test(contentType)
+    ) {
+      throw new Error(`unexpected response (${response.url}, ${contentType || 'no content type'})`);
+    }
+    // A response policy survives document.write. If it cannot load slick:, the
+    // checker inside slick.js can never run, so retain the untouched page.
+    if (response.headers.has('content-security-policy')) {
+      throw new Error('response contains a Content-Security-Policy header');
+    }
+
+    const html = await response.text();
+    doc = new DOMParser().parseFromString(html, 'text/html');
+    if (!doc.head || !doc.body || !doc.querySelector('script')) throw new Error('response is not a usable client page');
   } catch (error) {
-    console.error('[slick] could not refetch page HTML, leaving Slack alone:', error);
+    console.error('[slick] could not prepare replacement HTML; leaving the current document intact:', error);
     return;
   }
 
@@ -92,8 +104,8 @@ void (async () => {
     openFile: (title: string, accept?: string) => call('openFile', [title, accept]),
     openCssEditor: () => call('openCssEditor'),
 
-    // Per-plugin main-process RPC. The renderer never supplies the plugin id;
-    // the plugin manager binds it, so a plugin cannot address another's methods.
+    // The plugin manager supplies this id as a calling convention. The main
+    // process independently rejects calls while that plugin is disabled.
     plugin: (id: string) => ({
       call: (method: string, ...args: unknown[]) => ipcRenderer.invoke('slick:plugin-rpc', id, method, args),
       on(event: string, cb: (payload: unknown) => void) {
@@ -126,8 +138,7 @@ void (async () => {
     start: () => ipcRenderer.invoke('slick:start'),
   });
 
-  const doc = new DOMParser().parseFromString(html, 'text/html');
-  doc.querySelector('meta[http-equiv="Content-Security-Policy"]')?.remove();
+  for (const meta of doc.querySelectorAll('meta[http-equiv="Content-Security-Policy"]')) meta.remove();
 
   // Slack's scripts have to be re-added in their original order, after ours.
   const scripts = Array.from(doc.querySelectorAll('script')).map((script) => ({
@@ -140,7 +151,10 @@ void (async () => {
   const slick = doc.createElement('script');
   slick.id = 'slick-app';
   slick.src = appUrl;
-  slick.setAttribute('onerror', `console.error('[slick] failed to load ${appUrl}; Slack will run unmodified')`);
+  slick.setAttribute(
+    'onerror',
+    `Reflect.deleteProperty(globalThis,'SlickBridge');console.error('[slick] failed to load ${appUrl}; Slack will run unmodified')`,
+  );
   doc.head.appendChild(slick);
 
   for (const { src, textContent, type } of scripts) {
@@ -151,7 +165,15 @@ void (async () => {
     doc.head.appendChild(script);
   }
 
-  document.open();
-  document.write(`<!DOCTYPE html>${doc.documentElement.outerHTML}`);
-  document.close();
+  const previous = document.documentElement?.outerHTML ?? '';
+  try {
+    document.open();
+    document.write(`<!DOCTYPE html>${doc.documentElement.outerHTML}`);
+    document.close();
+  } catch (error) {
+    console.error('[slick] failed to commit replacement HTML; restoring the previous document:', error);
+    document.open();
+    document.write(`<!DOCTYPE html>${previous}`);
+    document.close();
+  }
 })();

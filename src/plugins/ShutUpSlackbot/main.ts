@@ -14,7 +14,7 @@ const plugin: SlickMainPlugin = {
 
   ready(ctx) {
     // Returning false vetoes the notification.
-    ctx.notifications.filter((options) => !isSlashCommandNotice(notificationText(options)));
+    return ctx.notifications.filter((options) => !isSlashCommandNotice(notificationText(options)));
   },
 };
 

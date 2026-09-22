@@ -20,7 +20,7 @@
     "test:early:electron": "npm run early:build && node scripts/early/test-electron.js",
     "build": "node scripts/build.ts",
     "desktop:dev": "node scripts/desktop.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "node scripts/generate-main-plugins.ts && tsc --noEmit"
   },
   "devDependencies": {
     "@types/node": "^26.6.2",

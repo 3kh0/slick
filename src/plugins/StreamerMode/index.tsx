@@ -65,12 +65,22 @@ export default class StreamerMode extends SlickPlugin<typeof meta.settings> {
   }
 
   private css(): string {
-    return streamerCss({
+    return `${streamerCss({
       blur: Number(this.config.blur) || 4,
       dmPreviewBlur: String(this.config.dmPreviewBlur),
       privateChannelNames: this.config.privateChannelNames !== false,
       vipStatus: this.config.vipStatus !== false,
-    });
+    })}
+      html.${ROOT_CLASS} :is(
+        [data-qa*="notification_toast" i],
+        [data-qa*="desktop_notification" i],
+        [class*="notification_toast" i],
+        [class*="desktop_notification" i],
+        .p-notification_bar
+      ) {
+        filter: blur(${Number(this.config.blur) || 4}px);
+      }
+    `;
   }
 
   private apply(active: boolean) {
@@ -132,7 +142,7 @@ export default class StreamerMode extends SlickPlugin<typeof meta.settings> {
     this.api.patchComponent<MessageProps>('MessageBackground', (Original) => (props) => {
       const id = props.msg?.channel;
       const channel = id ? this.api.channels.getCachedChannel(id) : undefined;
-      if (!channel?.is_private && !channel?.is_mpim) return <Original {...props} />;
+      if (!channel?.is_private && !channel?.is_mpim && !channel?.is_im) return <Original {...props} />;
       return <Original {...props} className={`${props.className ?? ''} ${THREAD_CLASS}`} />;
     });
   }

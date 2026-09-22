@@ -19,7 +19,11 @@ const plugin: SlickMainPlugin = {
   capabilities: ['notifications'],
 
   ready(ctx) {
-    ctx.notifications.filter(() => active.size === 0);
+    const dispose = ctx.notifications.filter(() => active.size === 0);
+    return () => {
+      dispose();
+      active.clear();
+    };
   },
 
   rpc: {

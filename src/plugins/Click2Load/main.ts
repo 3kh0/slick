@@ -33,7 +33,7 @@ const plugin: SlickMainPlugin = {
   capabilities: ['requests'],
 
   ready(ctx) {
-    ctx.net.intercept(patterns, (details) => {
+    return ctx.net.intercept(patterns, (details) => {
       // Only frames are gated. A stylesheet or image from the same host is
       // part of an embed that was already allowed.
       if (details.resourceType !== 'subFrame') return;

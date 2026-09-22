@@ -11,8 +11,6 @@ import * as meta from './meta.ts';
 
 const ALPHABET = 'abcdefghijklmnopqrstuvwxyz0123456789';
 const NAME_LENGTH = 7;
-/** Matches a name we already generated, so re-reads are not re-randomised. */
-const ALREADY_ANONYMOUS = /^[a-z0-9]{7}(\.[^./\\]+)?$/;
 
 export default class AnonymiseFileNames extends SlickPlugin<typeof meta.settings> {
   static readonly id = meta.id;
@@ -52,7 +50,7 @@ export default class AnonymiseFileNames extends SlickPlugin<typeof meta.settings
         const cached = names.get(this);
         if (cached !== undefined) return cached;
 
-        const anonymised = ALREADY_ANONYMOUS.test(real) ? real : anonymise(real);
+        const anonymised = anonymise(real);
         names.set(this, anonymised);
         return anonymised;
       },

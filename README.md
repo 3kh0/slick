@@ -131,7 +131,9 @@ You also have some nice flags to play around with: `--restore-handler` on `insta
 The Flatpak still uses Slack's installed `app.asar`, so install the official x86_64 Slack package first. Build and install it from the repository root with:
 
 ```bash
-flatpak-builder --user --install --force-clean --install-deps-from=flathub \
+bun install --frozen-lockfile
+SLICK_BUILD="$(git tag --list 'v[0-9]*' --sort=-v:refname | head -1 | sed 's/^v//')"
+flatpak-builder --env="SLICK_BUILD=$SLICK_BUILD" --user --install --force-clean --install-deps-from=flathub \
   .flatpak-build packaging/flatpak/dev.slick.Slick.yml
 flatpak run dev.slick.Slick
 ```

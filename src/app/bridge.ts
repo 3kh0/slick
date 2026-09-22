@@ -35,8 +35,14 @@ export interface SlickBridge {
   start(): Promise<unknown>;
 }
 
+// The preload exposes this before any page script runs. Capture it while this
+// module is evaluating, then remove the discoverable name before Slack's
+// bundle gets a chance to keep its own reference.
+const capturedBridge = (globalThis as any).SlickBridge;
+Reflect.deleteProperty(globalThis, 'SlickBridge');
+
 export function getBridge(): SlickBridge | null {
-  const bridge = (globalThis as any).SlickBridge;
+  const bridge = capturedBridge;
   if (!bridge?.loader || typeof bridge.bridgeVersion !== 'number') return null;
   return bridge as SlickBridge;
 }

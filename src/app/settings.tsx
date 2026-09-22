@@ -7,6 +7,17 @@ import type { PluginManager } from './pluginManager.ts';
 import { patchComponent, reactReady } from './slack/react.tsx';
 
 let elements: Awaited<typeof elementsReady>;
+let warnedMissingAdvanced = false;
+const configWriteQueues = new WeakMap<ConfigStore, Promise<void>>();
+
+function queueConfigWrite(config: ConfigStore, write: () => Promise<boolean>): void {
+  const previous = configWriteQueues.get(config) ?? Promise.resolve();
+  const next = previous
+    .catch(() => {})
+    .then(write)
+    .then(() => {});
+  configWriteQueues.set(config, next);
+}
 
 type TabsProps = {
   tabs: {
@@ -31,23 +42,27 @@ export async function addSettingsTab(manager: PluginManager, config: ConfigStore
   patchComponent<TabsProps>('Tabs', (Original) => (props) => {
     const [slickSelected, setSlickSelected] = React.useState(false);
     const tabs = [...props.tabs];
-    const advanced = tabs.at(-1);
-    if (advanced?.id === 'advanced' && !tabs.some((tab) => tab.id === 'slick')) {
+    const advanced = tabs.find((tab) => tab.id === 'advanced');
+    const hostTab = advanced ?? tabs.find((tab) => tab.id === props.currentTabId) ?? tabs[0];
+    if (!advanced && !warnedMissingAdvanced) {
+      warnedMissingAdvanced = true;
+      console.error('[slick] Slack Preferences no longer has an Advanced tab; using the current tab as Slick host');
+    }
+    if (!tabs.some((tab) => tab.id === 'slick')) {
       tabs.push({
         id: 'slick',
         label: <>Slick</>,
         content: <SlickSettings manager={manager} config={config} bridge={bridge} />,
-        // Advanced's own cog, taken from its props rather than named. An icon
-        // name is a guess about Slack's icon set, and a wrong one renders
-        // nothing; this is guaranteed to be an icon that exists.
-        svgIcon: advanced.svgIcon,
+        // Borrow a rendered tab's icon rather than guessing a private icon
+        // name. Advanced is preferred, but Slack may rename or remove it.
+        svgIcon: advanced?.svgIcon ?? hostTab?.svgIcon ?? { name: 'settings' },
         'aria-label': 'Slick',
       });
     }
 
     const onTabChange = (id: string, event: React.UIEvent) => {
       setSlickSelected(id === 'slick');
-      props.onTabChange?.(id === 'slick' ? 'advanced' : id, event);
+      props.onTabChange?.(id === 'slick' ? (hostTab?.id ?? 'advanced') : id, event);
     };
 
     return (
@@ -64,6 +79,15 @@ export async function addSettingsTab(manager: PluginManager, config: ConfigStore
 function useConfigChanges(config: ConfigStore) {
   const [, render] = React.useReducer((value: number) => value + 1, 0);
   React.useEffect(() => config.onConfigChange(render), [config]);
+}
+
+function useManagerChanges(manager: PluginManager) {
+  const [, render] = React.useReducer((value: number) => value + 1, 0);
+  React.useEffect(() => manager.onStatusChange(render), [manager]);
+}
+
+function Hint({ children }: { children: React.ReactNode }) {
+  return <div style={{ fontSize: '12px', opacity: 0.7 }}>{children}</div>;
 }
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
@@ -85,6 +109,7 @@ function SlickSettings({
   bridge: SlickBridge;
 }) {
   useConfigChanges(config);
+  useManagerChanges(manager);
   return (
     <div style={{ paddingBottom: '24px' }}>
       <Section title="Plugins">
@@ -95,7 +120,7 @@ function SlickSettings({
       <Appearance config={config} bridge={bridge} />
       <Section title="About">
         <div>Slick {__SLICK_VERSION__}</div>
-        <elements.Hint>Build {__SLICK_BUILD__}</elements.Hint>
+        <Hint>Build {__SLICK_BUILD__}</Hint>
       </Section>
     </div>
   );
@@ -131,6 +156,7 @@ function PluginRow({ info, config, bridge }: { info: PluginInfo; config: ConfigS
   const values = config.settingsFor(info.id);
   const entries = Object.entries(info.settings);
   const inputId = `slick-plugin-${info.id}`;
+  const statusId = `slick-plugin-status-${info.id}`;
 
   return (
     <div style={{ borderTop: '1px solid rgba(127,127,127,.2)', padding: '14px 0' }}>
@@ -146,7 +172,11 @@ function PluginRow({ info, config, bridge }: { info: PluginInfo; config: ConfigS
           className="c-input_checkbox"
           type="checkbox"
           checked={info.enabled}
-          onChange={(event) => void config.setPluginEnabled(info.id, event.currentTarget.checked)}
+          aria-describedby={info.enabled && !info.running ? statusId : undefined}
+          onChange={(event) => {
+            const enabled = event.currentTarget.checked;
+            queueConfigWrite(config, () => config.setPluginEnabled(info.id, enabled));
+          }}
           style={{ marginTop: '2px', flex: '0 0 auto' }}
         />
         <label htmlFor={inputId} style={{ flex: '1 1 auto', cursor: 'pointer', margin: 0 }}>
@@ -155,6 +185,17 @@ function PluginRow({ info, config, bridge }: { info: PluginInfo; config: ConfigS
             <span style={{ display: 'block', fontWeight: 400, opacity: 0.85 }}>{info.description}</span>
           )}
           {info.authors && <span style={{ display: 'block', fontSize: '12px', opacity: 0.6 }}>By {info.authors}</span>}
+          {info.enabled && !info.running && (
+            <span
+              id={statusId}
+              role={info.startError ? 'alert' : undefined}
+              style={{ display: 'block', fontSize: '12px', color: 'var(--sk_raspberry_red, #e01e5a)' }}
+            >
+              {info.startError
+                ? `Could not start: ${info.startError}. Turn this plugin off and on to retry.`
+                : 'Starting…'}
+            </span>
+          )}
         </label>
         {!!entries.length && (
           <button
@@ -217,7 +258,8 @@ function SettingRow({
   config: ConfigStore;
   bridge: SlickBridge;
 }) {
-  const save = (next: SettingValue) => void config.setPluginSetting(pluginId, settingKey, next);
+  const save = (next: SettingValue) =>
+    queueConfigWrite(config, () => config.setPluginSetting(pluginId, settingKey, next));
   const inputId = `slick-setting-${pluginId}-${settingKey}`;
   const note = restartRequired ? (
     <div style={{ color: 'var(--sk_raspberry_red, #e01e5a)', fontSize: '12px', marginTop: '4px' }}>
@@ -246,7 +288,7 @@ function SettingRow({
         </div>
         {setting.description && (
           <div style={{ marginLeft: '26px' }}>
-            <elements.Hint>{setting.description}</elements.Hint>
+            <Hint>{setting.description}</Hint>
           </div>
         )}
         {note}
@@ -258,7 +300,7 @@ function SettingRow({
     <div style={{ marginBottom: '16px' }}>
       <div style={{ fontWeight: 'bold', marginBottom: '5px' }}>{setting.label}</div>
       <SettingControl setting={setting} value={value} save={save} bridge={bridge} />
-      {setting.description && <elements.Hint>{setting.description}</elements.Hint>}
+      {setting.description && <Hint>{setting.description}</Hint>}
       {note}
     </div>
   );
@@ -280,7 +322,16 @@ function NumberControl({
     setText(String(coerced));
     save(coerced);
   };
-  return <elements.FormTextInput value={text} onChange={setText} onBlur={commit} />;
+  return (
+    <input
+      className="c-input_text"
+      type="text"
+      inputMode="decimal"
+      value={text}
+      onChange={(event) => setText(event.currentTarget.value)}
+      onBlur={commit}
+    />
+  );
 }
 
 function SettingControl({
@@ -310,18 +361,31 @@ function SettingControl({
     case 'number':
       return <NumberControl setting={setting} value={value} save={save} />;
     case 'text':
-      return <elements.FormTextInput value={String(value)} onChange={save} maxCharacterLimit={setting.maxLength} />;
+      return (
+        <input
+          className="c-input_text"
+          type="text"
+          value={String(value)}
+          maxLength={setting.maxLength}
+          onChange={(event) => save(event.currentTarget.value)}
+        />
+      );
     case 'select': {
       const selected = setting.options.find((option) => option.value === value);
       return (
-        <elements.BasicSelect
-          selectId={`slick-select-${setting.label}`}
-          options={setting.options}
-          selectedOption={selected}
-          onSelectionChange={(option) => save(option.value)}
-          ariaLabel={setting.label}
-          width={320}
-        />
+        <select
+          className="c-select_input"
+          aria-label={setting.label}
+          value={selected?.value ?? ''}
+          onChange={(event) => save(event.currentTarget.value)}
+          style={{ width: '320px' }}
+        >
+          {setting.options.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>
       );
     }
     case 'color':
@@ -364,7 +428,7 @@ function SettingControl({
           ))}
         </ul>
       ) : (
-        <elements.Hint>No names configured.</elements.Hint>
+        <Hint>No names configured.</Hint>
       );
     }
   }
@@ -382,14 +446,22 @@ function Appearance({ config, bridge }: { config: ConfigStore; bridge: SlickBrid
     <Section title="Appearance">
       <div style={{ marginBottom: '14px' }}>
         <div style={{ fontWeight: 'bold', marginBottom: '5px' }}>Theme</div>
-        <elements.BasicSelect
-          selectId="slick-theme"
-          options={options}
-          selectedOption={selected}
-          onSelectionChange={(option) => void config.setTheme(option.value)}
-          ariaLabel="Theme"
-          width={320}
-        />
+        <select
+          className="c-select_input"
+          aria-label="Theme"
+          value={selected.value}
+          onChange={(event) => {
+            const theme = event.currentTarget.value;
+            queueConfigWrite(config, () => config.setTheme(theme));
+          }}
+          style={{ width: '320px' }}
+        >
+          {options.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>
       </div>
       <elements.Button onClick={() => void bridge.openCssEditor()}>Open CSS editor</elements.Button>
     </Section>

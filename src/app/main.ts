@@ -33,10 +33,7 @@ const preconditions: Precondition[] = [
   {
     name: 'bridge',
     detail: 'no SlickBridge: the loader did not expose it',
-    ok: () => {
-      const bridge = (globalThis as any).SlickBridge;
-      return !!bridge?.loader && typeof bridge.bridgeVersion === 'number';
-    },
+    ok: () => getBridge() !== null,
   },
   {
     name: 'csp-removed',
@@ -74,7 +71,10 @@ function main() {
     return;
   }
 
-  if ((globalThis as any).SlickBridge?.safeMode) {
+  const bridge = getBridge();
+  if (!bridge) return;
+
+  if (bridge.safeMode) {
     console.warn('[slick] safe mode: plugins will not be loaded');
   }
 
@@ -99,9 +99,6 @@ function main() {
   // Plugins resolve their base class through this global, so every plugin
   // shares the runtime's SlickPlugin identity (see scripts/lib/plugin.ts).
   (globalThis as any).__slick = { SlickPlugin };
-
-  const bridge = getBridge();
-  if (!bridge) return;
 
   void patchingReady.then(async () => {
     await reduxReady;

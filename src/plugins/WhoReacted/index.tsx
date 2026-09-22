@@ -23,7 +23,6 @@ export default class WhoReacted extends SlickPlugin<typeof meta.settings> {
   static readonly description = meta.description;
   static readonly defaultEnabled = meta.defaultEnabled;
   static readonly settings = meta.settings;
-  static readonly liveSettings = ['maxAvatars'];
 
   private readonly ReactorsContext = React.createContext<string[]>(NO_REACTORS);
 

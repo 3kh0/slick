@@ -43,14 +43,14 @@ jobs:
           fi
 
           cat > body.md <<BODY
-          Slack **$SLACK_VERSION** bundles Electron **$SLACK_ELECTRON**, but \`byoe/package.json\` pins Electron **$BYOE_ELECTRON**.
+          Slack **$SLACK_VERSION** bundles Electron **$SLACK_ELECTRON**, but \`package.json\` pins Electron **$BYOE_ELECTRON**.
 
           Slack's native modules are built against the Electron major Slack shipped, so running them under a BYOE across a major boundary ABI-crashes: \`scripts/launch-byoe.sh\` refuses to launch, and \`scripts/byoe/slack-updater.js\` stops staging Slack updates until the pin catches up. Source installs through \`install.sh\` self-heal — they install whatever Slack ships — but the prebuilt releases bake this pin, so they need a new build.
 
           To fix:
 
           \`\`\`sh
-          cd byoe && bun add --exact electron@$PIN
+          bun add --dev --exact electron@$PIN
           \`\`\`
 
           Then smoke-test a launch against the new Slack before tagging a release.
@@ -59,3 +59,9 @@ jobs:
           BODY
 
           gh issue create --title "$TITLE" --label electron-mismatch --body-file body.md
+
+      - name: Fail on an incompatible Electron major
+        if: steps.check.outputs.mismatch == 'true'
+        run: |
+          echo "Slack and Slick use different Electron majors." >&2
+          exit 1

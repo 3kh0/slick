@@ -28,3 +28,14 @@ test('themeToCss accepts a CSS string and empty themes', () => {
   assert.equal(themeToCss({ css: 'body { color: red; }' }), 'body { color: red; }');
   assert.equal(themeToCss({}), '');
 });
+
+test('themeToCss preserves hostile variable keys because themes already accept arbitrary CSS', () => {
+  assert.equal(themeToCss({ vars: { '--accent;color': 'red' } }), `${selector}{--accent;color:red !important}\n`);
+});
+
+test('themeToCss preserves hostile variable values because themes already accept arbitrary CSS', () => {
+  assert.equal(
+    themeToCss({ vars: { '--accent': 'red;}body{display:none}/*' } }),
+    `${selector}{--accent:red;}body{display:none}/* !important}\n`,
+  );
+});

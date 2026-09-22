@@ -109,13 +109,24 @@ if [ "$V2" -eq 1 ]; then
     || die "Node.js 22+ is required to build Slick v2 (found: $(node -v 2>/dev/null || echo none))."
   [ "$BETA" -eq 0 ] || die "--beta is a v1 mechanism; in v2 the early path is the only path."
 
+  if [ ! -d "$ROOT/node_modules/electron-builder" ]; then
+    step "Installing build dependencies"
+    if command -v bun >/dev/null 2>&1; then
+      (cd "$ROOT" && bun install --frozen-lockfile) || die "dependency install failed"
+    elif command -v npm >/dev/null 2>&1; then
+      (cd "$ROOT" && npm install --no-audit --no-fund) || die "dependency install failed"
+    else
+      die "npm or bun is required to install build dependencies."
+    fi
+  fi
+
   if [ "$(sysctl -n hw.optional.arm64 2>/dev/null || true)" = "1" ]; then ARCH=arm64; else ARCH=x64; fi
   # electron-builder names the arm64 directory mac-arm64 and the x64 one mac.
   [ "$ARCH" = "arm64" ] && OUTDIR="mac-arm64" || OUTDIR="mac"
 
   step "Building Slick v2 (this bundles Electron; give it a minute)"
-  ( cd "$ROOT" && node scripts/build.ts package ) >/dev/null \
-    || die "build failed; run 'node scripts/build.ts package' to see why"
+  ( cd "$ROOT" && node scripts/build.ts package --arch "$ARCH" ) >/dev/null \
+    || die "build failed; run 'node scripts/build.ts package --arch $ARCH' to see why"
 
   BUILT="$ROOT/dist/release/$OUTDIR/Slick.app"
   [ -d "$BUILT" ] || die "electron-builder produced no app at $BUILT"

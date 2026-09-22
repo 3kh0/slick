@@ -5,10 +5,8 @@
 // re-parsing ~1MB of base64 on every settings change.
 //
 // The handler is the security boundary: page script controls the `path`
-// parameter, so it must not become a way to read arbitrary files. Two rules do
-// that -- the extension must be a known font type, and the target must be a
-// regular file. A font file is also only ever returned with a font content
-// type, so a readable path that is not a font cannot be exfiltrated as text.
+// parameter, so it must not become a way to read arbitrary files. The
+// canonical requested path must be the canonical file selected in settings.
 
 import fs from 'node:fs';
 import os from 'node:os';
@@ -37,6 +35,11 @@ const plugin: SlickMainPlugin = {
       SCHEME,
       { standard: true, secure: true, stream: true, corsEnabled: true, supportFetchAPI: true },
       (request) => {
+        const configured = String(ctx.settings.fontPath ?? '')
+          .replace(/^~(?=[/\\]|$)/, os.homedir())
+          .trim();
+        if (!configured) return notFound();
+
         let requested: string;
         try {
           requested = new URL(request.url).searchParams.get('path') ?? '';
@@ -52,8 +55,9 @@ const plugin: SlickMainPlugin = {
         if (!Object.hasOwn(MIME, extension)) return notFound();
 
         try {
-          if (!fs.statSync(file).isFile()) return notFound();
-          return new Response(Readable.toWeb(fs.createReadStream(file)) as unknown as ReadableStream, {
+          const canonical = fs.realpathSync(file);
+          if (canonical !== fs.realpathSync(configured) || !fs.statSync(canonical).isFile()) return notFound();
+          return new Response(Readable.toWeb(fs.createReadStream(canonical)) as unknown as ReadableStream, {
             headers: { 'access-control-allow-origin': '*', 'content-type': MIME[extension] },
           });
         } catch {

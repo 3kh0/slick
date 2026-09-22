@@ -5,8 +5,8 @@
 // bridge is a closed method table, whereas 13 of Slick's plugins need
 // privileged Electron work of their own.
 //
-// The renderer never names a plugin id -- the plugin manager binds it -- so a
-// plugin cannot reach another plugin's methods.
+// The page bridge passes a plugin id supplied by Slick's renderer wrapper. It
+// is not an identity boundary, so dispatch also checks current activation.
 
 import { app, dialog, ipcMain, Notification, protocol, session, shell, webContents } from 'electron';
 import type { Capability, MainCtx, ProtocolPrivileges, SlickMainPlugin } from '../shared/main.ts';
@@ -21,10 +21,19 @@ type Registered = {
   defaultEnabled: boolean;
   settings: PluginSettings;
   settingsListeners: Set<(settings: PluginSettings) => void>;
+  protocols: Array<{
+    scheme: string;
+    privileges: ProtocolPrivileges;
+    handler: (request: Request) => Response | Promise<Response>;
+  }>;
+  running: boolean;
+  dispose: (() => void | Promise<void>) | null;
+  queue: Promise<void>;
 };
 
 const registered = new Map<string, Registered>();
 let booted = false;
+let globallyEnabled = true;
 
 // Shared interception points
 //
@@ -77,6 +86,47 @@ function installFrameWatcher() {
 
 let displayMediaHandler: ((request: any) => any) | null = null;
 
+type RequestHandler = (details: Electron.OnBeforeRequestListenerDetails) => Electron.CallbackResponse | void;
+const requestHandlers = new Set<{ patterns: string[]; handler: RequestHandler }>();
+
+function requestMatches(url: string, patterns: string[]): boolean {
+  return patterns.some((pattern) => {
+    if (pattern === '<all_urls>') return true;
+    const expression = pattern.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replaceAll('*', '.*');
+    return new RegExp(`^${expression}$`).test(url);
+  });
+}
+
+function installRequestDispatcher() {
+  const webRequest = session.defaultSession.webRequest;
+  if (!requestHandlers.size) {
+    webRequest.onBeforeRequest(null);
+    return;
+  }
+
+  const urls = [...new Set([...requestHandlers].flatMap((registration) => registration.patterns))];
+  webRequest.onBeforeRequest({ urls }, (details, callback) => {
+    let response: Electron.CallbackResponse = {};
+    for (const registration of requestHandlers) {
+      if (!requestMatches(details.url, registration.patterns)) continue;
+      let next: Electron.CallbackResponse | void;
+      try {
+        next = registration.handler(details);
+      } catch (error) {
+        console.error('[slick] request handler threw:', error);
+        continue;
+      }
+      if (!next) continue;
+      if (next.cancel) {
+        response = { cancel: true };
+        break;
+      }
+      if (next.redirectURL) response = next;
+    }
+    callback(response);
+  });
+}
+
 // Context
 
 function requireCapability(plugin: SlickMainPlugin, capability: Capability) {
@@ -124,33 +174,32 @@ function createCtx(plugin: SlickMainPlugin, entry: () => Registered): MainCtx {
     protocol: {
       register(scheme: string, privileges: ProtocolPrivileges, handler) {
         need('protocol');
-        if (!booted) {
-          protocol.registerSchemesAsPrivileged([{ scheme, privileges }]);
-          return;
-        }
-        session.defaultSession.protocol.handle(scheme, (request) => handler(request));
+        if (booted) throw new Error(`[slick] ${id}: protocols must be declared during boot`);
+        protocol.registerSchemesAsPrivileged([{ scheme, privileges }]);
+        entry().protocols.push({ scheme, privileges, handler });
       },
     },
 
     net: {
       block(patterns) {
         need('requests');
-        const filter = { urls: patterns };
-        session.defaultSession.webRequest.onBeforeRequest(filter, (_details, callback) => callback({ cancel: true }));
-        return () => session.defaultSession.webRequest.onBeforeRequest(filter, (_d, cb) => cb({}));
+        const registration = { patterns, handler: () => ({ cancel: true }) };
+        requestHandlers.add(registration);
+        installRequestDispatcher();
+        return () => {
+          requestHandlers.delete(registration);
+          installRequestDispatcher();
+        };
       },
       intercept(patterns, handler) {
         need('requests');
-        const filter = { urls: patterns };
-        session.defaultSession.webRequest.onBeforeRequest(filter, (details, callback) => {
-          try {
-            callback(handler(details) ?? {});
-          } catch (error) {
-            console.error(`[slick] ${id} request handler threw:`, error);
-            callback({});
-          }
-        });
-        return () => session.defaultSession.webRequest.onBeforeRequest(filter, (_d, cb) => cb({}));
+        const registration = { patterns, handler };
+        requestHandlers.add(registration);
+        installRequestDispatcher();
+        return () => {
+          requestHandlers.delete(registration);
+          installRequestDispatcher();
+        };
       },
       async fetch(url, init) {
         need('net');
@@ -236,13 +285,20 @@ export function registerMainPlugins(plugins: SlickMainPlugin[], meta: PluginMeta
 
     const schema = (meta[plugin.id]?.schema ?? {}) as SettingsSchema;
     const defaultEnabled = meta[plugin.id]?.defaultEnabled === true;
-    const entry = {
+    const entry: Registered = {
       plugin,
       schema,
       defaultEnabled,
       settingsListeners: new Set<(settings: PluginSettings) => void>(),
       settings: resolveSettings(schema, defaultEnabled, undefined),
-    } as Registered;
+      protocols: [],
+      running: false,
+      dispose: null,
+      queue: Promise.resolve(),
+      // createCtx needs the entry it is being stored on, so ctx is filled in
+      // on the next line; this is the only window in which it is unset.
+      ctx: null as unknown as MainCtx,
+    };
 
     entry.ctx = createCtx(plugin, () => entry);
     registered.set(plugin.id, entry);
@@ -260,6 +316,9 @@ export function bootMainPlugins() {
     return;
   }
   for (const [id, entry] of registered) {
+    // Protocol schemes must be declared before ready even when their plugin is
+    // currently off, so a later enable can install the retained handler.
+    if (!isActive(entry) && !entry.plugin.capabilities.includes('protocol')) continue;
     try {
       entry.plugin.boot?.(entry.ctx);
     } catch (error) {
@@ -272,18 +331,13 @@ export function bootMainPlugins() {
 export async function readyMainPlugins() {
   booted = true;
   if (safeMode()) return;
-  for (const [id, entry] of registered) {
-    try {
-      await entry.plugin.ready?.(entry.ctx);
-    } catch (error) {
-      console.error(`[slick] ${id} ready failed:`, error);
-    }
-  }
+  await Promise.all([...registered.values()].map((entry) => reconcile(entry)));
 }
 
 export function windowCreated(window: Electron.BrowserWindow) {
   if (safeMode()) return;
   for (const [id, entry] of registered) {
+    if (!isActive(entry) || !entry.running) continue;
     try {
       entry.plugin.window?.(entry.ctx, window);
     } catch (error) {
@@ -292,26 +346,76 @@ export function windowCreated(window: Electron.BrowserWindow) {
   }
 }
 
-/** Push resolved settings in from the settings file watcher. */
-export function updateSettings(stored: Record<string, Record<string, unknown>> | undefined) {
+function isActive(entry: Registered): boolean {
+  return globallyEnabled && entry.settings.enabled === true;
+}
+
+async function start(entry: Registered) {
+  if (entry.running || !isActive(entry)) return;
+
+  const installedSchemes: string[] = [];
+  try {
+    for (const registration of entry.protocols) {
+      session.defaultSession.protocol.handle(registration.scheme, registration.handler);
+      installedSchemes.push(registration.scheme);
+    }
+    const dispose = await entry.plugin.ready?.(entry.ctx);
+    entry.dispose = typeof dispose === 'function' ? dispose : null;
+    entry.running = true;
+  } catch (error) {
+    for (const scheme of installedSchemes) session.defaultSession.protocol.unhandle(scheme);
+    console.error(`[slick] ${entry.plugin.id} ready failed:`, error);
+  }
+}
+
+async function stop(entry: Registered) {
+  if (!entry.running) return;
+  entry.running = false;
+  try {
+    await entry.dispose?.();
+  } catch (error) {
+    console.error(`[slick] ${entry.plugin.id} dispose failed:`, error);
+  }
+  entry.dispose = null;
+  entry.settingsListeners.clear();
+  for (const registration of entry.protocols) session.defaultSession.protocol.unhandle(registration.scheme);
+}
+
+function reconcile(entry: Registered): Promise<void> {
+  entry.queue = entry.queue.then(() => (isActive(entry) ? start(entry) : stop(entry)));
+  return entry.queue;
+}
+
+/** Push validated, resolved settings in from the settings file watcher. */
+export function updateSettings(stored: { enabled?: boolean; plugins?: Record<string, Record<string, unknown>> }) {
+  const previousGlobal = globallyEnabled;
+  globallyEnabled = stored.enabled !== false;
   for (const entry of registered.values()) {
-    entry.settings = resolveSettings(entry.schema, entry.defaultEnabled, stored?.[entry.plugin.id]);
-    for (const listener of entry.settingsListeners) {
-      try {
-        listener(entry.settings);
-      } catch (error) {
-        console.error(`[slick] ${entry.plugin.id} settings listener threw:`, error);
+    const wasActive = previousGlobal && entry.settings.enabled === true;
+    entry.settings = resolveSettings(entry.schema, entry.defaultEnabled, stored.plugins?.[entry.plugin.id]);
+    const active = isActive(entry);
+    if (booted && wasActive !== active) {
+      void reconcile(entry);
+    } else if (active) {
+      for (const listener of entry.settingsListeners) {
+        try {
+          listener(entry.settings);
+        } catch (error) {
+          console.error(`[slick] ${entry.plugin.id} settings listener threw:`, error);
+        }
       }
     }
   }
 }
 
 export function setupPluginRpc() {
-  ipcMain.handle('slick:plugin-rpc', (event, id: string, method: string, args: unknown[]) => {
+  ipcMain.handle('slick:plugin-rpc', async (event, id: string, method: string, args: unknown[]) => {
     if (!isSlackClient(event.senderFrame)) throw new Error('[slick] rejected sender');
 
     const entry = registered.get(id);
     if (!entry) throw new Error(`[slick] no main module for ${id}`);
+    await entry.queue;
+    if (!isActive(entry) || !entry.running) throw new Error(`[slick] ${id} is disabled`);
 
     const rpc = entry.plugin.rpc ?? {};
     // Own properties only: a method name of "constructor" or "toString" must

@@ -118,9 +118,15 @@ export default class CustomNameRecording extends SlickPlugin<typeof meta.setting
 
   /** Slack reads these fields off the File rather than measuring it. */
   private async describe(source: File): Promise<File> {
+    const bytes = await source.arrayBuffer();
+    const header = new Uint8Array(bytes, 0, Math.min(bytes.byteLength, 3));
+    const isId3 = header[0] === 0x49 && header[1] === 0x44 && header[2] === 0x33;
+    const isFrame = header[0] === 0xff && (header[1] & 0xe0) === 0xe0;
+    if (!isId3 && !isFrame) throw new Error('Choose an MP3 file');
+
     const context = new AudioContext();
     try {
-      const audio = await context.decodeAudioData(await source.arrayBuffer());
+      const audio = await context.decodeAudioData(bytes);
       const bars = Math.min(100, Math.max(20, Math.round(audio.duration * 5)));
       return Object.assign(new File([source], FILE_NAME, { type: 'audio/mpeg' }), {
         subtype: SUBTYPE,

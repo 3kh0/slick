@@ -2,9 +2,10 @@
 //
 // Every entry is a `lazyComponent`, so referencing one costs nothing until it
 // renders and a component whose chunk has not loaded yet simply renders
-// nothing rather than throwing. Using Slack's components rather than our own
-// markup is what keeps plugin UI themed, accessible and consistent when Slack
-// restyles itself.
+// nothing rather than throwing. Only Button, Tooltip, Label, MenuTrigger and
+// ConnectedBaseAvatar have been observed rendering. The other names, and all
+// prop shapes declared here, are unverified Slack-private contracts and must
+// not carry UI whose silent loss breaks a feature.
 //
 // Names live here and in docs/slack-internals.md; a Slack rename is a one-file
 // fix.

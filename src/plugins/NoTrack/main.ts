@@ -17,9 +17,9 @@ const plugin: SlickMainPlugin = {
   capabilities: ['requests'],
 
   ready(ctx) {
-    if (!ctx.settings.enabled) return;
-    ctx.net.block(TELEMETRY);
+    const dispose = ctx.net.block(TELEMETRY);
     ctx.log(`blocking ${TELEMETRY.length} telemetry patterns`);
+    return dispose;
   },
 };
 

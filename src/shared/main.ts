@@ -125,8 +125,8 @@ export interface SlickMainPlugin {
    */
   boot?(ctx: MainCtx): void;
 
-  /** After `app.whenReady()`. */
-  ready?(ctx: MainCtx): void | Promise<void>;
+  /** After `app.whenReady()`. Return a disposer for runtime disablement. */
+  ready?(ctx: MainCtx): void | (() => void | Promise<void>) | Promise<void | (() => void | Promise<void>)>;
 
   /** Per Slack BrowserWindow. */
   window?(ctx: MainCtx, window: Electron.BrowserWindow): void;

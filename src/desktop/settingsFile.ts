@@ -13,7 +13,10 @@ import { settingsDir } from './paths.js';
 const SETTINGS_FILE = 'settings.json';
 const DEBOUNCE_MS = 150;
 
-export type StoredPlugins = Record<string, Record<string, unknown>> | undefined;
+export type StoredSettings = {
+  enabled?: boolean;
+  plugins?: Record<string, Record<string, unknown>>;
+};
 
 export function readSettingsText(): string {
   try {
@@ -23,28 +26,35 @@ export function readSettingsText(): string {
   }
 }
 
-export function readStoredPlugins(): StoredPlugins {
+export function readStoredSettings(): StoredSettings | null {
   try {
     const parsed = JSON.parse(readSettingsText());
-    if (!parsed || typeof parsed !== 'object') return undefined;
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
     const plugins = parsed.plugins;
-    return plugins && typeof plugins === 'object' && !Array.isArray(plugins) ? plugins : undefined;
+    return {
+      enabled: parsed.enabled === false ? false : undefined,
+      plugins: plugins && typeof plugins === 'object' && !Array.isArray(plugins) ? plugins : undefined,
+    };
   } catch {
     // A hand-edited settings file is routine, and a syntax error in it must
     // not take the app down; the previous resolved settings stay in effect.
     console.error('[slick] settings.json is not valid JSON; ignoring this change');
-    return undefined;
+    return null;
   }
 }
 
-export function watchSettings(onChange: (text: string, plugins: StoredPlugins) => void): () => void {
+export function watchSettings(onChange: (text: string, settings: StoredSettings) => void): () => void {
   const dir = settingsDir();
   fs.mkdirSync(dir, { recursive: true });
 
   let timer: NodeJS.Timeout | null = null;
   const fire = () => {
     timer = null;
-    onChange(readSettingsText(), readStoredPlugins());
+    const text = readSettingsText();
+    const settings = readStoredSettings();
+    // An invalid edit must not reset live plugins or teach the renderer that
+    // the guessed defaults are safe to save back over the damaged file.
+    if (settings) onChange(text, settings);
   };
 
   let watcher: fs.FSWatcher;

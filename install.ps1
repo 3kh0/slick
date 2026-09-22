@@ -184,8 +184,11 @@ function New-Shortcuts($exe, $iconFile) {
   }
 }
 
-function Stop-Slick {
-  Get-Process Slick -EA SilentlyContinue | Stop-Process -Force -EA SilentlyContinue
+function Stop-Slick([string]$InstalledAt) {
+  $expected = [IO.Path]::GetFullPath((Join-Path $InstalledAt 'Slick.exe'))
+  Get-Process Slick -EA SilentlyContinue | Where-Object {
+    try { $_.Path -and ([IO.Path]::GetFullPath($_.Path) -eq $expected) } catch { $false }
+  } | Stop-Process -Force -EA SilentlyContinue
   Start-Sleep -Milliseconds 400
 }
 
@@ -208,7 +211,7 @@ if ($RestoreHandler) {
 
 if ($Uninstall) {
   Step "Uninstalling Slick"
-  Stop-Slick
+  Stop-Slick $Target
   Unregister-SlackHandler
   Restore-OfficialHandler | Out-Null
   $Shortcuts + $LegacyShortcuts | Select-Object -Unique | ForEach-Object { Remove-Item $_ -Force -EA SilentlyContinue }
@@ -253,13 +256,23 @@ if ($V2) {
   if (-not (Get-Command node -EA SilentlyContinue)) { Die "Node.js 22+ is required to build Slick v2 (get it from nodejs.org)" }
   if ($Beta) { Die "--beta is a v1 mechanism; in v2 the early path is the only path." }
 
-  $unpacked = if ($env:PROCESSOR_ARCHITECTURE -eq 'ARM64') { 'win-arm64-unpacked' } else { 'win-unpacked' }
+  $unpacked = if ($slackArch -eq 'arm64') { 'win-arm64-unpacked' } else { 'win-unpacked' }
+
+  if (-not (Test-Path (Join-Path $Root 'node_modules\electron-builder'))) {
+    Step "Installing build dependencies"
+    Push-Location $Root
+    try {
+      if (Get-Command bun -EA SilentlyContinue) { & bun install --frozen-lockfile }
+      else { & npm install --no-audit --no-fund }
+      if ($LASTEXITCODE -ne 0) { Die "dependency install failed" }
+    } finally { Pop-Location }
+  }
 
   Step "Building Slick v2 (this bundles Electron; give it a minute)"
   Push-Location $Root
   try {
-    & node (Join-Path $Root 'scripts\build.ts') package 2>&1 | Out-Null
-    if ($LASTEXITCODE -ne 0) { Die "build failed; run 'node scripts/build.ts package' to see why" }
+    & node (Join-Path $Root 'scripts\build.ts') package --arch $slackArch 2>&1 | Out-Null
+    if ($LASTEXITCODE -ne 0) { Die "build failed; run 'node scripts/build.ts package --arch $slackArch' to see why" }
   } finally { Pop-Location }
 
   $built = Join-Path $Root "dist\release\$unpacked"
@@ -387,7 +400,7 @@ if ($Beta -and -not $FromSource) {
   Remove-Item (Join-Path $runtime '.slick-beta') -Force -EA SilentlyContinue
 }
 
-Stop-Slick
+Stop-Slick $InstallTarget
 $backup = $InstallTarget + '.previous-' + [Guid]::NewGuid().ToString('N')
 $hadInstall = Test-Path $InstallTarget
 if ($hadInstall) { Move-Item $InstallTarget $backup }

@@ -34,6 +34,7 @@ export default class Censorship extends SlickPlugin<typeof meta.settings> {
       if (!bucket || typeof bucket !== 'object') return bucket;
       return this.api.redux.mapEntries<SlackMessage>(bucket, (_ts, message) => this.censor(message));
     });
+    this.patchMessageRows();
     this.patchSearch();
     this.patchActivityFeed();
     this.log(this.matcher.pattern ? 'masking configured terms in messages' : 'no terms configured');
@@ -52,6 +53,19 @@ export default class Censorship extends SlickPlugin<typeof meta.settings> {
 
   private censor(message?: SlackMessage): SlackMessage | undefined {
     return censorMessage(message, this.matcher);
+  }
+
+  /** These rows receive copied message props, so repainting the store-backed
+   *  parent alone cannot update an already mounted conversation. */
+  private patchMessageRows() {
+    for (const name of ['MessageWrapper', 'ThreadRootGeneric']) {
+      this.api.patchComponent<{ msg?: SlackMessage }>(name, (Original) => (props) => {
+        const React = this.api.react;
+        const version = this.api.redux.usePatchVersion();
+        const msg = React.useMemo(() => this.censor(props.msg), [props.msg, version]);
+        return React.createElement(Original, { ...props, msg });
+      });
+    }
   }
 
   /**
