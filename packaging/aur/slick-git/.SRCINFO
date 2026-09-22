@@ -1,0 +1,18 @@
+pkgbase = slick-git
+	pkgdesc = Slack client mod built from the latest source (requires official Slack)
+	pkgver = 2.0.100.r0.g0000000
+	pkgrel = 1
+	url = https://github.com/3kh0/slick
+	arch = x86_64
+	license = GPL-3.0-only
+	makedepends = git
+	makedepends = bun
+	makedepends = nodejs
+	depends = slack
+	provides = slick
+	conflicts = slick
+	conflicts = slick-bin
+	source = slick::git+https://github.com/3kh0/slick.git
+	sha256sums = SKIP
+
+pkgname = slick-git

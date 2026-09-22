@@ -1,0 +1,19 @@
+pkgbase = slick-bin
+	pkgdesc = Slack client mod (requires separately installed official Slack)
+	pkgver = 2.0.100
+	pkgrel = 1
+	url = https://github.com/3kh0/slick
+	arch = x86_64
+	license = GPL-3.0-only
+	depends = slack
+	provides = slick
+	conflicts = slick
+	conflicts = slick-git
+	source = Slick-2.0.100-linux-x64.tar.gz::https://github.com/3kh0/slick/releases/download/v100/Slick-2.0.100-linux-x64.tar.gz
+	source = dev.slick.Slick.desktop
+	source = icon.png
+	sha256sums = REPLACE_WITH_RELEASE_SHA256
+	sha256sums = 98654abf868cdc3465dd4946a2698e64916bb2ef99b449dbabfd5afc84c8d6ec
+	sha256sums = 11ad06c58420978f5403a8fd9ca521ea0bf4742ae5fb3ba649f490c794550b2d
+
+pkgname = slick-bin
