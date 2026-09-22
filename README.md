@@ -85,11 +85,13 @@ powershell -ExecutionPolicy Bypass -File install.ps1
 > [!NOTE]
 > Linux support is still in beta and x86_64-only. Slack doesn't ship an official arm64 Linux build, so there's nothing for an arm64 machine to run Slick against.
 
-Install Slack from your distro first (deb, rpm, AUR, whatever your package manager offers), then run:
+Install the official Slack desktop app first (deb, rpm, AUR, or your distro’s package). Download Slick’s x86_64 AppImage (portable), deb, or rpm from [Releases](https://github.com/3kh0/slick/releases), or install the tarball with:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/3kh0/slick/main/install-linux.sh | bash
 ```
+
+Make the AppImage executable (`chmod +x Slick-*.AppImage`) and run it directly. Install the deb/rpm with your package manager; they add `/usr/bin/slick`, a desktop entry and `slack://` handling. AppImages self-update in writable locations; deb/rpm and Flatpak update through their package managers. Packages use electron-builder’s post-install sandbox setup (user namespaces or a setuid `chrome-sandbox`); the AppImage uses `--no-sandbox` because its mounted filesystem cannot provide a setuid helper. The tarball installer also uses `--no-sandbox`.
 
 To uninstall:
 
