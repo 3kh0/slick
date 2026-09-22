@@ -155,28 +155,34 @@ Thunk creators confirmed resolving by name: `ensureMembersArePresent`
 Filled in as plugins are ported. Each row should say which plugin depends on it
 and how it was identified, so a break is diagnosable without re-deriving it.
 
-| Name                                                 | Kind          | Used by                                | How it was found                                                                                         |
-| ---------------------------------------------------- | ------------- | -------------------------------------- | -------------------------------------------------------------------------------------------------------- |
-| `createStore`                                        | redux export  | core (`src/app/slack/redux.ts`)        | named function export, wrapped via `patchExportFunction`                                                 |
-| createThunk module                                   | thunk factory | core (`src/app/slack/redux.ts`)        | signature: the same module exports a kind enum with `Thunk: 'Thunk'` and `Fetcher: 'Fetcher'`            |
-| `.p-client_container`                                | DOM anchor    | core (redux store + fiber root lookup) | stable Slack client container class                                                                      |
-| `currentUserStartedTyping`                           | thunk         | `SilentTyping`                         | present in the thunk registry; confirmed by dumping all 4,994 names                                      |
-| `currentUserEndedTyping`                             | thunk         | `SilentTyping`                         | as above                                                                                                 |
-| `routeMessages`                                      | named export  | core (`src/app/slack/rtm.ts`)          | named function export; Slack routes every socket payload through it                                      |
-| `handleMessageImmediatelyWithoutPreprocessing`       | thunk         | core (`src/app/slack/rtm.ts`)          | degraded-mode path that skips `routeMessages`; present in the thunk registry                             |
-| `state.messages[channelId][ts]`                      | redux slice   | `MessageLogger`, `Censorship`          | Taut `getRawMessage`; two-level map, bodies not timestamps. Also ShowRealUser                            |
-| `state.channelHistory[key].slices[].timestamps`      | redux slice   | `MessageLogger` via `injectMessages`   | Slack renders from this array, not by enumerating `messages`; key is `channelId` or `channelId-threadTs` |
-| `MessageWrapper`                                     | component     | `MessageLogger`                        | Taut ShowRealUser patches this with `props.msg`; channel message row                                     |
-| `ThreadRootGeneric`                                  | component     | `MessageLogger`                        | as above; thread parent row                                                                              |
-| `MessageListItem`                                    | component     | `Censorship`                           | Taut ShowRealUser; search result row with `props.result.messages` (search copies never hit `messages`)   |
-| `MessagePaneInput`                                   | component     | `bChannel`, `onMessageSendDelta`       | confirmed rendering; `props.prepareAndSendMessage({ delta, channelId, … })`                              |
-| `InputContainer`                                     | component     | `bChannel`, `onMessageSendDelta`       | thread composer; same send prop as `MessagePaneInput`                                                    |
-| `TextyAutocomplete`                                  | component     | `bChannel`                             | v1 composer integration; `includeAllBroadcastKeywords` enables `@channel` / `@here`                      |
-| `convertDeltaToBlocks`                               | named export  | core (`src/app/slack/blocks.ts`)       | v1 `DiPi.A`; identified by export name. `api.blocks.fromDelta`                                           |
-| `getChannelPrefByApi` / `getChannelPref`             | thunk         | `bChannel`                             | v1 `M9P0.Kn({ channelId, prefName, reason })`. Runtime probe, then `conversations.getPrefs`              |
-| `setChannelPrefsByApi` / `setChannelPrefs`           | thunk         | `bChannel`                             | v1 `Tid6.y({ channelId, newPrefs, reason })`. Runtime probe, then `conversations.setPrefs`               |
-| `inviteUsersToChannelByApi` / `inviteUsersToChannel` | thunk         | `bChannel`                             | v1 `M9P0.Cw({ channelId, users, reason })`. Runtime probe, then `conversations.invite`                   |
-| `conversations.invite` / `getPrefs` / `setPrefs`     | userAPI       | `bChannel`                             | durable fallback when the thunk names are absent. `already_in_channel` means the bot is a member         |
+| Name                                                 | Kind          | Used by                                | How it was found                                                                                           |
+| ---------------------------------------------------- | ------------- | -------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| `createStore`                                        | redux export  | core (`src/app/slack/redux.ts`)        | named function export, wrapped via `patchExportFunction`                                                   |
+| createThunk module                                   | thunk factory | core (`src/app/slack/redux.ts`)        | signature: the same module exports a kind enum with `Thunk: 'Thunk'` and `Fetcher: 'Fetcher'`              |
+| `.p-client_container`                                | DOM anchor    | core (redux store + fiber root lookup) | stable Slack client container class                                                                        |
+| `currentUserStartedTyping`                           | thunk         | `SilentTyping`                         | present in the thunk registry; confirmed by dumping all 4,994 names                                        |
+| `currentUserEndedTyping`                             | thunk         | `SilentTyping`                         | as above                                                                                                   |
+| `routeMessages`                                      | named export  | core (`src/app/slack/rtm.ts`)          | named function export; Slack routes every socket payload through it                                        |
+| `handleMessageImmediatelyWithoutPreprocessing`       | thunk         | core (`src/app/slack/rtm.ts`)          | degraded-mode path that skips `routeMessages`; present in the thunk registry                               |
+| `state.messages[channelId][ts]`                      | redux slice   | `MessageLogger`, `Censorship`          | Taut `getRawMessage`; two-level map, bodies not timestamps. Also ShowRealUser                              |
+| `state.channelHistory[key].slices[].timestamps`      | redux slice   | `MessageLogger` via `injectMessages`   | Slack renders from this array, not by enumerating `messages`; key is `channelId` or `channelId-threadTs`   |
+| `MessageWrapper`                                     | component     | `MessageLogger`                        | Taut ShowRealUser patches this with `props.msg`; channel message row                                       |
+| `ThreadRootGeneric`                                  | component     | `MessageLogger`                        | as above; thread parent row                                                                                |
+| `MessageListItem`                                    | component     | `Censorship`                           | Taut ShowRealUser; search result row with `props.result.messages` (search copies never hit `messages`)     |
+| `MessagePaneInput`                                   | component     | `bChannel`, `onMessageSendDelta`       | confirmed rendering; `props.prepareAndSendMessage({ delta, channelId, … })`                                |
+| `InputContainer`                                     | component     | `bChannel`, `onMessageSendDelta`       | thread composer; same send prop as `MessagePaneInput`                                                      |
+| `TextyAutocomplete`                                  | component     | `bChannel`                             | **Not yet seen rendering.** v1 composer integration; `includeAllBroadcastKeywords` enables `@channel`      |
+| `convertDeltaToBlocks`                               | named export  | core (`src/app/slack/blocks.ts`)       | v1 `DiPi.A`; identified by export name. `api.blocks.fromDelta`                                             |
+| `getChannelPrefByApi` / `getChannelPref`             | thunk         | `bChannel`                             | **CANDIDATE, unverified.** Replaces v1 `M9P0.Kn`. Tried at runtime; falls back to `conversations.getPrefs` |
+| `setChannelPrefsByApi` / `setChannelPrefs`           | thunk         | `bChannel`                             | **CANDIDATE, unverified.** Replaces v1 `Tid6.y`. Tried at runtime; falls back to `conversations.setPrefs`  |
+| `inviteUsersToChannelByApi` / `inviteUsersToChannel` | thunk         | `bChannel`                             | **CANDIDATE, unverified.** Replaces v1 `M9P0.Cw`. Tried at runtime; falls back to `conversations.invite`   |
+| `conversations.invite` / `getPrefs` / `setPrefs`     | userAPI       | `bChannel`                             | durable fallback when the thunk names are absent. `already_in_channel` means the bot is a member           |
+
+> **On the bChannel rows marked CANDIDATE.** Nothing has confirmed these
+> against a running client. The plugin tries each name, logs when it is absent,
+> and falls back to the documented Web API — which is why it works regardless.
+> They are recorded here as leads to confirm, not as identified names. Confirm
+> with `thunkNames()` on a focused client and then rewrite the row.
 
 ## Still to identify
 
@@ -187,7 +193,6 @@ These gate the Group C and D plugin ports and need a live discovery session:
 | `HcaStatus`           | the member hover-card, member-list and search-result anchors                                                                                                                                                |
 | `Click2Load`          | the message-embed iframe wrapper component                                                                                                                                                                  |
 | `CustomSounds`        | the module that plays notification audio                                                                                                                                                                    |
-| `BetterCaptions`      | the huddle/call container to mount the overlay in                                                                                                                                                           |
 | `bChannel` (live)     | confirm the thunk names above against `thunkNames()` on a focused client. The plugin already falls back to `userAPI` if they are absent                                                                     |
 | `NoTrack` (page half) | the telemetry factory modules. `getGenericTracer`, `getGenericTelemeter` and `getNoopTelemeter` are **not** thunk creators here, so they must be found as module exports via `getExport`/signature matching |
 

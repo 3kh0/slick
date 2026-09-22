@@ -18,3 +18,11 @@ Ported plugins live in `src/plugins/<Name>/`:
 `index.ts` (renderer half), `meta.ts` (id, name, description, defaultEnabled,
 settings schema — shared by both halves and the build), and an optional
 `main.ts` for privileged Electron work.
+
+## Dropped
+
+**BetterCaptions** is not being ported. It was Windows-only (system-audio
+capture needs `setDisplayMediaRequestHandler` with a loopback source, which
+Electron supports only there), it sent huddle audio to a third-party
+transcription API, and it carried an API key in the settings file. v1 remains
+on `main` for anyone who wants it.
