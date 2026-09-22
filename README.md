@@ -91,7 +91,7 @@ Install the official Slack desktop app first (deb, rpm, AUR, or your distro’s 
 curl -fsSL https://raw.githubusercontent.com/3kh0/slick/main/install-linux.sh | bash
 ```
 
-Make the AppImage executable (`chmod +x Slick-*.AppImage`) and run it directly. Install the deb/rpm with your package manager; they add `/usr/bin/slick`, a desktop entry and `slack://` handling. AppImages self-update in writable locations; deb/rpm and Flatpak update through their package managers. Packages use electron-builder’s post-install sandbox setup (user namespaces or a setuid `chrome-sandbox`); the AppImage uses `--no-sandbox` because its mounted filesystem cannot provide a setuid helper. The tarball installer also uses `--no-sandbox`.
+Make the AppImage executable (`chmod +x Slick-*.AppImage`) and run it directly. Install the deb/rpm with your package manager; they add `/usr/bin/slick`, a desktop entry and `slack://` handling. AppImages self-update in writable locations; deb/rpm and Flatpak update through their package managers. Packages use electron-builder’s post-install sandbox setup (user namespaces or a setuid `chrome-sandbox`); the AppImage uses electron-builder’s `--no-sandbox` launcher (its mount cannot provide a setuid helper). The tarball installer also uses `--no-sandbox`.
 
 To uninstall:
 

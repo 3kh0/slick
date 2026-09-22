@@ -128,6 +128,8 @@ export async function packageDesktop({ debug = false, platform = process.platfor
         homepage: 'https://github.com/3kh0/slick',
       },
       electronVersion: electronVersion(),
+      // The static AppImage runtime does not require libfuse.so.2 on Arch/Omarchy.
+      toolsets: platform === 'linux' ? { appimage: '1.0.3' } : undefined,
 
       directories: { app: DIST_DESKTOP, output: OUTPUT, buildResources: ASSETS },
       // The staged app is already bundled; nothing else belongs in the asar.
