@@ -1,6 +1,4 @@
-# Porting a plugin to v2
-
-Conventions every port follows. Read this before the per-plugin note.
+# Writing a plugin
 
 ## Layout
 
@@ -102,17 +100,16 @@ A setting listed in `liveSettings` mutates `this.config` in place and calls
 5. **`Object.keys(slice)` lies.** Several slices — `messages`, `channels`,
    `members`, `view`, `presence` — keep their real keys on the object's
    **prototype**, so `Object.keys` reports 0 for a slice holding tens of
-   thousands of entries. This has produced three wrong conclusions in this
-   project already. `mapEntries` handles it; direct reads must walk the
+   thousands of entries. `mapEntries` handles it; direct reads must walk the
    prototype.
 
 ## Things to prefer
 
 - **Props over DOM.** If Slack passes the data to a component, patch the
   component. Do not read it back out of the fiber.
-- **Props over CSS for anything conditional.** v1 hid composer buttons with
-  `button[aria-label="Emoji"]`, which breaks silently in every language other
-  than English.
+- **Props over CSS for anything conditional.** A selector like
+  `button[aria-label="Emoji"]` breaks silently in every language other than
+  English.
 - **`redux.patchSlice` over a component patch** when the data is in the store:
   one patch covers every surface that reads it, including ones nobody thought
   about.
@@ -125,7 +122,7 @@ A setting listed in `liveSettings` mutates `this.config` in place and calls
 ## Verification
 
 ```
-npm run typecheck && npm run lint && npm run fmt:check && npm run build && npm run test:app
+npm run check && npm run build
 ```
 
 Pure logic (a parser, a matcher, a formatter) goes in its own module with

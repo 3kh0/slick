@@ -55,6 +55,8 @@ If you'd rather build it yourself (or hack on it), clone the repo and run:
 ./install.sh
 ```
 
+To uninstall, run `./scripts/uninstall.sh` from a clone. It also removes your Slick sign-in and settings.
+
 ### Windows
 
 > [!NOTE]
@@ -108,7 +110,7 @@ This builds from source into the same `~/.local/share/slick/app` location instea
 ~/.local/share/slick/app/slick --no-sandbox --remote-debugging-port=9223
 ```
 
-You also have some nice flags to play around with: `--restore-handler` on `install-linux.sh` to give `slack://` back to the official Slack app, `--from-release` to use a prebuilt tarball instead of building from source, and `--uninstall` (or `./scripts/uninstall-linux.sh`) to remove Slick. Your sign-in and settings are kept unless you add `--purge`.
+You also have some nice flags to play around with: `--restore-handler` on `install-linux.sh` to give `slack://` back to the official Slack app, `--from-release` to use a prebuilt tarball instead of building from source, and `--uninstall` to remove Slick. Your sign-in and settings are kept unless you add `--purge`.
 
 #### Flatpak
 
@@ -171,7 +173,7 @@ Prefer to write your own CSS instead? Slick also has a "Custom CSS" option at th
 
 ## Plugins
 
-Plugins live in `src/plugins/<Name>/`: `index.ts` for the part that runs in Slack's page, `meta.ts` for the name, description and settings, and an optional `main.ts` for anything that needs Electron's main process. [`docs/plugins/PORTING.md`](docs/plugins/PORTING.md) covers the plugin API and the traps, [`docs/plugins/`](docs/plugins/) has notes on the trickier plugins, and [`docs/slack-internals.md`](docs/slack-internals.md) records every Slack-private name Slick depends on.
+Plugins live in `src/plugins/<Name>/`: `index.ts` for the part that runs in Slack's page, `meta.ts` for the name, description and settings, and an optional `main.ts` for anything that needs Electron's main process. [`docs/plugins.md`](docs/plugins.md) covers the plugin API and the traps, and [`docs/slack-internals.md`](docs/slack-internals.md) records every Slack-private name Slick depends on.
 
 ## Updates
 

@@ -3,7 +3,7 @@
 Every Slack-private name Slick patches belongs in this file. They are not a
 public contract: Slack can rename a component or reshape a slice in any release,
 and when that happens the fix should be a one-file change here rather than a
-hunt through 29 plugins.
+hunt through every plugin.
 
 ## What is known to hold
 
@@ -64,28 +64,9 @@ const keys = [...own, ...(proto && proto !== Object.prototype ? Object.keys(prot
 this is easy to miss. A probe that checks one slice and finds it sane concludes
 the store is fine.
 
-**This has caused three wrong conclusions in this project already**: that
-message bodies were unreachable, that the slice was empty because the window
-was unfocused, and that only `customStatus` was message-shaped. All three were
-one `Object.keys` call on a prototype-keyed object.
-
 `api.redux.mapEntries` handles this correctly — it proxies `getPrototypeOf` and
 runs entries through the prototype proxy — so `patchSlice` works on these
 slices. Only direct reads need care.
-
-## State shape: messages, confirmed
-
-`state.messages[channelId][ts]` holds message objects, and a sample from a live
-client looks like:
-
-```
-messages[C08HH2NSXC7][1789659565.070200]
-  text (string)  blocks  attachments  files  thread_ts  reply_count  replies
-  reply_users  latest_reply  is_ephemeral  source_team_id  blocksProcessed
-```
-
-So `text` is a real string on the message, `blocks` is present, and the nesting
-is two levels as documented above.
 
 ### The activity feed does not read `messages`
 
@@ -152,8 +133,7 @@ Thunk creators confirmed resolving by name: `ensureMembersArePresent`
 
 ## Names in use
 
-Filled in as plugins are ported. Each row should say which plugin depends on it
-and how it was identified, so a break is diagnosable without re-deriving it.
+Each row should say which plugin depends on it and how it was identified, so a break is diagnosable without re-deriving it.
 
 | Name                                                 | Kind          | Used by                                | How it was found                                                                                                                                                                                                                                                                                       |
 | ---------------------------------------------------- | ------------- | -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -175,11 +155,11 @@ and how it was identified, so a break is diagnosable without re-deriving it.
 | `MessageListItem`                                    | component     | `Censorship`                           | Taut ShowRealUser; search result row with `props.result.messages` (search copies never hit `messages`)                                                                                                                                                                                                 |
 | `MessagePaneInput`                                   | component     | `bChannel`, `onMessageSendDelta`       | confirmed rendering; `props.prepareAndSendMessage({ delta, channelId, … })`                                                                                                                                                                                                                            |
 | `InputContainer`                                     | component     | `bChannel`, `onMessageSendDelta`       | thread composer; same send prop as `MessagePaneInput`                                                                                                                                                                                                                                                  |
-| `TextyAutocomplete`                                  | component     | `bChannel`                             | **Not yet seen rendering.** v1 composer integration; `includeAllBroadcastKeywords` enables `@channel`                                                                                                                                                                                                  |
-| `convertDeltaToBlocks`                               | named export  | core (`src/app/slack/blocks.ts`)       | v1 `DiPi.A`; identified by export name. `api.blocks.fromDelta`                                                                                                                                                                                                                                         |
-| `getChannelPrefByApi` / `getChannelPref`             | thunk         | `bChannel`                             | **CANDIDATE, unverified.** Replaces v1 `M9P0.Kn`. Tried at runtime; falls back to `conversations.getPrefs`                                                                                                                                                                                             |
-| `setChannelPrefsByApi` / `setChannelPrefs`           | thunk         | `bChannel`                             | **CANDIDATE, unverified.** Replaces v1 `Tid6.y`. Tried at runtime; falls back to `conversations.setPrefs`                                                                                                                                                                                              |
-| `inviteUsersToChannelByApi` / `inviteUsersToChannel` | thunk         | `bChannel`                             | **CANDIDATE, unverified.** Replaces v1 `M9P0.Cw`. Tried at runtime; falls back to `conversations.invite`                                                                                                                                                                                               |
+| `TextyAutocomplete`                                  | component     | `bChannel`                             | **Not yet seen rendering.** `includeAllBroadcastKeywords` enables `@channel`                                                                                                                                                                                                                           |
+| `convertDeltaToBlocks`                               | named export  | core (`src/app/slack/blocks.ts`)       | identified by export name. `api.blocks.fromDelta`                                                                                                                                                                                                                                                      |
+| `getChannelPrefByApi` / `getChannelPref`             | thunk         | `bChannel`                             | **CANDIDATE, unverified.** Tried at runtime; falls back to `conversations.getPrefs`                                                                                                                                                                                                                    |
+| `setChannelPrefsByApi` / `setChannelPrefs`           | thunk         | `bChannel`                             | **CANDIDATE, unverified.** Tried at runtime; falls back to `conversations.setPrefs`                                                                                                                                                                                                                    |
+| `inviteUsersToChannelByApi` / `inviteUsersToChannel` | thunk         | `bChannel`                             | **CANDIDATE, unverified.** Tried at runtime; falls back to `conversations.invite`                                                                                                                                                                                                                      |
 | `conversations.invite` / `getPrefs` / `setPrefs`     | userAPI       | `bChannel`                             | durable fallback when the thunk names are absent. `already_in_channel` means the bot is a member                                                                                                                                                                                                       |
 
 > **On the bChannel rows marked CANDIDATE.** Nothing has confirmed these
@@ -216,37 +196,9 @@ happens when it stops matching.
 | `.p-member_profile_hover_card__banner_deactivated_dark` / `_light`, `.p-member_profile_restriction_deleted`, `.c-avatar` inside the card | as above                                        | the "Deactivated account" strip on the hover card and on the profile pane, plus the card's avatar, all painted from `--sk_foreground_low_solid` (`#35373b`)                                    | the strip and the avatar placeholder stay a lighter grey than the rest of the client                   |
 | `.c-menu_item__li`, `.c-menu_item__button`, `.c-menu_item__label`                                                                        | `MessageLogger`                                 | Slack's menu-row markup, reproduced for the rows the plugin appends to the message overflow menu                                                                                               | the rows still render and still work; they lose Slack's padding, hover and type                        |
 
-## Layout research (Slack 4.52.162, 2026-09-22)
+## Open leads
 
-These are observations for `work/fx-layout-report.md`, **not** patched dependencies.
-The module IDs are build-local and must be reidentified after Slack updates.
-
-- `rl6a` exports `AutoSizer` (react-virtualized-style component). Its mount
-  attaches `ResizeObserver` when available (fallback: element resize sensor),
-  schedules `setTimeout(this._onResize, 0)` from observer notifications, and
-  synchronously calls `_onResize()` on mount. That method reads computed parent
-  padding and `parentNode.getBoundingClientRect()` before changing state.
-  Observed parents include `.p-channel_sidebar__list` and `[data-qa="message_pane"]`.
-- `MOtw` defines `ListItem`: its `componentDidMount` calls `updateHeight()`
-  unless `isCachedHeightValid` or `useStaticHeight`; `updateHeight()` reads
-  `node.getBoundingClientRect().height` and calls `onHeightChange(itemKey,height)`
-  when the prior height differs by >0.5px or the cache is invalid. Observed
-  nodes are `[data-qa="virtual-list-item"]`, including sidebar items.
-- `Dk9U` defines `BaseList`: `getSiblingNodeHeight()` reads
-  `.c-virtual_list__sibling_container.getBoundingClientRect().height` from
-  `getContentHeight()` during render, scrolling and list relayout.
-  `onItemResize` reads `ResizeObserverEntry.borderBoxSize` when available,
-  otherwise falls back to the row's bounding rect; `setHeight` relayouts.
-  `scrollToOffset` writes scrollbar `scrollTop`. These names/DOM classes are
-  **not** safe to use for a cache across DOM mutations or resize without
-  additional invalidation: list data, fonts and siblings can change mid-frame.
-- `m97I` exports `CellMeasurer` / `CellMeasurerCache`: for uncached cells it
-  temporarily sets width/height to `auto`, reads `offsetHeight`/`offsetWidth`,
-  restores styles and invalidates the virtual grid size. No patch was made.
-
-## Still to identify
-
-These gate the Group C and D plugin ports and need a live discovery session:
+Each needs a live discovery session:
 
 | Needed for            | What is missing                                                                                                                                                                                             |
 | --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -264,5 +216,5 @@ and does nothing. Before shipping a patch, confirm the target exists:
 ```js
 thunkNames().includes('someThunk')            // thunk creators (4,994 of them)
 [...__slickRenderedComponents.keys()]         // components that have rendered
-Object.keys(getRawState().someSlice ?? {}).length   // is the slice populated?
+Object.keys(Object.getPrototypeOf(getRawState().someSlice) ?? {}).length // populated? (keys live on the prototype)
 ```
