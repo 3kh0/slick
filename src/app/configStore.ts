@@ -130,4 +130,10 @@ export class ConfigStore {
   setPluginEnabled(id: string, enabled: boolean) {
     return this.setPluginSetting(id, 'enabled', enabled);
   }
+
+  setTheme(theme: string) {
+    return this.update((config) => {
+      config.theme = theme;
+    });
+  }
 }

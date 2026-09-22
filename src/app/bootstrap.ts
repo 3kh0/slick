@@ -5,6 +5,8 @@ import { setStyle } from './api/css.ts';
 import type { SlickBridge } from './bridge.ts';
 import { ConfigStore } from './configStore.ts';
 import { PluginManager } from './pluginManager.ts';
+import { addSettingsTab } from './settings.tsx';
+import { installTheme } from './theme.ts';
 
 /** Injected by esbuild: { PluginName: "<bundled iife source>" }. */
 declare const __SLICK_PLUGINS__: Record<string, string>;
@@ -13,6 +15,7 @@ export async function bootstrap(bridge: SlickBridge): Promise<void> {
   const config = new ConfigStore(bridge);
   await config.init();
 
+  installTheme(config);
   setStyle(config.getUserCss(), 'user');
   config.onUserCssChange((css) => setStyle(css, 'user'));
 
@@ -21,6 +24,8 @@ export async function bootstrap(bridge: SlickBridge): Promise<void> {
 
   if (bridge.safeMode) {
     console.warn('[slick] safe mode: no plugins will be registered');
+    await addSettingsTab(manager, config, bridge);
+    void bridge.start();
     return;
   }
 
@@ -32,6 +37,7 @@ export async function bootstrap(bridge: SlickBridge): Promise<void> {
   }
 
   await manager.reconcile();
+  await addSettingsTab(manager, config, bridge);
 
   const running = manager.info().filter((plugin) => plugin.running);
   console.log(

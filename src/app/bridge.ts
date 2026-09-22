@@ -23,6 +23,10 @@ export interface SlickBridge {
   writeUserCss(css: string): Promise<boolean>;
   onUserCssChange(cb: (css: string) => void): () => void;
 
+  openFile(title: string, accept?: string): Promise<string>;
+  /** No-op until the Phase 4 CSS editor window is implemented. */
+  openCssEditor(): Promise<boolean>;
+
   blobStore(namespace: string): BlobStore;
   plugin(id: string): PluginChannel;
 

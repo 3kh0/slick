@@ -89,6 +89,9 @@ void (async () => {
       return () => ipcRenderer.removeListener('slick:user-css-changed', handler);
     },
 
+    openFile: (title: string, accept?: string) => call('openFile', [title, accept]),
+    openCssEditor: () => call('openCssEditor'),
+
     // Per-plugin main-process RPC. The renderer never supplies the plugin id;
     // the plugin manager binds it, so a plugin cannot address another's methods.
     plugin: (id: string) => ({

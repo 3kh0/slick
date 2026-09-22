@@ -1,15 +1,27 @@
 // Builds slick.js — the in-page bundle that runs before Slack's first script.
 
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
+import path from 'node:path';
 import { build } from 'esbuild';
-import { APP, DIST_APP, ROOT, SLICK_JS } from '../lib/paths.ts';
+import type { ThemeJson } from '../../src/app/theme.ts';
+import { APP, DIST_APP, ROOT, SLICK_JS, THEMES } from '../lib/paths.ts';
 import { bundleAllRenderers } from '../lib/plugin.ts';
 import { versions } from '../lib/versions.ts';
 
 const SOURCE_ORIGIN = 'slick:///';
 
+async function bundleThemes(): Promise<Record<string, ThemeJson>> {
+  const themes: Record<string, ThemeJson> = {};
+  const files = (await readdir(THEMES)).filter((file) => file.endsWith('.json')).toSorted();
+  for (const file of files) {
+    themes[path.basename(file, '.json')] = JSON.parse(await readFile(path.join(THEMES, file), 'utf8')) as ThemeJson;
+  }
+  console.log(`[build:themes] ${files.length} themes bundled`);
+  return themes;
+}
+
 export async function buildApp({ debug = false } = {}) {
-  const plugins = await bundleAllRenderers(debug);
+  const [plugins, themes] = await Promise.all([bundleAllRenderers(debug), bundleThemes()]);
 
   const result = await build({
     entryPoints: [`${APP}/main.ts`],
@@ -25,6 +37,7 @@ export async function buildApp({ debug = false } = {}) {
       __SLICK_VERSION__: JSON.stringify(versions.version),
       __SLICK_BUILD__: JSON.stringify(versions.build),
       __SLICK_PLUGINS__: JSON.stringify(plugins),
+      __SLICK_THEMES__: JSON.stringify(themes),
       // The bundle is injected as a <script src>, so anything reaching for
       // Node globals is a bug; fail loudly rather than shipping a shim.
       process: 'undefined',

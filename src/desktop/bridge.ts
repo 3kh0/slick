@@ -7,7 +7,7 @@
 
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
-import { ipcMain, webContents } from 'electron';
+import { dialog, ipcMain, webContents } from 'electron';
 import { configDir, profileDir, settingsDir } from './paths.js';
 import { setupBlobRpc } from './pluginHost.js';
 import { appUrl } from './session.js';
@@ -65,6 +65,27 @@ const methods: Record<string, (args: any[]) => unknown> = {
   writeSettings: ([text]) => writeFile(SETTINGS_FILE, String(text ?? '')),
   readUserCss: () => readFile(USER_CSS_FILE, ''),
   writeUserCss: ([css]) => writeFile(USER_CSS_FILE, String(css ?? '')),
+
+  async openFile([title, accept]) {
+    const extensions =
+      typeof accept === 'string'
+        ? accept
+            .split(',')
+            .map((part) => /^\.([a-z0-9]+)$/i.exec(part.trim())?.[1]?.toLowerCase())
+            .filter((extension): extension is string => !!extension)
+        : [];
+    const result = await dialog.showOpenDialog({
+      title: typeof title === 'string' ? `Choose ${title}` : 'Choose file',
+      properties: ['openFile'],
+      filters: extensions.length
+        ? [{ name: typeof title === 'string' ? title : 'File', extensions: [...new Set(extensions)] }]
+        : undefined,
+    });
+    return result.canceled ? '' : (result.filePaths[0] ?? '');
+  },
+
+  // Phase 4 part 3 will replace this with the CSS editor window.
+  openCssEditor: () => false,
 
   // Page-origin fetch, for the cross-origin requests plugins cannot make
   // themselves. Returns text only; plugins parse it.

@@ -400,6 +400,7 @@ export class PluginManager {
       description: entry.PluginClass.description,
       authors: entry.PluginClass.authors,
       settings: entry.PluginClass.settings,
+      relaunchSettings: entry.PluginClass.relaunchSettings,
       running: !!entry.instance,
       enabled: this.config.isActive(id),
     }));
