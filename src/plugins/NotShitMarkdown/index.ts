@@ -15,15 +15,15 @@ export default class NotShitMarkdown extends SlickPlugin<typeof meta.settings> {
 
   start() {
     this.api.onMessageSendDelta((delta) => {
-      // The inline parser has no lossless fenced-block representation. Leave
-      // fenced source alone unless Slack has already represented it as code.
-      if (
-        delta.ops.some((op) => {
-          const insert = 'insert' in op ? op.insert : undefined;
-          return typeof insert === 'string' && insert.includes('```');
-        })
-      )
-        return delta;
+      // The inline parser has no lossless fenced-block representation, so a
+      // fence it touches comes back as inline code with the delimiters eaten
+      // -- it corrupts the code the user was quoting. Ops already carrying a
+      // code attribute are Slack's own block and transformOps passes them
+      // through; a fence typed as plain text is the dangerous case, so leave
+      // the whole message alone. The text is joined first because Quill splits
+      // ops at formatting boundaries and a fence can straddle two of them.
+      const text = delta.ops.map((op) => ('insert' in op && typeof op.insert === 'string' ? op.insert : '')).join('');
+      if (text.includes('```')) return delta;
       const ops = transformOps(delta.ops, this.config);
       if (ops === delta.ops) return delta;
       // The send hook is synchronous, so the async blocks.makeDelta helper cannot

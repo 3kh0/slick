@@ -73,6 +73,22 @@ export function macSlackElectronMajor(resources: string): number {
   }
 }
 
+/**
+ * Slack's Electron major, or 0 when it cannot be read. macOS carries it in the
+ * framework's Info.plist; on Windows and Linux electron-builder writes a
+ * `version` file at the application root, one level above `resources`.
+ */
+export function slackElectronMajor(asar: string): number {
+  const resources = path.dirname(asar);
+  if (process.platform === 'darwin') return macSlackElectronMajor(resources);
+  try {
+    const raw = fs.readFileSync(path.join(path.dirname(resources), 'version'), 'utf8');
+    return Number.parseInt(raw.trim().replace(/^v/, ''), 10) || 0;
+  } catch {
+    return 0;
+  }
+}
+
 // Windows
 
 /** COFF machine word -> arch, so an arm64 Slick does not adopt an x64 Slack. */

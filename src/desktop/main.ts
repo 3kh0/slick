@@ -21,7 +21,7 @@ import {
 } from './pluginHost.js';
 import { readStoredSettings, watchSettings } from './settingsFile.js';
 import { applyPatches } from './patch.js';
-import { findSlackAsar, macSlackElectronMajor } from './slackFinder.js';
+import { findSlackAsar, slackElectronMajor } from './slackFinder.js';
 import { privilegedSchemes, setupSession } from './session.js';
 
 const cjsRequire = createRequire(import.meta.url);
@@ -57,31 +57,48 @@ if (!slackAsar) {
  */
 function electronMajorMismatch(asar: string): { ours: number; theirs: number } | null {
   if (process.env.SLICK_SKIP_PREFLIGHT === '1') return null;
-  if (process.platform !== 'darwin') return null; // win/linux read a `version` file; wired up in Phase 6
 
   const ours = Number.parseInt(process.versions.electron.split('.')[0], 10) || 0;
-  const theirs = macSlackElectronMajor(path.dirname(asar));
+  const theirs = slackElectronMajor(asar);
   if (!ours || !theirs || ours === theirs) return null;
   return { ours, theirs };
 }
 
+/**
+ * Asked before Slack is required rather than at app-ready: loading a bundle
+ * built against another Electron major can take the process down in the native
+ * module loader, and a prompt that arrives after that has nothing left to
+ * decline.
+ */
+function launchAnyway(mismatch: { ours: number; theirs: number }): boolean {
+  const detail =
+    `Slick is on Electron ${mismatch.ours}, the installed Slack is on ${mismatch.theirs}. ` +
+    'Running them together usually fails. Update Slick, or launch anyway to try.';
+  try {
+    const choice = dialog.showMessageBoxSync({
+      type: 'warning',
+      title: 'Slick',
+      message: 'Slick and Slack expect different Electron versions',
+      detail,
+      buttons: ['Quit', 'Launch Anyway'],
+      defaultId: 0,
+      cancelId: 0,
+    });
+    return choice === 1;
+  } catch (error) {
+    // The dialog is not always available this early. Refusing is the safe
+    // answer, because the alternative is loading a bundle already known to be
+    // incompatible.
+    console.error(`[slick] ${detail}`, error);
+    return false;
+  }
+}
+
 function startSlack(asar: string) {
   const mismatch = electronMajorMismatch(asar);
-  if (mismatch) {
-    app.whenReady().then(() => {
-      const choice = dialog.showMessageBoxSync({
-        type: 'warning',
-        title: 'Slick',
-        message: 'Slick and Slack expect different Electron versions',
-        detail:
-          `Slick is on Electron ${mismatch.ours}, the installed Slack is on ${mismatch.theirs}. ` +
-          'Running them together usually fails. Update Slick, or launch anyway to try.',
-        buttons: ['Quit', 'Launch Anyway'],
-        defaultId: 0,
-        cancelId: 0,
-      });
-      if (choice !== 1) app.exit(1);
-    });
+  if (mismatch && !launchAnyway(mismatch)) {
+    app.exit(1);
+    return;
   }
 
   // Main halves boot before app-ready, because privileged schemes and

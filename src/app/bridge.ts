@@ -35,11 +35,20 @@ export interface SlickBridge {
   start(): Promise<unknown>;
 }
 
-// The preload exposes this before any page script runs. Capture it while this
-// module is evaluating, then remove the discoverable name before Slack's
-// bundle gets a chance to keep its own reference.
-const capturedBridge = (globalThis as any).SlickBridge;
-Reflect.deleteProperty(globalThis, 'SlickBridge');
+// The global the preload exposes is a one-shot claim, not the API: the name
+// itself cannot be removed (contextBridge defines it non-configurably), so the
+// protection is that slick.js runs before Slack's bundle and takes the handle
+// first. Claiming here, while this module evaluates, is what makes that true.
+//
+// A null result means something claimed before us, which should be impossible
+// and means we are not running first after all.
+const capturedBridge = (() => {
+  const claim = (globalThis as any).SlickBridge?.claim;
+  if (typeof claim !== 'function') return null;
+  const bridge = claim();
+  if (!bridge) console.error('[slick] the bridge was already claimed; Slick did not run first');
+  return bridge;
+})();
 
 export function getBridge(): SlickBridge | null {
   const bridge = capturedBridge;

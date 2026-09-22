@@ -5,15 +5,22 @@
 // before any of Slack's scripts do.
 //
 // Order matters and is not negotiable:
-//   1. eval Slack's original preload, so its contextBridge.exposeInMainWorld
+//   1. blank the document synchronously, before the parser can run any of
+//      Slack's <script> tags
+//   2. eval Slack's original preload, so its contextBridge.exposeInMainWorld
 //      calls land before any Slack script looks for them
-//   2. fetch and validate a complete replacement without touching the live DOM
-//   3. expose SlickBridge
-//   4. commit the rebuilt document, CSP meta removed, with
-//      slick.js ahead of Slack's own <script> tags
+//   3. fetch and validate a complete replacement
+//   4. expose SlickBridge
+//   5. commit the rebuilt document, CSP meta removed, with slick.js ahead of
+//      Slack's own <script> tags
 //
-// If any of this fails we bail out and let Slack load normally. A broken Slack
-// is a far worse outcome than a Slick that did not start.
+// Step 1 has to be synchronous and cannot wait for step 3: the parser keeps
+// going during any await, and if Slack's bundle defines webpackChunkwebapp
+// before slick.js runs then every hook we install is too late and Slick
+// silently does nothing. The cost is that a failure after step 1 leaves an
+// empty document, which is why those paths reload instead of returning -- see
+// `abandon`. A white window with no way back to Preferences is the one outcome
+// worse than Slick not starting.
 
 const { contextBridge, ipcRenderer } = require('electron');
 
@@ -28,6 +35,39 @@ const safeModePromise = ipcRenderer.invoke('slick:get-safe-mode') as Promise<boo
 
 const isClientPage = location.hostname === 'app.slack.com' && /\/client(\/|$)/.test(location.pathname);
 
+// Set when a rebuild failed after blanking. The reload it triggers comes back
+// with this present, and that pass leaves the document alone so the user gets
+// stock Slack rather than a reload loop.
+const RECOVERY_KEY = 'slick:preload-recovery';
+let recovering = false;
+try {
+  recovering = sessionStorage.getItem(RECOVERY_KEY) === '1';
+  sessionStorage.removeItem(RECOVERY_KEY);
+} catch {}
+
+const rebuilding = isClientPage && !recovering;
+if (recovering) console.warn('[slick] recovering from a failed document rebuild; Slack will load unmodified');
+
+if (rebuilding) {
+  document.open();
+  document.write('<!DOCTYPE html>');
+  document.close();
+}
+
+/**
+ * Give up on the rebuild. The document is already blank by this point, so
+ * returning would leave a white window; reloading gets the user back to a
+ * working Slack, and the recovery flag stops it happening twice.
+ */
+function abandon(message: string, error: unknown): void {
+  console.error(`[slick] ${message}`, error);
+  if (!rebuilding) return;
+  try {
+    sessionStorage.setItem(RECOVERY_KEY, '1');
+  } catch {}
+  location.reload();
+}
+
 const call = (method: string, args: unknown[] = []) => ipcRenderer.invoke('slick:rpc', method, args);
 
 void (async () => {
@@ -38,11 +78,10 @@ void (async () => {
     // oxlint-disable-next-line no-eval
     eval(originalPreload);
   } catch (error) {
-    console.error('[slick] failed to evaluate Slack preload:', error);
-    return;
+    return abandon('failed to evaluate Slack preload:', error);
   }
 
-  if (!isClientPage) return;
+  if (!rebuilding) return;
 
   let doc: Document;
   try {
@@ -67,8 +106,7 @@ void (async () => {
     doc = new DOMParser().parseFromString(html, 'text/html');
     if (!doc.head || !doc.body || !doc.querySelector('script')) throw new Error('response is not a usable client page');
   } catch (error) {
-    console.error('[slick] could not prepare replacement HTML; leaving the current document intact:', error);
-    return;
+    return abandon('could not prepare replacement HTML:', error);
   }
 
   let appUrl: string;
@@ -78,7 +116,12 @@ void (async () => {
     appUrl = 'slick://app/slick.js';
   }
 
-  contextBridge.exposeInMainWorld('SlickBridge', {
+  // contextBridge defines its global non-configurably, so the name cannot be
+  // deleted once exposed and nothing in the main world can be hidden from the
+  // rest of it. What Slick does have is order: it runs before Slack's bundle.
+  // So the global is a one-shot claim rather than the API itself -- slick.js
+  // takes it on the first call and every later caller gets null.
+  const api = {
     loader: 'electron' as const,
     loaderVersion: typeof __SLICK_VERSION__ === 'string' ? __SLICK_VERSION__ : 'dev',
     bridgeVersion: 1,
@@ -136,6 +179,15 @@ void (async () => {
     },
 
     start: () => ipcRenderer.invoke('slick:start'),
+  };
+
+  let claimed = false;
+  contextBridge.exposeInMainWorld('SlickBridge', {
+    claim: () => {
+      if (claimed) return null;
+      claimed = true;
+      return api;
+    },
   });
 
   for (const meta of doc.querySelectorAll('meta[http-equiv="Content-Security-Policy"]')) meta.remove();
@@ -153,7 +205,7 @@ void (async () => {
   slick.src = appUrl;
   slick.setAttribute(
     'onerror',
-    `Reflect.deleteProperty(globalThis,'SlickBridge');console.error('[slick] failed to load ${appUrl}; Slack will run unmodified')`,
+    `globalThis.SlickBridge&&globalThis.SlickBridge.claim();console.error('[slick] failed to load ${appUrl}; Slack will run unmodified')`,
   );
   doc.head.appendChild(slick);
 
@@ -165,15 +217,11 @@ void (async () => {
     doc.head.appendChild(script);
   }
 
-  const previous = document.documentElement?.outerHTML ?? '';
   try {
     document.open();
     document.write(`<!DOCTYPE html>${doc.documentElement.outerHTML}`);
     document.close();
   } catch (error) {
-    console.error('[slick] failed to commit replacement HTML; restoring the previous document:', error);
-    document.open();
-    document.write(`<!DOCTYPE html>${previous}`);
-    document.close();
+    abandon('failed to commit replacement HTML:', error);
   }
 })();
