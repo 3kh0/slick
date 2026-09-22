@@ -1,7 +1,5 @@
-// Opening a popup menu from a trigger a plugin supplies.
-//
-// This owns the small accessible menu surface rather than depending on the
-// unverified props of Slack's private MenuFromTemplate component.
+// Owns its menu markup rather than depend on the unverified props of Slack's
+// private MenuFromTemplate.
 
 import { reactReady } from '../slack/react.tsx';
 import type { MenuTemplateItem } from './elements.ts';

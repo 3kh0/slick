@@ -1,30 +1,20 @@
-// QuietSpotify, main-process half.
-//
-// The embed is a cross-origin iframe from open.spotify.com, so nothing in the
-// Slack page can touch its audio. The volume is applied by patching
-// `Audio.prototype.play` inside the frame, which catches the element Spotify
-// creates however and whenever it creates it -- setting `.volume` on whatever
-// exists at dom-ready races with the player and usually loses.
-//
-// v1 re-injected the whole script on every frame load and read the volume off
-// disk each time, because the main half had no settings channel. It does now.
+// The embed is a cross-origin iframe, so the page can't touch its audio.
+// Patching Audio.prototype.play inside the frame catches every element Spotify
+// creates; setting .volume at dom-ready races the player and usually loses.
 
 import type { SlickMainPlugin } from '$slick';
 
 const EMBED_PREFIX = 'https://open.spotify.com/embed/';
 const DEFAULT_VOLUME = 10;
 
-/** 0-100 from settings, as the 0-1 fraction the media element wants. */
 function volumeFraction(value: unknown): number {
   const percent = Number(value);
   if (!Number.isFinite(percent)) return DEFAULT_VOLUME / 100;
   return Math.min(Math.max(percent, 0), 100) / 100;
 }
 
-/**
- * Re-entrant on purpose: a frame that already has the patch takes the new
- * volume instead of stacking a second wrapper on `play`.
- */
+// Re-entrant: an already-patched frame takes the new volume instead of
+// stacking a second wrapper on play.
 const frameScript = (volume: number) => `(function (volume) {
   if (window.__slickQuietSpotify) {
     window.__slickQuietSpotify.volume = volume;
@@ -67,7 +57,7 @@ const plugin: SlickMainPlugin = {
         try {
           if (frame.url.startsWith(EMBED_PREFIX)) apply(frame);
         } catch {
-          // The frame went away between the check and the call.
+          // Frame destroyed.
           frames.delete(frame);
         }
       }

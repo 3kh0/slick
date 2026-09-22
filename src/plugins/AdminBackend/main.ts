@@ -1,16 +1,6 @@
-// AdminBackend, main-process half.
-//
-// Opens in the system browser rather than a Slack window, which is the whole
-// reason this needs a main half at all.
-//
-// The renderer asks for a tool by id and a member id; this builds the URL. It
-// is deliberately not the other way round: handing the renderer a
-// "open this URL" call would make any page script a way to launch arbitrary
-// external links.
-//
-// v1 did the same thing by navigating to a fake `https://slick.admin-backend/`
-// hostname and cancelling it in a `will-navigate` handler. Same allow-list,
-// but over a channel that also had to be invisible to Slack.
+// Opens in the system browser. The renderer sends a tool id and member id and
+// this builds the URL; an "open this URL" RPC would let any page script launch
+// arbitrary external links.
 
 import type { SlickMainPlugin } from '$slick';
 
@@ -32,8 +22,7 @@ const plugin: SlickMainPlugin = {
       const [target, memberId] = args;
       if (typeof target !== 'string' || !Object.hasOwn(TOOLS, target)) throw new Error('unknown tool');
       if (typeof memberId !== 'string' || !USER_ID.test(memberId)) throw new Error('bad member id');
-      // Respect the per-tool setting here too: the renderer already filters
-      // the menu, but the RPC is reachable without it.
+      // The renderer filters the menu, but the RPC is reachable without it.
       if (ctx.settings[target] === false) throw new Error(`${target} is disabled`);
 
       await ctx.shell.openExternal(TOOLS[target](memberId));

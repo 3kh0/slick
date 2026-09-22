@@ -1,29 +1,17 @@
-// Slick's Slack Updater
-//
-// Ported from scripts/byoe/slack-updater.js with its logic intact.
-//
-// Slick launches by require()-ing Slack's app.asar out of the installed Slack
-// app, and patch.ts neuters Slack's own autoUpdater -- which would otherwise
-// try to update the *running* bundle, Slick, rather than Slack. Without this
-// file a Slick user would sit on whatever Slack version was installed forever,
-// eventually tripping the Electron-major preflight or Slack's server-side
+// Updates the installed Slack. patch.ts neuters Slack's own autoUpdater (it
+// would try to update the running bundle, Slick), so without this Slack would
+// fall behind until it hit the Electron-major preflight or Slack's server-side
 // minimum-version wall.
 //
-// The strategy is stage-then-swap-at-boot: ask Slack's public download redirect
-// for the latest version, and if it is newer *and* bundles the same Electron
-// major Slick was built against, download, verify and stage it. The swap
-// happens at the next launch, before the asar is required, so the bundle is
-// never replaced under a running session.
+// macOS: stage-then-swap-at-boot. A newer Slack with the same Electron major as
+// Slick is downloaded, verified and staged, then swapped in at the next launch
+// before the asar is required, never under a running session.
 //
-// Windows is simpler, because the standalone Slack is a Squirrel install:
-// Squirrel's own Update.exe can be pointed at Slack's release feed, and it
-// verifies the package against the feed's hashes and installs a new `app-<ver>`
-// directory beside the running one. slackFinder.ts already picks the newest of
-// those, so the update takes effect at the next launch with no swap of ours.
-// The Microsoft Store (MSIX) Slack is updated by the Store and left alone.
+// Windows: standalone Slack is Squirrel, so Update.exe installs a new
+// `app-<ver>` dir from Slack's feed (hash-verified) and slackFinder.ts picks the
+// newest at next launch. MSIX Slack is left to the Store.
 //
-// Linux Slack comes from a package manager, which keeps it current; Slick
-// has nothing to add there.
+// Linux: the package manager keeps Slack current.
 
 import { execFile, execFileSync } from 'node:child_process';
 import fs from 'node:fs';
@@ -35,8 +23,8 @@ import { settingsDir } from './paths.js';
 const MAC = process.platform === 'darwin';
 const FRAMEWORK_PLIST_REL = 'Contents/Frameworks/Electron Framework.framework/Resources/Info.plist';
 const SLACK_BUNDLE_ID = 'com.tinyspeck.slackmacgap';
-// Slack Technologies' Developer ID team. A valid signature alone only proves
-// *someone* signed the bundle; this proves it was Slack.
+// Slack's Developer ID team: a valid signature alone only proves *someone*
+// signed the bundle.
 const SLACK_REQUIREMENT = 'anchor apple generic and certificate leaf[subject.OU] = "BQR82RBBHL"';
 const LATEST_REDIRECT = 'https://slack.com/ssb/download-osx-universal';
 const VERSION_RE = /desktop-releases\/mac\/[^/]+\/(\d+\.\d+\.\d+)\//;
@@ -172,8 +160,7 @@ export function createSlackUpdater({
             res.pipe(file);
           })
           .on('error', reject)
-          // Without this a stalled connection pends forever, and so does the
-          // check that owns it.
+          // Otherwise a stalled connection hangs the check forever.
           .setTimeout(STALL_MS, function (this: import('node:http').ClientRequest) {
             this.destroy(new Error('download stalled'));
           });
@@ -194,10 +181,7 @@ export function createSlackUpdater({
       ),
     );
 
-  /**
-   * Called synchronously at boot, before Slick require()s Slack's asar. Swaps a
-   * previously staged Slack.app into place if it is still valid.
-   */
+  /** Must run synchronously at boot, before Slack's asar is required. */
   function applyStagedIfAny(): void {
     const marker = readMarker();
     if (!marker?.version) return;
@@ -206,8 +190,8 @@ export function createSlackUpdater({
       return;
     }
 
-    // Stale guards: something newer was installed by other means, or the staged
-    // build no longer matches Slick's Electron major because Slick moved.
+    // Stale if something newer was installed meanwhile, or Slick's Electron
+    // major moved.
     const installed = installedVersion();
     if (installed && cmpVersion(marker.version, installed) <= 0) {
       log(`staged Slack ${marker.version} <= installed ${installed}; discarding`);
@@ -220,8 +204,7 @@ export function createSlackUpdater({
       return;
     }
 
-    // The official app may be open alongside Slick. Moving the bundle out from
-    // under it breaks that session, so wait for a launch where it is not.
+    // Moving the bundle under a running official Slack breaks that session.
     if (slackRunning()) {
       log(`Slack is running; leaving staged ${marker.version} for the next launch`);
       return;
@@ -235,7 +218,7 @@ export function createSlackUpdater({
       fs.rmSync(backup, { recursive: true, force: true });
       log(`installed Slack ${marker.version}`);
     } catch (error) {
-      // Restore whatever was moved: the user must never be left without Slack.
+      // Never leave the user without Slack.
       try {
         if (!fs.existsSync(slackApp) && fs.existsSync(backup)) fs.renameSync(backup, slackApp);
       } catch {}
@@ -257,7 +240,6 @@ export function createSlackUpdater({
   let checking = false;
 
   async function checkNow(): Promise<void> {
-    // A slow download must not overlap the next scheduled check.
     if (checking) return;
     checking = true;
     try {
@@ -305,9 +287,8 @@ export function createSlackUpdater({
 
       const downloadedMajor = electronMajorOf(built);
       if (downloadedMajor && downloadedMajor !== slickElectronMajor()) {
-        // Installing this would trip Slick's own Electron-major preflight and
-        // block launch. Leave Slack alone; once Slick ships a matching Electron
-        // this check runs again and picks it up.
+        // Would trip the Electron-major preflight and block launch; retried
+        // once Slick ships a matching Electron.
         log(
           `Slack ${latest} bundles Electron ${downloadedMajor} but Slick is on ${slickElectronMajor()}; skipping until Slick updates`,
         );
@@ -338,20 +319,17 @@ export function createSlackUpdater({
       checkNow().catch(() => {});
       setTimeout(run, CHECK_INTERVAL_MS).unref?.();
     };
-    // Offset from Slick's own updater so the two network checks do not fire
-    // together at launch.
+    // Offset from Slick's own updater check.
     setTimeout(run, 90_000).unref?.();
   }
 
   return { applyStagedIfAny, checkNow, scheduleChecks, latestVersion, installedVersion };
 }
 
-// Windows (Squirrel)
-
 const WIN_LATEST_REDIRECT = 'https://slack.com/ssb/download-win64';
 const WIN_VERSION_RE = /desktop-releases\/windows\/x64\/(\d+\.\d+\.\d+)\//;
 const WIN_FEED = (version: string) => `https://downloads.slack-edge.com/desktop-releases/windows/x64/${version}/`;
-/** Update.exe downloads ~160MB and unpacks it; give it room, but not forever. */
+/** Update.exe downloads and unpacks ~160MB. */
 const WIN_UPDATE_TIMEOUT_MS = 30 * 60 * 1000;
 
 function createWindowsSlackUpdater(ua: string): SlackUpdater {
@@ -390,8 +368,7 @@ function createWindowsSlackUpdater(ua: string): SlackUpdater {
 
   async function checkNow(): Promise<void> {
     if (checking) return;
-    // Only a standalone install has Update.exe; the Store build has neither
-    // it nor a need for it.
+    // Only a standalone (non-Store) install has Update.exe.
     if (!fs.existsSync(updateExe)) return;
     checking = true;
     try {

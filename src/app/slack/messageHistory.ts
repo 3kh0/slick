@@ -1,9 +1,5 @@
-// Channel-history helpers for re-inserting messages Slack has dropped.
-//
-// Slack draws a conversation from `channelHistory[key].slices[].timestamps`,
-// not by enumerating `messages`. A body that exists in `messages` but is
-// absent from the timestamps array is simply never drawn. These helpers are
-// pure so they can be tested without booting the webpack/React interceptors.
+// Pure channelHistory helpers for messages.ts (see there), split out so they
+// test without booting the interceptors.
 
 export type HistoryMessage = {
   ts?: string;

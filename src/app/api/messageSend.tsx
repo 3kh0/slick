@@ -1,14 +1,6 @@
-// One shared hook on outgoing message content.
-//
-// Slack hands the composer's Quill Delta to three different components, so
-// every plugin that wants to rewrite an outgoing message would otherwise patch
-// all three itself. Patching them once and letting plugins register transforms
-// also means the transforms compose instead of fighting: two plugins patching
-// `prepareAndSendMessage` independently would each wrap the other's props and
-// whichever rendered last would win.
-//
-// This replaces v1's approach of rewriting the JSON request body on its way
-// out, which had to re-parse what Slack had already serialized.
+// Slack hands the composer's Quill Delta to three components. Patching them
+// once lets plugin transforms compose; two plugins each wrapping
+// `prepareAndSendMessage` would fight, and the last to render would win.
 
 import type { Delta } from '../../shared/delta.ts';
 import type { ComponentReplacer } from '../slack/react.tsx';
@@ -45,7 +37,6 @@ export function setupMessageSendDelta(patchComponent: PatchComponent) {
 
   function applyTransforms(delta: Delta): Delta {
     let result = delta;
-    // Map iteration is registration order, including after removals.
     for (const registered of transforms.values()) {
       const input = result;
       try {
@@ -86,8 +77,7 @@ export function setupMessageSendDelta(patchComponent: PatchComponent) {
       ?.split('\n')
       .find((line) => line.includes(' at ') && !/messageSend|pluginManager/.test(line))
       ?.trim();
-    // The registration site names the plugin bundle even when a malformed
-    // return gives us no thrown stack of its own.
+    // Names the plugin bundle even when a malformed return throws nothing.
     const registered = {
       transform,
       label: `${transform.name || 'anonymous'} (#${nextTransformId++}${registrationSite ? `, ${registrationSite}` : ''})`,

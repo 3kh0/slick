@@ -1,13 +1,5 @@
 // Show each person's pronouns after the timestamp on their messages.
-//
-// v1 matched nine selectors against every DOM batch, read the user id back out
-// of the fiber and appended a span -- which meant it also had to detect and
-// remove its own spans to avoid duplicating them. v2 renders inside the header
-// component, so React owns the element and removing the plugin removes it.
-//
-// The pronoun itself comes from `members.useMember`, which loads the member if
-// the store has not got them yet, so this works on a channel scrolled back
-// past anyone currently cached.
+// members.useMember loads uncached members, so scrolled-back history works.
 
 import { SlickPlugin } from '$slick';
 import * as meta from './meta.ts';
@@ -30,11 +22,8 @@ const MAX_LENGTH = 40;
 const isPerson = (msg: Message | undefined): msg is Message & { user: string } =>
   !!msg?.user && USER_ID.test(msg.user) && msg.user !== 'USLACKBOT' && !msg.bot_id;
 
-/**
- * Grouped messages get handed the same children back with `visible: false`,
- * so identifying the header parts by prop shape has to respect that or the
- * pronouns turn up on every message in a run.
- */
+// Grouped messages get the same children with `visible: false`; respect it
+// or pronouns appear on every message in a run.
 const isHeaderChild = (child: React.ReactNode, prop: string): boolean => {
   const props = React.isValidElement(child) ? child.props : null;
   if (typeof props !== 'object' || props === null) return false;

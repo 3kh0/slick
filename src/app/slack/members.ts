@@ -1,10 +1,6 @@
-// Reading Slack member profiles out of the redux store.
-//
-// The interesting part is `modifyMemberObject`. Slack denormalizes every name
-// into six lowercase/deburred fields and its search, autocomplete and sort
-// paths read those rather than `profile.display_name`. Rewriting only the
-// display field leaves the member findable under the old name, which is how a
-// rename plugin ends up half-working.
+// Slack denormalizes names into lowercase/deburred fields that search,
+// autocomplete and sort read instead of `profile.display_name`, so
+// `modifyMemberObject` rewrites all of them.
 
 import { retry } from '../helpers.ts';
 import { reactReady } from './react.tsx';
@@ -37,10 +33,6 @@ type GetMemberById = (state: any, userId: string) => SlackMember | undefined;
 const deburr = (value: string): string => value.normalize('NFKD').replace(/[̀-ͯ]/g, '');
 const lc = (value: string): string => String(value).toLowerCase();
 
-/**
- * A copy of `member` with the named fields replaced, including every
- * denormalized form Slack derives from them.
- */
 export function modifyMemberObject(
   member: SlackMember,
   edits: {
@@ -73,12 +65,7 @@ export function modifyMemberObject(
   return next;
 }
 
-/**
- * Slack stands in a member it has not fetched with a placeholder carrying
- * empty names and a `profile` object shared by every other placeholder.
- * Handing one to a plugin would look like a member whose name is the empty
- * string, so they never leave this module.
- */
+/** Unfetched members are empty-named placeholders; never hand them to plugins. */
 const loaded = (member?: SlackMember): SlackMember | undefined =>
   !member || member.isUnknown === true || member.isNonExistent === true ? undefined : member;
 
@@ -86,7 +73,6 @@ export function getCachedMember(userId: string): SlackMember | undefined {
   return loaded(getStore()?.getState().members?.[userId]);
 }
 
-/** The member this client is signed in as. */
 export function getCurrentMemberId(): string | undefined {
   return getRawState()?.bootData?.user_id;
 }
@@ -94,11 +80,7 @@ export function getCurrentMemberId(): string | undefined {
 const inFlight = new Map<string, Promise<SlackMember | undefined>>();
 let batch: { ids: Set<string>; done: Promise<void> } | undefined;
 
-/**
- * Coalesce a burst of lookups into one thunk. A message list mounting asks for
- * dozens of members in the same tick, and one request per member is both slow
- * and a good way to get rate limited.
- */
+/** Coalesce a burst of lookups (a mounting message list) into one thunk, avoiding rate limits. */
 function fetchMembers(userId: string): Promise<void> {
   if (!batch) {
     const ids = new Set<string>();
@@ -114,7 +96,6 @@ function fetchMembers(userId: string): Promise<void> {
   return batch.done;
 }
 
-/** Get a member, asking Slack to fetch them if the store has not got them. */
 export async function getMember(userId: string): Promise<SlackMember | undefined> {
   const cached = getCachedMember(userId);
   if (cached) return cached;
@@ -138,8 +119,7 @@ export const membersReady = (async () => {
   const React = await reactReady;
   const { useReduxState } = await reduxReady;
 
-  // Slack's own memoized selector, when it is available: it resolves aliases
-  // and shared-channel members that a bare `state.members` read misses.
+  // Slack's selector resolves aliases and shared-channel members a bare read misses.
   let selector: GetMemberById | undefined;
   void waitForExport<GetMemberById>(
     (exp: any) => typeof exp === 'function' && exp.meta?.key === 'createSelectorGetMemberById',
@@ -149,7 +129,6 @@ export const membersReady = (async () => {
 
   const readMember: GetMemberById = (state, userId) => selector?.(state, userId) ?? state.members?.[userId];
 
-  /** Reactively read a member, asking Slack to load them if it has not yet. */
   function useMember(userId: string): SlackMember | undefined {
     const member = useReduxState<SlackMember | undefined>((state) => loaded(readMember(state, userId)));
     const missing = !member;

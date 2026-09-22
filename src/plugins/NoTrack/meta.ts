@@ -1,9 +1,5 @@
-// Shared metadata for NoTrack.
-//
-// Lives apart from both halves because three consumers need it without pulling
-// in the other two: the renderer class, the main-process half, and the build,
-// which generates the schema map Preferences and the main process resolve
-// settings against.
+// Separate file so the renderer, main-process half and build can each import
+// it without pulling in the others.
 
 import type { SettingsSchema } from '../../shared/settings.ts';
 

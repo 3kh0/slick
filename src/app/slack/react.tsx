@@ -1,14 +1,7 @@
-// Slick React Interception
-//
-// Slack's React and JSX runtime are found through the module registry, then
-// `createElement`/`jsx`/`jsxs` are wrapped so every element type passes through
-// `resolveType` before React sees it. That is the whole mechanism plugins use
-// to change Slack's UI, and it is why v2 needs no MutationObserver at all:
-// work happens when React renders, not when the DOM changes.
-//
-// Every type is resolved once per set of patches: objects and functions in
-// weak caches keyed on identity, host strings ('div', 'span') in a plain Map,
-// which stays small because there are only so many tag names.
+// Slack's React and JSX runtime are wrapped so every element type passes
+// through `resolveType` before React sees it; that is how plugins change
+// Slack's UI without a MutationObserver. Each type resolves once per set of
+// patches (identity-keyed weak caches; host tag strings in a plain Map).
 
 import { forEachExport, findModuleId, getExport, getValueSource, waitForExport } from './webpack.ts';
 import { Store } from '../store.ts';
@@ -19,8 +12,6 @@ export type ComponentType<P = any> = React.ComponentType<P> | string;
 export type ComponentReplacer<P = any> = (Original: ComponentType<P>) => ComponentType<P>;
 type Filter = (exp: any) => boolean;
 
-// Detection
-
 function isReact(exp: any): exp is typeof import('react') {
   return exp && typeof exp === 'object' && 'createElement' in exp && 'Component' in exp && 'useState' in exp;
 }
@@ -29,11 +20,8 @@ function isJsxRuntime(exp: any): boolean {
   return !!(exp && typeof exp === 'object' && exp.jsx && exp.jsxs && exp.Fragment);
 }
 
-// Naming
-//
-// Slack ships displayName for its connected and memo components, which is what
-// makes name-based patching possible at all. It is not a contract -- see
-// docs/slack-internals.md -- so anything load-bearing should prefer a filter.
+// Slack's displayName on connected/memo components is not a contract (see
+// docs/slack-internals.md); anything load-bearing should prefer a filter.
 
 const originalComponentSymbol = Symbol.for('slick.originalComponent');
 
@@ -80,8 +68,6 @@ function componentFilter(name: string, filter?: Filter): Filter {
   };
 }
 
-// Finding components
-
 /** Throws if the component's chunk has not loaded yet. */
 export function getComponent<P extends {}>(name: string, all?: false, filter?: Filter): React.ComponentType<P>;
 export function getComponent<P extends {}>(name: string, all: true, filter?: Filter): React.ComponentType<P>[];
@@ -99,17 +85,13 @@ export function waitForComponent<P extends {}>(name: string, filter?: Filter): P
   return waitForExport<React.ComponentType<P>>(componentFilter(name, filter));
 }
 
-/** How long a component may stay missing before it is worth a console warning. */
 const MISSING_MS = 30_000;
 
 /**
- * A stand-in that renders the real component once its chunk arrives, and
- * nothing until then. This is what the elements registry is built from: a
- * plugin can reference `api.elements.Button` at start() time without caring
- * whether Slack has loaded that chunk yet.
- *
- * The lookup is deferred to the first render rather than done eagerly, so
- * building the registry costs nothing for components no plugin uses.
+ * Renders the real component once its chunk arrives, nothing until then.
+ * Backs the elements registry, so plugins can use `api.elements.Button` before
+ * Slack loads that chunk. Lookup is deferred to first render so unused entries
+ * cost nothing.
  */
 export function lazyComponent<P extends {}>(name: string, filter?: Filter): React.ComponentType<P> {
   const match = componentFilter(name, filter);
@@ -138,8 +120,8 @@ export function lazyComponent<P extends {}>(name: string, filter?: Filter): Reac
   };
 
   function LazyComponent(props: P) {
-    // Looking on the first render, not at module scope, keeps an
-    // already-loaded component from flashing in a tick later.
+    // Looking synchronously here keeps an already-loaded component from
+    // flashing in a tick later.
     look();
     const Component = component.use();
     return Component ? <Component {...props} /> : null;
@@ -148,8 +130,8 @@ export function lazyComponent<P extends {}>(name: string, filter?: Filter): Reac
   return LazyComponent;
 }
 
-// Slack never exports plenty of its components, and `connect` keeps no link
-// back to the wrapped one, so note what resolveType actually sees on screen.
+// Many components are never exported and `connect` keeps no link to the
+// wrapped one, so record what resolveType actually sees.
 const renderedComponents = new Map<string, ComponentType>();
 const renderedWaiters = new Map<string, Set<(component: ComponentType) => void>>();
 
@@ -183,8 +165,6 @@ export function waitForRenderedComponent(name: string): Promise<ComponentType> {
   });
 }
 
-// Source lookup, for identifying minified components by signature
-
 function unwrapComponentLayers(component: any): any[] {
   const layers: any[] = [];
   let current = component;
@@ -209,8 +189,6 @@ export function getComponentSource(component: ComponentType): string {
   throw new Error('[slick] could not find source for component', { cause: component });
 }
 
-// Fibers
-
 export function getFiberFromNode(node: Element): any | null {
   const key = Object.keys(node).find((k) => k.startsWith('__reactFiber$') || k.startsWith('__reactInternalInstance$'));
   return key ? (node as any)[key] : null;
@@ -224,13 +202,10 @@ function getRootFiber(): any | null {
 }
 
 /**
- * Poisoning memoized props makes an already-mounted subtree re-run when React
- * next visits it. This does not itself schedule an update.
- *
- * Deferred to a microtask so a plugin starting with several patches -- or
- * several plugins starting together -- costs one walk rather than one each,
- * and iterative because a recursive walk down `sibling` recurses once per
- * list item and can run out of stack on a long channel.
+ * Poisoning memoized props makes a mounted subtree re-run when React next
+ * visits it (it does not schedule an update). Batched to one walk per
+ * microtask; iterative because recursing down `sibling` can overflow the stack
+ * on a long channel.
  */
 let dirtyQueued = false;
 
@@ -254,17 +229,12 @@ function dirtyMemoizationCache() {
   });
 }
 
-// Component patching
-
 type ComponentMatcher = (component: ComponentType) => boolean;
 const replacements = new Map<ComponentMatcher, ComponentReplacer>();
 
-// Components that match no replacer, and components mapped to their patched
-// form. Both are caches keyed on identity, so matchers run once per type.
 let notPatched = new WeakSet<object>();
 let resolved = new WeakMap<object, ComponentType>();
-// Host elements are the bulk of what Slack renders, and before this cache
-// every one of them ran every patch's matcher on every render.
+// Host elements are the bulk of renders; without this every one ran every matcher.
 let resolvedHosts = new Map<string, any>();
 
 function invalidateCaches() {
@@ -343,11 +313,6 @@ function applyReplacer<P = any>(replacer: ComponentReplacer<P>, original: Compon
   return replaced;
 }
 
-/**
- * Given the type passed to createElement/jsx, return what should render:
- * the original when nothing matches, otherwise the replacer-wrapped component.
- * Memoized per type identity, so matchers run at most once per component.
- */
 function resolveType(type: any, props: any): any {
   if (typeof type === 'string' && !props?.__original) {
     const host = resolvedHosts.get(type);
@@ -373,7 +338,6 @@ function resolveUncached(type: any, props: any): any {
     if (notPatched.has(type)) return type;
     const hit = resolved.get(type);
     if (hit) return hit;
-    // First sighting of this type.
     rememberRendered(type);
   }
 
@@ -437,10 +401,8 @@ export function patchComponent<P = object>(matcher: PatchMatcher<P>, replacement
   };
 }
 
-// Installation
-//
-// Both React and the JSX runtime go through forEachExport rather than a single
-// wait, because Slack can load more than one copy and each needs wrapping.
+// forEachExport, not a single wait: Slack can load more than one copy of
+// React / the JSX runtime and each needs wrapping.
 
 export const reactReady: Promise<typeof import('react')> = new Promise((resolve) => {
   forEachExport(isReact, (React) => {

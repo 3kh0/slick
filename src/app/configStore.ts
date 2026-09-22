@@ -1,8 +1,5 @@
-// Slick Config Store
-//
-// Holds the settings document and the user stylesheet, keeps them in sync with
-// the main process, and resolves each plugin's stored values against its
-// schema. Plugins never see raw stored config -- only coerced settings.
+// Settings and user stylesheet, synced with the main process. Plugins only
+// ever see settings coerced against their schema.
 
 import { type PluginSettings, resolveSettings, type SettingsSchema } from '../shared/settings.ts';
 import type { SlickBridge } from './bridge.ts';
@@ -68,14 +65,12 @@ export class ConfigStore {
         ? { config: parsed, valid: true }
         : { config: {}, valid: false };
     } catch {
-      // Defaults let Slick boot, but are only a guess. Refuse to persist them
-      // over a file whose surviving contents may still be recoverable.
+      // Don't persist defaults over a file that may still be recoverable.
       console.error('[slick] settings file is not valid JSON; changes will not be saved');
       return { config: {}, valid: false };
     }
   }
 
-  /** Register a plugin's schema so its config can be resolved. */
   registerSchema(id: string, schema: SettingsSchema, defaultEnabled: boolean) {
     this.schemas.set(id, { schema, defaultEnabled });
     this.resolved.delete(id);
@@ -93,7 +88,6 @@ export class ConfigStore {
     return this.userCss;
   }
 
-  /** Resolved, coerced settings for one plugin. */
   settingsFor(id: string): PluginSettings {
     const cached = this.resolved.get(id);
     if (cached) return cached;
@@ -106,7 +100,7 @@ export class ConfigStore {
     return settings;
   }
 
-  /** Whether a plugin should be running: its own switch and the global one. */
+  /** Its own switch and the global one. */
   isActive(id: string): boolean {
     return this.globallyEnabled && this.settingsFor(id).enabled === true;
   }

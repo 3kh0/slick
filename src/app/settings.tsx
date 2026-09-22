@@ -11,14 +11,9 @@ let warnedUnrecognisedTabs = false;
 const configWriteQueues = new WeakMap<ConfigStore, Promise<void>>();
 
 /**
- * The section ids Slack's Preferences dialog renders, read off its `Tabs`
- * props on Slack 4.52.155 and recorded in docs/slack-internals.md.
- *
- * Slack builds the sidebar rail out of the same `Tabs` component, so the tab
- * list has to be identified by what is in it. The rail's ids (home, dms,
- * activity-inbox, unified-files, later, platform) overlap this set not at all,
- * so a handful of matches separates the two without depending on one id in one
- * position -- which is what put a stray Slick tab on the rail.
+ * Preferences section ids (Slack 4.52.155, see docs/slack-internals.md). The
+ * sidebar rail uses the same `Tabs` component with disjoint ids, so the
+ * Preferences list is identified by several matches from this set.
  */
 const PREFERENCES_TAB_IDS = new Set([
   'availability',
@@ -78,10 +73,8 @@ export async function addSettingsTab(manager: PluginManager, config: ConfigStore
 
     const known = props.tabs.filter((tab) => tab.id !== undefined && PREFERENCES_TAB_IDS.has(tab.id));
     if (known.length < MIN_PREFERENCES_TABS) {
-      // Some ids recognised but not enough means Slack has renamed most of
-      // them and the set above is stale. Say so once: the alternative is
-      // Preferences quietly losing its Slick tab, which leaves hand-editing
-      // settings.json as the only way in.
+      // A few matches but not enough: the set above is stale. Warn once rather
+      // than silently losing the Slick tab.
       if (known.length && !warnedUnrecognisedTabs) {
         warnedUnrecognisedTabs = true;
         console.error(
@@ -100,8 +93,7 @@ export async function addSettingsTab(manager: PluginManager, config: ConfigStore
         id: 'slick',
         label: <>Slick</>,
         content: <SlickSettings manager={manager} config={config} bridge={bridge} />,
-        // Borrow a rendered tab's icon rather than guessing a private icon
-        // name. Advanced is preferred, but Slack may rename or remove it.
+        // Borrow a rendered tab's icon rather than guess a private icon name.
         svgIcon: hostTab.svgIcon ?? { name: 'settings' },
         'aria-label': 'Slick',
       });
@@ -173,11 +165,7 @@ function SlickSettings({
   );
 }
 
-/**
- * The cog, inlined rather than drawn with `SvgIcon name="cog"`. v1 inlined it
- * too: an icon name is a guess about Slack's icon set, and a wrong one renders
- * nothing at all, which is exactly the failure this row already had once.
- */
+/** Inlined: a wrong `SvgIcon` name renders nothing at all. */
 function CogIcon() {
   return (
     <svg
@@ -208,12 +196,7 @@ function PluginRow({ info, config, bridge }: { info: PluginInfo; config: ConfigS
   return (
     <div style={{ borderTop: '1px solid rgba(127,127,127,.2)', padding: '14px 0' }}>
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
-        {/*
-          A plain input with Slack's own class, as v1 used. The name used to be
-          passed to Slack's Checkbox as a `label` prop, which it ignores -- so
-          every row rendered as an anonymous checkbox next to the word
-          "Settings". Owning the markup means the name cannot go missing again.
-        */}
+        {/* Plain input: Slack's Checkbox ignores a `label` prop, leaving rows unnamed. */}
         <input
           id={inputId}
           className="c-input_checkbox"
@@ -314,9 +297,7 @@ function SettingRow({
     </div>
   ) : null;
 
-  // A checkbox reads as a statement you agree with, so it sits beside its
-  // label. Everything else is a value you supply, so the label goes above it.
-  // v1 made the same split.
+  // Checkboxes sit beside their label; every other control gets its label above.
   if (setting.type === 'boolean') {
     return (
       <div style={{ marginBottom: '16px' }}>
@@ -394,9 +375,7 @@ function SettingControl({
 }) {
   switch (setting.type) {
     case 'boolean':
-      // Slack's own class on a plain input, for the same reason PluginRow uses
-      // one: this component's real prop shape is not known, and a wrong guess
-      // renders nothing rather than failing.
+      // Plain input, as in PluginRow: Slack's Checkbox prop shape is unknown.
       return (
         <input
           className="c-input_checkbox"

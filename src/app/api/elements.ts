@@ -1,14 +1,8 @@
-// The elements registry: Slack's own React components, by name.
-//
-// Every entry is a `lazyComponent`, so referencing one costs nothing until it
-// renders and a component whose chunk has not loaded yet simply renders
-// nothing rather than throwing. Only Button, Tooltip, Label, MenuTrigger and
-// ConnectedBaseAvatar have been observed rendering. The other names, and all
-// prop shapes declared here, are unverified Slack-private contracts and must
-// not carry UI whose silent loss breaks a feature.
-//
-// Names live here and in docs/slack-internals.md; a Slack rename is a one-file
-// fix.
+// Slack's own React components by name, each a `lazyComponent` (renders
+// nothing until its chunk loads). Only Button, Tooltip, Label, MenuTrigger and
+// ConnectedBaseAvatar have been observed rendering; the other names and all
+// prop shapes are unverified Slack-private contracts, so don't put UI whose
+// silent loss breaks a feature on them. See docs/slack-internals.md.
 
 import { lazyComponent, reactReady } from '../slack/react.tsx';
 

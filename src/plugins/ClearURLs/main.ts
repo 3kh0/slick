@@ -1,12 +1,5 @@
-// ClearURLs, main-process half.
-//
-// Fetches the rule set, because it comes from raw.githubusercontent.com and
-// the Slack page cannot reach a third-party origin.
-//
-// v1 pushed the rules into the page with `executeJavaScript` on every
-// dom-ready -- a ~500KB JSON blob re-serialized into a script every time a
-// window loaded. The renderer asks once instead, and the answer is cached both
-// in memory and on disk.
+// Fetches the rule set here because the Slack page cannot reach
+// raw.githubusercontent.com. Cached in memory and on disk.
 
 import type { MainCtx, SlickMainPlugin } from '$slick';
 
@@ -29,8 +22,7 @@ async function fetchRules(ctx: MainCtx): Promise<unknown> {
     ctx.log(`fetched ${Object.keys(data.providers).length} providers`);
     return data;
   } catch (error) {
-    // Offline or rate limited is the normal case, not an error worth failing
-    // the plugin over: a stale rule set still strips almost everything.
+    // Offline/rate-limited is normal; a stale rule set still strips almost everything.
     ctx.log(`rules fetch failed (${(error as Error).message}), ${cached ? 'using the cached copy' : 'no cache'}`);
     if (!cached) return null;
     try {
@@ -46,8 +38,7 @@ const plugin: SlickMainPlugin = {
   capabilities: ['net'],
 
   ready(ctx) {
-    // Started here rather than on first call, so the rules are usually in hand
-    // before the user sends anything.
+    // Start early so the rules are usually ready before the first send.
     rules ??= fetchRules(ctx);
   },
 

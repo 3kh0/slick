@@ -1,9 +1,5 @@
-// Calling Slack's Web API as the signed-in user.
-//
-// The token comes from Slack's own localConfig rather than from anything Slick
-// stores, so there is no second copy of a credential to leak. Requests go
-// through the page's fetch (same origin, cookies included) rather than the
-// main process: these are calls Slack itself could make.
+// Web API calls as the signed-in user, using Slack's own localConfig token (no
+// second credential copy) through the page's same-origin fetch.
 
 import { getActiveTeam } from '../slack/localConfig.ts';
 
@@ -29,11 +25,7 @@ function sleep(ms: number, signal?: AbortSignal): Promise<void> {
   });
 }
 
-/**
- * Call a Web API method as the active user and return the parsed response.
- * Throws if the request or the API call itself failed, so a caller never has
- * to check `ok` as well as catching.
- */
+/** Returns the parsed response; throws on request or API failure (`ok: false`). */
 export async function userAPI<T = any>(
   method: string,
   params: Record<string, string | Blob> = {},

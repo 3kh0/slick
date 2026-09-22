@@ -1,10 +1,6 @@
-// Replace uploaded file names with a random string.
-//
-// Patches the `name` getter on File.prototype, so every consumer -- Slack's
-// upload code, the draft preview, the eventual API call -- sees the same
-// anonymised name. The mapping is cached per File object so a given file keeps
-// one name for its whole life; without that, the preview and the upload would
-// disagree.
+// Patches File.prototype's `name` getter so every consumer (upload code, draft
+// preview, API call) sees the anonymised name. Cached per File, or the preview
+// and the upload would disagree.
 
 import { SlickPlugin } from '$slick';
 import * as meta from './meta.ts';
@@ -31,8 +27,7 @@ export default class AnonymiseFileNames extends SlickPlugin<typeof meta.settings
     }
 
     const original = descriptor.get;
-    // Captured in the closure rather than reached through `this`: the getter
-    // has to be a plain function so its `this` stays the File being read.
+    // The getter's `this` is the File, so capture these in the closure.
     const names = this.names;
     const anonymise = (real: string) => this.anonymise(real);
 

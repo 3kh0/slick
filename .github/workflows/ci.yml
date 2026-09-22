@@ -16,17 +16,17 @@ jobs:
       fail-fast: false
       matrix:
         check:
-          - "fmt:check"
+          - 'fmt:check'
           - lint
-          - "lint:sh"
+          - 'lint:sh'
           - typecheck
-          - "test:app"
+          - 'test:app'
     steps:
       - uses: actions/checkout@v7
       - uses: oven-sh/setup-bun@v2
       - run: bun install --frozen-lockfile
         env:
-          ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
+          ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
       - run: bun run ${{ matrix.check }}
 
   build:
@@ -39,7 +39,7 @@ jobs:
       - uses: oven-sh/setup-bun@v2
       - run: bun install --frozen-lockfile
         env:
-          ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
+          ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
       - run: bun run build
 
   package:
@@ -65,4 +65,4 @@ jobs:
       - run: bun install --frozen-lockfile
       - run: bun run build -- package --arch ${{ matrix.arch }}
         env:
-          SLICK_BUILD: "86"
+          SLICK_BUILD: '86'

@@ -1,12 +1,5 @@
-// Slim down the composer.
-//
-// v1 hid buttons with CSS keyed on `aria-label` -- `button[aria-label="Emoji"]`
-// and eight more like it. That breaks the moment Slack is used in any language
-// other than English, and it breaks silently. v2 turns the buttons off through
-// `TextyButtons`' own props, so Slack does not render them at all.
-//
-// The layout is a container query rather than v1's unconditional one-line
-// pinning, so a narrow composer stacks instead of overlapping the send button.
+// Slim down the composer. Buttons are turned off via TextyButtons' own props,
+// not aria-label CSS, which would break in any non-English locale.
 
 import { SlickPlugin } from '$slick';
 import { COMPACT_CSS, layoutCss, NO_BROADCAST_CSS } from './layout.ts';
@@ -15,7 +8,6 @@ import * as meta from './meta.ts';
 type TextyButtonsProps = Record<string, unknown>;
 type InputContainerProps = { dontShowBroadcastControls?: boolean };
 
-/** The props each option turns off, keyed by the setting that hides it. */
 const BUTTON_PROPS: Record<string, string[]> = {
   hideFormatting: ['enableComposerButton'],
   hideEmoji: ['enableEmojiButton'],

@@ -1,8 +1,5 @@
-// Slack's modal system, reduced to `openModal` plus confirm/alert helpers.
-//
-// The modal is opened by dispatching Slack's own `openModal` thunk with owned
-// dialog markup. The host still provides the modal stack and focus trap without
-// making the controls depend on an unverified private component contract.
+// Dispatches Slack's `openModal` thunk with owned markup: Slack provides the
+// modal stack and focus trap, without depending on private component props.
 
 import { reactReady } from '../slack/react.tsx';
 import { getStore } from '../slack/redux.ts';
@@ -40,7 +37,6 @@ export type AlertOptions = {
   closeText?: string;
 };
 
-/** Build the convenience dialogs over a given `openModal`. */
 export function dialogHelpersFor(openModal: (options: OpenModalOptions) => ModalHandle | null) {
   /** Resolves true if confirmed, false on cancel or dismissal. */
   function confirm(options: ConfirmOptions): Promise<boolean> {
@@ -108,8 +104,7 @@ export const modalReady = (async () => {
       return null;
     }
 
-    // The close function only exists after dispatch, but the element's
-    // handlers need it, so it is reached through a box rather than captured.
+    // The close function only exists after dispatch, so handlers reach it through a box.
     const closeRef = { current: () => {} };
     const finish = (kind: string, callback: (() => void) | undefined) => {
       try {

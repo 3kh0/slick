@@ -38,15 +38,13 @@ export async function buildApp({ debug = false } = {}) {
       __SLICK_BUILD__: JSON.stringify(versions.build),
       __SLICK_PLUGINS__: JSON.stringify(plugins),
       __SLICK_THEMES__: JSON.stringify(themes),
-      // The bundle is injected as a <script src>, so anything reaching for
-      // Node globals is a bug; fail loudly rather than shipping a shim.
+      // Page bundle: reaching for Node globals is a bug, so fail loudly.
       process: 'undefined',
     },
   });
 
   let code = result.outputFiles[0].text;
-  // Without this the bundle shows up in DevTools as an anonymous script
-  // attributed to app.slack.com.
+  // Otherwise DevTools shows an anonymous script attributed to app.slack.com.
   code += `\n//# sourceURL=${SOURCE_ORIGIN}slick.js\n`;
 
   await mkdir(DIST_APP, { recursive: true });

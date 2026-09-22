@@ -1,9 +1,5 @@
-// Slick Desktop Session
-// Serves the app bundle over the privileged slick:// scheme.
-//
-// Slick is embedded-only: slick.js ships inside the app's resources and is
-// never fetched from a CDN. SLICK_APP_URL exists so `npm run dev` can point the
-// loader at a local dev server; it is a development escape hatch, not a feature.
+// Serves the embedded slick.js (and the CSS editor) over slick://.
+// SLICK_APP_URL is a dev-only override for `npm run dev`.
 
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
@@ -17,8 +13,7 @@ export function privilegedSchemes() {
   return [
     {
       scheme: SLICK_SCHEME,
-      // codeCache lets V8 keep compiled slick.js between launches, as it does
-      // for Slack's own https bundles; custom schemes are opted out otherwise.
+      // Custom schemes get no V8 code cache unless opted in.
       privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, codeCache: true },
     },
   ];
@@ -28,15 +23,7 @@ export function appUrl(): string {
   return process.env.SLICK_APP_URL || 'slick://app/slick.js';
 }
 
-/**
- * Serve slick.js over slick://.
- *
- * `dirs` are searched in order. A packaged build finds it in Slick's own
- * resources (captured before patch.ts spoofs `resourcesPath` to Slack's); an
- * unpackaged dev run finds it next to main.js, because there `resourcesPath`
- * belongs to the Electron binary rather than to us.
- */
-/** Monaco ships .js and .css only; anything else is not ours to serve. */
+/** The only file types served from the Monaco dir. */
 const MONACO_TYPES: Record<string, string> = {
   '.js': 'application/javascript',
   '.css': 'text/css',
@@ -47,6 +34,10 @@ const MONACO_TYPES: Record<string, string> = {
 
 const notFound = () => new Response('Not found', { status: 404 });
 
+/**
+ * `dirs` are searched in order: Slick's own resources (captured before patch.ts
+ * spoofs `resourcesPath`) when packaged, next to main.js in dev.
+ */
 export function setupSession(dirs: string[]) {
   const candidates = dirs.map((dir) => path.join(dir, 'slick.js'));
   const monacoDirs = dirs.map((dir) => path.join(dir, 'monaco'));
@@ -55,8 +46,7 @@ export function setupSession(dirs: string[]) {
     const url = new URL(request.url);
     const file = url.pathname.replace(/^\//, '');
 
-    // The custom-CSS editor. Its HTML is generated rather than stored, so the
-    // Monaco base URL and the version stay in one place.
+    // Custom-CSS editor; HTML is generated so the Monaco URL lives in one place.
     if (url.hostname === 'editor') {
       if (file === '' || file === 'index.html') {
         return new Response(editorHtml(), { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
@@ -65,8 +55,7 @@ export function setupSession(dirs: string[]) {
       const prefix = MONACO_URL_PREFIX.replace(/^\//, '');
       if (!file.startsWith(prefix)) return notFound();
 
-      // Resolved and re-checked against the root, so a `..` in the request
-      // cannot walk out of the Monaco directory.
+      // Re-checked against the root below so `..` can't escape it.
       const relative = file.slice(prefix.length);
       const type = MONACO_TYPES[path.extname(relative).toLowerCase()];
       if (!type) return notFound();

@@ -1,15 +1,10 @@
-// Click2Load, main-process half.
-//
-// The renderer's src patch stops Slack asking for an embed, but not a request
-// made some other way, so the block is enforced here as well. Nothing reaches
-// a gated provider unless the user clicked the placeholder within the last few
-// seconds.
+// The renderer's src patch doesn't catch every request, so the block is
+// enforced here too: a gated provider loads only within ALLOW_MS of a click.
 
 import type { SlickMainPlugin } from '$slick';
 import { PROVIDERS } from './meta.ts';
 
-/** How long a click stays good for. Long enough to navigate, short enough
- *  that it is not a standing permission. */
+/** Long enough to navigate, short enough not to be a standing permission. */
 const ALLOW_MS = 15_000;
 
 const allowed = new Map<string, number>();
@@ -34,8 +29,7 @@ const plugin: SlickMainPlugin = {
 
   ready(ctx) {
     return ctx.net.intercept(patterns, (details) => {
-      // Only frames are gated. A stylesheet or image from the same host is
-      // part of an embed that was already allowed.
+      // Only frames: subresources belong to an embed already allowed.
       if (details.resourceType !== 'subFrame') return;
 
       const provider = PROVIDERS.find((candidate) =>
@@ -65,8 +59,7 @@ const plugin: SlickMainPlugin = {
         throw new Error('bad url');
       }
 
-      // Swept on write rather than on a timer: the map only grows when
-      // someone clicks, so there is nothing to sweep when idle.
+      // Swept on write: the map only grows on click.
       const now = Date.now();
       for (const [key, expires] of allowed) if (expires <= now) allowed.delete(key);
 

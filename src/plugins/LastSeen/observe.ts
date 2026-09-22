@@ -1,9 +1,5 @@
-// Which RTM events imply someone was at their keyboard, and how to read the
-// person out of each.
-//
-// Slack exposes no last-seen API. Everything here is inferred from traffic
-// this client would have received anyway, which is why the plugin describes it
-// as "observed" rather than as fact.
+// Which RTM events imply someone was at their keyboard, and who. Inferred only
+// from traffic this client receives anyway, hence "observed".
 
 import type { RtmEvent } from '$slick';
 
@@ -12,9 +8,8 @@ const human = (event: RtmEvent | undefined, id: unknown): string | undefined =>
   event && typeof id === 'string' && !event.bot_id && !event.app_id ? id : undefined;
 
 export const ACTIVITY: Record<string, (event: RtmEvent) => string | string[] | undefined> = {
-  // An `away` batch also arrives in bulk on subscribe, so only `active` means
-  // now. Treating `away` as an observation would record "last seen: now" for
-  // the whole workspace at once.
+  // `away` arrives in bulk on subscribe; counting it would stamp the whole
+  // workspace as seen now.
   presence_change: (event) => (event.presence === 'active' ? (event.users ?? event.user) : undefined),
   user_typing: (event) => event.user,
   message: (event) =>
@@ -29,11 +24,7 @@ export const ACTIVITY: Record<string, (event: RtmEvent) => string | string[] | u
   sh_room_join: (event) => event.user,
 };
 
-/**
- * When an event happened, in ms. Slack timestamps are seconds with six decimal
- * places, whose last digits are a uniqueness counter rather than a time, so
- * the result is rounded to a whole millisecond.
- */
+/** Slack ts decimals end in a uniqueness counter, so round to whole ms. */
 export function when(event: RtmEvent): number {
   const at = Number.parseFloat(event.event_ts ?? event.ts);
   return at > 0 ? Math.round(at * 1000) : Date.now();
@@ -54,11 +45,7 @@ export function ago(at: number, now = Date.now()): string {
   return 'just now';
 }
 
-/**
- * Drop the oldest sightings past `max`, and anything older than `ttlMs`.
- * Unbounded growth is the failure mode here: one entry per person this client
- * has ever seen, on a busy workspace, forever.
- */
+/** Drop entries older than `ttlMs`, then the oldest past `max`. */
 export function prune(seen: Map<string, number>, max: number, ttlMs: number, now = Date.now()): Map<string, number> {
   for (const [id, at] of seen) if (now - at > ttlMs) seen.delete(id);
   if (seen.size <= max) return seen;

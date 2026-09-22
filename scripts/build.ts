@@ -12,8 +12,7 @@ if (archIndex >= 0 && (!arch || arch.startsWith('--'))) {
   console.error('--arch needs a value');
   process.exit(1);
 }
-// Guard the -1: without it `archIndex + 1` is 0 and the first positional
-// argument is eaten, so `build.ts package` silently built `desktop` instead.
+// Without the -1 guard, archIndex + 1 is 0 and eats the first positional arg.
 const archValueIndex = archIndex < 0 ? -1 : archIndex + 1;
 const targets = args.filter((arg, index) => !arg.startsWith('--') && index !== archValueIndex);
 

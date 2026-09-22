@@ -1,6 +1,5 @@
-// Build-time constants substituted by esbuild's `define` (scripts/build/*.ts).
-// Declared once here so files that are scripts rather than modules (the app
-// entry, the preload) do not each redeclare them into the global scope.
+// Build-time constants from esbuild's `define` (scripts/build/*.ts), declared
+// once so non-module scripts don't each redeclare them.
 
 declare const __SLICK_VERSION__: string;
 declare const __SLICK_BUILD__: number;

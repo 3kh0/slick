@@ -1,14 +1,5 @@
-// Blur private information while someone else can see your screen.
-//
-// v1 tagged elements for redaction by running `querySelectorAll` over a list
-// of ~300 substring selectors on every DOM batch -- 407 lines of it -- because
-// it had no way to ask whether a channel was private. It is asked directly
-// now: `MessageBackground` gets the message, the message names its channel,
-// and `channels.getCachedChannel` says whether that channel is private.
-//
-// Notification suppression moved to the shared filter in the main half. In v1
-// this plugin and ShutUpSlackbot each replaced `Notification.prototype.show`
-// independently, so whichever loaded second silently disabled the other.
+// Blur private information while someone else can see your screen. Native
+// notifications are silenced by the main half.
 
 import { SlickPlugin } from '$slick';
 import { REVEAL_CLASS, ROOT_CLASS, streamerCss, THREAD_CLASS } from './css.ts';
@@ -86,9 +77,7 @@ export default class StreamerMode extends SlickPlugin<typeof meta.settings> {
   private apply(active: boolean) {
     this.active.set(active);
     document.documentElement.classList.toggle(ROOT_CLASS, active);
-    // The main half silences native notifications while this is on; if the
-    // message went missing the worst case is a visible notification, so a
-    // failure here is logged rather than thrown.
+    // Worst case on failure is a visible notification, so just log.
     void this.api.main.call('setActive', active).catch((error) => this.log('could not reach the main half', error));
   }
 
@@ -97,11 +86,8 @@ export default class StreamerMode extends SlickPlugin<typeof meta.settings> {
     this.apply(!this.active.get());
   };
 
-  /**
-   * Patched in the page rather than handled in the main process, because this
-   * has to see shares Slack starts itself, and it needs the stream object to
-   * know when the share ends.
-   */
+  // Patched in the page: it must see shares Slack starts itself, and needs the
+  // stream to know when the share ends.
   private watchScreenShares() {
     const media = navigator.mediaDevices;
     if (typeof media?.getDisplayMedia !== 'function') {
@@ -147,11 +133,8 @@ export default class StreamerMode extends SlickPlugin<typeof meta.settings> {
     });
   }
 
-  /**
-   * A thread's heading, root, replies and footer are flat siblings in the
-   * virtual list, so `:hover` cannot reveal a whole thread and this has to be
-   * done in JS. It is one delegated listener, not an observer.
-   */
+  // A thread's rows are flat siblings in the virtual list, so :hover can't
+  // reveal a whole thread.
   private followThreadHover() {
     const follow = (event: Event) => {
       const view = document.querySelector(THREADS_VIEW);

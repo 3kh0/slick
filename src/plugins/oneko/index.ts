@@ -1,10 +1,5 @@
 // A cat that chases the cursor. Based on oneko.js by @adryd325
 // (https://github.com/adryd325/oneko.js), MIT.
-//
-// v1 read the upstream script off disk at runtime, string-replaced two lines
-// out of it and `executeJavaScript`'d the result. v2 is a real module: the
-// animation is the same, but the sprite sheet is inlined at build time and the
-// whole thing stops cleanly, which the injected-script version could not.
 
 import { SlickPlugin } from '$slick';
 import nekoSprite from './oneko.gif';
@@ -293,7 +288,6 @@ export default class Oneko extends SlickPlugin<typeof meta.settings> {
 
     this.resetIdleAnimation();
 
-    // A beat of surprise before giving chase.
     if (this.idleTime > 1) {
       this.setSprite('alert', 0);
       this.idleTime = Math.min(this.idleTime, 7);

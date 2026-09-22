@@ -1,13 +1,7 @@
-// Replace third-party embeds with a click-to-load placeholder.
-//
-// Property and setAttribute writes are intercepted before navigation. A scan
-// also replaces parser-created frames; the main half blocks known providers
-// while that scan catches up.
-//
-// Clicking the placeholder asks the main half to allow that one URL, then sets
-// the real source. v1 routed the click through a fake `slick.click2load`
-// hostname that the main half cancelled and redirected; the RPC does the same
-// job without a channel Slack could stumble into.
+// iframe `src` property and setAttribute writes are intercepted before
+// navigation. A scan also replaces parser-created frames; the main half blocks
+// known providers while that scan catches up. Clicking the placeholder asks
+// main to allow that one URL, then sets the real source.
 
 import { SlickPlugin } from '$slick';
 import { placeholder, providerFor } from './gate.ts';
@@ -31,7 +25,6 @@ export default class Click2Load extends SlickPlugin<typeof meta.settings> {
   static readonly liveSettings = ['spotify', 'soundcloud', 'other'];
 
   private restore: (() => void) | null = null;
-  /** The real source of each gated frame, until someone asks for it. */
   private readonly gated = new Map<HTMLIFrameElement, string>();
   private observer: MutationObserver | null = null;
 
@@ -44,8 +37,7 @@ export default class Click2Load extends SlickPlugin<typeof meta.settings> {
 
     const setSrc = descriptor.set;
     const setAttribute = Element.prototype.setAttribute;
-    // Captured in the closure rather than reached through `this`: the setter
-    // has to be a plain function so its `this` stays the frame being written.
+    // The setter's `this` is the frame, so capture `gate` in the closure.
     const gate = (frame: HTMLIFrameElement, value: string) => this.gate(frame, value);
 
     Object.defineProperty(HTMLIFrameElement.prototype, 'src', {
@@ -83,7 +75,6 @@ export default class Click2Load extends SlickPlugin<typeof meta.settings> {
     });
     this.observer.observe(document, { subtree: true, childList: true, attributes: true, attributeFilter: ['src'] });
 
-    // The placeholder cannot reach the page directly, so it posts instead.
     const onMessage = (event: MessageEvent) => {
       if (!event.data || (event.data as { slickClick2Load?: boolean }).slickClick2Load !== true) return;
       const frame = [...document.querySelectorAll('iframe')].find(
@@ -108,13 +99,12 @@ export default class Click2Load extends SlickPlugin<typeof meta.settings> {
     this.gated.clear();
   }
 
-  /** True if the frame was gated and the caller should not set the source. */
+  /** True if gated; the caller must not set the source. */
   private gate(frame: HTMLIFrameElement, value: string): boolean {
     let provider;
     try {
-      // `isConnected` is false when Slack builds the element before inserting
-      // it, which is the common case, so absence of a message ancestor only
-      // counts against it once the frame is actually in the document.
+      // Slack usually sets src before inserting the frame, so a detached frame
+      // is treated as in-message.
       const inMessage = !frame.isConnected || !!frame.closest(MESSAGE_FRAME);
       provider = providerFor(String(value), location.href, inMessage);
     } catch {
@@ -132,8 +122,7 @@ export default class Click2Load extends SlickPlugin<typeof meta.settings> {
     if (!source) return;
 
     try {
-      // The main half blocks these requests outright, so it has to be told
-      // before the frame navigates.
+      // Main blocks these requests, so it must be told before navigating.
       await this.api.main.call('allow', source);
     } catch (error) {
       this.log('could not allow the embed', error);

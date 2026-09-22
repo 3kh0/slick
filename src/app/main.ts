@@ -1,9 +1,5 @@
-// Slick App Entrypoint
-//
-// Runs as the first script in Slack's rebuilt document. Every precondition
-// below is a reason to do nothing at all: because we now run *before* Slack,
-// a Slick that half-starts can stop Slack booting entirely, and a Slack that
-// does not boot is much worse than a Slack without Slick.
+// Runs as the first script in Slack's rebuilt document. Any failed
+// precondition means do nothing: a half-started Slick can stop Slack booting.
 
 import { registerDocument } from './api/css.ts';
 import { installResizeGate } from './api/resize.ts';
@@ -12,11 +8,10 @@ import { getBridge } from './bridge.ts';
 import { SlickPlugin } from '../shared/Plugin.ts';
 import { installChildWindows, onChildWindow } from './slack/childWindows.ts';
 import { exposeDebugGlobals as exposeReactDebug, patchingReady } from './slack/react.tsx';
-// Imported for its side effects: redux.ts wraps createStore and Slack's
-// thunk factory at module scope, which has to happen before Slack loads.
+// Side effects: redux.ts wraps createStore and the thunk factory at module
+// scope, before Slack loads.
 import { exposeDebugGlobals as exposeReduxDebug, getStore, reduxReady } from './slack/redux.ts';
-// Same for rtm.ts: it wraps `routeMessages` and the degraded-mode thunk so
-// plugins can subscribe to websocket events without patching WebSocket.
+// Same for rtm.ts (wraps `routeMessages` and the degraded-mode thunk).
 import './slack/rtm.ts';
 import {
   exposeDebugGlobals as exposeWebpackDebug,
@@ -66,8 +61,7 @@ function main() {
       ok = check.ok();
     } catch {}
     if (ok) continue;
-    // The first precondition failing is routine (sign-in pages, marketing
-    // pages); the rest mean the loader is broken and should be loud.
+    // Failing the first is routine (sign-in pages); the rest mean the loader is broken.
     const log = check.name === 'slack-client' ? console.log : console.error;
     log(`[slick] not starting (${check.name}): ${check.detail}. Slack will load normally.`);
     return;
@@ -80,19 +74,15 @@ function main() {
     console.warn('[slick] safe mode: plugins will not be loaded');
   }
 
-  // Interception has to be installed synchronously, before this script returns:
-  // the very next <script> in the document is Slack's own bundle.
+  // Must be synchronous: the next <script> is Slack's bundle.
   try {
     installWebpackHooks();
     exposeWebpackDebug();
     exposeReactDebug();
     exposeReduxDebug();
-    // Here rather than in bootstrap for the same reason: the gate only works
-    // if it is registered ahead of Slack's own resize listeners. It stays
-    // inert until a plugin registers with it.
+    // Must register ahead of Slack's own resize listeners.
     installResizeGate();
-    // Also here rather than in bootstrap: this wraps window.open, which Slack
-    // must not be able to capture a reference to before we patch it.
+    // Wraps window.open before Slack can capture a reference to it.
     installChildWindows();
     onChildWindow(registerDocument);
   } catch (error) {

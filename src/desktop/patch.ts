@@ -1,10 +1,6 @@
-// Slick Desktop Patch
-// Mutates the cached CJS electron module *before* Slack's asar is required, so
-// every subsequent require('electron') from Slack's own code sees our versions.
-// Also spoofs the process/app properties Slack uses to locate its assets.
-//
-// This replaces the per-platform patching that v1 duplicated across
-// scripts/byoe/build-handoff-app{,-win,-linux}.js and scripts/byoe/inject.js.
+// Must run before Slack's asar is required: every require('electron') from
+// Slack then sees our overrides. Also spoofs the process/app paths Slack uses to
+// find its assets.
 
 import { EventEmitter } from 'node:events';
 import crypto from 'node:crypto';
@@ -18,8 +14,7 @@ const cjsRequire = createRequire(import.meta.url);
 const NodeModule = cjsRequire('module') as any;
 const electronCjs = cjsRequire('electron') as Record<string, any>;
 
-// Every require('electron') from Slack resolves to this proxy, so an entry in
-// `overrides` shadows the real export without mutating the electron module.
+// `overrides` shadow real exports without mutating the electron module.
 const overrides: Record<string, any> = {};
 const electronProxy = new Proxy(electronCjs, {
   get(target, prop: string) {
@@ -33,8 +28,7 @@ NodeModule._load = function (request: string, ...args: any[]) {
   return origModuleLoad.call(this, request, ...args);
 };
 
-// Slack must never update the bundle we are running out of; v1 stubbed this in
-// scripts/byoe/inject.js. Slick's own updater handles Slack (slackUpdater.ts).
+// Slack must never update the bundle we run from; slackUpdater.ts updates Slack.
 class NoopAutoUpdater extends EventEmitter {
   setFeedURL() {}
   getFeedURL() {
@@ -61,8 +55,6 @@ overrides.crashReporter = {
   getParameters: () => ({}),
 };
 
-// Menu
-
 let openSettings: (() => void) | null = null;
 let checkForUpdates: (() => void) | null = null;
 
@@ -88,8 +80,6 @@ function slickMenuTemplate(): Electron.MenuItemConstructorOptions {
   return { label: 'Slick', submenu };
 }
 
-// v1 only patched the menu on macOS (inside build-handoff-app.js); doing it
-// here gets it on Windows and Linux too.
 type AnyItem = Electron.MenuItem | Electron.MenuItemConstructorOptions;
 /** Slack's Windows labels carry access keys (`&Help`), and its Help item has no role. */
 const labelled = (item: AnyItem, name: string) => (item.label ?? '').replace(/&/g, '') === name;
@@ -104,8 +94,6 @@ function injectSlickMenu(items: AnyItem[]) {
   return out;
 }
 
-// Patches
-
 export function applyPatches(
   slackAsarPath: string,
   slickPreloadPath: string,
@@ -113,17 +101,14 @@ export function applyPatches(
 ) {
   const slackResources = path.dirname(slackAsarPath);
 
-  // The preload we substitute has to be able to run Slack's original one, or
-  // Slack's contextBridge surface never appears. See preload.ts.
+  // Our preload evals Slack's original (see preload.ts).
   const originalPreloads = new Map<string, string>();
   ipcMain.handle('slick:get-original-preload', (_event, key: string) => originalPreloads.get(key) ?? null);
 
   /**
-   * Swap Slack's preload for ours and keep its source fetchable by key.
-   *
-   * A window whose preload cannot be read keeps Slack's own path: substituting
-   * ours with no source to evaluate would strand the renderer without the
-   * desktop API it expects.
+   * Swap Slack's preload for ours, keeping its source fetchable by key. If it
+   * can't be read, Slack's stays: ours would strand the renderer without
+   * Slack's desktop API.
    */
   function substitutePreload(webPreferences: any = {}): { webPreferences: any; preloadKey: string } {
     const slackPreload: string | undefined = webPreferences?.preload;
@@ -166,12 +151,9 @@ export function applyPatches(
     },
   });
 
-  // Windows Slack opens with window.open -- popped-out conversations, the
-  // in-app browser, anything ctrl/cmd-clicked -- never reach the proxy above.
-  // Slack answers them from setWindowOpenHandler, and Electron builds the
-  // guest WebContents from `overrideBrowserWindowOptions` internally, before
-  // any BrowserWindow wrapper exists. Without this they run stock Slack: no
-  // bridge, no plugins, and no theme, which is exactly how they used to look.
+  // window.open windows (pop-outs, in-app browser, ctrl/cmd-clicks) bypass the
+  // proxy above: Electron builds them from `overrideBrowserWindowOptions`
+  // internally. Without this they run stock Slack with no bridge or theme.
   app.on('web-contents-created', (_event, contents) => {
     const originalSetter = contents.setWindowOpenHandler.bind(contents);
     contents.setWindowOpenHandler = (handler: (details: Electron.HandlerDetails) => any) =>
@@ -180,8 +162,7 @@ export function applyPatches(
         try {
           result = handler(details);
         } catch (error) {
-          // Slack's own decision must stand even if it threw; denying here
-          // would silently stop links opening at all.
+          // Rethrow rather than deny, or links silently stop opening.
           console.error('[slick] Slack window-open handler threw:', error);
           throw error;
         }
@@ -218,10 +199,8 @@ export function applyPatches(
     return origSetMenu.call(this, Menu.buildFromTemplate(injectSlickMenu(menu.items)));
   };
 
-  // On Windows Slack sets neither of those: its title-bar button builds the
-  // File/Edit/.../Help menu afresh and pops it up, so without this the Slick
-  // menu -- and with it Settings and Check for Updates -- never appeared there.
-  // Only a menu shaped like the app menu is touched, never a context menu.
+  // Windows Slack sets neither: its title-bar button pops up a freshly built
+  // app menu. Only a menu shaped like the app menu is touched, never a context menu.
   const origPopup = Menu.prototype.popup;
   Menu.prototype.popup = function (this: Electron.Menu, options?: Electron.PopupOptions) {
     const items = this.items;
@@ -237,9 +216,8 @@ export function applyPatches(
     website: 'https://github.com/3kh0/slick',
   });
 
-  // Make Slack believe it is running out of its own bundle. This is the
-  // load-bearing trick v1 also relied on; without it Slack cannot find its
-  // assets, and its own preload path resolution breaks.
+  // Make Slack believe it runs from its own bundle, or it can't find its assets
+  // or resolve its preload.
   Object.defineProperty(process, 'resourcesPath', { configurable: true, value: slackResources });
   app.getAppPath = () => slackAsarPath;
   app.setPath('userData', profileDir());

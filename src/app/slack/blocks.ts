@@ -1,9 +1,5 @@
-// Block Kit conversion, done by Slack's own converters.
-//
-// Re-implementing Delta -> blocks would mean re-implementing mention, link and
-// emoji resolution, and any drift shows up as a message that renders wrong for
-// everyone else. Slack's converter needs the store passed in, which is the
-// only reason this is not a pure function.
+// Block Kit conversion via Slack's own converters, so mention, link and emoji
+// resolution match what Slack's composer sends. They need the store's state.
 
 import type { Delta } from '../../shared/delta.ts';
 import { getStore } from './redux.ts';
@@ -64,11 +60,7 @@ export const blocksReady = (async () => {
     return new DeltaClass(ops);
   }
 
-  /**
-   * Convert composer content to Block Kit. Accepts a Delta or the raw ops
-   * array drafts are stored as. Mentions, links and formatting are resolved by
-   * Slack, so the result matches what its own composer would have sent.
-   */
+  /** Convert composer content (a Delta or a draft's raw ops) to Block Kit. */
   async function fromDelta(content: Delta | unknown[], options?: FromDeltaOptions): Promise<Block[]> {
     const convert = await deltaToBlocks;
     const delta = Array.isArray(content) ? await makeDelta(content) : content;

@@ -1,9 +1,6 @@
-// Keep deleted and edited messages visible.
-//
-// v1 patched WebSocket, fetch and XHR, re-synthesised message_changed events,
-// and styled the DOM after Slack had already rendered a tombstone. v2 listens
-// at the RTM router, puts the original message back through injectMessages
-// (messages + channelHistory), and styles the row with a component patch.
+// Listens at the RTM router, puts deleted messages back through
+// injectMessages (messages + channelHistory), and styles rows via a component
+// patch.
 
 import { SlickPlugin, type ComponentType, type RtmEvent, type SlackMessage } from '$slick';
 import * as meta from './meta.ts';
@@ -28,17 +25,15 @@ type RowProps = {
   className?: string;
 };
 
-/** The message overflow menu, which knows which message it was opened from. */
 type ActionsMenuProps = {
   channelId?: string;
   ts?: string;
   onTriggerClose?: (event?: unknown) => void;
 };
 
-/** Slack's generic menu body: the rows are its children. */
 type MenuProps = { children?: React.ReactNode };
 
-/** The pre-2026-09-22 layout: every entry in one blob. Migrated away from on load. */
+/** Old single-blob layout; migrated to per-entry keys on load. */
 const LEGACY_STORAGE_KEY = 'log';
 const ENTRY_PREFIX = 'entry:';
 const RECENT_CAP = 400;
@@ -102,18 +97,13 @@ export default class MessageLogger extends SlickPlugin<typeof meta.settings> {
 
   private readonly entries = new Map<string, LogEntry>();
   private readonly recent = new Map<string, SlackMessage>();
-  /** Keys written or removed since the last flush; see flush(). */
   private readonly dirty = new Set<string>();
   private writes: Promise<void> = Promise.resolve();
   private persistTimer: ReturnType<typeof setTimeout> | null = null;
   private rowTimer: ReturnType<typeof setTimeout> | null = null;
   private seenRow = false;
 
-  /**
-   * The overflow menu's rows are rendered by Slack's generic `Menu`, which has
-   * no idea which message it belongs to. `MessageActionsMenu` does, so it looks
-   * the entry up and hands the finished rows down.
-   */
+  /** `MessageActionsMenu` knows the message; the generic `Menu` that renders rows does not. */
   private readonly MenuRowsContext = React.createContext<React.ReactNode[]>([]);
 
   async start() {
@@ -138,8 +128,7 @@ export default class MessageLogger extends SlickPlugin<typeof meta.settings> {
 
   onSettingsChange() {
     this.api.setStyle(this.css(), 'deleted');
-    // Lowering the retention has to take effect now rather than at the next
-    // delete, which in a quiet workspace could be days away.
+    // Apply lowered retention now, not at the next delete.
     if (this.cap()) this.flush();
     this.api.redux.refresh();
   }
@@ -153,20 +142,12 @@ export default class MessageLogger extends SlickPlugin<typeof meta.settings> {
   private accept(key: string, entry: LogEntry | null | undefined): boolean {
     if (!entry || typeof entry !== 'object') return false;
     if (typeof entry.channel !== 'string' || typeof entry.ts !== 'string') return false;
-    // Entries written under looser caps are brought within the current ones
-    // here, rather than waiting for the message to be touched again.
     if (normalize(entry)) this.dirty.add(key);
     this.entries.set(key, entry);
     return true;
   }
 
-  /**
-   * Load the log, migrating the single-blob layout if it is still there.
-   *
-   * One blob per entry costs a little more at boot -- one batched read rather
-   * than one read -- and saves rewriting the whole log on every delete. That
-   * blob had already reached 881 KB here, and every edit rewrote all of it.
-   */
+  /** One key per entry so a delete doesn't rewrite the whole log (the blob reached 881 KB). */
   private async restore() {
     const stored = await this.api.storage.entries<LogEntry>(ENTRY_PREFIX);
     for (const [key, entry] of stored) this.accept(key.slice(ENTRY_PREFIX.length), entry);
@@ -175,7 +156,7 @@ export default class MessageLogger extends SlickPlugin<typeof meta.settings> {
     if (!legacy || typeof legacy !== 'object') return;
     let migrated = 0;
     for (const [key, entry] of Object.entries(legacy)) {
-      // Anything already written per-entry is the newer copy of the two.
+      // A per-entry copy is newer.
       if (this.entries.has(key)) continue;
       if (!this.accept(key, entry)) continue;
       this.dirty.add(key);
@@ -317,13 +298,7 @@ export default class MessageLogger extends SlickPlugin<typeof meta.settings> {
     this.dirty.add(key);
   }
 
-  /**
-   * Evict by age, then by count. Returns whether anything went.
-   *
-   * Age is the cap that was missing: 1000 entries sounds generous until you
-   * measure the rate. This workspace produced 591 in 0.6 days, so the count
-   * alone amounted to a retention of about a day and a half.
-   */
+  /** Returns whether anything was evicted. */
   private cap(): boolean {
     const gone = evictable(this.entries, this.config.retentionDays);
     for (const key of gone) this.forget(key);
@@ -345,9 +320,7 @@ export default class MessageLogger extends SlickPlugin<typeof meta.settings> {
     }
     const keys = [...this.dirty];
     this.dirty.clear();
-    // Serialised rather than fired off together: a normal flush is one or two
-    // keys, but the one-off migration in restore() hands over several hundred,
-    // and that many simultaneous writes is a burst worth not creating.
+    // Serialised: the migration in restore() can flush hundreds of keys at once.
     for (const key of keys) {
       const entry = this.entries.get(key);
       const storageKey = `${ENTRY_PREFIX}${key}`;
@@ -425,8 +398,7 @@ export default class MessageLogger extends SlickPlugin<typeof meta.settings> {
       .filter(Boolean)
       .join(' ');
 
-    // The two ways of dismissing an entry live in the message's overflow menu,
-    // not here: rendered inline they read as part of the message body.
+    // Dismiss actions live in the overflow menu; inline they read as message body.
     return React.createElement(
       'div',
       { className: classes || undefined },
@@ -436,10 +408,8 @@ export default class MessageLogger extends SlickPlugin<typeof meta.settings> {
   }
 
   /**
-   * Put "Hide edit history" and "Accept deletion" in the message's three-dots
-   * menu. Slack builds that menu from redux selectors rather than from a
-   * template prop, so there is nothing to add an entry to; the rows are
-   * appended as extra children of the menu body instead.
+   * Slack builds the message menu from redux selectors, not a template prop, so
+   * the rows are appended as extra children of the menu body.
    */
   private patchMenu() {
     const React = this.api.react;
@@ -466,8 +436,7 @@ export default class MessageLogger extends SlickPlugin<typeof meta.settings> {
     this.api.patchComponent<MenuProps>('Menu', (Original) => (props) => {
       const rows = React.useContext(this.MenuRowsContext);
       if (!rows.length) return React.createElement(Original, props);
-      // Emptying the context below this point keeps the rows off the submenus
-      // Slack renders inside the same menu, each of which is its own `Menu`.
+      // Empty the context below so submenus (each its own `Menu`) don't get the rows.
       return React.createElement(
         this.MenuRowsContext.Provider,
         { value: [] },
@@ -476,11 +445,7 @@ export default class MessageLogger extends SlickPlugin<typeof meta.settings> {
     });
   }
 
-  /**
-   * One row, in Slack's own menu-item markup. Slack's `MenuItem` is exported
-   * behind a wrapper this cannot address by name, and an unrecognised child is
-   * rendered as-is by its `Menu`, so the classes are the contract here.
-   */
+  /** Slack's `MenuItem` isn't addressable by name, so this mimics its markup; the classes are the contract. */
   private menuRow(key: string, label: string, click: () => void, close?: (event?: unknown) => void) {
     const React = this.api.react;
     return React.createElement(

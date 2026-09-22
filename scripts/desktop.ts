@@ -8,8 +8,7 @@ import path from 'node:path';
 import { buildDesktop } from './build/desktop.ts';
 import { DIST_DESKTOP, ROOT } from './lib/paths.ts';
 
-// The same Electron electron-builder packages, so dev and release agree. The
-// package's main export is the path to its binary.
+// Same Electron that gets packaged; the package's main export is its binary path.
 const electron = String(createRequire(import.meta.url)('electron'));
 if (!existsSync(electron)) {
   console.error(`No Electron at ${electron}. Run: bun install`);
@@ -18,9 +17,8 @@ if (!existsSync(electron)) {
 
 await buildDesktop({ debug: true });
 
-// Dev runs get their own profile so an experiment can never mangle the real
-// Slick install's signed-in session. Point SLICK_HANDOFF_PROFILE at
-// "~/Library/Application Support/Slick" to reuse it deliberately.
+// Separate profile so dev can't mangle the real install's session. Point
+// SLICK_HANDOFF_PROFILE at "~/Library/Application Support/Slick" to reuse it.
 const profile = process.env.SLICK_HANDOFF_PROFILE || path.join(ROOT, 'work', 'dev-profile');
 console.log(`[dev] profile: ${profile}`);
 

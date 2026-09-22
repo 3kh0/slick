@@ -1,21 +1,10 @@
-// Slick Desktop Windows Native Modules
-// Ported from scripts/byoe/build-handoff-app-win.js, which v1 needed and v2
-// had dropped.
-//
-// Slick runs Slack's code in Slick's own process, so Slack's native (.node)
-// modules load into Slick.exe. Two things stand in the way on Windows:
-//
-//   * The modules depend on the VC++ runtime DLLs that ship next to slack.exe,
-//     one directory above `resources`, which is not on Slick's loader path.
-//   * The Microsoft Store (MSIX) build lives in WindowsApps. Windows lets
-//     another process read files there but refuses to load executable code
-//     from it (ERROR_ACCESS_DENIED), so `require()` of any .node file fails.
-//
-// The fix is a mirror: copy app.asar.unpacked into Slick's own settings
-// directory once per Slack Electron version, and route dlopen() for anything
-// under Slack's unpacked directory to the copy. The standalone build does not
-// need the mirror, but going through it costs one copy per Slack update and
-// keeps a single code path.
+// Slack's .node modules load into Slick.exe, which on Windows hits two walls:
+//   * they need the VC++ runtime DLLs beside slack.exe, not on our loader path;
+//   * MSIX Slack lives in WindowsApps, which other processes may read but not
+//     load code from (ERROR_ACCESS_DENIED).
+// So app.asar.unpacked is mirrored into our settings dir once per Slack
+// Electron version and dlopen() is redirected to it. Standalone Slack doesn't
+// need the mirror but uses it too, for a single code path.
 
 import crypto from 'node:crypto';
 import fs from 'node:fs';
@@ -31,7 +20,7 @@ function mirrorId(appDir: string): string {
   return `unknown-${crypto.createHash('sha256').update(appDir).digest('hex').slice(0, 12)}`;
 }
 
-/** Mirrors left behind by earlier Slack versions; a few hundred MB each over time. */
+/** A few hundred MB each. */
 function pruneMirrors(root: string, keep: string) {
   let entries: string[];
   try {
@@ -49,10 +38,7 @@ function pruneMirrors(root: string, keep: string) {
   }
 }
 
-/**
- * Must run before Slack's asar is required. Returns true when it had to copy,
- * so a slow first launch after a Slack update can be told apart in the log.
- */
+/** Must run before Slack's asar is required. Returns true when it copied (for the log). */
 export function prepareWindowsNatives(asar: string): boolean {
   const resources = path.dirname(asar);
   const appDir = path.dirname(resources);
@@ -68,8 +54,7 @@ export function prepareWindowsNatives(asar: string): boolean {
   const copied = !fs.existsSync(ready);
 
   if (copied) {
-    // Staged and renamed into place, so an interrupted copy is never mistaken
-    // for a complete one.
+    // Staged then renamed, so an interrupted copy never looks complete.
     const staging = `${mirror}.tmp-${process.pid}`;
     fs.rmSync(staging, { recursive: true, force: true });
     fs.mkdirSync(path.dirname(staging), { recursive: true });

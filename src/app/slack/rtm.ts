@@ -1,15 +1,7 @@
-// Slick RTM
-//
-// Observes Slack's websocket events where they enter the client, so plugins
-// never have to patch WebSocket, fetch, or XHR. Everything the socket delivers
-// is routed through `routeMessages`; degraded mode skips that router and goes
-// through `handleMessageImmediatelyWithoutPreprocessing` instead.
-//
-// Listeners can subscribe by `type`, by `subtype`, or `*` for all of them.
-// Slack's message deletes arrive as `{ type: 'message', subtype: 'message_deleted' }`
-// or with `rtmEventType` already set to `message_deleted`, depending on the
-// connection; emitting both names means `api.rtm.on('message_deleted', ...)`
-// works either way.
+// Websocket events are observed at `routeMessages` (and, in degraded mode,
+// `handleMessageImmediatelyWithoutPreprocessing`). Deletes arrive either as
+// subtype `message_deleted` or with `rtmEventType` set to it depending on the
+// connection, so every event is emitted under its type, subtype and routed type.
 
 import { patchThunk } from './redux.ts';
 import { patchExportFunction } from './webpack.ts';

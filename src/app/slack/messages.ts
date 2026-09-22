@@ -1,13 +1,9 @@
-// Reads and edits Slack message objects, and re-inserts ones Slack has dropped.
+// `state.messages` is nested two levels (`messages[channelId][ts]`), and Slack
+// draws a conversation from `channelHistory[key].slices[].timestamps`, not by
+// enumerating `messages`. Re-inserting a message takes both patches; a body
+// missing from the timestamps is never drawn.
 //
-// `state.messages` is nested two levels deep (`messages[channelId][ts]`), and
-// Slack draws a conversation from `channelHistory[key].slices[].timestamps`,
-// not by enumerating `messages`. Re-inserting a message therefore takes two
-// coordinated patches; a body that exists in `messages` but is absent from the
-// timestamps array is simply never drawn.
-//
-// Ported from Taut's `app/slack/messages.ts`. MessageLogger is the only
-// consumer of `injectMessages` today; ShowRealUser will want the rest.
+// Ported from Taut's `app/slack/messages.ts`.
 
 import {
   historyKeyChannel,
@@ -87,7 +83,6 @@ export function getRawMessage(channel: string, ts: string): SlackMessage | undef
 export const asRawMessage = (msg: SlackMessage | undefined): SlackMessage | undefined =>
   (typeof msg?.channel === 'string' && msg.ts && getRawMessage(msg.channel, msg.ts)) || msg;
 
-/** Return a copy of the `message` object with the given fields replaced. */
 export function modifyMessageObject(
   message: SlackMessage,
   edits: {

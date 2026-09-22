@@ -1,9 +1,4 @@
-// Slick Plugin Storage
-//
-// Durable, plugin-scoped, JSON-shaped storage backed by the main process.
-// v1's plugins each used raw localStorage, which is per-origin rather than
-// per-plugin, survives uninstall, is invisible to Preferences, and silently
-// truncates at a few megabytes. This is namespaced and enumerable instead.
+// Durable, plugin-scoped JSON storage backed by the main process.
 
 export type BlobStore = {
   list(): Promise<string[]>;
@@ -16,9 +11,7 @@ export type BlobStore = {
 };
 
 export class ScopedStorage {
-  // Written out rather than declared as constructor parameter properties:
-  // node --experimental-strip-types cannot parse those, and the tests run
-  // under it.
+  // Not a constructor parameter property: node --experimental-strip-types (tests) can't parse those.
   private blob: BlobStore;
 
   constructor(blob: BlobStore) {
@@ -71,11 +64,7 @@ export class ScopedStorage {
   }
 }
 
-/**
- * A TTL cache over the same storage, with in-flight de-duplication so a hundred
- * simultaneous renders of the same user produce one request rather than a
- * hundred. v1's WhoReacted, HcaStatus and UserPronouns each rolled their own.
- */
+/** A TTL cache over plugin storage that de-duplicates in-flight fetches per key. */
 export class Cache<T> {
   private memory = new Map<string, { value: T; expires: number }>();
   private inflight = new Map<string, Promise<T>>();
@@ -85,12 +74,7 @@ export class Cache<T> {
   private storage: ScopedStorage;
   private name: string;
   private ttlMs: number;
-  /**
-   * How many entries to hold in memory. A TTL alone is not a bound: it says
-   * when an entry stops being *useful*, not when it stops being *resident*.
-   * ShowRealUser keys this per message, so without a ceiling the map grows
-   * for as long as the session lasts.
-   */
+  /** In-memory ceiling; a TTL alone doesn't bound residency (ShowRealUser keys per message). */
   private maxEntries: number;
 
   constructor(storage: ScopedStorage, name: string, ttlMs = 60 * 60 * 1000, maxEntries = 5000) {
@@ -104,24 +88,15 @@ export class Cache<T> {
     return `cache:${this.name}:${key}`;
   }
 
-  /**
-   * Drop what has expired, and whatever is over the ceiling after that.
-   *
-   * Reading an expired entry only ever overwrote it, so a key that is never
-   * asked for again stayed resident for the life of the session and on disk
-   * for the life of the install. Maps iterate in insertion order, which is
-   * close enough to least-recently-added for a cache of this kind.
-   */
   private prune() {
-    // `get` is on the render path for ShowRealUser and WhoReacted, so a full
-    // scan per call would cost more than the entries it reclaims. Amortise it.
+    // `get` is on render paths; amortise the scan.
     if (++this.sinceSweep < 512) return;
     this.sinceSweep = 0;
     const now = Date.now();
     for (const [key, entry] of this.memory) if (entry.expires <= now) this.memory.delete(key);
   }
 
-  /** Costs only what it evicts, so it can run on every insert and keep `maxEntries` exact. */
+  /** Evicts oldest-inserted first; cheap enough to run on every insert. */
   private remember(key: string, entry: { value: T; expires: number }) {
     this.memory.set(key, entry);
     for (const oldest of this.memory.keys()) {
@@ -130,11 +105,7 @@ export class Cache<T> {
     }
   }
 
-  /**
-   * Delete expired blobs. Runs once per session, on first use rather than on
-   * construction so it never competes with boot, and is never awaited: a cache
-   * that cannot tidy up is still a working cache.
-   */
+  /** Once per session on first use (not construction, to stay off boot); never awaited. */
   private async sweepStorage() {
     const prefix = `cache:${this.name}:`;
     const stored = await this.storage.entries<{ expires?: number } | null>(prefix);

@@ -1,7 +1,5 @@
-// Slack's own client state, kept in localStorage under `localConfig_v2`.
-//
-// This is where the per-workspace API token lives, which is what `api.userAPI`
-// needs to call the Web API as the signed-in user.
+// Slack's `localConfig_v2` localStorage entry holds the per-workspace API
+// token `api.userAPI` uses.
 
 export type LocalConfigTeam = {
   id?: string;
@@ -38,11 +36,9 @@ function routeTeamId(): string | undefined {
   }
 }
 
-/** The entry for the workspace currently on screen, if there is one. */
 export function getActiveTeam(config: LocalConfig = readLocalConfig()): LocalConfigTeam | undefined {
-  // `lastActiveTeamId` is shared by every Slack window. The client route is
-  // window-local; if it names an unknown team, failing is safer than sending a
-  // request with another workspace's credentials.
+  // `lastActiveTeamId` is shared across windows; the route is window-local. If
+  // it names an unknown team, fail rather than use another workspace's token.
   const routed = routeTeamId();
   const teamId = routed ?? config.lastActiveTeamId;
   return teamId ? config.teams?.[teamId] : undefined;

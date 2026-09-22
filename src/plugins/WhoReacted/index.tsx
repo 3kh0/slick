@@ -1,13 +1,6 @@
-// Show who reacted, inside each reaction pill.
-//
-// v1 scraped the DOM: it read reactor ids out of the React fiber behind
-// `.c-reaction`, kept its own avatar cache in localStorage, and re-ran on every
-// MutationObserver batch -- 296 lines of it. Slack already hands the ids to the
-// `Reaction` component as `props.users`, so v2 just reads the prop.
-//
-// The ids arrive on `Reaction` but the avatars belong inside the pill, which
-// `ReactionAnimation` renders. A context carries them across rather than
-// re-deriving them, so the two patches stay independent.
+// Show who reacted, inside each reaction pill. The ids arrive as
+// Reaction's props.users, but the pill is rendered by ReactionAnimation, so a
+// context carries them across.
 
 import { SlickPlugin } from '$slick';
 import * as meta from './meta.ts';
@@ -33,8 +26,7 @@ export default class WhoReacted extends SlickPlugin<typeof meta.settings> {
 
   private readonly Avatar = ({ userId }: { userId: string }) => {
     const profile = this.api.members.useMember(userId)?.profile;
-    // A member with no avatar_hash yet gets a URL that 404s, and a broken
-    // image icon in a reaction pill looks like a bug rather than a race.
+    // A member with no avatar_hash yet gets a URL that 404s.
     const [broken, setBroken] = React.useState(false);
     const url = profile?.image_24 ?? profile?.image_48;
     if (!url || broken) return null;

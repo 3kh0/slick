@@ -1,22 +1,14 @@
 // Collapse Slack's transitions without touching elements that have none.
 //
-// The obvious rule -- `.p-client_container * { transition-duration: .01ms }` --
-// is what Snappy used to ship, and it was the single most expensive thing in
-// Slick. Declaring any transition longhand on an element gives it a transition
-// with `transition-property: all`, so Chromium diffs every property of every
-// element on every style recalc. Measured on a signed-in client, that rule
-// alone doubled style-recalc time during a window drag and quadrupled it while
-// switching views (4.4s -> 1.1s over the nav benchmark once removed).
-//
-// Instead, read Slack's own stylesheets and override only the selectors that
-// already declare a transition. Elements that never animated stay untouched.
-// `.01ms` rather than `none` or `0s`: Slack's JS waits on `transitionend` in
-// places, and a transition that never runs never fires it.
+// Never use a universal `* { transition-duration }` rule: any transition
+// longhand gives every element `transition-property: all`, so Chromium diffs
+// every property on every recalc (measured 2-4x slower style recalc). Override
+// only selectors that already declare a transition. `.01ms`, not `0s`/`none`:
+// Slack's JS waits on `transitionend`, which a zero transition never fires.
 
 const OVERRIDE = 'transition-duration: .01ms !important; transition-delay: 0s !important;';
 /** Selectors per emitted rule. One unparseable selector voids its whole list. */
 const CHUNK = 200;
-/** How often to look for rules Slack inserted since the last scan. */
 const RESCAN_MS = 5_000;
 
 function hasDuration(style: CSSStyleDeclaration): boolean {
@@ -37,10 +29,8 @@ function collect(rules: CSSRuleList, into: Set<string>) {
 
 export type TransitionOverride = { stop(): void };
 
-/**
- * `emit(css, key)` receives each new batch of overrides under its own key, so
- * a later batch adds a sheet rather than re-parsing the ones before it.
- */
+// Each batch gets its own key, so later batches add a sheet instead of
+// re-parsing earlier ones.
 export function overrideTransitions(emit: (css: string, key: string) => void): TransitionOverride {
   const known = new Set<string>();
   /** Rule count per sheet at its last scan; a change means Slack inserted rules. */
@@ -82,8 +72,7 @@ export function overrideTransitions(emit: (css: string, key: string) => void): T
     } catch (error) {
       console.error('[slick] [Snappy] transition scan failed:', error);
     }
-    // Quickly at first, while Slack is still loading its stylesheets, then
-    // rarely. Idle time only: this is housekeeping, never worth a dropped frame.
+    // Fast while Slack loads its stylesheets, then rarely; idle time only.
     const delay = ++scans < 10 ? 1_000 : RESCAN_MS;
     timer = setTimeout(() => requestIdleCallback(loop, { timeout: delay }), delay);
   };

@@ -21,7 +21,7 @@ const MASK_CHARS: Record<Exclude<CensorStyle, 'custom'>, string> = {
   blocks: '█',
 };
 
-/** Fields Slack actually draws from. Walk these; leave ids, types, timestamps. */
+/** Fields Slack draws from; ids, types and timestamps are left alone. */
 const TEXT_FIELDS = ['text', 'blocks', 'blocksProcessed', 'attachments'] as const;
 const TEXT_KEYS = new Set(['text', 'fallback', 'title', 'pretext', 'footer']);
 const WORD_CHAR = /[\p{L}\p{N}_]/u;
@@ -131,7 +131,6 @@ export function censorMessage<T extends Record<string, unknown>>(msg: T | undefi
   for (const field of TEXT_FIELDS) {
     if (!Object.hasOwn(msg, field)) continue;
     const value = msg[field];
-    // Top-level `text` is a string; blocks/attachments are nested.
     const out = typeof value === 'string' ? censorString(value, matcher) : censorDeep(value, matcher);
     if (out === value) continue;
     next ??= { ...msg };

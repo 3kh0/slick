@@ -1,13 +1,8 @@
 // Open a member in Hack Club's admin tools, from their profile menu.
 //
-// v1 cloned a DOM menu row, rewrote its label, re-bound its click handler and
-// spliced it back in -- 179 lines, and it had to strip Slack's hover highlight
-// off the clone by hand. v2 adds an item to the menu template Slack is about
-// to render.
-//
 // The renderer never names a URL: it asks the main half for a tool by id, and
-// the main half owns the allow-list. A compromised page can therefore ask to
-// open Telescreen for some user, and nothing else.
+// the main half owns the allow-list, so a compromised page can't open
+// arbitrary links.
 
 import { SlickPlugin, type MenuTemplateItem } from '$slick';
 import * as meta from './meta.ts';
@@ -24,10 +19,7 @@ export default class AdminBackend extends SlickPlugin<typeof meta.settings> {
   static readonly defaultEnabled = meta.defaultEnabled;
   static readonly settings = meta.settings;
 
-  /**
-   * The overflow menu knows whose profile it is; the generic menu body that
-   * actually renders the rows does not.
-   */
+  /** The overflow menu knows whose profile it is; MenuFromTemplate does not. */
   private readonly MemberIdContext = React.createContext<string | null>(null);
 
   start() {

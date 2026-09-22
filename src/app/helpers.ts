@@ -1,12 +1,6 @@
-// Small utilities shared across the app bundle.
-
 export const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
-/**
- * Run `attempt` until it produces a value, backing off exponentially with full
- * jitter. Used for reads that depend on Slack having fetched something: the
- * first try usually misses, and a tight retry would just hammer the store.
- */
+/** Retry until `attempt` produces a value, with exponential backoff and full jitter. */
 export async function retry<T>(
   attempt: () => Promise<T | undefined>,
   { tries = 3, baseMs = 1000, maxMs = 30_000 }: { tries?: number; baseMs?: number; maxMs?: number } = {},

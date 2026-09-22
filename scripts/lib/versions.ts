@@ -1,6 +1,5 @@
-// Version and build number.
-// v1 derived the build number from the newest `v<N>` git tag; keep that so the
-// updater's integer comparison keeps working across the v1 -> v2 cutover.
+// Build number is the newest `v<N>` git tag; the updater compares it as an
+// integer, so keep this scheme.
 
 import { execFileSync } from 'node:child_process';
 import { ROOT } from './paths.ts';

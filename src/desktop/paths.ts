@@ -1,13 +1,11 @@
-// Slick Desktop Paths
-// Where Slick keeps its own state. Deliberately separate from the `userData`
-// path handed to Slack (see patch.ts), which is a subdirectory of this one so
-// a single directory holds everything Slick owns.
+// configDir holds everything Slick owns: Slack's userData (profileDir, see
+// patch.ts) and Slick's own state (settingsDir).
 
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-/** Slick's config root. Honours SLICK_HANDOFF_PROFILE, as the v1 loader did. */
+/** Honours SLICK_HANDOFF_PROFILE (v1's override name). */
 export function configDir(): string {
   const override = process.env.SLICK_HANDOFF_PROFILE;
   if (override) return path.resolve(override);
@@ -23,14 +21,9 @@ export function configDir(): string {
 }
 
 /**
- * The Chromium profile Slack runs against.
- *
- * v1 used the config root itself as Chromium's userData, so an existing
- * install has its cookies, IndexedDB and Local Storage there rather than in
- * `profile/`. Switching directories on upgrade would sign every v1 user out and
- * drop Slack's local cache, so a v1 profile keeps being used where it is. It is
- * recognised by Chromium's `Local State` file at the root, and only while no
- * v2 profile exists -- once `profile/` does, that is the one in use.
+ * The Chromium profile Slack runs against. v1 used the config root itself, so
+ * a root `Local State` with no `profile/` means a v1 profile, kept in place so
+ * upgrading doesn't sign users out.
  */
 export function profileDir(): string {
   const root = configDir();
@@ -39,7 +32,7 @@ export function profileDir(): string {
   return profile;
 }
 
-/** Slick's own settings live here: settings.json, custom.css, boot.log, ... */
+/** settings.json, custom.css, boot.log, ... */
 export function settingsDir(): string {
   return path.join(configDir(), 'slick');
 }

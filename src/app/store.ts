@@ -1,7 +1,5 @@
-// A minimal reactive value, readable from inside a React render.
-//
-// `useSyncExternalStore` rather than `useState` so a value that changes
-// between render and subscribe cannot be missed.
+// A minimal reactive value. `useSyncExternalStore` so a change between render
+// and subscribe cannot be missed.
 
 export class Store<T> {
   private value: T;

@@ -1,17 +1,11 @@
-// Mark Slackbot's slash-command registration DMs as read.
-//
-// The notification half of this lives in main.ts. v1 had the two halves
-// disagree about what counted as a notice, because each carried its own copy
-// of the rules; both now share `detect.ts`.
-//
-// v1 also read the messages out of the DOM. v2 watches the RTM stream, so a
-// notice is marked read whether or not its channel is on screen.
+// Mark Slackbot's slash-command registration DMs as read (main.ts silences the
+// notification). Watches the RTM stream, so it works whether or not the
+// channel is on screen.
 
 import { SlickPlugin, type RtmEvent } from '$slick';
 import { decodeMrkdwn, isSlackbot, isSlashCommandNotice } from './detect.ts';
 import * as meta from './meta.ts';
 
-/** Bounded, so a long session cannot grow this without limit. */
 const MAX_REMEMBERED = 300;
 
 export default class ShutUpSlackbot extends SlickPlugin<typeof meta.settings> {
@@ -48,7 +42,7 @@ export default class ShutUpSlackbot extends SlickPlugin<typeof meta.settings> {
     try {
       await this.api.userAPI('conversations.mark', { channel, ts }, { signal: this.api.signal });
     } catch (error) {
-      // Leave it out of `marked` so a later event can retry it.
+      // Allow a later event to retry.
       this.marked.delete(key);
       this.log('could not mark the notice read', error);
     }

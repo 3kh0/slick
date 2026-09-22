@@ -1,6 +1,4 @@
-// Shapes of Slack's webpack/rspack runtime that Slick actually intercepts.
-// Deliberately minimal: only the parts webpack.ts touches are described, so a
-// change in a field we never read cannot make this file wrong.
+// Only the parts of Slack's webpack/rspack runtime that webpack.ts touches.
 
 export type Exports = Record<string, any>;
 
@@ -17,9 +15,7 @@ export type ModuleFactory = (module: WebpackModule, exports: Exports, require: W
 export type Chunk = [PropertyKey[], Record<PropertyKey, ModuleFactory>, ((require: WebpackRequire) => any)?];
 
 export interface WebpackRequire {
-  /** Load a module by id and return its exports. */
   (id: PropertyKey): Exports;
-  /** Every registered module factory. */
   m: Record<PropertyKey, ModuleFactory>;
   /** Base URL chunks are resolved against. */
   p: string;

@@ -1,9 +1,6 @@
 // Name the private channels Slack will not name, and mention ones you are not
-// in. Names can stay local or come from the Flaron index.
-//
-// v1 rewrote label text nodes after React rendered them. v2 layers synthesized
-// channels over Slack's store and patches the two missing-channel renderers, so
-// every consumer sees the same name without scraping the DOM.
+// in. Names can stay local or come from the Flaron index. Synthesized channels
+// are layered over Slack's store and the two missing-channel renderers patched.
 
 import { SlickPlugin, type SlackChannel } from '$slick';
 import {

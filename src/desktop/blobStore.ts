@@ -1,6 +1,4 @@
-// Slick Blob Store
-// Namespaced key/value storage on disk, backing api.storage in the renderer
-// and ctx.storage in the main process.
+// On-disk namespaced key/value store behind api.storage and ctx.storage.
 
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
@@ -8,11 +6,9 @@ import { settingsDir } from './paths.js';
 
 const MAX_VALUE_BYTES = 8 * 1024 * 1024;
 
-// Plugins namespace their keys with `:` (`plugin:ShowRealUser`,
-// `cache:relay_senders:...`), which Windows forbids in file names, so every
-// write there failed. `%` never survives safeSegment, which makes `%3A` an
-// unambiguous stand-in that list() can reverse. Only on Windows: elsewhere the
-// colon is legal and existing stores already use it.
+// Keys use `:`, which Windows forbids in file names. `%` never survives
+// safeSegment, so `%3A` is an unambiguous, reversible stand-in. Windows only:
+// existing stores elsewhere already use `:`.
 const COLON = process.platform === 'win32' ? '%3A' : ':';
 
 /** Namespaces and keys become path segments, so they must not escape the root. */
@@ -41,13 +37,7 @@ export async function list(namespace: string): Promise<string[]> {
   }
 }
 
-/**
- * Every value under `prefix`, in one call.
- *
- * A store kept as one blob per record is cheap to update but expensive to load
- * a key at a time: MessageLogger alone holds a thousand of them, and a
- * thousand IPC round trips at boot is not a trade worth making.
- */
+/** One call instead of an IPC round trip per key (MessageLogger holds ~1000). */
 export async function readAll(namespace: string, prefix = ''): Promise<Record<string, string>> {
   const keys = (await list(namespace)).filter((key) => key.startsWith(prefix));
   const out: Record<string, string> = {};
@@ -72,7 +62,7 @@ export async function write(namespace: string, key: string, value: string): Prom
   try {
     const file = keyPath(namespace, key);
     await fs.mkdir(path.dirname(file), { recursive: true });
-    // Write-then-rename, so a crash mid-write cannot truncate existing data.
+    // Write-then-rename so a crash can't truncate existing data.
     const temp = `${file}.${process.pid}.tmp`;
     await fs.writeFile(temp, value, 'utf8');
     await fs.rename(temp, file);

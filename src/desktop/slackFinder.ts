@@ -1,9 +1,4 @@
-// Slick Desktop Slack Discovery
 // Finds the installed Slack's resources directory (the one holding app.asar).
-// Ported from the three v1 handoff builders, which each carried their own copy:
-//   scripts/byoe/build-handoff-app.js       (macOS)
-//   scripts/byoe/build-handoff-app-win.js   (Windows, standalone + MSIX)
-//   scripts/byoe/build-handoff-linux.js     (Linux)
 
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
@@ -19,11 +14,10 @@ const LINUX_CANDIDATES = [
   '/usr/lib/slack',
   '/opt/Slack',
   '/opt/slack',
-  // Ubuntu's default route to Slack. Last, so a native package wins when both exist.
+  // Last, so a native package wins over the snap.
   '/snap/slack/current/usr/lib/slack',
 ];
 
-/** Descending numeric compare of dotted version strings. */
 function compareVersion(a: string, b: string): number {
   const left = a.split('.').map(Number);
   const right = b.split('.').map(Number);
@@ -45,8 +39,6 @@ function pinnedSlackApp(): string {
   }
 }
 
-// macOS
-
 /** The Slack.app Slick runs on: the installer's pin, else /Applications. */
 export function macSlackApp(): string {
   return pinnedSlackApp() || MAC_DEFAULT_APP;
@@ -57,10 +49,6 @@ function findMac(): string {
   return hasAsar(resources) ? resources : '';
 }
 
-/**
- * Slack's bundled Electron major, read from the framework plist. Slick's own
- * Electron major has to match it, so main.ts can refuse to boot on a mismatch.
- */
 export function macSlackElectronMajor(resources: string): number {
   const plist = path.join(
     path.dirname(resources),
@@ -80,9 +68,8 @@ export function macSlackElectronMajor(resources: string): number {
 }
 
 /**
- * Slack's Electron major, or 0 when it cannot be read. macOS carries it in the
- * framework's Info.plist; on Windows and Linux electron-builder writes a
- * `version` file at the application root, one level above `resources`.
+ * Slack's Electron major, or 0. macOS: the framework's Info.plist; elsewhere
+ * electron-builder's `version` file one level above `resources`.
  */
 export function slackElectronMajor(asar: string): number {
   const resources = path.dirname(asar);
@@ -94,8 +81,6 @@ export function slackElectronMajor(asar: string): number {
     return 0;
   }
 }
-
-// Windows
 
 /** COFF machine word -> arch, so an arm64 Slick does not adopt an x64 Slack. */
 function peArch(file: string): string {
@@ -135,8 +120,7 @@ function findWindowsStandalone(): string[] {
   return dirs.map((dir) => path.join(base, dir, 'resources')).filter(hasAsar);
 }
 
-// WindowsApps is ACL-locked, so the install location comes from the package
-// repository registry key rather than a directory listing.
+// WindowsApps is ACL-locked, so read the install location from the registry.
 function findWindowsMsix(): string[] {
   const base = [
     'HKLM',
@@ -178,16 +162,13 @@ function findWindows(): string {
   const candidates = [...findWindowsStandalone(), ...findWindowsMsix()];
   if (!candidates.length) return '';
 
-  // Prefer a Slack whose architecture matches ours; Windows will not load a
-  // mismatched native module into our process.
+  // Windows won't load a native module of another arch into our process.
   const matched = candidates.find((resources) => {
     const exe = path.join(path.dirname(resources), 'slack.exe');
     return fs.existsSync(exe) && peArch(exe) === process.arch;
   });
   return matched || candidates[0];
 }
-
-// Linux
 
 function findLinux(): string {
   const pinned = pinnedSlackApp();
@@ -200,10 +181,7 @@ function findLinux(): string {
   return '';
 }
 
-/**
- * The installed Slack's `resources` directory, or '' when Slack is not found.
- * TAUT-style env override kept for development and the test harness.
- */
+/** '' when Slack is not found. SLICK_SLACK_RESOURCES overrides, for dev and tests. */
 export function findSlackResources(): string {
   const override = process.env.SLICK_SLACK_RESOURCES;
   if (override) return hasAsar(override) ? override : '';
@@ -213,7 +191,6 @@ export function findSlackResources(): string {
   return findLinux();
 }
 
-/** Slack's app.asar, or '' when Slack is not found. */
 export function findSlackAsar(): string {
   const resources = findSlackResources();
   return resources ? path.join(resources, 'app.asar') : '';

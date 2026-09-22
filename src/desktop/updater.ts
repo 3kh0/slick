@@ -1,16 +1,5 @@
-// Slick Updater
-//
-// Ported from v1's scripts/byoe/updater.js with its logic intact. A download
-// is installed only once attestation.ts has verified its build provenance;
-// one that fails is refused rather than installed.
-//
-// Two things deliberately differ from v1, because v2 packages with
-// electron-builder rather than the three hand-rolled builders:
-//   - the application root is located inside the extracted archive rather than
-//     assumed to be a fixed name, since electron-builder's zip and tar.gz
-//     layouts are not the ones v1 produced;
-//   - the Linux relaunch runs the packaged executable rather than
-//     `electron resources/app.asar`, which only existed in v1's layout.
+// Slick self-updater. A download is installed only after attestation.ts has
+// verified its build provenance.
 
 import { execFile, spawn } from 'node:child_process';
 import fs from 'node:fs';
@@ -71,10 +60,8 @@ function installRoot(): string {
 }
 
 /**
- * Why Slick cannot replace itself here, or '' when it can. A Flatpak is
- * updated by Flatpak and its /app is read-only; an install in a directory the
- * user cannot write (/opt, /Applications without admin) would have the swap
- * fail after the download, with nothing to show for it.
+ * Why Slick cannot replace itself here, or '' when it can. Flatpak's /app is
+ * read-only, and an unwritable install dir would fail the swap after download.
  */
 function selfUpdateBlocker(): string {
   if (PLATFORM === 'linux' && (process.env.FLATPAK_ID || fs.existsSync('/.flatpak-info'))) {
@@ -299,13 +286,9 @@ export function createUpdater({ version, build }: { version: string; build: numb
   }
 
   /**
-   * The application root inside an extracted archive.
-   *
-   * v1 assumed a fixed name because its own builders wrote one. electron-builder
-   * does not promise the same layout across platforms and versions, so this
-   * looks for the thing that identifies an app root -- the bundle on macOS, the
-   * executable elsewhere -- at the top level or one directory down. Guessing
-   * wrong here would install a directory that does not contain Slick.
+   * The app root inside an extracted archive: the bundle on macOS, the
+   * executable's dir elsewhere, at the top level or one down. electron-builder's
+   * layout isn't fixed across platforms/versions, so it is searched for.
    */
   function findStage(dir: string): string | null {
     const isRoot = (candidate: string): boolean => {
@@ -331,9 +314,8 @@ export function createUpdater({ version, build }: { version: string; build: numb
 
   /**
    * Hand the swap to a detached helper that waits for this process to exit.
-   * `dir` is removed explicitly rather than derived from `stage`: the app root
-   * can be the extraction directory itself, and deriving the cleanup target
-   * from it would delete a directory we do not own.
+   * `dir` is passed separately because `stage` can be the extraction dir
+   * itself; deriving cleanup from it could delete a dir we don't own.
    */
   function install(stage: string, dir: string, relaunch = true): Promise<void> {
     const again = relaunch ? '1' : '';
@@ -381,14 +363,11 @@ export function createUpdater({ version, build }: { version: string; build: numb
     ];
     fs.writeFileSync(ps1, lines.join('\r\n'));
 
-    // The helper has to outlive Slick, since waiting for Slick to exit is its
-    // first job. libuv puts every child it spawns on Windows into a
-    // kill-on-close job, so a helper spawned directly dies with Slick and the
-    // update is downloaded, verified and never installed -- v1 shipped that
-    // bug. `detached` is no way out: powershell.exe never runs as a
-    // DETACHED_PROCESS. The job does let a child's own children break away,
-    // so a throwaway launcher starts the real helper with Start-Process.
-    // All three paths are ours and cannot contain a double quote.
+    // libuv puts every Windows child into a kill-on-close job, so a helper
+    // spawned directly dies with Slick and the update never installs.
+    // `detached` doesn't help (powershell.exe never runs as DETACHED_PROCESS),
+    // but grandchildren may break away, so a throwaway launcher starts the
+    // real helper via Start-Process. The paths are ours and contain no `"`.
     const helperArgs = [
       '-NoProfile -ExecutionPolicy Bypass',
       `-File "${ps1}"`,
@@ -408,8 +387,7 @@ export function createUpdater({ version, build }: { version: string; build: numb
       ],
       { stdio: 'ignore', windowsHide: true },
     );
-    // The launcher is still in the job, so Slick must not exit before it has
-    // handed off. It normally takes well under a second.
+    // The launcher is still in the job, so don't exit until it has handed off.
     return new Promise((resolve) => {
       const timer = setTimeout(resolve, 10_000);
       const done = () => {
@@ -602,10 +580,9 @@ export function createUpdater({ version, build }: { version: string; build: numb
       app.quit();
       return;
     }
-    // "Later" keeps the promise the download prompt made: the verified update
-    // is installed when Slick next quits, without relaunching it. The quit is
-    // held until the helper is launched, then finished with exit(), since
-    // every other will-quit listener has already run.
+    // "Later": install on next quit without relaunching. Hold the quit until
+    // the helper is launched, then exit(), since other will-quit listeners
+    // have already run.
     app.once('will-quit', (event) => {
       event.preventDefault();
       void install(stage, dir, false).finally(() => app.exit(0));
@@ -632,8 +609,8 @@ export function createUpdater({ version, build }: { version: string; build: numb
 
   /** The background check: silent unless there is something to offer. */
   async function checkForUpdates(): Promise<void> {
-    // Unprompted checks stay quiet where the answer could only be "update it
-    // yourself"; the menu item still reports availability.
+    // Stay quiet where the answer could only be "update it yourself"; the menu
+    // item still reports availability.
     if (!build || selfUpdateBlocker()) return;
     const now = Date.now();
     const state = readState();
@@ -650,7 +627,6 @@ export function createUpdater({ version, build }: { version: string; build: numb
     const latestBuild = releaseBuild(release);
     if (latestBuild <= build) return;
 
-    // Do not re-prompt for the same build within the check interval.
     const promptState = readState();
     if (promptState.lastPromptedBuild === latestBuild && now - (promptState.lastPromptedAt ?? 0) < CHECK_INTERVAL_MS) {
       return;
@@ -719,8 +695,7 @@ export function createUpdater({ version, build }: { version: string; build: numb
     app
       .whenReady()
       .then(() => {
-        // Never at launch: the first check waits, so a cold start is not
-        // competing with Slack's own boot for the network.
+        // Delay the first check so it doesn't compete with Slack's boot.
         const state = readState();
         const elapsed = Date.now() - (state.lastCheckedAt ?? 0);
         const delay = state.lastCheckedAt ? Math.max(30_000, CHECK_INTERVAL_MS - elapsed) : 30_000;
@@ -731,16 +706,5 @@ export function createUpdater({ version, build }: { version: string; build: numb
 
   const info = () => ({ version, build, lastCheckedAt: readState().lastCheckedAt ?? 0 });
 
-  instance = { RELEASES_URL, readState, info, scheduleUpdateChecks, manualCheckForUpdates };
-  return instance;
+  return { RELEASES_URL, readState, info, scheduleUpdateChecks, manualCheckForUpdates };
 }
-
-let instance: {
-  RELEASES_URL: string;
-  readState: () => State;
-  info: () => { version: string; build: number; lastCheckedAt: number };
-  scheduleUpdateChecks: () => void;
-  manualCheckForUpdates: (options?: { quiet?: boolean }) => Promise<UpdateResult>;
-} | null = null;
-
-export const currentUpdater = () => instance;

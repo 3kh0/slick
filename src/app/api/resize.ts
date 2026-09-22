@@ -1,21 +1,8 @@
-// Window resize gating.
-//
-// Slack recomputes a lot of layout from JavaScript on every `resize` event —
-// the top nav measures itself, virtualised lists re-run their sizing — and the
-// compositor delivers one such event per frame while a window edge is dragged.
-// Dragging a window across the screen therefore queues hundreds of layout
-// passes, and the window visibly trails the cursor.
-//
-// Slick runs before Slack's first script, so its `resize` listener is
-// registered first. For an event dispatched at `window` every listener is an
-// at-target listener and they run in registration order, so being first is
-// what makes `stopImmediatePropagation` able to suppress Slack's handlers
-// entirely. One synthetic `resize` is dispatched once the drag stops and Slack
-// catches up in a single pass.
-//
-// The gate is inert until something registers: with no registrations the event
-// passes straight through, so turning the feature off restores stock behaviour
-// rather than approximating it.
+// Slack does heavy JS layout on every `resize`, which fires per frame during a
+// window drag, so the window trails the cursor. Our listener registers before
+// Slack's (all `window` listeners are at-target, run in registration order),
+// so `stopImmediatePropagation` suppresses Slack's handlers; one synthetic
+// `resize` is replayed after the drag stops. Inert with no registrations.
 //
 // The technique — the quiet period, the replay, and the flex-basis
 // compensation in the Snappy plugin — is ported from Taut
@@ -29,21 +16,16 @@ type Registration = {
 const registrations = new Set<Registration>();
 
 let timer: ReturnType<typeof setTimeout> | undefined;
-/** Set while the replayed event is in flight, so the gate lets its own event by. */
+/** Lets the replayed event through the gate. */
 let replaying = false;
 let holding = false;
 
-/** The most patient registration wins; nobody gets resumed early. */
 const quietMs = () => Math.max(...[...registrations].map((registration) => registration.quietMs));
 
-// ResizeObserver
-//
-// The `resize` gate leaves Slack's ResizeObservers running, and those fire per
-// frame during a drag too -- virtualised lists re-measuring rows, the composer
-// re-fitting. Slick runs first, so it can hand Slack a ResizeObserver whose
-// callbacks wait out the same hold. The browser counts a notification as
-// delivered once it fires, so a held one is never re-sent: each observer's
-// latest entry per target is kept and replayed when the hold ends.
+// Slack's ResizeObservers also fire per frame during a drag, so Slack gets a
+// ResizeObserver whose callbacks wait out the same hold. The browser never
+// re-sends a delivered notification, so the latest entry per target is kept
+// and replayed when the hold ends.
 
 type HeldObserver = {
   callback: ResizeObserverCallback;
@@ -60,7 +42,6 @@ function releaseObservers() {
     try {
       held.callback([...held.entries.values()], held.observer);
     } catch (error) {
-      // Slack's callback, not ours; surface it as the browser would.
       reportError(error);
     }
   }
@@ -79,7 +60,6 @@ function installResizeObserverHold() {
         for (const entry of entries) held.entries.set(entry.target, entry);
         heldObservers.add(held);
       });
-      // Anything still queued when Slack disconnects is no longer wanted.
       const disconnect = this.disconnect.bind(this);
       this.disconnect = () => {
         if (held) {
@@ -133,8 +113,7 @@ function gate(event: Event) {
 }
 
 /**
- * Must be called synchronously from the app entrypoint, before Slack's bundle
- * runs. Installed later it would register after Slack's own listeners, and
+ * Must run synchronously from the entrypoint, before Slack's bundle:
  * `stopImmediatePropagation` only suppresses listeners added after this one.
  */
 export function installResizeGate() {
@@ -161,8 +140,7 @@ export function deferResizeWork(options: { quietMs: number; onHoldChange?: (hold
     } catch (error) {
       console.error('[slick] resize hold listener threw:', error);
     }
-    // Removing the last registration mid-drag would otherwise leave Slack
-    // holding a stale layout until the next resize; let it catch up now.
+    // Removing the last registration mid-drag would leave Slack's layout stale.
     if (registrations.size || !holding) return;
     clearTimeout(timer);
     flush();

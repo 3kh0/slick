@@ -1,9 +1,5 @@
-// Stop Slack telling everyone you are typing.
-//
-// v1 patched WebSocket.prototype.send and dropped frames whose JSON parsed to
-// a user_typing message -- every outgoing frame paid a JSON.parse. Because v2
-// runs before Slack's bundle, the typing call can be stubbed at its source
-// instead, and nothing else on the socket is touched.
+// Stop Slack telling everyone you are typing, by stubbing the typing thunks
+// rather than filtering WebSocket frames.
 
 import { SlickPlugin } from '$slick';
 import * as meta from './meta.ts';

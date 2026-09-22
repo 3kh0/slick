@@ -42,11 +42,9 @@ function Assert-ReleaseAttestation([string]$Path) {
   Die "refusing to install an unattested or mismatched build"
 }
 
-# Windows PowerShell 5.1 turns every stderr line of a native command into an
-# ErrorRecord once it is redirected, and under $ErrorActionPreference = 'Stop'
-# the first one is fatal -- so a Node warning aborted the build. Run the tool
-# with errors non-terminating and judge it by its exit code alone; its output
-# goes to a log that is shown only when it fails.
+# PowerShell 5.1 turns redirected native stderr into ErrorRecords, fatal under
+# $ErrorActionPreference = 'Stop' (a Node warning aborted the build). Run with
+# errors non-terminating, judge by exit code, show the log only on failure.
 function Invoke-Logged([string]$Log, [scriptblock]$Command) {
   $prevEap = $ErrorActionPreference
   $ErrorActionPreference = 'Continue'
@@ -208,10 +206,8 @@ function Stop-Slick([string]$InstalledAt) {
 
 function Restore-OfficialHandler {
   $res = Find-SlackResources
-  # The Store build registers slack:// through its package, under a path that
-  # changes with every Store update. Pointing the key at today's Slack.exe
-  # would break on the next one; deleting our override lets the package's own
-  # registration answer again.
+  # The Store build registers slack:// via its package, at a path that changes
+  # every update; delete our override so the package's registration answers.
   if ($res -match '\\WindowsApps\\') {
     Remove-Item "HKCU:\Software\Classes\$Protocol" -Recurse -Force -EA SilentlyContinue
     & ie4uinit.exe -show 2>$null
@@ -305,9 +301,6 @@ if ($FromSource) {
   # Copied rather than moved, so a failed install does not destroy the build.
   $Target = Join-Path (Split-Path $InstallTarget) ('slick-stage-' + [Guid]::NewGuid().ToString('N'))
   Copy-Item $built $Target -Recurse -Force
-
-  # electron-builder already embeds the icon and version info, so the rcedit
-  # branding step the v1 path needs does not apply here.
 } else {
   Step "Finding the latest Slick release"
   $asset = $null; $tag = $null

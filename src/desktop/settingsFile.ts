@@ -1,10 +1,5 @@
-// Slick Settings File
-//
-// Reading and watching settings.json from the main process. Watching the
-// *directory* rather than the file is deliberate: editors and Slick's own
-// writes replace the file by rename, and an fs.watch on the path itself stops
-// firing the moment the inode it was opened against goes away. v1 learned this
-// in scripts/byoe/watch.js.
+// Watches the directory, not the file: writes replace it by rename, and
+// fs.watch on the path stops firing once its inode is gone.
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -36,8 +31,7 @@ export function readStoredSettings(): StoredSettings | null {
       plugins: plugins && typeof plugins === 'object' && !Array.isArray(plugins) ? plugins : undefined,
     };
   } catch {
-    // A hand-edited settings file is routine, and a syntax error in it must
-    // not take the app down; the previous resolved settings stay in effect.
+    // Hand edits are routine; keep the previous settings on a syntax error.
     console.error('[slick] settings.json is not valid JSON; ignoring this change');
     return null;
   }
@@ -52,8 +46,7 @@ export function watchSettings(onChange: (text: string, settings: StoredSettings)
     timer = null;
     const text = readSettingsText();
     const settings = readStoredSettings();
-    // An invalid edit must not reset live plugins or teach the renderer that
-    // the guessed defaults are safe to save back over the damaged file.
+    // Don't reset live plugins, or let the renderer save defaults over the damaged file.
     if (settings) onChange(text, settings);
   };
 

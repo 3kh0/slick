@@ -1,16 +1,7 @@
-// Locally rename other members. Only this client sees the nickname; everyone
-// else still sees their real name.
-//
-// v1 held 16 name selectors, 13 profile selectors and 9 action-bar selectors
-// and re-ran all of them on every DOM batch, which is the single worst example
-// of what this rewrite exists to delete. v2 rewrites the member object on its
-// way out of the store, so every surface that reads a name -- messages,
-// mentions, the member list, search, autocomplete -- gets the nickname without
-// Slick knowing those surfaces exist.
-//
-// `modifyMemberObject` is doing the load-bearing work: it rewrites the six
-// denormalized name fields as well as the display one, so a nicknamed member
-// is no longer findable under their old name either.
+// Locally rename other members; only this client sees the nickname. The member
+// object is rewritten on its way out of the store, so every surface that reads
+// a name picks it up. modifyMemberObject also rewrites the denormalized name
+// fields, so the old name stops matching in search/autocomplete too.
 
 import { SlickPlugin, type MenuTemplateItem, type SlackMember } from '$slick';
 import * as meta from './meta.ts';
@@ -32,11 +23,8 @@ export default class Nicknames extends SlickPlugin<typeof meta.settings> {
   // one must not restart the plugin that just wrote it.
   static readonly liveSettings = ['names'];
 
-  /**
-   * The overflow menu knows whose profile it belongs to, but the menu body is
-   * rendered by a generic component that does not. Context carries the id
-   * across rather than guessing from the menu contents.
-   */
+  // The overflow menu knows the member id but the generic menu body it renders
+  // does not; context carries it across.
   private readonly MemberIdContext = React.createContext<string | null>(null);
 
   private get nicknames(): NicknameMap {
@@ -61,8 +49,7 @@ export default class Nicknames extends SlickPlugin<typeof meta.settings> {
       const template = props.template;
       if (!memberId || !Array.isArray(template)) return <Original {...props} />;
 
-      // Anchored to the copy-display-name row so the new item lands with the
-      // other name actions rather than at the end of an unrelated section.
+      // Insert next to the other name actions.
       const anchor = template.findIndex(
         (item) => typeof item?.label === 'string' && item.label.startsWith('Copy display name'),
       );
@@ -97,8 +84,7 @@ export default class Nicknames extends SlickPlugin<typeof meta.settings> {
   }
 
   private openNicknameModal(userId: string) {
-    // Deliberately the raw state: the modal should show who this actually is,
-    // not the nickname already applied to them.
+    // Raw state, so the modal shows the real name rather than the nickname.
     const member: SlackMember | undefined = this.api.redux.getRawState()?.members?.[userId];
     const realName = member?.profile?.display_name || member?.profile?.real_name || member?.real_name || userId;
 

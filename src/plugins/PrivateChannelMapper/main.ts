@@ -1,17 +1,12 @@
-// PrivateChannelMapper, main-process half.
-//
-// Flaron is a third party, so every request goes through here: the Slack page
-// cannot reach it cross-origin, and routing it through the main process keeps
-// the whole network surface of this plugin in one reviewable place.
-//
-// What is sent is exactly a channel id or the name the user typed, and nothing
-// else. No token, no team, no identity. Both settings default off.
+// All Flaron (third-party) requests go through the main process: the page
+// can't reach it cross-origin, and it keeps the network surface reviewable in
+// one place. Only a channel id or the typed name is sent -- no token, team or
+// identity. Both settings default off.
 
 import type { MainCtx, SlickMainPlugin } from '$slick';
 import { CHANNEL_ID } from './flaron.ts';
 
 const FLARON = 'https://flaron.halceon.dev';
-/** A channel name Flaron does not know is not worth re-asking about often. */
 const UNKNOWN_TTL_MS = 24 * 60 * 60 * 1000;
 
 const unknown = new Map<string, number>();

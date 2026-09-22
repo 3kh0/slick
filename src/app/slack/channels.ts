@@ -1,9 +1,5 @@
-// Reading Slack channels from the redux store, and building channel objects
-// Slack will accept from a handful of known fields.
-//
-// `makeChannelObject` exists because a channel synthesized by a plugin has to
-// carry the same denormalized name fields a real one does, or autocomplete
-// and search will not find it.
+// A synthesized channel needs the same denormalized name fields as a real one,
+// or autocomplete and search will not find it.
 
 import { getStore } from './redux.ts';
 
@@ -62,7 +58,6 @@ export function getCachedChannel(channelId: string): SlackChannel | undefined {
   return getStore()?.getState().channels?.[channelId];
 }
 
-/** The channel currently on screen, if the client is looking at one. */
 export function getCurrentChannelId(): string | undefined {
   return getStore()?.getState().view?.channelId;
 }

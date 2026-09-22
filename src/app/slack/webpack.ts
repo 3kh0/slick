@@ -1,13 +1,7 @@
-// Slick Webpack Interception
-//
-// Installs before Slack's bundle evaluates. Slack ships its chunks by pushing
-// onto a global array; we replace that global with an accessor pair so the
-// moment Slack creates the array we can wrap its `push`, and from there wrap
-// every module factory as it arrives.
-//
-// Wrapping factories rather than forcing modules to load matters: modules
-// register themselves as Slack naturally initializes them, so Slick never
-// changes Slack's load order or evaluates a module Slack did not want yet.
+// Installs before Slack's bundle evaluates: the chunk-array global becomes an
+// accessor so its `push` can be wrapped the moment Slack creates it, and every
+// module factory is wrapped as it arrives. Modules register as Slack itself
+// initializes them, so Slick never changes load order.
 
 import type { Chunk, Exports, ModuleFactory, WebpackModule, WebpackRequire } from './webpackTypes.ts';
 
@@ -15,11 +9,9 @@ const global = globalThis as any;
 
 let webpackRequire: WebpackRequire | null = null;
 
-/** module id -> its exports, as initialized */
 const moduleRegistry = new Map<PropertyKey, Exports>();
-/** module id -> the *unwrapped* factory, so .toString() is the original source */
+/** Unwrapped factories, so .toString() is the original source. */
 const moduleFactories = new Map<string, ModuleFactory>();
-/** exported value -> the module that first exported it, for source lookups */
 const exportOwners = new WeakMap<object, string>();
 
 function isIndexable(value: any): boolean {
@@ -38,16 +30,10 @@ function registerExportOwner(moduleId: string, exports: any) {
   }
 }
 
-// Matching
-
 type SimpleMatcher = (exp: any) => boolean;
 type ExportMatcher<T> = (exp: any) => exp is T;
 
-/**
- * Run a matcher against an export and each of its own enumerable properties.
- * Slack exports most things as namespace members, so matching only the module
- * object itself would miss nearly everything.
- */
+/** Slack exports most things as namespace members, so check each own property too. */
 function matchExportOrProps(exports: any, matcher: SimpleMatcher): any {
   try {
     if (matcher(exports)) return exports;
@@ -63,11 +49,8 @@ function matchExportOrProps(exports: any, matcher: SimpleMatcher): any {
   return undefined;
 }
 
-// Waiting for exports
-
 const pendingMatchers = new Map<symbol, { matcher: SimpleMatcher; resolve: (exp: any) => void }>();
 
-/** Resolve as soon as an export matching `matcher` exists, now or later. */
 export function waitForExport<T>(matcher: ExportMatcher<T>): Promise<T>;
 export function waitForExport<T>(matcher: SimpleMatcher): Promise<T>;
 export function waitForExport(matcher: SimpleMatcher): Promise<any> {
@@ -93,19 +76,13 @@ function checkPendingMatchers(exports: any) {
   }
 }
 
-// Module load callbacks
-
 const moduleLoadCallbacks: ((exports: any) => void)[] = [];
 
 export function onModuleLoaded(cb: (exports: any) => void): void {
   moduleLoadCallbacks.push(cb);
 }
 
-/**
- * Fire `cb` for every export matching `matcher`, both already-loaded and
- * future. Used for things Slack may load more than one copy of (React, the
- * JSX runtime), where waiting for just the first would miss the others.
- */
+/** Fire `cb` for every match, loaded and future: Slack may load several copies of React. */
 export function forEachExport(matcher: SimpleMatcher, cb: (exp: any) => void): void {
   const seen = new WeakSet<object>();
   const fire = (found: any) => {
@@ -125,8 +102,6 @@ export function forEachExport(matcher: SimpleMatcher, cb: (exp: any) => void): v
   });
 }
 
-// Patching exports
-
 type ModuleExportsPatcher = (exports: any, moduleId: string) => any | undefined;
 const moduleExportsPatchers = new Set<ModuleExportsPatcher>();
 
@@ -136,7 +111,6 @@ export function patchModuleExports(patcher: ModuleExportsPatcher): () => void {
   return () => moduleExportsPatchers.delete(patcher);
 }
 
-/** Wrap a named function export. */
 export function patchExportFunction(
   name: string,
   wrap: (original: (...args: any[]) => any) => (...args: any[]) => any,
@@ -160,8 +134,6 @@ export function patchExportFunction(
     }
   });
 }
-
-// Factory wrapping
 
 function wrapModuleFactory(moduleId: PropertyKey, factory: ModuleFactory): ModuleFactory {
   if ((factory as any).__slickWrapped) return factory;
@@ -202,8 +174,6 @@ function wrapModuleFactory(moduleId: PropertyKey, factory: ModuleFactory): Modul
   return wrapped;
 }
 
-// Push interception
-
 type PushFn = (...items: Chunk[]) => number;
 
 function wrapPush(originalPush: PushFn): PushFn {
@@ -220,7 +190,7 @@ function wrapPush(originalPush: PushFn): PushFn {
         }
       }
 
-      // The runtime callback is how we get hold of __webpack_require__ itself.
+      // The chunk's runtime callback receives __webpack_require__.
       if (typeof runtime === 'function' && !webpackRequire) {
         const originalRuntime = runtime;
         chunk[2] = function slickRuntime(require: WebpackRequire) {
@@ -296,8 +266,6 @@ export function installWebpackHooks() {
   }
 }
 
-// Lookups
-
 export function getExport<T>(matcher: ExportMatcher<T>): T | undefined;
 export function getExport<T>(matcher: SimpleMatcher): T | undefined;
 export function getExport<T>(matcher: SimpleMatcher, all: true): T[];
@@ -332,8 +300,6 @@ export function getByProps(props: string[], all = false) {
   return all ? getExport(matcher, true) : getExport(matcher);
 }
 
-// Source inspection, for finding things by signature when names are minified
-
 export function getModuleSource(id: PropertyKey): string {
   const factory = moduleFactories.get(String(id));
   if (!factory) throw new Error(`[slick] no module with id: ${String(id)}`);
@@ -358,8 +324,7 @@ export function allExports(): [string, any][] {
 
 export const stats = () => ({ modules: moduleRegistry.size, hasRequire: !!webpackRequire });
 
-// Exposed for the discovery sessions that find the component and thunk names
-// plugins patch. See docs/slack-internals.md.
+// Discovery aids; see docs/slack-internals.md.
 export function exposeDebugGlobals() {
   const debug = {
     __slickModuleRegistry: moduleRegistry,

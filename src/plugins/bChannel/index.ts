@@ -1,14 +1,9 @@
 // Post @channel / @here through the bChannel relay.
 //
-// v1 addressed Slack by minified module id (`eh+y`, `M9P0`, `Tid6`, `DiPi`) and
-// patched fetch/XHR to rewrite the request after Slack had already serialized
-// it. Those ids change without warning and fail inside empty catches.
-//
-// v2 never ships an id. Preflight is named thunks (`getChannelPrefByApi` and
-// friends) with `userAPI` as the durable fallback; Block Kit is
-// `api.blocks.fromDelta`; the send is intercepted on `prepareAndSendMessage`
-// before Slack posts. Failures log. Anything this plugin changes on a channel
-// is recorded so it can be put back.
+// Never uses minified module ids (they change without warning). Preflight is
+// named thunks (`getChannelPrefByApi` and friends) with `userAPI` as the
+// fallback; the send is intercepted on `prepareAndSendMessage` before Slack
+// posts. Channel changes are recorded so they can be put back.
 
 import { SlickPlugin, type ComponentType, type Delta, type SlackMessage } from '$slick';
 import {

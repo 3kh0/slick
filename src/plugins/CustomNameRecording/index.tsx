@@ -1,14 +1,10 @@
-// Upload an audio file as your name recording, instead of recording one.
+// Upload an audio file as your name recording.
 //
-// Slack computes a duration and a waveform when it records, and then reads
-// them back off the File object at upload time rather than measuring the
-// audio. An uploaded file has to carry the same fields or Slack rejects it, so
-// `describe` decodes the audio and derives them.
-//
-// v1 built its buttons by cloning Slack's DOM and re-binding the handlers.
-// v2 renders alongside Slack's own button and uses its props -- the upload
-// callbacks (`onChangeFile`, `onFileUploadStart`/`End`) are already there, so
-// the recording lands through exactly the path Slack's own recorder uses.
+// Slack reads duration and waveform off the File object at upload time rather
+// than measuring the audio, so an uploaded file must carry them or Slack
+// rejects it; `describe` decodes the audio to derive them. The button renders
+// beside EditAudioButton and reuses its upload callbacks, so the file takes
+// the same path as Slack's own recorder.
 //
 // Adapted from Taut's CustomNameRecording (MIT, github.com/jeremy46231/taut).
 
@@ -24,7 +20,6 @@ type AudioButtonProps = {
 const FILE_NAME = 'audio_name_pronunciation.mp3';
 const SUBTYPE = 'slack_name_pronunciation';
 
-/** The file they chose, or null if they closed the picker. */
 function pickAudio(): Promise<File | null> {
   return new Promise((resolve) => {
     const input = document.createElement('input');
@@ -43,7 +38,7 @@ function pickAudio(): Promise<File | null> {
   });
 }
 
-/** The waveform Slack draws: one peak per bar, each 0-100. */
+/** One peak per bar, each 0-100. */
 function peaks(channel: Float32Array, count: number): number[] {
   const width = Math.max(1, Math.floor(channel.length / count));
   return Array.from({ length: count }, (_, bar) => {
@@ -116,7 +111,6 @@ export default class CustomNameRecording extends SlickPlugin<typeof meta.setting
     }
   }
 
-  /** Slack reads these fields off the File rather than measuring it. */
   private async describe(source: File): Promise<File> {
     const bytes = await source.arrayBuffer();
     const header = new Uint8Array(bytes, 0, Math.min(bytes.byteLength, 3));

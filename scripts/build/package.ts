@@ -1,26 +1,10 @@
-// Packages the staged loader into distributable artifacts with
-// electron-builder, replacing the three hand-rolled builders in scripts/byoe/
-// (build-handoff-app.js, -app-win.js, -linux.js -- about 1,270 lines that had
-// to be kept in step with each other by hand, which is most of what
-// scripts/ci/validate.js existed to police).
+// Packages the staged loader with electron-builder. Two names must not change:
 //
-// Two constraints are inherited rather than chosen, and both matter:
-//
-//   * The artifact names are a contract. install.sh, install.ps1,
-//     install-linux.sh and the updater's `pickAsset` all match on
-//     `-mac-<arch>.zip`, `-win32-<arch>.zip` and `-linux-<arch>.tar.gz`.
-//     Renaming the artifacts would silently break updates for everyone
-//     already on v1, so electron-builder is configured to produce the names
-//     that already exist rather than the installers being reworked around
-//     electron-builder's defaults.
-//
-//   * The macOS bundle id is `dev.slick.byoe.handoff`. That is what install.sh
-//     registers as the `slack://` handler, and what an existing install has
-//     recorded in LaunchServices.
-//
-// Slick is BYOE: its Electron `require`s Slack's app.asar at runtime. Nothing
-// about that changes here -- this packages Slick's own Electron and loader,
-// exactly as the dev stage runs them.
+//   * Artifact names: the installers and the updater's pickAsset match on
+//     `-mac-<arch>.zip`, `-win32-<arch>.zip` and `-linux-<arch>.tar.gz`;
+//     renaming silently breaks updates for existing installs.
+//   * The macOS bundle id `dev.slick.byoe.handoff`: install.sh registers it as
+//     the slack:// handler and existing installs have it in LaunchServices.
 
 import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
@@ -49,14 +33,11 @@ const { archive } = createRequire(import.meta.url)('app-builder-lib/out/targets/
 /**
  * Finish the macOS bundle before electron-builder zips it.
  *
- * With `identity: null` electron-builder signs nothing, and its edits to
- * Info.plist and Resources leave Electron's original seal broken
- * (`codesign --verify` fails: "code has no resources but signature indicates
- * they must be present"). v1's builder always ad-hoc signed, and install.sh
- * still does for source builds, but the release zip and the auto-updater path
- * never pass through install.sh -- so this is where a downloaded or
- * self-updated Slick gets a valid signature. The macOS 26 icon variants go in
- * first, since they are sealed resources too.
+ * With `identity: null` electron-builder signs nothing, yet its Info.plist and
+ * Resources edits break Electron's original seal ("code has no resources but
+ * signature indicates they must be present"). Release zips and updates never
+ * pass through install.sh, so ad-hoc sign here. Icon variants go in first as
+ * they are sealed resources too.
  */
 function finishMacApp(appPath: string) {
   const car = path.join(ASSETS, 'Assets.car');
@@ -101,8 +82,8 @@ async function legacyArchive(platform: NodeJS.Platform, arch: string): Promise<s
   await cp(built, app, { recursive: true, verbatimSymlinks: true });
 
   if (platform === 'linux') {
-    // v1's installed launcher and updater invoke Slick/electron after replacing
-    // the app. Keep that entry point for the one-way migration to v2.
+    // Older installs' launcher and updater exec Slick/electron after replacing
+    // the app; keep that entry point so they can migrate.
     await copyFile(path.join(app, 'slick'), path.join(app, 'electron'));
   }
 
@@ -113,9 +94,8 @@ async function legacyArchive(platform: NodeJS.Platform, arch: string): Promise<s
   } else {
     const temporaryArtifact = path.join(stage, 'Slick.tar.gz');
     await rm(artifact, { force: true });
-    // app-builder-lib's archive helper invokes 7za with a .tar.gz target on
-    // Linux, which fails with E_INVALIDARG (seen on Arch). tar also preserves
-    // the executable bits and symlinks in Electron's unpacked distribution.
+    // app-builder-lib's 7za fails on .tar.gz with E_INVALIDARG (Arch); system
+    // tar also keeps exec bits and symlinks.
     execFileSync('tar', ['-czf', temporaryArtifact, '-C', stage, 'Slick']);
     await rename(temporaryArtifact, artifact);
   }
@@ -159,8 +139,8 @@ export async function packageDesktop({ debug = false, platform = process.platfor
         icon: path.join(ASSETS, 'desktop.icns'),
         target: [{ target: 'zip', arch: ['arm64', 'x64'] }],
         artifactName: 'Slick-${version}-mac-${arch}.${ext}',
-        // Slick is distributed through an installer that verifies a GitHub
-        // build attestation, not through notarization.
+        // Trust comes from the installer's GitHub attestation check, not
+        // notarization; ad-hoc signed in afterPack.
         identity: null,
       },
 
@@ -171,8 +151,7 @@ export async function packageDesktop({ debug = false, platform = process.platfor
       },
 
       linux: {
-        // Pinned rather than derived from productName, because install-linux.sh
-        // and the .desktop file's Exec line both name it.
+        // install-linux.sh and the .desktop Exec line name it.
         executableName: 'slick',
         category: 'Network;InstantMessaging',
         icon: path.join(ASSETS, 'icon.png'),
@@ -185,8 +164,7 @@ export async function packageDesktop({ debug = false, platform = process.platfor
         finishMacApp(path.join(context.appOutDir, `${context.packager.appInfo.productFilename}.app`));
       },
 
-      // Nothing here is published from the build; release.yml uploads and
-      // attests the artifacts itself.
+      // release.yml uploads and attests.
       publish: null,
     },
   });

@@ -1,12 +1,8 @@
 // Relay bots that post on someone else's behalf, and where each records who.
+// An allow-list on purpose: any bot can set source_user_id, so trusting it
+// blindly would let any app impersonate anyone.
 //
-// This is an allow-list on purpose. Any bot can put a `source_user_id` in its
-// message metadata, and honouring it blindly would let an arbitrary app make a
-// message appear to come from anyone. Only bots known to be relays are trusted
-// to name their sender.
-//
-// The list is Taut's (MIT, github.com/jeremy46231/taut), which tracks the same
-// workspace and is more complete than v1's three entries.
+// List from Taut (MIT, github.com/jeremy46231/taut).
 
 import type { SlackMessage } from '$slick';
 

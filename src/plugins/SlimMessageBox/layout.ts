@@ -1,21 +1,14 @@
-// The one-line composer layout.
-//
-// Adapted from Taut's SlimMessageBox (MIT, github.com/jeremy46231/taut), whose
-// container-query approach is a real improvement on v1's: v1 pinned the
-// toolbar beside the editor unconditionally, so a narrow composer overlapped
-// the send button.
+// The one-line composer layout. Adapted from Taut's SlimMessageBox (MIT,
+// github.com/jeremy46231/taut). A container query, so a narrow composer stacks
+// instead of overlapping the send button.
 
 const SCOPE = '.p-message_input__input_container_unstyled';
 
 /** The editor claims this much; the buttons sit beside it only if they fit. */
 const MIN_EDITOR_WIDTH = 450;
 
-/**
- * A container query cannot ask what the buttons measure, so this estimates:
- * Slack's row is ~340px, less whatever has been turned off. It only decides
- * when the one-line layout starts, so being wrong costs some message width
- * rather than breaking the layout.
- */
+// A container query can't measure the buttons, so estimate Slack's ~340px row
+// minus hidden ones. Being wrong only shifts when one-line kicks in.
 const CONTAINER = 'slick-composer';
 const SLACK_BUTTON_ROW = 340;
 const BUTTON_WIDTH = 32;

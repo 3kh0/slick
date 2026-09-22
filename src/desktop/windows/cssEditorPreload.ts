@@ -1,8 +1,5 @@
-// Preload for the custom-CSS editor window.
-//
-// Wrapped in an IIFE so its `contextBridge`/`ipcRenderer` bindings stay out of
-// the global scope: this and src/desktop/preload.ts are both CJS scripts
-// rather than modules, so identical top-level names in the two would collide.
+// IIFE: this and preload.ts are both CJS scripts, so shared top-level names
+// would collide in the global scope.
 
 (() => {
   const { contextBridge, ipcRenderer } = require('electron');

@@ -1,12 +1,7 @@
-// Slick Plugin Manager
-//
-// Builds each plugin's API, runs its lifecycle, and guarantees that disabling
-// a plugin actually undoes it. Every registration a plugin makes through its
-// API is tracked and reversed on teardown, so `stop()` is for things the API
-// did not hand back a disposer for -- which should be almost nothing.
-//
-// Running before Slack means a plugin that hangs or throws can stop Slack
-// booting, so lifecycle calls are time-boxed and every failure is contained.
+// Every registration a plugin makes through its API is tracked and reversed on
+// teardown, so `stop()` is only for things without a disposer. Plugins run
+// before Slack, so a hang or throw could block boot: lifecycle calls are
+// time-boxed and every failure is contained.
 
 import { SlickPlugin, type SlickPluginConstructor } from '../shared/Plugin.ts';
 import { changedKeys, type PluginSettings } from '../shared/settings.ts';
@@ -63,8 +58,6 @@ function withTimeout<T>(id: string, phase: string, operation: Promise<T>): Promi
   });
 }
 
-// Scope
-
 type PluginScope = {
   signal: AbortSignal;
   track(cleanup: () => void): () => void;
@@ -85,8 +78,7 @@ function createScope(): PluginScope {
         done = true;
         cleanup();
       };
-      // A disposer handed back after teardown runs immediately, so a slow
-      // async registration cannot outlive the plugin that asked for it.
+      // Runs immediately after teardown, so a slow async registration cannot outlive the plugin.
       if (active) cleanups.push(once);
       else once();
       return once;
@@ -106,12 +98,9 @@ function createScope(): PluginScope {
   };
 }
 
-// API
-
 async function createBaseAPI(bridge: SlickBridge) {
   await patchingReady;
   return {
-    // discovery
     getExport,
     getByProps,
     waitForExport,
@@ -122,7 +111,6 @@ async function createBaseAPI(bridge: SlickBridge) {
     getComponentSource,
     getValueSource,
     getFiberFromNode,
-    // patching
     patchComponent,
     redux: await reduxReady,
     rtm: await rtmReady,
@@ -131,14 +119,11 @@ async function createBaseAPI(bridge: SlickBridge) {
     channels: await channelsReady,
     blocks: await blocksReady,
     files: await filesReady,
-    // Slack's three composer components are patched once here, so plugin
-    // transforms compose instead of each wrapping the others' props.
+    // Patched once here so plugin transforms compose on Slack's three composers.
     onMessageSendDelta: setupMessageSendDelta(patchComponent),
-    // UI
     elements: await elementsReady,
     menu: await menuReady,
     modal: await modalReady,
-    // environment
     /** A reactive value a plugin's components can read with `.use()`. */
     Store,
     react: await reactReady,
@@ -160,7 +145,6 @@ function createScopedAPI(
   channel: PluginChannel,
   config: ConfigStore,
 ) {
-  // Wrap a registration so its disposer is run automatically on teardown.
   const tracked =
     <A extends unknown[]>(fn: (...args: A) => () => void) =>
     (...args: A) =>
@@ -193,7 +177,6 @@ function createScopedAPI(
     /** Notified for each of Slack's pop-out documents (slack/childWindows.ts). */
     onDocument: tracked(base.onDocument),
 
-    /** Hold Slack's resize handlers until the window stops moving. */
     deferResizeWork: tracked(base.deferResizeWork),
 
     // Keys are namespaced so one plugin cannot replace another's stylesheet.
@@ -203,9 +186,8 @@ function createScopedAPI(
     Cache: <T>(name: string, ttlMs?: number, maxEntries?: number) => new Cache<T>(storage, name, ttlMs, maxEntries),
 
     /**
-     * This plugin's own settings, written back to the settings file so
-     * Preferences shows them. The key must be declared in the schema and in
-     * `liveSettings`, or writing it restarts the plugin that just wrote it.
+     * Persist one of this plugin's settings. The key must be in the schema and
+     * `liveSettings`, or writing it restarts the plugin.
      */
     settings: {
       set: (key: string, value: unknown) => config.setPluginSetting(id, key, value),
@@ -218,8 +200,6 @@ function createScopedAPI(
     },
   };
 }
-
-// Manager
 
 type Entry = {
   PluginClass: SlickPluginConstructor;
@@ -258,7 +238,6 @@ export class PluginManager {
     return result;
   }
 
-  /** Evaluate a bundled plugin IIFE and validate what it produced. */
   register(code: string): string | null {
     let PluginClass: SlickPluginConstructor;
     try {
@@ -311,7 +290,6 @@ export class PluginManager {
     }
   }
 
-  /** Bring every plugin's running state in line with its configuration. */
   async reconcile(): Promise<void> {
     await Promise.all(
       [...this.plugins.keys()].map((id) =>
@@ -341,8 +319,7 @@ export class PluginManager {
       return;
     }
     if (!entry.instance) {
-      // A failed start stays failed until this plugin's own configuration
-      // changes. Unrelated settings broadcasts must not create a retry loop.
+      // Stays failed until its own config changes, so unrelated broadcasts don't retry-loop.
       if (entry.startError && !changed.length) return;
       await this.start(id, entry);
       return;
@@ -355,16 +332,12 @@ export class PluginManager {
     const allLive = settingChanges.every((key) => live.has(key));
 
     if (!allLive) {
-      // Anything not declared live restarts the plugin: simpler than asking
-      // every plugin to reconfigure itself correctly, at the cost of losing
-      // in-memory state.
       await this.stop(id, entry);
       await this.start(id, entry);
       return;
     }
 
-    // Live path. The plugin's own config object is mutated in place, because
-    // its closures already captured it.
+    // Mutated in place: the plugin's closures already captured this object.
     Object.assign(entry.instance['config' as keyof SlickPlugin] as object, next);
     try {
       await withTimeout(id, 'onSettingsChange', Promise.resolve(entry.instance.onSettingsChange(settingChanges)));
@@ -411,8 +384,7 @@ export class PluginManager {
       console.log(`[slick] started ${id}`);
     } catch (error) {
       console.error(`[slick] ${id} failed to start:`, error);
-      // A plugin that threw halfway through start has probably registered
-      // some of its hooks; tear them down rather than leaving it half-applied.
+      // Tear down whatever it registered before throwing.
       await this.stop(id, entry);
       entry.startError = error instanceof Error ? error.message : String(error);
       this.notifyStatus();
@@ -432,8 +404,7 @@ export class PluginManager {
         console.error(`[slick] ${id} failed to stop cleanly:`, error);
       }
     }
-    // Always dispose, even if stop() threw: the tracked registrations are the
-    // ones that actually change Slack, and they have to come off.
+    // Always dispose, even if stop() threw.
     scope?.dispose();
     this.notifyStatus();
     console.log(`[slick] stopped ${id}`);

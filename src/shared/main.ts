@@ -1,21 +1,12 @@
-// Slick Main-Process Plugin Contract
-//
-// 13 of Slick's plugins do privileged work that cannot happen in the page:
-// custom protocol schemes, request blocking and interception, cross-origin
-// subframe injection, native notification suppression, display-media capture.
-// Taut has no equivalent -- its bridge is a closed RPC table -- so this is the
-// one genuinely slick-specific part of the architecture.
-//
-// A plugin's `main.ts` default-exports one of these. The renderer half reaches
-// it through `api.main.call(...)`, never by naming another plugin's id.
+// Contract for a plugin's privileged `main.ts` half (default export). The
+// renderer half reaches it only through `api.main.call(...)`.
 
 import type { PluginSettings } from './settings.ts';
 
 /**
- * Everything a main-process plugin half is allowed to touch. Undeclared
- * capabilities throw when used. This is a review aid rather than a sandbox:
- * `frames` in particular can inject script into cross-origin frames, so
- * changes to a main.ts deserve the same scrutiny as changes to the loader.
+ * Undeclared capabilities throw when used. A review aid, not a sandbox:
+ * `frames` can inject into cross-origin frames, so review main.ts changes like
+ * loader changes.
  */
 export type Capability =
   | 'protocol' // register a privileged scheme and serve local files
@@ -81,12 +72,8 @@ export interface MainCtx {
   };
 
   /**
-   * requires `notifications`
-   *
-   * One shared patch of Slack's notification path, with plugins registering
-   * predicates. v1 had StreamerMode and ShutUpSlackbot each monkey-patching
-   * `Notification.prototype.show` independently, so whichever installed second
-   * silently defeated the other.
+   * requires `notifications`. One shared patch of the notification path, so
+   * plugins' predicates compose instead of clobbering each other's patches.
    */
   notifications: {
     filter(predicate: (options: Electron.NotificationConstructorOptions) => boolean): () => void;
@@ -120,10 +107,7 @@ export interface SlickMainPlugin {
   id: string;
   capabilities: Capability[];
 
-  /**
-   * Before `app.whenReady()`. The only place `registerSchemesAsPrivileged`
-   * and Chromium switches work.
-   */
+  /** Before `app.whenReady()`: the only place schemes and switches can be registered. */
   boot?(ctx: MainCtx): void;
 
   /** After `app.whenReady()`. Return a disposer for runtime disablement. */
@@ -132,9 +116,6 @@ export interface SlickMainPlugin {
   /** Per Slack BrowserWindow. */
   window?(ctx: MainCtx, window: Electron.BrowserWindow): void;
 
-  /**
-   * The renderer-callable surface. Own properties only -- the dispatcher
-   * refuses anything reached through the prototype chain.
-   */
+  /** Renderer-callable; the dispatcher only accepts own properties. */
   rpc?: Record<string, RpcHandler>;
 }

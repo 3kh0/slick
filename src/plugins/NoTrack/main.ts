@@ -1,5 +1,4 @@
-// NoTrack, main-process half: block Slack's telemetry endpoints outright.
-// Patterns from uAssets and the AdGuard filters, carried over from v1.
+// Block Slack's telemetry endpoints. Patterns from uAssets and the AdGuard filters.
 
 import type { SlickMainPlugin } from '$slick';
 

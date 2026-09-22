@@ -16,11 +16,11 @@ export const settings = {
   ),
 } as const satisfies SettingsSchema;
 
-/** Providers that are always gated, wherever they appear. */
+/** Always gated, wherever they appear. */
 export const PROVIDERS = [
   { key: 'spotify', label: 'Spotify', domains: ['spotify.com'] },
   { key: 'soundcloud', label: 'SoundCloud', domains: ['soundcloud.com'] },
 ] as const;
 
-/** Slack's own origins, which are never gated. */
+/** Never gated. */
 export const INTERNAL_DOMAINS = ['slack.com', 'slack-edge.com', 'slack-imgs.com', 'slackb.com', 'slack-core.com'];

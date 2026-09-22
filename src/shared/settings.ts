@@ -1,12 +1,6 @@
-// Slick Settings Schema
-//
-// Slick keeps v1's typed settings schema rather than adopting Taut's
-// hand-edited JSONC file, because the schema is what generates the Preferences
-// UI and the browser-extension options form. One declaration, three consumers:
-// the renderer (plugin config), the main process (ctx.settings), and the UI.
-//
-// Coercion lives here and is applied centrally, so a plugin never validates its
-// own settings and a hostile config can never reach a plugin as the wrong type.
+// Typed settings schema: drives plugin config, ctx.settings, Preferences and the
+// extension options form. Coercion is central, so a hostile config can never
+// reach a plugin as the wrong type.
 
 export type SettingType = 'boolean' | 'number' | 'text' | 'select' | 'color' | 'file' | 'names';
 
@@ -68,7 +62,6 @@ function coerceNames(value: unknown, fallback: Record<string, string>): Record<s
   return names;
 }
 
-/** Coerce one value to its declared type, falling back to the default. */
 export function coerceSetting(setting: Setting, value: unknown): SettingValue {
   if (value === undefined) return setting.default;
 
@@ -96,10 +89,7 @@ export function coerceSetting(setting: Setting, value: unknown): SettingValue {
   }
 }
 
-/**
- * Resolve a plugin's stored config against its schema. Unknown keys are
- * dropped; a missing plugin falls back to `defaultEnabled`.
- */
+/** Unknown keys are dropped; a missing plugin falls back to `defaultEnabled`. */
 export function resolveSettings(
   schema: SettingsSchema,
   defaultEnabled: boolean,
@@ -113,7 +103,6 @@ export function resolveSettings(
   return { ...resolved, enabled };
 }
 
-/** Which declared settings changed between two resolved configs. */
 export function changedKeys(before: PluginSettings, after: PluginSettings): string[] {
   const keys = new Set([...Object.keys(before), ...Object.keys(after)]);
   const changed: string[] = [];
@@ -121,8 +110,7 @@ export function changedKeys(before: PluginSettings, after: PluginSettings): stri
     const a = before[key];
     const b = after[key];
     if (a === b) continue;
-    // `names` maps are the only structured value, so a shallow compare is not
-    // enough for them and a stable stringify is cheap at this size.
+    // `names` maps are the only structured value.
     if (typeof a === 'object' && typeof b === 'object' && JSON.stringify(a) === JSON.stringify(b)) continue;
     changed.push(key);
   }

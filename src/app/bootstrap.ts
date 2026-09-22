@@ -1,4 +1,3 @@
-// Slick Bootstrap
 // Config store -> plugin manager -> plugins, then hand back to Slack.
 
 import { setStyle } from './api/css.ts';
@@ -25,7 +24,6 @@ export async function bootstrap(bridge: SlickBridge): Promise<void> {
   if (bridge.safeMode) {
     console.warn('[slick] safe mode: no plugins will be registered');
     await addSettingsTab(manager, config, bridge);
-    void bridge.start();
     return;
   }
 
@@ -45,6 +43,4 @@ export async function bootstrap(bridge: SlickBridge): Promise<void> {
       running.length ? `: ${running.map((plugin) => plugin.id).join(', ')}` : ''
     }`,
   );
-
-  void bridge.start();
 }

@@ -1,11 +1,7 @@
-// Slick Update Attestation
-//
-// The check that decides whether a downloaded update may be installed, kept
-// apart from updater.ts so it can be tested without Electron. An update is
-// only installed if GitHub holds a SLSA build-provenance attestation whose
-// subject digest matches the bytes downloaded, signed by a Fulcio certificate
-// chaining to the sigstore public-good root, whose SAN names Slick's own
-// release workflow.
+// Decides whether a downloaded update may be installed (kept out of updater.ts
+// so it's testable without Electron). Requires a SLSA provenance attestation
+// whose subject digest matches the download, signed by a Fulcio cert chaining
+// to the sigstore public-good root, whose SAN names Slick's release workflow.
 
 import crypto from 'node:crypto';
 import fs from 'node:fs';
@@ -96,8 +92,7 @@ export function verifyBundle(bundle: any, digestHex: string): void {
     throw new AttestationError('Fulcio intermediate is not trusted');
   }
 
-  // The SAN is what ties the signature to Slick's own workflow rather than to
-  // any other project that happens to use the same public-good roots.
+  // The SAN ties the signature to Slick's workflow, not any project on the same roots.
   const san = String(leaf.subjectAltName || '');
   const sanOk = san
     .split(/,\s*/)

@@ -1,16 +1,12 @@
-// Re-skin the workspace's custom responses.
-//
-// Pure CSS, because that is genuinely all this needs: Slack tags custom
-// responses with their own background class, so the avatar and sender name can
-// be replaced without touching React at all. The port is a straight carry-over
-// of v1's stylesheet -- the difference is that the settings now apply live.
+// Pure CSS: Slack tags custom responses with their own background class, so
+// the avatar and sender name can be replaced without touching React.
 
 import { SlickPlugin } from '$slick';
 import * as meta from './meta.ts';
 
 const CUSTOM_RESPONSE = '.c-message_kit__background--labels--custom_response';
 
-/** Quote a value for use as a CSS string, so a stray quote cannot break out. */
+/** Quote as a CSS string so a stray quote cannot break out. */
 const cssString = (value: unknown): string => JSON.stringify(String(value));
 
 export default class CustomSlackbot extends SlickPlugin<typeof meta.settings> {
@@ -27,8 +23,7 @@ export default class CustomSlackbot extends SlickPlugin<typeof meta.settings> {
 
     const rules = [
       avatar && `${CUSTOM_RESPONSE} .c-message_kit__avatar { background-image: url(${cssString(avatar)}) !important; }`,
-      // The original name is hidden by collapsing its font rather than by
-      // `display: none`, so the button keeps its layout and hit area.
+      // font-size 0 rather than display:none keeps the button's hit area.
       name && `${CUSTOM_RESPONSE} .c-message__sender_button { font-size: 0 !important; }`,
       name && `${CUSTOM_RESPONSE} .c-message__sender_button::after { content: ${cssString(name)}; font-size: 15px; }`,
       this.config.badge && `${CUSTOM_RESPONSE} [data-qa="custom_response_info_badge"] { display: none !important; }`,

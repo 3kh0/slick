@@ -1,14 +1,10 @@
-// Uploading through Slack's own uploader, so the file arrives attributed to
-// the signed-in user and with the metadata Slack expects.
-
 import { dispatchThunk } from './redux.ts';
 
 type PendingUpload = { uploadPromise?: Promise<{ fileIds?: string[] }> };
 
 /**
- * Upload as the current user and resolve with the new file id. Slack reads
- * fields like `subtype` off the File and writes `id` back onto it, so this
- * needs a real File rather than a Blob.
+ * Upload via Slack's own uploader; resolves with the file id. Needs a real
+ * File: Slack reads `subtype` off it and writes `id` back.
  */
 export async function uploadFile(file: File): Promise<string> {
   const pending: PendingUpload = await dispatchThunk('addAndUploadPendingFile', { file, hideBanner: true });

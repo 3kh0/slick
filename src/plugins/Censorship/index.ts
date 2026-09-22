@@ -1,12 +1,8 @@
-// Mask configured words in Slack messages, on this client only.
+// Mask configured words by transforming `state.messages` on read, so React
+// never sees the original (no flash of the uncensored word).
 //
-// v1 walked every rendered text node through the MutationObserver hub, so the
-// uncensored word flashed for a frame and the cost scaled with the whole DOM.
-// v2 transforms `state.messages` on read: React never sees the original, and
-// the cost scales with messages actually read.
-//
-// `messages` is nested two levels (`messages[channelId][ts]`). A single-level
-// `patchSlice` receives a channel bucket, compiles, runs, and does nothing.
+// `messages` is nested two levels (`messages[channelId][ts]`): the patchSlice
+// callback gets a channel bucket, not a message.
 
 import { SlickPlugin, type ComponentType, type SlackMessage } from '$slick';
 import { compile, censorMessage, emptyMatcher, type Matcher } from './censor.ts';
@@ -42,8 +38,8 @@ export default class Censorship extends SlickPlugin<typeof meta.settings> {
 
   onSettingsChange() {
     this.compile();
-    // mapEntries memos on the patch version. Without a refresh the closure keeps
-    // serving results computed from the old terms and the plugin looks dead.
+    // mapEntries memos on the patch version; without a refresh it keeps
+    // serving results masked with the old terms.
     this.api.redux.refresh();
   }
 
@@ -55,8 +51,8 @@ export default class Censorship extends SlickPlugin<typeof meta.settings> {
     return censorMessage(message, this.matcher);
   }
 
-  /** These rows receive copied message props, so repainting the store-backed
-   *  parent alone cannot update an already mounted conversation. */
+  /** These rows receive copied message props, so the store patch alone can't
+   *  update an already mounted conversation. */
   private patchMessageRows() {
     for (const name of ['MessageWrapper', 'ThreadRootGeneric']) {
       this.api.patchComponent<{ msg?: SlackMessage }>(name, (Original) => (props) => {
@@ -68,11 +64,7 @@ export default class Censorship extends SlickPlugin<typeof meta.settings> {
     }
   }
 
-  /**
-   * The activity feed hands `ActivityItem` its own message payload rather than
-   * reading it back out of the store, so the `messages` patch does not cover
-   * it. ShowRealUser patches the same component for the same reason.
-   */
+  /** `ActivityItem` gets its own message payload, not one from the store. */
   private patchActivityFeed() {
     this.api.patchComponent<{ msg?: SlackMessage }>('ActivityItem', (Original) => (props) => {
       const React = this.api.react;

@@ -1,12 +1,6 @@
-// Slick Plugin Host
-//
-// Runs the main-process halves of plugins and exposes their RPC to the
-// matching renderer half. This is the piece Taut has no equivalent for: its
-// bridge is a closed method table, whereas 13 of Slick's plugins need
-// privileged Electron work of their own.
-//
-// The page bridge passes a plugin id supplied by Slick's renderer wrapper. It
-// is not an identity boundary, so dispatch also checks current activation.
+// Runs plugins' main-process halves and exposes their RPC to the renderer. The
+// plugin id comes from the page and is not an identity boundary, so dispatch
+// also checks activation.
 
 import { app, dialog, ipcMain, Notification, protocol, session, shell, webContents } from 'electron';
 import type { Capability, MainCtx, ProtocolPrivileges, SlickMainPlugin } from '../shared/main.ts';
@@ -35,11 +29,8 @@ const registered = new Map<string, Registered>();
 let booted = false;
 let globallyEnabled = true;
 
-// Shared interception points
-//
-// Several plugins want the same hook. Installing one patch with a list of
-// participants avoids v1's bug where StreamerMode and ShutUpSlackbot each
-// replaced Notification.prototype.show and the second silently won.
+// Shared hooks: one patch with a list of participants, so plugins patching the
+// same thing don't silently override each other.
 
 const notificationFilters = new Set<(options: Electron.NotificationConstructorOptions) => boolean>();
 let notificationsPatched = false;
@@ -126,8 +117,6 @@ function installRequestDispatcher() {
     callback(response);
   });
 }
-
-// Context
 
 function requireCapability(plugin: SlickMainPlugin, capability: Capability) {
   if (plugin.capabilities?.includes(capability)) return;
@@ -257,8 +246,7 @@ function createCtx(plugin: SlickMainPlugin, entry: () => Registered): MainCtx {
       openExternal(url) {
         need('shell');
         const parsed = new URL(url);
-        // Only ever hand the OS an http(s) URL: file:// and custom schemes are
-        // how an openExternal turns into arbitrary local execution.
+        // file:// and custom schemes turn openExternal into local execution.
         if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
           throw new Error(`[slick] ${id}: refusing to open ${parsed.protocol} externally`);
         }
@@ -275,8 +263,6 @@ function createCtx(plugin: SlickMainPlugin, entry: () => Registered): MainCtx {
     },
   } as MainCtx;
 }
-
-// Registration
 
 export type PluginMeta = Record<string, { schema: SettingsSchema; defaultEnabled: boolean }>;
 
@@ -296,8 +282,7 @@ export function registerMainPlugins(plugins: SlickMainPlugin[], meta: PluginMeta
       running: false,
       dispose: null,
       queue: Promise.resolve(),
-      // createCtx needs the entry it is being stored on, so ctx is filled in
-      // on the next line; this is the only window in which it is unset.
+      // Filled in below; createCtx needs the entry.
       ctx: null as unknown as MainCtx,
     };
 
@@ -306,19 +291,15 @@ export function registerMainPlugins(plugins: SlickMainPlugin[], meta: PluginMeta
   }
 }
 
-/**
- * Called before app.whenReady(). Safe mode skips main halves too: a privileged
- * half is exactly the kind of code most able to stop the app starting, so the
- * recovery flag has to cover it.
- */
+/** Before app.whenReady(). Safe mode skips main halves: they can stop the app starting. */
 export function bootMainPlugins() {
   if (safeMode()) {
     console.warn('[slick] safe mode: main-process plugin halves will not run');
     return;
   }
   for (const [id, entry] of registered) {
-    // Protocol schemes must be declared before ready even when their plugin is
-    // currently off, so a later enable can install the retained handler.
+    // Schemes must be declared before ready even if the plugin is off, so a
+    // later enable can install the handler.
     if (!isActive(entry) && !entry.plugin.capabilities.includes('protocol')) continue;
     try {
       entry.plugin.boot?.(entry.ctx);
@@ -328,7 +309,6 @@ export function bootMainPlugins() {
   }
 }
 
-/** Called after app.whenReady(). */
 export async function readyMainPlugins() {
   booted = true;
   if (safeMode()) return;
@@ -387,7 +367,6 @@ function reconcile(entry: Registered): Promise<void> {
   return entry.queue;
 }
 
-/** Push validated, resolved settings in from the settings file watcher. */
 export function updateSettings(stored: { enabled?: boolean; plugins?: Record<string, Record<string, unknown>> }) {
   const previousGlobal = globallyEnabled;
   globallyEnabled = stored.enabled !== false;
@@ -419,8 +398,7 @@ export function setupPluginRpc() {
     if (!isActive(entry) || !entry.running) throw new Error(`[slick] ${id} is disabled`);
 
     const rpc = entry.plugin.rpc ?? {};
-    // Own properties only: a method name of "constructor" or "toString" must
-    // not resolve through the prototype chain.
+    // Own properties only, so "constructor"/"toString" don't resolve via the prototype.
     if (!Object.hasOwn(rpc, method)) throw new Error(`[slick] unknown method: ${id}.${method}`);
     if (!Array.isArray(args)) throw new Error('[slick] bad args');
 

@@ -1,13 +1,6 @@
-// Slick Redux Interception
-//
-// Read-time state patching. Rather than dispatching actions to change what
-// Slack believes, Slick wraps `getState` so a plugin can transform entries as
-// they are read -- a nickname, a censored message, a channel Slack cannot see.
-// Slack's own state is never mutated, so disabling a plugin restores the truth
-// immediately.
-//
-// v1 had six plugins each rediscovering the store and hand-rolling their own
-// getState wrapper; this is the one copy.
+// Read-time state patching: `getState` is wrapped so plugins transform entries
+// as they are read. Slack's state is never mutated, so disabling a plugin
+// restores the truth immediately.
 
 import { getFiberFromNode, reactReady } from './react.tsx';
 import { patchExportFunction, patchModuleExports } from './webpack.ts';
@@ -69,14 +62,9 @@ patchExportFunction('createStore', (originalCreateStore) => (...args: any[]) => 
   return store;
 });
 
-/** The Provider's store once found. Cleared whenever Slack creates a new one. */
 let cachedStore: SlackStore | null = null;
 
-/**
- * Slack's store, found through the <Provider> value on the fiber tree. The
- * walk runs once per store: it used to run on every call, and hooks, thunks
- * and a 500ms poll all call this.
- */
+/** Found via the <Provider> value on the fiber tree; cached per store (this is called hot). */
 export function getStore(): SlackStore | null {
   if (cachedStore) return cachedStore;
   const start = document.querySelector('.p-client_container')?.firstElementChild;
@@ -155,16 +143,10 @@ export function patchState(patch: StatePatch): () => void {
   };
 }
 
-// mapEntries
-//
-// A proxy over one of Slack's id-keyed slices (members, messages, channels)
-// that runs each entry through `mapEntry` as it is read. Results are memoized
-// per key on the raw value, so an untouched entry costs one Map lookup.
-//
-// The proxy has to cover get, getOwnPropertyDescriptor, ownKeys and the
-// prototype: Slack reads these slices in all of those ways, and `addedKeys`
-// (entries that do not exist in Slack's state at all) only materialize if
-// ownKeys reports them.
+// mapEntries: a proxy over an id-keyed slice that runs each entry through
+// `mapEntry` on read, memoized per key on the raw value. It must cover get,
+// getOwnPropertyDescriptor, ownKeys and the prototype: Slack slices keep keys
+// on the prototype, and `addedKeys` only materialize if ownKeys reports them.
 
 const hasOwn = (object: object, key: PropertyKey): boolean => typeof key !== 'symbol' && Object.hasOwn(object, key);
 
@@ -198,8 +180,6 @@ export function mapEntries<T = any>(
   const memo = memoFor(mapEntry);
   let failed = false;
 
-  // A version bump means the closure's inputs may have changed, so memoized
-  // results and the added-key set are dropped.
   const sync = () => {
     if (memo.version === patchVersion) return;
     memo.cache = new Map();
@@ -309,14 +289,9 @@ export function mapEntries<T = any>(
   });
 }
 
-// Slice patches
-//
-// Every patch on one slice shares a single proxy, and that proxy is reused for
-// as long as Slack's own slice object is unchanged. Both matter: a fresh proxy
-// per state change gave `state.members` a new identity on every dispatch --
-// measured at 61 identities over 8s idle against Slack's 3 -- so every selector
-// taking a whole slice recomputed on every action, and three plugins patching
-// `messages` meant three nested proxies on every message read.
+// All patches on one slice share a single proxy, reused while Slack's slice
+// object is unchanged. A fresh proxy per state change gives the slice a new
+// identity on every dispatch, so every whole-slice selector recomputes.
 
 type SlicePatch = { mapEntry: MapEntry<any>; addedKeys?: () => Iterable<string> };
 type SliceLayer = {
@@ -342,7 +317,6 @@ function composeLayer(sliceName: string, layer: SliceLayer) {
       try {
         out = patch.mapEntry(key, out);
       } catch (error) {
-        // Disable just the patch that threw, not every patch on the slice.
         failed.add(patch);
         console.error(`[slick] entry patch on "${sliceName}" threw for key "${key}" and was disabled:`, error);
       }
@@ -415,11 +389,8 @@ export function patchSlice<T = any>(
   };
 }
 
-// Thunks
-//
-// Slack builds every thunk and fetcher through one `createThunk` factory, so
-// wrapping that factory yields a registry keyed by the thunk's own meta.name --
-// which is how plugins address a thunk without knowing its minified module id.
+// Slack builds every thunk through one `createThunk` factory; wrapping it
+// yields a registry keyed by meta.name, independent of minified module ids.
 
 type ThunkCreator = (...args: any[]) => any;
 type ThunkWrap = {
@@ -479,8 +450,7 @@ const readExport = (exports: any, key: string): any => {
   }
 };
 
-// The module that defines createThunk also exports its kind enum; that pair is
-// the most stable signature available for a module whose names are minified.
+// createThunk's module also exports its kind enum: the most stable signature available.
 const isThunkKinds = (value: any): boolean => value?.Thunk === 'Thunk' && value?.Fetcher === 'Fetcher';
 
 patchModuleExports((exports) => {
@@ -550,8 +520,6 @@ export function patchThunk(match: string | ThunkWrap['match'], wrap: ThunkWrap['
   return () => void thunkWraps.delete(entry);
 }
 
-// Hooks, available once Slack's React has been found.
-
 export const reduxReady = (async () => {
   const React = await reactReady;
 
@@ -566,9 +534,8 @@ export const reduxReady = (async () => {
   }
 
   /**
-   * Slack's `connect` memoizes off the raw state, so it never re-runs for a
-   * read-time patch. Any component rendering patched data must subscribe to
-   * this or it will update only by coincidence.
+   * Slack's `connect` memoizes off raw state and never re-runs for a read-time
+   * patch; components rendering patched data must subscribe to this.
    */
   function usePatchVersion(): number {
     return React.useSyncExternalStore(subscribePatches, getPatchVersion);

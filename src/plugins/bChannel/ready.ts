@@ -1,6 +1,5 @@
-// Channel preflight helpers. The plugin invites the bot and rewrites
-// `who_can_post`; these parse Slack's pref shape and decide whether that is
-// needed. Kept pure so a wrong pref shape fails in tests, not in a channel.
+// Parse Slack's `who_can_post` pref and decide whether the bot needs adding.
+// Pure so a wrong pref shape fails in tests, not in a channel.
 
 export type PrefValue = { type?: unknown[]; user?: unknown[]; subteam?: unknown[] };
 export type ChannelPref = { pref_value?: PrefValue };

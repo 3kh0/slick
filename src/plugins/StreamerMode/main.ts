@@ -1,14 +1,5 @@
-// StreamerMode, main-process half.
-//
-// Only one job: silence native notifications while redaction is on. A toast
-// with a DM preview in it defeats the entire plugin.
-//
-// v1 replaced `Notification.prototype.show` here, which collided with
-// ShutUpSlackbot doing the same thing. The shared filter composes instead.
-//
-// State is per WebContents, because a second Slack window is a separate
-// renderer with its own StreamerMode instance, and a notification should be
-// suppressed if *any* of them is redacting.
+// Silence native notifications while redaction is on in any window (state is
+// per WebContents; each Slack window has its own StreamerMode instance).
 
 import type { SlickMainPlugin } from '$slick';
 
@@ -33,8 +24,7 @@ const plugin: SlickMainPlugin = {
 
       if (on) {
         active.add(sender.id);
-        // A window that goes away while redacting must not mute the app
-        // forever.
+        // A closed window must not mute the app forever.
         sender.once('destroyed', () => active.delete(sender.id));
       } else {
         active.delete(sender.id);

@@ -1,16 +1,9 @@
 // Show who actually sent a message when a relay bot posts on their behalf.
 //
-// v1 wrapped `store.getState` itself -- 758 lines, including its own store
-// discovery and its own memoization. All of that is now the redux layer's job,
-// so what is left here is the part that is actually about relay bots.
-//
-// Two sources of truth for the real sender:
-//   * `metadata.event_payload`, when the store still has it. Cheap, exact.
-//   * `conversations.replies` with `include_all_metadata`, when it does not.
-//     Slack keeps `event_type` in the store but drops the payload, so a
-//     message scrolled back to has to be asked about. Results are cached for a
-//     month and failures are remembered, because otherwise every store update
-//     retries every message that has no sender to find.
+// The sender comes from metadata.event_payload when the store has it, else
+// conversations.replies with include_all_metadata (Slack keeps event_type in
+// the store but drops the payload). Results are cached and failures
+// remembered, or every store update would retry every unresolved message.
 
 import { SlickPlugin, type SlackAttachment } from '$slick';
 import { RELAY_BOTS, type RelayedMessage } from './bots.ts';
@@ -45,7 +38,6 @@ export default class ShowRealUser extends SlickPlugin<typeof meta.settings> {
     return typeof value === 'string' && USER_ID.test(value) ? value : undefined;
   }
 
-  /** The sender we know for a relayed message, starting a lookup if we do not. */
   private senderOf(channel: string, ts: string): string | undefined {
     const key = `${channel}:${ts}`;
     const known = this.senders.peek(key);
@@ -80,7 +72,6 @@ export default class ShowRealUser extends SlickPlugin<typeof meta.settings> {
     }, REPAINT_DEBOUNCE_MS);
   }
 
-  /** A forwarded copy of a relayed message, re-credited to the real person. */
   private asForwardedBy(attachment: SlackAttachment): SlackAttachment {
     if (!attachment?.channel_id || !attachment.ts) return attachment;
 
@@ -102,7 +93,6 @@ export default class ShowRealUser extends SlickPlugin<typeof meta.settings> {
     return forwarded;
   }
 
-  /** The bot's own link, repointed at a person, keeping the workspace domain. */
   private profileLink(link: string | undefined, user: string): string | undefined {
     try {
       return `${new URL(link ?? '').origin}/team/${user}`;
@@ -111,7 +101,6 @@ export default class ShowRealUser extends SlickPlugin<typeof meta.settings> {
     }
   }
 
-  /** The message as sent by the real person, once we know who that is. */
   private fixed(msg: RelayedMessage | undefined, channel = msg?.channel, ts = msg?.ts): RelayedMessage | undefined {
     if (!msg) return msg;
 
@@ -131,10 +120,8 @@ export default class ShowRealUser extends SlickPlugin<typeof meta.settings> {
     return out;
   }
 
-  /**
-   * Block Kit stays attributed to the bot, so its buttons keep working -- the
-   * interaction payload Slack sends back is keyed on the app that owns them.
-   */
+  // Block Kit stays attributed to the bot: interaction payloads are keyed on
+  // the owning app, so its buttons would break otherwise.
   private withBot(msg: RelayedMessage | undefined) {
     const bot = msg?.slick_bot_id;
     if (!msg || msg.bot_id || typeof bot !== 'string') return msg;
@@ -152,8 +139,7 @@ export default class ShowRealUser extends SlickPlugin<typeof meta.settings> {
     });
     this.api.redux.refresh();
 
-    // The message row, the thread root and the activity feed each receive a
-    // message as a prop rather than reading it back out of the store.
+    // These receive msg as a prop rather than reading the store.
     for (const name of ['MessageWrapper', 'ThreadRootGeneric', 'ActivityItem']) {
       this.api.patchComponent<{ msg?: RelayedMessage }>(name, (Original) => (props) => {
         const version = this.api.redux.usePatchVersion();

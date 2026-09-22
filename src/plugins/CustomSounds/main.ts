@@ -1,12 +1,6 @@
-// CustomSounds, main-process half.
-//
-// Serves the chosen audio file over a privileged scheme, for the same reason
-// CustomFonts does: the page cannot read a local path.
-//
-// The handler only ever serves the file named in settings. The `p` parameter
-// exists so a settings change busts the media cache, and is checked against
-// the configured path rather than trusted -- otherwise page script could ask
-// for any file on disk.
+// Serves the configured sound over a privileged scheme. The `p` parameter only
+// busts the media cache on a settings change; it is checked against the
+// configured path, never trusted, or page script could read any file.
 
 import fs from 'node:fs';
 import os from 'node:os';
@@ -43,8 +37,6 @@ const plugin: SlickMainPlugin = {
       const configured = expand(String(ctx.settings.soundPath ?? ''));
       if (!configured) return notFound();
 
-      // The requested path must be the configured one. Page script controls
-      // the URL, so anything else would be an arbitrary file read.
       let requested: string;
       try {
         requested = expand(new URL(request.url).searchParams.get('p') ?? '');

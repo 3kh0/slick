@@ -1,9 +1,5 @@
-// Slick Desktop Main
-// Boot order: prefs -> find Slack -> preflight -> patch electron -> require Slack.
-//
-// Everything Slick does to Slack happens through the electron module patch in
-// patch.ts, applied before Slack's asar is required. Slack then runs its own
-// main process believing it is in its own bundle.
+// Boot order: stage Slack update -> find Slack -> preflight -> patch electron
+// (patch.ts) -> require Slack's asar.
 
 import { createRequire } from 'node:module';
 import path from 'node:path';
@@ -38,10 +34,8 @@ protocol.registerSchemesAsPrivileged(privilegedSchemes());
 const version = typeof __SLICK_VERSION__ === 'string' ? __SLICK_VERSION__ : 'dev';
 const build = typeof __SLICK_BUILD__ === 'number' ? __SLICK_BUILD__ : 0;
 
-// Before findSlackAsar, because this can replace the very bundle it is about
-// to resolve. A staged Slack is only ever swapped in here, with nothing loaded
-// from it yet -- never under a running session.
-// The pinned Slack, not always /Applications: v1 updated whichever one it ran.
+// Before findSlackAsar: this can replace the bundle it resolves. Uses the pinned
+// Slack, not always /Applications.
 const slackUpdater = createSlackUpdater({ version, slackApp: macSlackApp() });
 slackUpdater.applyStagedIfAny();
 
@@ -64,10 +58,7 @@ if (!slackAsar) {
   startSlack(slackAsar);
 }
 
-/**
- * Slick's Electron major has to match the one Slack ships, or Slack's native
- * modules will not load. v1 gated on this in each handoff builder.
- */
+/** Slack's native modules only load under a matching Electron major. */
 function electronMajorMismatch(asar: string): { ours: number; theirs: number } | null {
   if (process.env.SLICK_SKIP_PREFLIGHT === '1') return null;
 
@@ -78,10 +69,8 @@ function electronMajorMismatch(asar: string): { ours: number; theirs: number } |
 }
 
 /**
- * Asked before Slack is required rather than at app-ready: loading a bundle
- * built against another Electron major can take the process down in the native
- * module loader, and a prompt that arrives after that has nothing left to
- * decline.
+ * Asked before Slack is required, not at app-ready: a mismatched bundle can
+ * crash the process in the native module loader first.
  */
 function launchAnyway(mismatch: { ours: number; theirs: number }): boolean {
   const detail =
@@ -99,9 +88,7 @@ function launchAnyway(mismatch: { ours: number; theirs: number }): boolean {
     });
     return choice === 1;
   } catch (error) {
-    // The dialog is not always available this early. Refusing is the safe
-    // answer, because the alternative is loading a bundle already known to be
-    // incompatible.
+    // The dialog isn't always available this early; refusing is the safe answer.
     console.error(`[slick] ${detail}`, error);
     return false;
   }
@@ -123,11 +110,9 @@ function startSlack(asar: string) {
     }
   }
 
-  // Main halves boot before app-ready, because privileged schemes and
-  // Chromium switches can only be registered that early.
+  // Before app-ready: privileged schemes and switches must register that early.
   registerMainPlugins(mainPlugins, pluginMeta);
-  // Null means the file exists but did not parse: leave the resolved defaults
-  // alone rather than treating a damaged file as an instruction.
+  // Null means the file didn't parse: keep defaults rather than obey a damaged file.
   const stored = readStoredSettings();
   if (stored) updateSettings(stored);
   bootMainPlugins();
@@ -136,8 +121,7 @@ function startSlack(asar: string) {
   setupBridge();
   setupPluginRpc();
 
-  // patch.ts no-ops Slack's own autoUpdater, so both of these are Slick's job:
-  // its own builds, and the Slack install it runs on top of.
+  // patch.ts no-ops Slack's autoUpdater, so Slick updates both itself and Slack.
   const updater = createUpdater({ version, build });
   setMenuHandlers({ checkForUpdates: () => void updater.manualCheckForUpdates() });
   updater.scheduleUpdateChecks();
@@ -146,8 +130,6 @@ function startSlack(asar: string) {
   app.whenReady().then(async () => {
     setupSession([slickResourcesPath, __dirname]);
     await readyMainPlugins();
-    // Edits to the settings file reach both halves: the main plugins through
-    // their ctx, the renderer through the bridge's change event.
     watchSettings((text, settings) => {
       updateSettings(settings);
       broadcast('slick:settings-changed', text);

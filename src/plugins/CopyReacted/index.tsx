@@ -1,13 +1,6 @@
-// Copy the people who reacted to a message, per emoji or all at once.
-//
-// v1 built its own floating menu, positioned it by hand and drew its own
-// toast: 398 lines. v2 uses Slack's own menu, so it themes, positions and
-// dismisses like every other Slack menu.
-//
-// Reactor ids come from `ReactionBar`'s props and the chip renders next to the
-// add-reaction button, so a context carries the list across the two patches.
-// Names are resolved through `members.getMember`, which batches the lookups --
-// a message with fifty reactors is one request, not fifty.
+// Reactor ids come from `ReactionBar`'s props but the chip renders next to
+// `ReactionAddButton`, so a context carries the list across the two patches.
+// `members.getMember` batches lookups: fifty reactors is one request.
 
 import { SlickPlugin, type MenuTemplateItem } from '$slick';
 import * as meta from './meta.ts';
@@ -15,7 +8,7 @@ import * as meta from './meta.ts';
 type SlackReaction = { name?: string; users?: string[] };
 type ReactionBarProps = { reactions?: SlackReaction[] };
 
-/** Stable identity, so context consumers do not re-render for an empty list. */
+/** Stable identity so consumers don't re-render for an empty list. */
 const NO_REACTIONS: SlackReaction[] = [];
 
 const SEPARATORS: Record<string, string> = { space: ' ', newline: '\n', comma: ', ' };
@@ -48,8 +41,7 @@ export default class CopyReacted extends SlickPlugin<typeof meta.settings> {
     try {
       await navigator.clipboard.writeText(lines.join(separator));
     } catch (error) {
-      // The clipboard is denied when the window is not focused, which is easy
-      // to hit -- say so rather than failing silently.
+      // Denied when the window isn't focused.
       this.log('could not copy reactors', error);
       void this.api.modal.alert({
         title: 'Could not copy',
@@ -73,7 +65,6 @@ export default class CopyReacted extends SlickPlugin<typeof meta.settings> {
         click: () => void this.copyReactors(everyone),
       },
     ];
-    // Per-emoji rows are only worth the space when there is more than one.
     if (reactions.length > 1) {
       for (const reaction of reactions) {
         template.push({
@@ -119,7 +110,6 @@ export default class CopyReacted extends SlickPlugin<typeof meta.settings> {
       </this.ReactionsContext.Provider>
     ));
 
-    // Rendered after the add-reaction button, so the chip stays in the row.
     this.api.patchComponent('ReactionAddButton', (Original) => (props) => (
       <>
         <Original {...props} />

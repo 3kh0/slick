@@ -1,12 +1,6 @@
-// Show when someone was last seen, from what this client can observe.
-//
-// Slack exposes no last-seen API, so there are two sources, each behind its
-// own setting: RTM traffic that implies someone was at their keyboard, and a
+// Slack has no last-seen API, so there are two sources, each behind its own
+// setting: RTM traffic implying someone was at their keyboard, and a
 // `search.messages` lookup for their most recent visible message.
-//
-// v1 kept its observations in `localStorage` with no bound, wrote on every
-// event, and scraped the profile pane out of the DOM. v2 keeps a capped map
-// flushed on a timer, and renders inside Slack's own presence component.
 //
 // Adapted from Taut's LastSeen (MIT, github.com/jeremy46231/taut).
 
@@ -31,14 +25,14 @@ export default class LastSeen extends SlickPlugin<typeof meta.settings> {
   static readonly defaultEnabled = meta.defaultEnabled;
   static readonly settings = meta.settings;
 
-  /** userId -> when we last saw them do something, in ms. */
+  /** userId -> last sighting, ms. */
   private seen = new Map<string, number>();
   private dirty = false;
   private flushTimer: ReturnType<typeof setInterval> | null = null;
 
   private messages = this.api.Cache<number | null>('last_message', this.ttlMs);
 
-  /** Which profile surface a presence indicator is being rendered inside. */
+  /** The profile pane / hover card know whose profile it is; Presence does not. */
   private readonly Surface = React.createContext<{ userId?: string; card?: boolean } | undefined>(undefined);
 
   private get ttlMs(): number {
@@ -55,8 +49,7 @@ export default class LastSeen extends SlickPlugin<typeof meta.settings> {
       for (const [type, who] of Object.entries(ACTIVITY)) {
         this.api.rtm.on(type, (event) => this.sighting(who(event), when(event)));
       }
-      // `user_typing` alone fires several times a second across a workspace,
-      // so the map is written to disk on a timer rather than per event.
+      // `user_typing` fires several times a second, so flush on a timer.
       this.flushTimer = setInterval(() => this.flush(), FLUSH_MS);
     }
 
@@ -97,8 +90,6 @@ export default class LastSeen extends SlickPlugin<typeof meta.settings> {
   }
 
   private patchSurfaces() {
-    // The profile pane and the hover card each know whose profile they are;
-    // the presence indicator inside them does not.
     this.api.patchComponent<ProfileProps>('RimetoProfilePresence', (Original) => (props) => (
       <this.Surface.Provider value={{ userId: props.member?.id }}>
         <Original {...props} />
@@ -126,7 +117,7 @@ export default class LastSeen extends SlickPlugin<typeof meta.settings> {
       );
     });
 
-    // The hover card shows a dot with no words, so it gets a line of its own.
+    // The hover card's presence has no text, so it gets a line of its own.
     this.api.patchComponent<ProfileProps>('LocalTime', (Original) => (props) => {
       const surface = React.useContext(this.Surface);
       const id = surface?.card ? props.member?.id : undefined;
@@ -182,8 +173,7 @@ export default class LastSeen extends SlickPlugin<typeof meta.settings> {
     return seen;
   }
 
-  /** Off by default: this sends a presence subscription for everyone whose
-   *  profile is opened, which is real extra websocket traffic. */
+  /** Off by default: a presence subscription per opened profile is extra websocket traffic. */
   private watch(userId: string) {
     void this.api.redux
       .dispatchThunk('subscribeToPresence', { memberIds: [userId], reason: 'slick-last-seen' })

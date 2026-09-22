@@ -1,8 +1,6 @@
-// Turn Spotify embeds down.
-//
-// Entirely main-process work: the embed is a cross-origin iframe, so the page
-// half cannot reach it. This exists so the plugin has a renderer half to be
-// enabled and configured through -- see main.ts for the mechanism.
+// Turn Spotify embeds down. The work is all in main.ts (the embed is a
+// cross-origin iframe); this half exists so the plugin can be enabled and
+// configured.
 
 import { SlickPlugin } from '$slick';
 import * as meta from './meta.ts';

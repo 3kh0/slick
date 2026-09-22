@@ -1,15 +1,9 @@
-// Disable Slack's built-in tracking.
+// Disable Slack's built-in tracking. main.ts blocks the telemetry hosts at the
+// network layer; this half stubs sendBeacon, which bypasses webRequest.
 //
-// The main-process half (main.ts) blocks the telemetry hosts at the network
-// layer, which is what actually stops the data leaving. This half suppresses
-// sendBeacon, which bypasses webRequest entirely and so cannot be blocked
-// there.
-//
-// Taut additionally no-ops Slack's telemetry factories, but the names it uses
-// (getGenericTracer / getGenericTelemeter / getNoopTelemeter) are not thunk
-// creators in Slack 4.52.155 -- a registry dump of all 4,994 named thunks does
-// not contain them -- so patching them by thunk name is dead code. Finding
-// them as module exports is a discovery task; see docs/slack-internals.md.
+// Taut also no-ops getGenericTracer / getGenericTelemeter / getNoopTelemeter,
+// but those aren't thunk creators in Slack 4.52.155, so patching them by thunk
+// name does nothing. See docs/slack-internals.md.
 
 import { SlickPlugin } from '$slick';
 import * as meta from './meta.ts';
@@ -28,10 +22,7 @@ export default class NoTrack extends SlickPlugin<typeof meta.settings> {
     this.log(this.config.blockBeacons ? 'beacons blocked' : 'beacon blocking is off');
   }
 
-  /**
-   * sendBeacon is fire-and-forget and bypasses the request patches, so it
-   * needs its own stub. Returning true keeps Slack's callers happy.
-   */
+  // Returning true keeps Slack's callers happy.
   private patchBeacon() {
     const original = navigator.sendBeacon?.bind(navigator);
     if (!original) return;

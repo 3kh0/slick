@@ -1,12 +1,7 @@
-// CustomFonts, main-process half.
+// Serves the uploaded font over a privileged scheme.
 //
-// Serves an uploaded font file over a privileged scheme. The page cannot read
-// a local path itself, and inlining the font as a data URI would mean
-// re-parsing ~1MB of base64 on every settings change.
-//
-// The handler is the security boundary: page script controls the `path`
-// parameter, so it must not become a way to read arbitrary files. The
-// canonical requested path must be the canonical file selected in settings.
+// Security boundary: page script controls `path`, so the canonical requested
+// path must equal the canonical file selected in settings.
 
 import fs from 'node:fs';
 import os from 'node:os';

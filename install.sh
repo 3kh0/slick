@@ -10,10 +10,8 @@ NO_LAUNCH=0
 step() { printf '\033[1;35m==>\033[0m \033[1m%s\033[0m\n' "$*"; }
 die()  { printf '\033[1;31merror:\033[0m %s\n' "$*" >&2; exit 1; }
 
-# One entry point for every platform. The per-OS integration differs too much to
-# share -- app bundles and LaunchServices here, .desktop files and xdg-mime on
-# Linux, the registry on Windows -- so each keeps its own script and this picks.
-# Dispatched before any argument is parsed, so the target script sees them all.
+# Per-OS integration differs too much to share, so each OS has its own script.
+# Dispatched before argument parsing so the target script sees every argument.
 case "$(uname -s)" in
 Darwin) ;;
 Linux)
@@ -144,7 +142,7 @@ else
 
   ditto -x -k "$TMP/Slick.zip" "$TMP/staged"
   STAGED_APP="$TMP/staged/Slick.app"
-  # v1 releases name the binary Electron; v2 (electron-builder) names it Slick.
+  # Older releases name the binary Electron; electron-builder names it Slick.
   [ -x "$STAGED_APP/Contents/MacOS/Slick" ] || [ -x "$STAGED_APP/Contents/MacOS/Electron" ] \
     || die "release zip did not contain Slick.app"
 

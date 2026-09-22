@@ -1,31 +1,18 @@
-// Slick Desktop Preload
-//
-// Runs in place of Slack's own preload (patch.ts swaps it) and is the reason
-// the rest of Slick can exist: it rebuilds the document so slick.js executes
-// before any of Slack's scripts do.
-//
-// Order matters and is not negotiable:
-//   1. blank the document synchronously, before the parser can run any of
-//      Slack's <script> tags
-//   2. eval Slack's original preload, so its contextBridge.exposeInMainWorld
-//      calls land before any Slack script looks for them
-//   3. fetch and validate a complete replacement
+// Replaces Slack's preload (patch.ts swaps it) and rebuilds the document so
+// slick.js runs before any Slack script. Order is load-bearing:
+//   1. blank the document synchronously, before the parser runs Slack's scripts
+//   2. eval Slack's original preload so its exposeInMainWorld calls land first
+//   3. fetch and validate a replacement document
 //   4. expose SlickBridge
-//   5. commit the rebuilt document, CSP meta removed, with slick.js ahead of
-//      Slack's own <script> tags
+//   5. commit it, CSP meta removed, with slick.js ahead of Slack's scripts
 //
-// Step 1 has to be synchronous and cannot wait for step 3: the parser keeps
-// going during any await, and if Slack's bundle defines webpackChunkwebapp
-// before slick.js runs then every hook we install is too late and Slick
-// silently does nothing. The cost is that a failure after step 1 leaves an
-// empty document, which is why those paths reload instead of returning -- see
-// `abandon`. A white window with no way back to Preferences is the one outcome
-// worse than Slick not starting.
+// Step 1 can't wait for step 3: the parser keeps going during any await, and if
+// Slack's bundle loads before slick.js every hook is too late. A failure after
+// step 1 leaves a blank window, so those paths reload via `abandon`.
 
 const { contextBridge, ipcRenderer } = require('electron');
 
-// Every async dependency starts now, in parallel, because all of it blocks the
-// document rebuild and therefore Slack's first paint.
+// Started in parallel: all of it blocks the rebuild and Slack's first paint.
 const preloadKey = process.argv.find((arg: string) => arg.startsWith('--slick-preload-key='))?.slice(20) ?? '';
 const originalPreloadPromise = ipcRenderer.invoke('slick:get-original-preload', preloadKey) as Promise<string | null>;
 const originalResponsePromise = fetch(location.href);
@@ -35,9 +22,7 @@ const safeModePromise = ipcRenderer.invoke('slick:get-safe-mode') as Promise<boo
 
 const isClientPage = location.hostname === 'app.slack.com' && /\/client(\/|$)/.test(location.pathname);
 
-// Set when a rebuild failed after blanking. The reload it triggers comes back
-// with this present, and that pass leaves the document alone so the user gets
-// stock Slack rather than a reload loop.
+// Set before a recovery reload; that pass loads stock Slack instead of looping.
 const RECOVERY_KEY = 'slick:preload-recovery';
 let recovering = false;
 try {
@@ -54,11 +39,7 @@ if (rebuilding) {
   document.close();
 }
 
-/**
- * Give up on the rebuild. The document is already blank by this point, so
- * returning would leave a white window; reloading gets the user back to a
- * working Slack, and the recovery flag stops it happening twice.
- */
+/** The document is already blank, so reload into stock Slack rather than return. */
 function abandon(message: string, error: unknown): void {
   console.error(`[slick] ${message}`, error);
   if (!rebuilding) return;
@@ -96,8 +77,7 @@ void (async () => {
     ) {
       throw new Error(`unexpected response (${response.url}, ${contentType || 'no content type'})`);
     }
-    // A response policy survives document.write. If it cannot load slick:, the
-    // checker inside slick.js can never run, so retain the untouched page.
+    // A CSP header survives document.write and could block slick:.
     if (response.headers.has('content-security-policy')) {
       throw new Error('response contains a Content-Security-Policy header');
     }
@@ -116,11 +96,9 @@ void (async () => {
     appUrl = 'slick://app/slick.js';
   }
 
-  // contextBridge defines its global non-configurably, so the name cannot be
-  // deleted once exposed and nothing in the main world can be hidden from the
-  // rest of it. What Slick does have is order: it runs before Slack's bundle.
-  // So the global is a one-shot claim rather than the API itself -- slick.js
-  // takes it on the first call and every later caller gets null.
+  // contextBridge globals are non-configurable, so the API can't be hidden from
+  // Slack's scripts. Instead it's a one-shot claim: slick.js runs first and
+  // takes it; every later caller gets null.
   const api = {
     loader: 'electron' as const,
     loaderVersion: typeof __SLICK_VERSION__ === 'string' ? __SLICK_VERSION__ : 'dev',
@@ -147,8 +125,7 @@ void (async () => {
     openFile: (title: string, accept?: string) => call('openFile', [title, accept]),
     openCssEditor: () => call('openCssEditor'),
 
-    // The plugin manager supplies this id as a calling convention. The main
-    // process independently rejects calls while that plugin is disabled.
+    // The id is a convention, not a trust boundary; main enforces enablement.
     plugin: (id: string) => ({
       call: (method: string, ...args: unknown[]) => ipcRenderer.invoke('slick:plugin-rpc', id, method, args),
       on(event: string, cb: (payload: unknown) => void) {
@@ -169,8 +146,7 @@ void (async () => {
       clear: () => call('blobClear', [namespace]),
     }),
 
-    // contextBridge structure-clones arguments, so only the serializable parts
-    // of RequestInit survive the trip.
+    // contextBridge structure-clones, so only serializable RequestInit parts pass.
     fetch: (url: string, init?: RequestInit) => {
       const serial: Record<string, unknown> = {};
       if (init?.method) serial.method = init.method;
@@ -178,8 +154,6 @@ void (async () => {
       if (init?.headers) serial.headers = { ...(init.headers as Record<string, string>) };
       return call('fetch', [url, serial]);
     },
-
-    start: () => ipcRenderer.invoke('slick:start'),
   };
 
   let claimed = false;
@@ -193,7 +167,6 @@ void (async () => {
 
   for (const meta of doc.querySelectorAll('meta[http-equiv="Content-Security-Policy"]')) meta.remove();
 
-  // Slack's scripts have to be re-added in their original order, after ours.
   const scripts = Array.from(doc.querySelectorAll('script')).map((script) => ({
     src: (script as HTMLScriptElement).src,
     textContent: script.textContent,

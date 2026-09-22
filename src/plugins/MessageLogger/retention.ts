@@ -1,24 +1,12 @@
-// What the log is allowed to keep.
-//
-// Retention used to be a count and nothing else: 1000 entries, oldest evicted
-// first. That reads as generous until you measure the rate -- this workspace
-// produced 591 entries in 0.6 days, so 1000 amounted to a retention of about a
-// day and a half, and nothing bounded how large any single entry could get.
+// Retention is bounded by age, count and per-entry size: a busy workspace
+// produced ~1000 entries/day, and single entries reached 127 KB.
 
 import type { SlackMessage } from '$slick';
 
 export const MAX_ENTRIES = 1000;
-/**
- * Twenty is already more revisions than anyone reads. At the old hundred, one
- * message could legitimately hold 100 x 2 x MAX_EDIT_TEXT chars -- and one
- * did, at 127 KB.
- */
 export const MAX_EDITS_PER_MESSAGE = 20;
 export const MAX_EDIT_TEXT = 4000;
-/**
- * A retained message is stored whole so it can be injected back, and a Slack
- * message is only as small as its blocks and attachments happen to be.
- */
+/** Messages are stored whole (to be injected back), so blocks can make them large. */
 export const MAX_MESSAGE_BYTES = 32 * 1024;
 export const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -33,11 +21,8 @@ export function weigh(value: unknown): number {
 }
 
 /**
- * Shrink an oversized message until it fits, heaviest field first.
- *
- * The text is what makes a deleted message worth keeping, so it goes last and
- * is truncated rather than dropped. A row that loses its blocks still renders:
- * Slack falls back to `text`.
+ * Drop heavy fields until it fits, then truncate `text` (never dropped). A row
+ * without blocks still renders: Slack falls back to `text`.
  */
 export function trim(message: SlackMessage): SlackMessage {
   if (weigh(message) <= MAX_MESSAGE_BYTES) return message;
@@ -53,10 +38,7 @@ export function trim(message: SlackMessage): SlackMessage {
   return message;
 }
 
-/**
- * The keys to drop: too old first, then oldest-first until the count fits.
- * `retentionDays` of 0 means age is not a criterion.
- */
+/** Too old first, then oldest-first until the count fits. `retentionDays` 0 ignores age. */
 export function evictable(entries: Iterable<[string, { at?: number }]>, retentionDays: number, now = Date.now()) {
   const live = new Map(entries);
   const out: string[] = [];
@@ -83,12 +65,9 @@ export function evictable(entries: Iterable<[string, { at?: number }]>, retentio
 }
 
 /**
- * Bring an entry stored under older, looser caps within the current ones.
- *
- * Caps applied only on write leave the existing worst offender in place: the
- * 127 KB entry that prompted lowering MAX_EDITS_PER_MESSAGE would have kept
- * its hundred revisions until someone happened to edit that message again.
- * Returns whether anything changed, so the caller knows to persist it.
+ * Apply current caps to an entry stored under looser ones; caps enforced only
+ * on write would leave oversized entries until the message was edited again.
+ * Returns whether it changed, so the caller persists it.
  */
 export function normalize(entry: { message?: SlackMessage; edits?: { oldText: string; newText: string }[] }): boolean {
   let changed = false;

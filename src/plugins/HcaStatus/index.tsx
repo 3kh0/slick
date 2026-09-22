@@ -1,13 +1,5 @@
-// Mark message senders who have not completed identity verification.
-//
-// v1 had the renderer queue user ids into a global, and the main process poll
-// that global every 800ms with `executeJavaScript`, then push results back the
-// same way -- a busy-wait across the process boundary, running forever whether
-// or not anything was on screen.
-//
-// v2 asks once per user, from the component that renders their name, through a
-// cache that dedups in-flight requests. Nothing runs when nothing is
-// rendering.
+// Asks once per user from the component that renders their name, through a
+// cache that dedups in-flight requests.
 
 import { SlickPlugin } from '$slick';
 import * as meta from './meta.ts';
@@ -37,7 +29,6 @@ export default class HcaStatus extends SlickPlugin<typeof meta.settings> {
 
     this.api.patchComponent<SenderProps>('BaseMessageSender', (Original) => (props) => {
       const userId = props.userId;
-      // A bot has no identity to verify, and Slackbot is not a person.
       const lookupFor = !props.botId && userId && USER_ID.test(userId) && userId !== 'USLACKBOT' ? userId : null;
 
       const [status, setStatus] = React.useState<meta.HcaStatus | null>(() =>
@@ -84,7 +75,7 @@ export default class HcaStatus extends SlickPlugin<typeof meta.settings> {
 
   private async lookUp(userId: string): Promise<meta.HcaStatus | null> {
     try {
-      // Through the main half: the check is cross-origin from the Slack page.
+      // Via main: the endpoint is cross-origin from the Slack page.
       return await this.statuses.get(userId, () => this.api.main.call<meta.HcaStatus | null>('check', userId));
     } catch (error) {
       this.log('could not check verification status', error);

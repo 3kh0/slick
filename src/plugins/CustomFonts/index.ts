@@ -1,22 +1,14 @@
-// Replace Slack's typeface with a system font or an uploaded font file.
+// Slack reads its font off custom properties, not just `font-family`, so
+// overriding only the latter leaves half the UI on Lato.
 //
-// Slack reads its own font off three custom properties rather than a plain
-// `font-family`, so overriding only the latter leaves half the UI on Lato.
-//
-// An uploaded file is served by the main half over `slick-custom-font://`
-// (see main.ts) rather than inlined: a font is ~100KB-1MB of base64 that would
-// otherwise be re-parsed on every settings change.
-//
-// NOTE: v1's renderer also built a font picker inside Slack's Appearance
-// preferences. That belongs in Slick's own settings tab, which is Phase 4, so
-// it is not ported here. The settings themselves work today.
+// Uploaded files are served by main over `slick-custom-font://` rather than
+// inlined as ~1MB of base64 re-parsed on every settings change.
 
 import { SlickPlugin } from '$slick';
 import * as meta from './meta.ts';
 
 const UPLOADED_FAMILY = 'SlickCustomFont';
 
-/** Quote a family name unless it is a bare identifier CSS accepts as-is. */
 const quoteFamily = (name: string): string => (/^[\w-]+$/.test(name) ? name : JSON.stringify(name));
 
 export default class CustomFonts extends SlickPlugin<typeof meta.settings> {

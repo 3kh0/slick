@@ -1,15 +1,9 @@
 // The redaction stylesheet.
 //
-// Adapted from Taut's StreamerMode (MIT, github.com/jeremy46231/taut). Worth
-// reading v1's version next to this one: v1 could not tell a private channel
-// from a public one, so it matched anything whose class or data-qa *contained*
-// "dm", "dms", "dm_list", "direct_message" and six more, case-insensitively,
-// crossed with five element shapes each -- around 300 selectors that both
-// missed real DMs and blurred unrelated UI.
-//
-// These select on the structure Slack actually uses: the lock icon that marks
-// a private channel, the sidebar row's own channel-type attribute, and the
-// activity row's destination tag.
+// Adapted from Taut's StreamerMode (MIT, github.com/jeremy46231/taut). Selects
+// on Slack's structure (lock icon, sidebar channel-type attribute, activity
+// destination tag) rather than class-name substrings, which over- and
+// under-match.
 
 export const ROOT_CLASS = 'slick-streamer-mode';
 export const THREAD_CLASS = 'slick-streamer-mode__private-thread';

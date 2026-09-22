@@ -1,8 +1,5 @@
-// Recognizing Slack's notification sound assets.
-//
-// Slack serves them from slack-edge.com under a fixed set of names, with a
-// content hash appended. Matching on the name rather than the full URL means a
-// Slack redeploy does not silently stop the plugin working.
+// Slack serves notification sounds from slack-edge.com as fixed names plus a
+// content hash; matching on the name survives Slack redeploys.
 
 /** Slack's notification sound names, as of 4.52.155. */
 export const SOUND_NAMES = new Set([
@@ -26,11 +23,7 @@ export const SOUND_NAMES = new Set([
 /** `boop-1a2b3c4d.mp3` -> `boop`. The hash is optional. */
 const ASSET = /^([a-z0-9_]+?)(?:-[0-9a-f]{6,32})?\.(?:aac|m4a|mp3|oga|ogg|opus|wav)$/i;
 
-/**
- * Whether a media source is one of Slack's own notification sounds. Restricted
- * to Slack's origins so a message containing an audio file called `boop.mp3`
- * does not get replaced.
- */
+/** Restricted to Slack's origins so a user-sent `boop.mp3` isn't replaced. */
 export function isNotificationSound(src: string, base: string): boolean {
   let url: URL;
   try {
@@ -48,7 +41,6 @@ export function isNotificationSound(src: string, base: string): boolean {
   return !!name && SOUND_NAMES.has(name.toLowerCase());
 }
 
-/** The URL the main half serves a chosen file from. */
 export function customSoundUrl(path: string): string {
   const extension = /\.[a-z0-9]{1,8}$/i.exec(path)?.[0] ?? '.mp3';
   return `slick-custom-sounds://current/sound${extension}?p=${encodeURIComponent(path)}`;

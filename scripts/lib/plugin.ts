@@ -1,11 +1,6 @@
-// Plugin discovery and bundling.
-//
-// Each plugin is a directory under src/plugins/ with an `index.ts(x)` renderer
-// half and an optional `main.ts` privileged half. Renderer halves are bundled
-// individually into IIFE expressions and inlined into slick.js, so the plugin
-// manager can evaluate, enable and disable them without a reload. Main halves
-// are bundled into the loader instead, where they run with full Electron
-// privileges and are never reachable from page code.
+// Plugin discovery and bundling. Renderer halves (index.ts(x)) become IIFE
+// expressions inlined into slick.js so they can be toggled without a reload;
+// main halves (main.ts) are bundled into the loader, unreachable from the page.
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -36,12 +31,8 @@ export function discoverPlugins(): PluginEntry[] {
     .toSorted((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
 }
 
-/**
- * `$slick` resolves to a virtual module reading the host bundle's globals, so
- * a plugin shares the runtime's `SlickPlugin` identity. Compiling a second
- * copy into each plugin would make `instanceof SlickPlugin` fail and every
- * plugin would be rejected at registration.
- */
+// `$slick` reads the host bundle's globals: a second compiled copy of
+// SlickPlugin would fail `instanceof` and every plugin would be rejected.
 const slickGlobalShim: Plugin = {
   name: 'slick-global-shim',
   setup(builder) {
@@ -56,7 +47,6 @@ const slickGlobalShim: Plugin = {
   },
 };
 
-/** Main halves are bundled into the loader, so `$slick` is just the real module. */
 const slickSharedAlias: Plugin = {
   name: 'slick-shared-alias',
   setup(builder) {
@@ -64,7 +54,6 @@ const slickSharedAlias: Plugin = {
   },
 };
 
-/** Bundle one renderer half into the IIFE-returns-class form the manager loads. */
 export async function bundleRenderer(entry: PluginEntry, debug: boolean): Promise<string> {
   const result = await build({
     entryPoints: [entry.renderer],
@@ -78,9 +67,7 @@ export async function bundleRenderer(entry: PluginEntry, debug: boolean): Promis
     sourcemap: false,
     jsx: 'transform',
     plugins: [slickGlobalShim],
-    // Assets are inlined as data URIs rather than fetched. Slick is
-    // embedded-only: a plugin reaching the network for an image is both a
-    // privacy leak and a thing that breaks offline.
+    // Inline assets: fetching them would leak privacy and break offline.
     loader: { '.gif': 'dataurl', '.png': 'dataurl', '.svg': 'dataurl', '.woff2': 'dataurl' },
     define: { process: 'undefined' },
   });
@@ -104,11 +91,8 @@ export async function bundleAllRenderers(debug: boolean): Promise<Record<string,
   return plugins;
 }
 
-/**
- * Generate the module the loader imports to reach every main half. Written to
- * a temp file rather than resolved dynamically, so the set of privileged
- * plugins is fixed at build time and cannot be extended at runtime.
- */
+// Written to a file, not resolved dynamically, so the set of privileged
+// plugins is fixed at build time.
 export function mainHalvesModule(): string {
   const all = discoverPlugins();
   const withMain = all.filter((entry) => entry.main);

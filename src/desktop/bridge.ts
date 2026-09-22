@@ -1,9 +1,5 @@
-// Slick Desktop Bridge
-// The core renderer<->main channel. Replaces v1's `https://slick.control/?op=`
-// cancelled-fetch hack (scripts/byoe/inject.js:313-385), which existed only
-// because executeJavaScript'd page code had no real way to reach main.
-//
-// Per-plugin RPC lives on a separate, capability-gated channel; see pluginHost.ts.
+// Core renderer<->main channel. Per-plugin RPC is separate and
+// capability-gated; see pluginHost.ts.
 
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
@@ -45,7 +41,7 @@ async function writeFile(name: string, text: string): Promise<boolean> {
     await fs.mkdir(settingsDir(), { recursive: true });
     const file = path.join(settingsDir(), name);
     temp = `${file}.${process.pid}.${Date.now()}.tmp`;
-    // Keep the old inode intact until the complete replacement is durable.
+    // Write-then-rename so a crash never leaves a truncated file.
     await fs.writeFile(temp, text, 'utf8');
     await fs.rename(temp, file);
     return true;
@@ -57,12 +53,8 @@ async function writeFile(name: string, text: string): Promise<boolean> {
 }
 
 /**
- * The custom-CSS editor window, built on first use. Constructing it eagerly
- * would register its ipcMain handlers in every session, and most never open it.
- *
- * Saving goes through the same file the renderer's writeUserCss uses, so an
- * edit reaches the live client over the existing change broadcast rather than
- * through a second path that could disagree with it.
+ * Built lazily so its ipcMain handlers aren't registered in every session.
+ * Saves go through the same file and broadcast as writeUserCss.
  */
 let editor: ReturnType<typeof createCssEditor> | null = null;
 function cssEditor() {
@@ -78,7 +70,6 @@ function cssEditor() {
   return editor;
 }
 
-/** Push to every live Slack client renderer. */
 export function broadcast(channel: string, ...args: unknown[]) {
   for (const contents of webContents.getAllWebContents()) {
     if (contents.isDestroyed()) continue;
@@ -96,7 +87,6 @@ const methods: Record<string, (args: any[]) => unknown> = {
   writeUserCss: async ([css]) => {
     const text = String(css ?? '');
     const ok = await writeFile(USER_CSS_FILE, text);
-    // Keep an open editor window in step, so the two cannot drift apart.
     if (ok && editor) editor.update(text);
     return ok;
   },
@@ -121,8 +111,7 @@ const methods: Record<string, (args: any[]) => unknown> = {
 
   openCssEditor: () => cssEditor().open(),
 
-  // Page-origin fetch, for the cross-origin requests plugins cannot make
-  // themselves. Returns text only; plugins parse it.
+  // For cross-origin requests plugins can't make from the page. Text only.
   async fetch([url, init]) {
     const response = await fetch(String(url), init);
     return { status: response.status, body: await response.text() };
@@ -140,8 +129,7 @@ export function setupBridge() {
     settings: settingsDir(),
   }));
 
-  // Escape hatch for a bad plugin release: --safe-mode boots Slick's runtime
-  // but loads no plugins at all.
+  // --safe-mode boots Slick's runtime with no plugins, for a bad plugin release.
   ipcMain.handle('slick:get-safe-mode', () => safeMode());
 
   ipcMain.handle('slick:rpc', (event, method: string, args: unknown[]) => {
@@ -150,8 +138,4 @@ export function setupBridge() {
     if (!Array.isArray(args)) throw new Error('[slick] bad args');
     return methods[method](args);
   });
-
-  // Reserved for the file watchers that push settings/CSS changes back to the
-  // page; wired up in Phase 4 alongside the settings tab.
-  ipcMain.handle('slick:start', () => true);
 }

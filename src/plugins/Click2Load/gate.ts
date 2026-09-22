@@ -1,5 +1,3 @@
-// Deciding whether a frame should be gated, and building the placeholder.
-
 import { INTERNAL_DOMAINS, PROVIDERS } from './meta.ts';
 
 export type Provider = { key: string; label: string };
@@ -7,12 +5,7 @@ export type Provider = { key: string; label: string };
 export const matchesDomain = (host: string, domains: readonly string[]): boolean =>
   domains.some((domain) => host === domain || host.endsWith(`.${domain}`));
 
-/**
- * Which gate a frame source falls under, or null if it should load freely.
- * `inMessage` says whether the frame is inside a message -- an embed Slack
- * puts in its own chrome is Slack's business, one in a message is a third
- * party someone else chose.
- */
+/** Unknown hosts are only gated inside messages; embeds in Slack's own chrome load freely. */
 export function providerFor(source: string, base: string, inMessage: boolean): Provider | null {
   let url: URL;
   try {
@@ -36,9 +29,8 @@ const escapeHtml = (value: string): string =>
   );
 
 /**
- * The placeholder document. It is a `srcdoc`, so it is same-origin-null and
- * cannot see the page; it reports a click by posting to its parent rather than
- * navigating, which is what lets the page ask for permission before the real
+ * A `srcdoc` placeholder: null-origin, so it can't see the page. It reports a
+ * click via postMessage so the page can get main's permission before the real
  * request is made.
  */
 export function placeholder(source: string, label: string): string {

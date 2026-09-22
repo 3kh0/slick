@@ -1,10 +1,4 @@
-// Slick Stylesheets
-//
-// Keyed stylesheet injection. v1 shipped all plugin CSS through a single
-// `webContents.insertCSS` call rebuilt from scratch on every change, plus a
-// MutationObserver that re-appended the custom-CSS <style> whenever Slack's own
-// style insertion pushed it out of last place. Owning individual <style>
-// elements makes both of those unnecessary.
+// Keyed stylesheet injection: one owned <style> element per key.
 
 type Sheet = {
   css: string;
@@ -12,12 +6,9 @@ type Sheet = {
   elements: WeakMap<Document, HTMLStyleElement>;
 };
 
-// Windows Slack opens by navigating -- ctrl-clicked links, the in-app browser
-// -- get their own Slick instance, because patch.ts substitutes the preload on
-// those too. Pop-outs are the other kind: Slack renders into an about:blank
-// window from the opener, so no preload ever runs there and the only way those
-// documents get Slick's styles is for us to mirror them in. See
-// slack/childWindows.ts, which is what calls registerDocument.
+// Navigated windows get their own Slick via the preload; pop-outs are
+// about:blank windows with no preload, so styles are mirrored into them (see
+// slack/childWindows.ts, which calls registerDocument).
 
 const sheets = new Set<Sheet>();
 const keyed = new Map<string, Sheet>();
@@ -29,7 +20,6 @@ function liveDocuments(): Document[] {
   return [document, ...[...extraDocuments].filter((doc) => doc.defaultView)];
 }
 
-/** Start mirroring every stylesheet, current and future, into `doc`. */
 export function registerDocument(doc: Document) {
   if (doc === document || extraDocuments.has(doc)) return;
   extraDocuments.add(doc);

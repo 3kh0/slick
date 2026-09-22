@@ -1,5 +1,4 @@
-// The SlickBridge surface, as the preload exposes it.
-// Typed here so the app can be checked without importing Electron types.
+// The SlickBridge surface the preload exposes, typed without Electron imports.
 
 import type { BlobStore } from './api/storage.ts';
 
@@ -24,24 +23,17 @@ export interface SlickBridge {
   onUserCssChange(cb: (css: string) => void): () => void;
 
   openFile(title: string, accept?: string): Promise<string>;
-  /** No-op until the Phase 4 CSS editor window is implemented. */
   openCssEditor(): Promise<boolean>;
 
   blobStore(namespace: string): BlobStore;
   plugin(id: string): PluginChannel;
 
   fetch(url: string, init?: RequestInit): Promise<{ status: number; body: string }>;
-
-  start(): Promise<unknown>;
 }
 
-// The global the preload exposes is a one-shot claim, not the API: the name
-// itself cannot be removed (contextBridge defines it non-configurably), so the
-// protection is that slick.js runs before Slack's bundle and takes the handle
-// first. Claiming here, while this module evaluates, is what makes that true.
-//
-// A null result means something claimed before us, which should be impossible
-// and means we are not running first after all.
+// The preload global is a one-shot claim (contextBridge makes it
+// non-configurable), so it is claimed at module evaluation, before Slack's
+// bundle runs. Null means something claimed first: we are not running first.
 const capturedBridge = (() => {
   const claim = (globalThis as any).SlickBridge?.claim;
   if (typeof claim !== 'function') return null;
