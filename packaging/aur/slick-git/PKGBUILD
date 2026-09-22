@@ -1,0 +1,39 @@
+# Maintainer: Slick contributors
+pkgname=slick-git
+pkgver=2.0.100.r0.g0000000
+pkgrel=1
+pkgdesc='Slack client mod built from the latest source (requires official Slack)'
+arch=('x86_64')
+url='https://github.com/3kh0/slick'
+license=('GPL-3.0-only')
+depends=('slack')
+makedepends=('git' 'bun' 'nodejs')
+provides=('slick')
+conflicts=('slick' 'slick-bin')
+source=('slick::git+https://github.com/3kh0/slick.git')
+sha256sums=('SKIP')
+
+pkgver() {
+  cd "$srcdir/slick"
+  local build
+  build="$(git tag --list 'v[0-9]*' --sort=-v:refname | head -1 | sed 's/^v//')"
+  printf '2.0.%s.r%s.g%s' "${build:-0}" "$(git rev-list --count HEAD)" "$(git rev-parse --short HEAD)"
+}
+
+build() {
+  cd "$srcdir/slick"
+  bun install --frozen-lockfile
+  node scripts/build.ts package --arch x64
+}
+
+package() {
+  cd "$srcdir/slick"
+  install -dm755 "$pkgdir/opt/slick" "$pkgdir/usr/bin"
+  tar -xzf dist/release/Slick-*-linux-x64.tar.gz -C "$pkgdir/opt/slick" --strip-components=1
+  ln -s /opt/slick/slick "$pkgdir/usr/bin/slick"
+  install -Dm644 packaging/flatpak/dev.slick.Slick.desktop "$pkgdir/usr/share/applications/dev.slick.Slick.desktop"
+  for icon in assets/desktop-linux/*.png; do
+    size="$(basename "$icon" .png)"
+    install -Dm644 "$icon" "$pkgdir/usr/share/icons/hicolor/${size}x${size}/apps/dev.slick.Slick.png"
+  done
+}

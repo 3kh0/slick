@@ -114,6 +114,10 @@ This builds from source into the same `~/.local/share/slick/app` location instea
 
 You also have some nice flags to play around with: `--restore-handler` on `install-linux.sh` to give `slack://` back to the official Slack app, `--from-release` to use a prebuilt tarball instead of building from source, and `--uninstall` to remove Slick. Your sign-in and settings are kept unless you add `--purge`.
 
+#### Nix (x86_64 Linux)
+
+With [Nix flakes](https://nixos.wiki/wiki/Flakes) enabled, install the official Slack package in your system or user profile, then run `nix run github:3kh0/slick` (or `nix build github:3kh0/slick#slick`). The flake builds Slick from source with nixpkgs' Electron; Slack itself is never bundled. For a non-profile Slack package, pass it as the optional `slackPackage` argument when overriding the Nix derivation. Nix-store installs update via Nix rather than Slick's self-updater. See [Linux distribution options](docs/linux-distribution.md) for details.
+
 #### Flatpak
 
 The Flatpak still uses Slack's installed `app.asar`, so install the official x86_64 Slack package first. Build and install it from the repository root with:
