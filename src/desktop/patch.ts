@@ -92,7 +92,7 @@ function slickMenuTemplate(): Electron.MenuItemConstructorOptions {
 // here gets it on Windows and Linux too.
 type AnyItem = Electron.MenuItem | Electron.MenuItemConstructorOptions;
 /** Slack's Windows labels carry access keys (`&Help`), and its Help item has no role. */
-const labelled = (item: AnyItem, name: string) => (item.label ?? '').replace('&', '') === name;
+const labelled = (item: AnyItem, name: string) => (item.label ?? '').replace(/&/g, '') === name;
 const isHelp = (item: AnyItem) => item.role === 'help' || labelled(item, 'Help');
 
 function injectSlickMenu(items: AnyItem[]) {
