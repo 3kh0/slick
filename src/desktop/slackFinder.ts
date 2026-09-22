@@ -14,6 +14,10 @@ const LINUX_CANDIDATES = [
   '/usr/lib/slack',
   '/opt/Slack',
   '/opt/slack',
+  // Nix profiles expose Slack's lib/slack/resources/app.asar symlink.
+  '/run/current-system/sw/lib/slack',
+  path.join(process.env.HOME || '', '.nix-profile/lib/slack'),
+  path.join('/etc/profiles/per-user', process.env.USER || '', 'lib/slack'),
   // Last, so a native package wins over the snap.
   '/snap/slack/current/usr/lib/slack',
 ];

@@ -27,7 +27,7 @@ const cjsRequire = createRequire(import.meta.url);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 // patch.ts spoofs process.resourcesPath to Slack's; keep ours first.
-const slickResourcesPath = process.resourcesPath;
+const slickResourcesPath = process.env.SLICK_RESOURCES_PATH || process.resourcesPath;
 
 protocol.registerSchemesAsPrivileged(privilegedSchemes());
 
