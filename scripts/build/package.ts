@@ -107,9 +107,15 @@ export async function packageDesktop({ debug = false, platform = process.platfor
   await buildDesktop({ debug });
 
   const selectedArch = targetArch(arch);
+  if (platform === 'linux' && selectedArch !== Arch.x64) {
+    throw new Error('[build:package] Linux releases require x64 Slack');
+  }
   const selectedPlatform =
     platform === 'darwin' ? Platform.MAC : platform === 'win32' ? Platform.WINDOWS : Platform.LINUX;
-  const targets = selectedPlatform.createTarget(platform === 'darwin' ? ['zip', 'dmg'] : 'dir', selectedArch);
+  const targets = selectedPlatform.createTarget(
+    platform === 'darwin' ? ['zip', 'dmg'] : platform === 'linux' ? ['dir', 'AppImage', 'deb', 'rpm'] : 'dir',
+    selectedArch,
+  );
 
   const results = await electronBuild({
     targets,
@@ -117,6 +123,10 @@ export async function packageDesktop({ debug = false, platform = process.platfor
       appId: 'dev.slick.byoe.handoff',
       productName: 'Slick',
       copyright: 'Slick contributors',
+      extraMetadata: {
+        description: 'Slack client mod using your installed Slack',
+        homepage: 'https://github.com/3kh0/slick',
+      },
       electronVersion: electronVersion(),
 
       directories: { app: DIST_DESKTOP, output: OUTPUT, buildResources: ASSETS },
@@ -154,9 +164,27 @@ export async function packageDesktop({ debug = false, platform = process.platfor
         // install-linux.sh and the .desktop Exec line name it.
         executableName: 'slick',
         category: 'Network;InstantMessaging',
-        icon: path.join(ASSETS, 'icon.png'),
-        target: [{ target: 'tar.gz', arch: ['x64', 'arm64'] }],
-        artifactName: 'Slick-${version}-linux-${arch}.${ext}',
+        icon: path.join(ASSETS, 'desktop-linux'),
+        target: [
+          { target: 'AppImage', arch: ['x64'] },
+          { target: 'deb', arch: ['x64'] },
+          { target: 'rpm', arch: ['x64'] },
+        ],
+        desktop: { entry: { Name: 'Slick', MimeType: 'x-scheme-handler/slack;' } },
+      },
+      appImage: {
+        artifactName: 'Slick-${version}-linux-x86_64.AppImage',
+        executableArgs: ['--no-sandbox'],
+      },
+      deb: {
+        artifactName: 'slick_${version}_amd64.deb',
+        packageName: 'slick',
+        maintainer: 'Slick contributors <support@hackclub.com>',
+      },
+      rpm: {
+        artifactName: 'slick-${version}.x86_64.rpm',
+        packageName: 'slick',
+        maintainer: 'Slick contributors <support@hackclub.com>',
       },
 
       afterPack: async (context) => {
