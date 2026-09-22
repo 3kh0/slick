@@ -1,20 +1,51 @@
-{ lib, buildNpmPackage, electron_44, makeWrapper, src, slackPackage ? null }:
+{
+  lib,
+  stdenvNoCC,
+  bun,
+  nodejs,
+  electron_44,
+  makeWrapper,
+  src,
+  slackPackage ? null,
+}:
 
-buildNpmPackage {
+let
+  nodeModules = stdenvNoCC.mkDerivation {
+    pname = "slick-node-modules";
+    version = "2.0.0-dev";
+    inherit src;
+    nativeBuildInputs = [ bun ];
+    dontConfigure = true;
+    dontBuild = true;
+    # Patched shebangs would reference the store, which a fixed-output path may not.
+    dontFixup = true;
+    outputHashMode = "recursive";
+    outputHashAlgo = "sha256";
+    outputHash = "sha256-+Qw/4t1sSiBiV3rgyiR29Z1zABPaNrupwgPMMOH7ZmA=";
+    installPhase = ''
+      export HOME="$TMPDIR/home"
+      export BUN_INSTALL_CACHE_DIR="$TMPDIR/bun-cache"
+      export ELECTRON_SKIP_BINARY_DOWNLOAD=1
+      bun install --frozen-lockfile --ignore-scripts --cpu=x64 --os=linux
+      rm -rf node_modules/.cache node_modules/.bun
+      mkdir -p $out
+      cp -a node_modules $out/
+    '';
+  };
+in
+stdenvNoCC.mkDerivation {
   pname = "slick";
   version = "2.0.0-dev";
   inherit src;
-  npmDepsHash = "sha256-k5GQpXkYGivPcJsReDKPTdLHl9l3VUXEv2ertBUwQ4o=";
-  dontNpmBuild = true;
-  nativeBuildInputs = [ makeWrapper ];
+  nativeBuildInputs = [ nodejs makeWrapper ];
+  dontConfigure = true;
 
-  # Electron is supplied by nixpkgs; npm's Electron download is unnecessary.
-  ELECTRON_SKIP_BINARY_DOWNLOAD = "1";
   SLICK_BUILD = "0";
   SLICK_VERSION = "2.0.0-dev";
 
   buildPhase = ''
     runHook preBuild
+    ln -s ${nodeModules}/node_modules node_modules
     node scripts/build.ts desktop
     runHook postBuild
   '';
@@ -39,6 +70,7 @@ buildNpmPackage {
   meta = {
     description = "Slack client mod using an installed official Slack";
     homepage = "https://github.com/3kh0/slick";
+    license = lib.licenses.gpl3Only;
     platforms = [ "x86_64-linux" ];
     mainProgram = "slick";
   };
