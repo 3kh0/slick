@@ -31,12 +31,16 @@ export async function addSettingsTab(manager: PluginManager, config: ConfigStore
   patchComponent<TabsProps>('Tabs', (Original) => (props) => {
     const [slickSelected, setSlickSelected] = React.useState(false);
     const tabs = [...props.tabs];
-    if (tabs.at(-1)?.id === 'advanced' && !tabs.some((tab) => tab.id === 'slick')) {
+    const advanced = tabs.at(-1);
+    if (advanced?.id === 'advanced' && !tabs.some((tab) => tab.id === 'slick')) {
       tabs.push({
         id: 'slick',
         label: <>Slick</>,
         content: <SlickSettings manager={manager} config={config} bridge={bridge} />,
-        svgIcon: { name: 'code' },
+        // Advanced's own cog, taken from its props rather than named. An icon
+        // name is a guess about Slack's icon set, and a wrong one renders
+        // nothing; this is guaranteed to be an icon that exists.
+        svgIcon: advanced.svgIcon,
         'aria-label': 'Slick',
       });
     }
@@ -214,16 +218,48 @@ function SettingRow({
   bridge: SlickBridge;
 }) {
   const save = (next: SettingValue) => void config.setPluginSetting(pluginId, settingKey, next);
+  const inputId = `slick-setting-${pluginId}-${settingKey}`;
+  const note = restartRequired ? (
+    <div style={{ color: 'var(--sk_raspberry_red, #e01e5a)', fontSize: '12px', marginTop: '4px' }}>
+      Restart Slick to apply this setting.
+    </div>
+  ) : null;
+
+  // A checkbox reads as a statement you agree with, so it sits beside its
+  // label. Everything else is a value you supply, so the label goes above it.
+  // v1 made the same split.
+  if (setting.type === 'boolean') {
+    return (
+      <div style={{ marginBottom: '16px' }}>
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: '10px' }}>
+          <input
+            id={inputId}
+            className="c-input_checkbox"
+            type="checkbox"
+            checked={value === true}
+            onChange={(event) => save(event.currentTarget.checked)}
+            style={{ flex: '0 0 auto' }}
+          />
+          <label htmlFor={inputId} style={{ margin: 0, fontWeight: 700, cursor: 'pointer' }}>
+            {setting.label}
+          </label>
+        </div>
+        {setting.description && (
+          <div style={{ marginLeft: '26px' }}>
+            <elements.Hint>{setting.description}</elements.Hint>
+          </div>
+        )}
+        {note}
+      </div>
+    );
+  }
+
   return (
     <div style={{ marginBottom: '16px' }}>
       <div style={{ fontWeight: 'bold', marginBottom: '5px' }}>{setting.label}</div>
       <SettingControl setting={setting} value={value} save={save} bridge={bridge} />
       {setting.description && <elements.Hint>{setting.description}</elements.Hint>}
-      {restartRequired && (
-        <div style={{ color: 'var(--sk_raspberry_red, #e01e5a)', fontSize: '12px', marginTop: '4px' }}>
-          Restart Slick to apply this setting.
-        </div>
-      )}
+      {note}
     </div>
   );
 }
