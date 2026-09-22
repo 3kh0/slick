@@ -12,34 +12,12 @@ type Sheet = {
   elements: WeakMap<Document, HTMLStyleElement>;
 };
 
+// Windows Slack opens with window.open get their own Slick instance, because
+// patch.ts substitutes the preload on those too -- so there is no second
+// document to mirror into from here.
+
 const sheets = new Set<Sheet>();
 const keyed = new Map<string, Sheet>();
-
-/** Extra documents to mirror styles into: Slack's pop-out windows. */
-const extraDocuments = new Set<Document>();
-const documentListeners = new Set<(doc: Document) => void>();
-
-function liveDocuments(): Document[] {
-  return [document, ...[...extraDocuments].filter((doc) => doc.defaultView)];
-}
-
-export function registerDocument(doc: Document) {
-  if (doc === document || extraDocuments.has(doc)) return;
-  extraDocuments.add(doc);
-  for (const sheet of sheets) render(sheet, doc);
-  for (const listener of documentListeners) {
-    try {
-      listener(doc);
-    } catch (error) {
-      console.error('[slick] document listener threw:', error);
-    }
-  }
-}
-
-export function onDocument(cb: (doc: Document) => void): () => void {
-  documentListeners.add(cb);
-  return () => void documentListeners.delete(cb);
-}
 
 function render(sheet: Sheet, doc: Document) {
   let element = sheet.elements.get(doc);
@@ -53,10 +31,8 @@ function render(sheet: Sheet, doc: Document) {
 }
 
 function drop(sheet: Sheet) {
-  for (const doc of liveDocuments()) {
-    sheet.elements.get(doc)?.remove();
-    sheet.elements.delete(doc);
-  }
+  sheet.elements.get(document)?.remove();
+  sheet.elements.delete(document);
   sheets.delete(sheet);
   if (sheet.key !== undefined) keyed.delete(sheet.key);
 }
@@ -79,7 +55,7 @@ export function setStyle(css: string | null, key?: string): () => void {
     if (key !== undefined) keyed.set(key, sheet);
   }
   sheet.css = css;
-  for (const doc of liveDocuments()) render(sheet, doc);
+  render(sheet, document);
 
   const added = sheet;
   return () => drop(added);

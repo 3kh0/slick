@@ -27,6 +27,16 @@ type RowProps = {
   className?: string;
 };
 
+/** The message overflow menu, which knows which message it was opened from. */
+type ActionsMenuProps = {
+  channelId?: string;
+  ts?: string;
+  onTriggerClose?: (event?: unknown) => void;
+};
+
+/** Slack's generic menu body: the rows are its children. */
+type MenuProps = { children?: React.ReactNode };
+
 const STORAGE_KEY = 'log';
 const MAX_ENTRIES = 1000;
 const MAX_EDITS_PER_MESSAGE = 100;
@@ -96,6 +106,13 @@ export default class MessageLogger extends SlickPlugin<typeof meta.settings> {
   private rowTimer: ReturnType<typeof setTimeout> | null = null;
   private seenRow = false;
 
+  /**
+   * The overflow menu's rows are rendered by Slack's generic `Menu`, which has
+   * no idea which message it belongs to. `MessageActionsMenu` does, so it looks
+   * the entry up and hands the finished rows down.
+   */
+  private readonly MenuRowsContext = React.createContext<React.ReactNode[]>([]);
+
   async start() {
     const saved = await this.api.storage.get<Record<string, LogEntry>>(STORAGE_KEY, {});
     if (this.api.signal.aborted) return;
@@ -112,6 +129,7 @@ export default class MessageLogger extends SlickPlugin<typeof meta.settings> {
     this.api.messages.injectMessages(() => this.injectable());
     this.api.setStyle(this.css(), 'deleted');
     this.patchRows();
+    this.patchMenu();
     this.log(`logging deletes and edits (${this.entries.size} stored)`);
   }
 
@@ -323,7 +341,6 @@ export default class MessageLogger extends SlickPlugin<typeof meta.settings> {
       .slick-ml-edited-original { display: block; margin-bottom: 2px; opacity: .62; white-space: pre-wrap; word-break: break-word; }
       .slick-ml-edited-original s { text-decoration: line-through; }
       .slick-ml-edited-marker { margin-left: 4px; font-size: .85em; opacity: .72; }
-      .slick-ml-forget { margin: 2px 8px 2px 0; font-size: 12px; text-decoration: underline; }
     `;
   }
 
@@ -351,25 +368,81 @@ export default class MessageLogger extends SlickPlugin<typeof meta.settings> {
       .filter(Boolean)
       .join(' ');
 
+    // The two ways of dismissing an entry live in the message's overflow menu,
+    // not here: rendered inline they read as part of the message body.
     return React.createElement(
       'div',
       { className: classes || undefined },
       entry.edits?.length ? this.editHistory(entry.edits) : null,
-      entry.edits?.length
-        ? React.createElement(
-            'button',
-            { className: 'c-button-unstyled slick-ml-forget', type: 'button', onClick: () => this.hideEdits(entry) },
-            'Hide edit history',
-          )
-        : null,
-      entry.deleted
-        ? React.createElement(
-            'button',
-            { className: 'c-button-unstyled slick-ml-forget', type: 'button', onClick: () => this.acceptDelete(entry) },
-            'Accept deletion',
-          )
-        : null,
       React.createElement(Original, props),
+    );
+  }
+
+  /**
+   * Put "Hide edit history" and "Accept deletion" in the message's three-dots
+   * menu. Slack builds that menu from redux selectors rather than from a
+   * template prop, so there is nothing to add an entry to; the rows are
+   * appended as extra children of the menu body instead.
+   */
+  private patchMenu() {
+    const React = this.api.react;
+
+    this.api.patchComponent<ActionsMenuProps>('MessageActionsMenu', (Original) => (props) => {
+      const version = this.api.redux.usePatchVersion();
+      const { channelId, ts, onTriggerClose } = props;
+      const rows = React.useMemo(() => {
+        const entry = channelId && ts ? this.entries.get(this.key(channelId, ts)) : undefined;
+        if (!entry) return [];
+        return [
+          entry.edits?.length
+            ? this.menuRow('slick_ml_hide_edits', 'Hide edit history', () => this.hideEdits(entry), onTriggerClose)
+            : null,
+          entry.deleted
+            ? this.menuRow('slick_ml_accept_delete', 'Accept deletion', () => this.acceptDelete(entry), onTriggerClose)
+            : null,
+        ].filter((row) => row !== null);
+      }, [channelId, ts, onTriggerClose, version]);
+
+      return React.createElement(this.MenuRowsContext.Provider, { value: rows }, React.createElement(Original, props));
+    });
+
+    this.api.patchComponent<MenuProps>('Menu', (Original) => (props) => {
+      const rows = React.useContext(this.MenuRowsContext);
+      if (!rows.length) return React.createElement(Original, props);
+      // Emptying the context below this point keeps the rows off the submenus
+      // Slack renders inside the same menu, each of which is its own `Menu`.
+      return React.createElement(
+        this.MenuRowsContext.Provider,
+        { value: [] },
+        React.createElement(Original, props, props.children, rows),
+      );
+    });
+  }
+
+  /**
+   * One row, in Slack's own menu-item markup. Slack's `MenuItem` is exported
+   * behind a wrapper this cannot address by name, and an unrecognised child is
+   * rendered as-is by its `Menu`, so the classes are the contract here.
+   */
+  private menuRow(key: string, label: string, click: () => void, close?: (event?: unknown) => void) {
+    const React = this.api.react;
+    return React.createElement(
+      'div',
+      { key, className: 'c-menu_item__li', role: 'presentation' },
+      React.createElement(
+        'button',
+        {
+          type: 'button',
+          role: 'menuitem',
+          className: 'c-menu_item__button',
+          'data-qa': key,
+          onClick: () => {
+            click();
+            close?.();
+          },
+        },
+        React.createElement('div', { className: 'c-menu_item__label' }, label),
+      ),
     );
   }
 

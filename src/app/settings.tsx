@@ -7,8 +7,42 @@ import type { PluginManager } from './pluginManager.ts';
 import { patchComponent, reactReady } from './slack/react.tsx';
 
 let elements: Awaited<typeof elementsReady>;
-let warnedMissingAdvanced = false;
+let warnedUnrecognisedTabs = false;
 const configWriteQueues = new WeakMap<ConfigStore, Promise<void>>();
+
+/**
+ * The section ids Slack's Preferences dialog renders, read off its `Tabs`
+ * props on Slack 4.52.155 and recorded in docs/slack-internals.md.
+ *
+ * Slack builds the sidebar rail out of the same `Tabs` component, so the tab
+ * list has to be identified by what is in it. The rail's ids (home, dms,
+ * activity-inbox, unified-files, later, platform) overlap this set not at all,
+ * so a handful of matches separates the two without depending on one id in one
+ * position -- which is what put a stray Slick tab on the rail.
+ */
+const PREFERENCES_TAB_IDS = new Set([
+  'availability',
+  'notifications',
+  'vip',
+  'tab_rail',
+  'sidebar',
+  'themes',
+  'messages_media',
+  'language_region',
+  'accessibility',
+  'mark_as_read',
+  'video_audio',
+  'salesforce',
+  'connected_accounts',
+  'privacy_visibility',
+  'advanced',
+  'slack_ai',
+  'labs',
+  'send_on_behalf',
+]);
+
+/** Enough matches to be sure, few enough to survive Slack dropping sections. */
+const MIN_PREFERENCES_TABS = 3;
 
 function queueConfigWrite(config: ConfigStore, write: () => Promise<boolean>): void {
   const previous = configWriteQueues.get(config) ?? Promise.resolve();
@@ -41,13 +75,26 @@ export async function addSettingsTab(manager: PluginManager, config: ConfigStore
   // Advanced route avoids teaching its Preferences router an unknown route.
   patchComponent<TabsProps>('Tabs', (Original) => (props) => {
     const [slickSelected, setSlickSelected] = React.useState(false);
+
+    const known = props.tabs.filter((tab) => tab.id !== undefined && PREFERENCES_TAB_IDS.has(tab.id));
+    if (known.length < MIN_PREFERENCES_TABS) {
+      // Some ids recognised but not enough means Slack has renamed most of
+      // them and the set above is stale. Say so once: the alternative is
+      // Preferences quietly losing its Slick tab, which leaves hand-editing
+      // settings.json as the only way in.
+      if (known.length && !warnedUnrecognisedTabs) {
+        warnedUnrecognisedTabs = true;
+        console.error(
+          '[slick] Slack Preferences tab ids have changed; the Slick tab has nowhere to go. Saw:',
+          props.tabs.map((tab) => tab.id),
+        );
+      }
+      return <Original {...props} />;
+    }
+
     const tabs = [...props.tabs];
     const advanced = tabs.find((tab) => tab.id === 'advanced');
-    const hostTab = advanced ?? tabs.find((tab) => tab.id === props.currentTabId) ?? tabs[0];
-    if (!advanced && !warnedMissingAdvanced) {
-      warnedMissingAdvanced = true;
-      console.error('[slick] Slack Preferences no longer has an Advanced tab; using the current tab as Slick host');
-    }
+    const hostTab = advanced ?? known[known.length - 1];
     if (!tabs.some((tab) => tab.id === 'slick')) {
       tabs.push({
         id: 'slick',
@@ -55,14 +102,14 @@ export async function addSettingsTab(manager: PluginManager, config: ConfigStore
         content: <SlickSettings manager={manager} config={config} bridge={bridge} />,
         // Borrow a rendered tab's icon rather than guessing a private icon
         // name. Advanced is preferred, but Slack may rename or remove it.
-        svgIcon: advanced?.svgIcon ?? hostTab?.svgIcon ?? { name: 'settings' },
+        svgIcon: hostTab.svgIcon ?? { name: 'settings' },
         'aria-label': 'Slick',
       });
     }
 
     const onTabChange = (id: string, event: React.UIEvent) => {
       setSlickSelected(id === 'slick');
-      props.onTabChange?.(id === 'slick' ? (hostTab?.id ?? 'advanced') : id, event);
+      props.onTabChange?.(id === 'slick' ? (hostTab.id ?? 'advanced') : id, event);
     };
 
     return (

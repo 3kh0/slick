@@ -155,28 +155,31 @@ Thunk creators confirmed resolving by name: `ensureMembersArePresent`
 Filled in as plugins are ported. Each row should say which plugin depends on it
 and how it was identified, so a break is diagnosable without re-deriving it.
 
-| Name                                                 | Kind          | Used by                                | How it was found                                                                                           |
-| ---------------------------------------------------- | ------------- | -------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
-| `createStore`                                        | redux export  | core (`src/app/slack/redux.ts`)        | named function export, wrapped via `patchExportFunction`                                                   |
-| createThunk module                                   | thunk factory | core (`src/app/slack/redux.ts`)        | signature: the same module exports a kind enum with `Thunk: 'Thunk'` and `Fetcher: 'Fetcher'`              |
-| `.p-client_container`                                | DOM anchor    | core (redux store + fiber root lookup) | stable Slack client container class                                                                        |
-| `currentUserStartedTyping`                           | thunk         | `SilentTyping`                         | present in the thunk registry; confirmed by dumping all 4,994 names                                        |
-| `currentUserEndedTyping`                             | thunk         | `SilentTyping`                         | as above                                                                                                   |
-| `routeMessages`                                      | named export  | core (`src/app/slack/rtm.ts`)          | named function export; Slack routes every socket payload through it                                        |
-| `handleMessageImmediatelyWithoutPreprocessing`       | thunk         | core (`src/app/slack/rtm.ts`)          | degraded-mode path that skips `routeMessages`; present in the thunk registry                               |
-| `state.messages[channelId][ts]`                      | redux slice   | `MessageLogger`, `Censorship`          | Taut `getRawMessage`; two-level map, bodies not timestamps. Also ShowRealUser                              |
-| `state.channelHistory[key].slices[].timestamps`      | redux slice   | `MessageLogger` via `injectMessages`   | Slack renders from this array, not by enumerating `messages`; key is `channelId` or `channelId-threadTs`   |
-| `MessageWrapper`                                     | component     | `MessageLogger`                        | Taut ShowRealUser patches this with `props.msg`; channel message row                                       |
-| `ThreadRootGeneric`                                  | component     | `MessageLogger`                        | as above; thread parent row                                                                                |
-| `MessageListItem`                                    | component     | `Censorship`                           | Taut ShowRealUser; search result row with `props.result.messages` (search copies never hit `messages`)     |
-| `MessagePaneInput`                                   | component     | `bChannel`, `onMessageSendDelta`       | confirmed rendering; `props.prepareAndSendMessage({ delta, channelId, … })`                                |
-| `InputContainer`                                     | component     | `bChannel`, `onMessageSendDelta`       | thread composer; same send prop as `MessagePaneInput`                                                      |
-| `TextyAutocomplete`                                  | component     | `bChannel`                             | **Not yet seen rendering.** v1 composer integration; `includeAllBroadcastKeywords` enables `@channel`      |
-| `convertDeltaToBlocks`                               | named export  | core (`src/app/slack/blocks.ts`)       | v1 `DiPi.A`; identified by export name. `api.blocks.fromDelta`                                             |
-| `getChannelPrefByApi` / `getChannelPref`             | thunk         | `bChannel`                             | **CANDIDATE, unverified.** Replaces v1 `M9P0.Kn`. Tried at runtime; falls back to `conversations.getPrefs` |
-| `setChannelPrefsByApi` / `setChannelPrefs`           | thunk         | `bChannel`                             | **CANDIDATE, unverified.** Replaces v1 `Tid6.y`. Tried at runtime; falls back to `conversations.setPrefs`  |
-| `inviteUsersToChannelByApi` / `inviteUsersToChannel` | thunk         | `bChannel`                             | **CANDIDATE, unverified.** Replaces v1 `M9P0.Cw`. Tried at runtime; falls back to `conversations.invite`   |
-| `conversations.invite` / `getPrefs` / `setPrefs`     | userAPI       | `bChannel`                             | durable fallback when the thunk names are absent. `already_in_channel` means the bot is a member           |
+| Name                                                 | Kind          | Used by                                | How it was found                                                                                                                 |
+| ---------------------------------------------------- | ------------- | -------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| `createStore`                                        | redux export  | core (`src/app/slack/redux.ts`)        | named function export, wrapped via `patchExportFunction`                                                                         |
+| createThunk module                                   | thunk factory | core (`src/app/slack/redux.ts`)        | signature: the same module exports a kind enum with `Thunk: 'Thunk'` and `Fetcher: 'Fetcher'`                                    |
+| `.p-client_container`                                | DOM anchor    | core (redux store + fiber root lookup) | stable Slack client container class                                                                                              |
+| `currentUserStartedTyping`                           | thunk         | `SilentTyping`                         | present in the thunk registry; confirmed by dumping all 4,994 names                                                              |
+| `currentUserEndedTyping`                             | thunk         | `SilentTyping`                         | as above                                                                                                                         |
+| `routeMessages`                                      | named export  | core (`src/app/slack/rtm.ts`)          | named function export; Slack routes every socket payload through it                                                              |
+| `handleMessageImmediatelyWithoutPreprocessing`       | thunk         | core (`src/app/slack/rtm.ts`)          | degraded-mode path that skips `routeMessages`; present in the thunk registry                                                     |
+| `state.messages[channelId][ts]`                      | redux slice   | `MessageLogger`, `Censorship`          | Taut `getRawMessage`; two-level map, bodies not timestamps. Also ShowRealUser                                                    |
+| `state.channelHistory[key].slices[].timestamps`      | redux slice   | `MessageLogger` via `injectMessages`   | Slack renders from this array, not by enumerating `messages`; key is `channelId` or `channelId-threadTs`                         |
+| `MessageWrapper`                                     | component     | `MessageLogger`                        | Taut ShowRealUser patches this with `props.msg`; channel message row                                                             |
+| `ThreadRootGeneric`                                  | component     | `MessageLogger`                        | as above; thread parent row                                                                                                      |
+| `MessageActionsMenu`                                 | component     | `MessageLogger`                        | opened a message's three-dots menu and dumped the newly rendered names; props `{channelId, ts, threadTs, onTriggerClose}`        |
+| `Menu`                                               | component     | `MessageLogger`                        | Slack's generic menu body. It builds the message menu from redux selectors, not a template prop, so extra rows go in as children |
+| `Tabs`                                               | component     | core (`src/app/settings.tsx`)          | Preferences **and** the sidebar rail render through it; the Preferences instance is told apart by its section ids (below)        |
+| `MessageListItem`                                    | component     | `Censorship`                           | Taut ShowRealUser; search result row with `props.result.messages` (search copies never hit `messages`)                           |
+| `MessagePaneInput`                                   | component     | `bChannel`, `onMessageSendDelta`       | confirmed rendering; `props.prepareAndSendMessage({ delta, channelId, … })`                                                      |
+| `InputContainer`                                     | component     | `bChannel`, `onMessageSendDelta`       | thread composer; same send prop as `MessagePaneInput`                                                                            |
+| `TextyAutocomplete`                                  | component     | `bChannel`                             | **Not yet seen rendering.** v1 composer integration; `includeAllBroadcastKeywords` enables `@channel`                            |
+| `convertDeltaToBlocks`                               | named export  | core (`src/app/slack/blocks.ts`)       | v1 `DiPi.A`; identified by export name. `api.blocks.fromDelta`                                                                   |
+| `getChannelPrefByApi` / `getChannelPref`             | thunk         | `bChannel`                             | **CANDIDATE, unverified.** Replaces v1 `M9P0.Kn`. Tried at runtime; falls back to `conversations.getPrefs`                       |
+| `setChannelPrefsByApi` / `setChannelPrefs`           | thunk         | `bChannel`                             | **CANDIDATE, unverified.** Replaces v1 `Tid6.y`. Tried at runtime; falls back to `conversations.setPrefs`                        |
+| `inviteUsersToChannelByApi` / `inviteUsersToChannel` | thunk         | `bChannel`                             | **CANDIDATE, unverified.** Replaces v1 `M9P0.Cw`. Tried at runtime; falls back to `conversations.invite`                         |
+| `conversations.invite` / `getPrefs` / `setPrefs`     | userAPI       | `bChannel`                             | durable fallback when the thunk names are absent. `already_in_channel` means the bot is a member                                 |
 
 > **On the bChannel rows marked CANDIDATE.** Nothing has confirmed these
 > against a running client. The plugin tries each name, logs when it is absent,
@@ -184,15 +187,33 @@ and how it was identified, so a break is diagnosable without re-deriving it.
 > They are recorded here as leads to confirm, not as identified names. Confirm
 > with `thunkNames()` on a focused client and then rewrite the row.
 
+### Preferences tab ids
+
+`src/app/settings.tsx` adds the Slick tab to the `Tabs` instance whose ids it
+recognises. Read off `props.tabs` on a live client (Slack 4.52.155):
+
+| list         | ids                                                                                                                                                                                                                                |
+| ------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Preferences  | `availability`, `notifications`, `vip`, `tab_rail`, `sidebar`, `themes`, `messages_media`, `language_region`, `accessibility`, `mark_as_read`, `video_audio`, `salesforce`, `connected_accounts`, `privacy_visibility`, `advanced` |
+| sidebar rail | `home`, `dms`, `activity-inbox`, `unified-files`, `later`, `platform`                                                                                                                                                              |
+
+The two sets do not overlap, which is what the patch relies on. Matching on
+`advanced` alone is not enough — it identifies Preferences but not _only_
+Preferences once the check is relaxed, and a Slick tab then appears on the rail.
+If Slack renames most of these, `settings.tsx` logs once and adds no tab.
+
 ## CSS class names in use
 
 Class names are a weaker contract than component names -- Slack regenerates
 them -- so nothing load-bearing may depend on one. Each row must say what
 happens when it stops matching.
 
-| Selector                         | Used by  | What it is                                                     | If it stops matching                                                                                   |
-| -------------------------------- | -------- | -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| `.p-ia4_top_nav__left_container` | `Snappy` | the top nav's left pane, whose `flex-basis` Slack sets from JS | resize gating still works; the top nav holds its width for the length of a drag instead of tracking it |
+| Selector                                                                                                                                 | Used by                                         | What it is                                                                                                                                                                                     | If it stops matching                                                                                   |
+| ---------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| `.p-ia4_top_nav__left_container`                                                                                                         | `Snappy`                                        | the top nav's left pane, whose `flex-basis` Slack sets from JS                                                                                                                                 | resize gating still works; the top nav holds its width for the length of a drag instead of tracking it |
+| `.p-member_profile_hover_card__container_deleted`                                                                                        | `themes/amoled.json`, `themes/ultraviolet.json` | the body of the profile hover card for a deactivated account. Slack paints it from `--sk_foreground_min_solid` (`#222529`), a dual-use token the themes deliberately do not override wholesale | the card goes back to Slack's grey panel against the theme's background. Nothing else changes          |
+| `.p-member_profile_hover_card__banner_deactivated_dark` / `_light`, `.p-member_profile_restriction_deleted`, `.c-avatar` inside the card | as above                                        | the "Deactivated account" strip on the hover card and on the profile pane, plus the card's avatar, all painted from `--sk_foreground_low_solid` (`#35373b`)                                    | the strip and the avatar placeholder stay a lighter grey than the rest of the client                   |
+| `.c-menu_item__li`, `.c-menu_item__button`, `.c-menu_item__label`                                                                        | `MessageLogger`                                 | Slack's menu-row markup, reproduced for the rows the plugin appends to the message overflow menu                                                                                               | the rows still render and still work; they lose Slack's padding, hover and type                        |
 
 ## Still to identify
 

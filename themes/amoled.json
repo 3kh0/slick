@@ -25,6 +25,8 @@
     ".c-message_kit__background--hovered:not(.c-message_kit__background--highlight):not(.c-message_kit__background--editing):not(.c-message_kit__background--huddle):not(.c-message_kit__background--deleting){background:#121416 !important;}",
     ".c-message:hover:not(.c-message--highlight):not(.c-message--standalone):not(.c-message--pinned):not(.c-message--ephemeral):not(.c-message--custom_response):not(.c-message--starred),.c-message--hover:not(.c-message--highlight):not(.c-message--standalone):not(.c-message--pinned):not(.c-message--ephemeral):not(.c-message--custom_response):not(.c-message--starred){background:#121416 !important;}",
     ".p-about_modal__contents{background:#000 !important;border:1px solid #2a2a2a !important;}",
+    ".p-member_profile_hover_card__container_deleted{background:#000 !important;border:1px solid #2a2a2a !important;}",
+    ".p-member_profile_hover_card__banner_deactivated_dark,.p-member_profile_hover_card__banner_deactivated_light,.p-member_profile_restriction_deleted,.p-member_profile_hover_card__container_deleted .c-avatar{background:#121416 !important;}",
     ".p-view_contents--primary:has([data-qa^=outbox_tab_]) .p-view_header,.p-outbox_page__tab-menu,.p-drafts_page,.p-sent_page{background:#000 !important;}",
     ".p-view_contents--primary:has([data-qa=threads_view]) .p-view_header,.p-threads_view{background:#000 !important;}"
   ]
