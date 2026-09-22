@@ -79,7 +79,39 @@ SLACK_CONFIG="$HOME/Library/Application Support/Slick/slick/slack-app-path"
 mkdir -p "$(dirname "$SLACK_CONFIG")"
 printf '%s\n' "$SLACK" > "$SLACK_CONFIG"
 
-if [ -f "$ROOT/scripts/byoe/build-handoff-app.js" ]; then
+# v2 builds through electron-builder (scripts/build.ts); v1 through the
+# hand-rolled builder. A v2 checkout still carries the v1 builder, so the v2
+# loader entry point is what actually distinguishes them.
+V2=0
+[ -f "$ROOT/src/desktop/main.ts" ] && V2=1
+
+if [ "$V2" -eq 1 ]; then
+  node -e 'process.exit(parseInt(process.versions.node, 10) >= 22 ? 0 : 1)' 2>/dev/null \
+    || die "Node.js 22+ is required to build Slick v2 (found: $(node -v 2>/dev/null || echo none))."
+  [ "$BETA" -eq 0 ] || die "--beta is a v1 mechanism; in v2 the early path is the only path."
+
+  if [ "$(sysctl -n hw.optional.arm64 2>/dev/null || true)" = "1" ]; then ARCH=arm64; else ARCH=x64; fi
+  # electron-builder names the arm64 directory mac-arm64 and the x64 one mac.
+  [ "$ARCH" = "arm64" ] && OUTDIR="mac-arm64" || OUTDIR="mac"
+
+  step "Building Slick v2 (this bundles Electron; give it a minute)"
+  ( cd "$ROOT" && node scripts/build.ts package ) >/dev/null \
+    || die "build failed; run 'node scripts/build.ts package' to see why"
+
+  BUILT="$ROOT/dist/release/$OUTDIR/Slick.app"
+  [ -d "$BUILT" ] || die "electron-builder produced no app at $BUILT"
+
+  mkdir -p "$HOME/Applications"
+  TMP="$(mktemp -d "$HOME/Applications/.slick-install.XXXXXX")"
+  trap 'rm -rf "$TMP"' EXIT
+  STAGED_APP="$TMP/Slick.app"
+  # Copied rather than moved, so a failed install does not destroy the build.
+  ditto "$BUILT" "$STAGED_APP"
+
+  step "Installing icon"
+  "$ROOT/scripts/byoe/set-icon.sh" "$STAGED_APP" --no-register 2>&1 | while IFS= read -r line; do printf '    %s\n' "$line"; done
+
+elif [ -f "$ROOT/scripts/byoe/build-handoff-app.js" ]; then
   node -e 'process.exit(parseInt(process.versions.node, 10) >= 18 ? 0 : 1)' 2>/dev/null \
     || die "Node.js 18+ is required (found: $(node -v 2>/dev/null || echo none)), please install it from nodejs.org first."
 
@@ -159,14 +191,16 @@ else
 
   ditto -x -k "$TMP/Slick.zip" "$TMP/staged"
   STAGED_APP="$TMP/staged/Slick.app"
-  [ -x "$STAGED_APP/Contents/MacOS/Electron" ] || die "release zip did not contain Slick.app"
+  # v1 releases name the binary Electron; v2 (electron-builder) names it Slick.
+  [ -x "$STAGED_APP/Contents/MacOS/Slick" ] || [ -x "$STAGED_APP/Contents/MacOS/Electron" ] \
+    || die "release zip did not contain Slick.app"
   [ "$BETA" -eq 0 ] || die "--beta is not supported for downloaded macOS apps: modifying the runtime invalidates code signing. Clone the repo and run ./install.sh --beta instead."
   [ ! -e "$STAGED_APP/Contents/Resources/slick/.slick-beta" ] || die "release unexpectedly enables beta; refusing to modify a signed app"
 
 fi
 
-pkill -f "$APP/Contents/MacOS/Electron" 2>/dev/null || true
-wait_gone -f "$APP/Contents/MacOS/Electron"
+for BIN in Slick Electron; do pkill -f "$APP/Contents/MacOS/$BIN" 2>/dev/null || true; done
+for BIN in Slick Electron; do wait_gone -f "$APP/Contents/MacOS/$BIN"; done
 step "Installing $APP"
 mkdir -p "$HOME/Applications"
 BACKUP="$(mktemp -d "$HOME/Applications/.slick-previous.XXXXXX")"
@@ -177,7 +211,7 @@ if ! mv "$STAGED_APP" "$APP"; then
 fi
 rm -rf "$BACKUP"
 
-if [ -f "$ROOT/scripts/byoe/build-handoff-app.js" ]; then
+if [ "$V2" -eq 0 ] && [ -f "$ROOT/scripts/byoe/build-handoff-app.js" ]; then
   if [ "$BETA" -eq 1 ]; then
     touch "$ROOT/.slick-beta"
   else
