@@ -64,18 +64,31 @@ patchExportFunction('createStore', (originalCreateStore) => (...args: any[]) => 
   try {
     wrapGetState(store);
   } catch {}
+  // A new store may be about to replace the Provider's; look again next time.
+  cachedStore = null;
   return store;
 });
 
-/** Slack's store, found through the <Provider> value on the fiber tree. */
+/** The Provider's store once found. Cleared whenever Slack creates a new one. */
+let cachedStore: SlackStore | null = null;
+
+/**
+ * Slack's store, found through the <Provider> value on the fiber tree. The
+ * walk runs once per store: it used to run on every call, and hooks, thunks
+ * and a 500ms poll all call this.
+ */
 export function getStore(): SlackStore | null {
+  if (cachedStore) return cachedStore;
   const start = document.querySelector('.p-client_container')?.firstElementChild;
   if (!start) return null;
 
   for (let fiber = getFiberFromNode(start); fiber; fiber = fiber.return) {
     const value = fiber.memoizedProps?.value;
     const store = value?.store ?? value;
-    if (store && typeof store.getState === 'function' && typeof store.subscribe === 'function') return store;
+    if (store && typeof store.getState === 'function' && typeof store.subscribe === 'function') {
+      cachedStore = store;
+      return store;
+    }
   }
   return null;
 }
@@ -296,17 +309,110 @@ export function mapEntries<T = any>(
   });
 }
 
+// Slice patches
+//
+// Every patch on one slice shares a single proxy, and that proxy is reused for
+// as long as Slack's own slice object is unchanged. Both matter: a fresh proxy
+// per state change gave `state.members` a new identity on every dispatch --
+// measured at 61 identities over 8s idle against Slack's 3 -- so every selector
+// taking a whole slice recomputed on every action, and three plugins patching
+// `messages` meant three nested proxies on every message read.
+
+type SlicePatch = { mapEntry: MapEntry<any>; addedKeys?: () => Iterable<string> };
+type SliceLayer = {
+  patches: Set<SlicePatch>;
+  /** Rebuilt whenever `patches` changes, so mapEntries' memo starts clean. */
+  mapEntry: MapEntry<any>;
+  addedKeys?: () => Iterable<string>;
+  raw?: object;
+  version: number;
+  proxy?: object;
+};
+
+const slices = new Map<string, SliceLayer>();
+let unpatchSlices: (() => void) | null = null;
+
+function composeLayer(sliceName: string, layer: SliceLayer) {
+  const patches = [...layer.patches];
+  const failed = new Set<SlicePatch>();
+  layer.mapEntry = (key, entry) => {
+    let out = entry;
+    for (const patch of patches) {
+      if (failed.has(patch)) continue;
+      try {
+        out = patch.mapEntry(key, out);
+      } catch (error) {
+        // Disable just the patch that threw, not every patch on the slice.
+        failed.add(patch);
+        console.error(`[slick] entry patch on "${sliceName}" threw for key "${key}" and was disabled:`, error);
+      }
+    }
+    return out;
+  };
+  const adders = patches.filter((patch) => patch.addedKeys);
+  layer.addedKeys = adders.length
+    ? function* () {
+        for (const patch of adders) {
+          try {
+            yield* patch.addedKeys!();
+          } catch (error) {
+            console.error(`[slick] added-keys callback on "${sliceName}" threw:`, error);
+          }
+        }
+      }
+    : undefined;
+  layer.proxy = undefined;
+}
+
+function patchSlices(state: any): any {
+  let out = state;
+  for (const [sliceName, layer] of slices) {
+    const slice = state?.[sliceName];
+    if (!slice || typeof slice !== 'object') continue;
+    if (layer.raw !== slice || layer.version !== patchVersion || !layer.proxy) {
+      layer.raw = slice;
+      layer.version = patchVersion;
+      layer.proxy = mapEntries(slice, layer.mapEntry, layer.addedKeys, sliceName);
+    }
+    if (out === state) out = { ...state };
+    out[sliceName] = layer.proxy;
+  }
+  return out;
+}
+
 /** Transform entries of one id-keyed slice as they are read. */
 export function patchSlice<T = any>(
   sliceName: string,
   mapEntry: MapEntry<T>,
   addedKeys?: () => Iterable<string>,
 ): () => void {
-  return patchState((state) => {
-    const slice = state?.[sliceName];
-    if (!slice || typeof slice !== 'object') return state;
-    return { ...state, [sliceName]: mapEntries(slice, mapEntry, addedKeys, sliceName) };
-  });
+  const patch: SlicePatch = { mapEntry, addedKeys };
+  let layer = slices.get(sliceName);
+  if (!layer) {
+    layer = { patches: new Set(), mapEntry: (_key, entry) => entry, version: -1 };
+    slices.set(sliceName, layer);
+  }
+  layer.patches.add(patch);
+  composeLayer(sliceName, layer);
+  if (!unpatchSlices) unpatchSlices = patchState(patchSlices);
+  else refresh();
+
+  let disposed = false;
+  return () => {
+    if (disposed) return;
+    disposed = true;
+    const current = slices.get(sliceName);
+    if (!current?.patches.delete(patch)) return;
+    if (current.patches.size) composeLayer(sliceName, current);
+    else slices.delete(sliceName);
+    if (!slices.size && unpatchSlices) {
+      const unpatch = unpatchSlices;
+      unpatchSlices = null;
+      unpatch();
+    } else {
+      refresh();
+    }
+  };
 }
 
 // Thunks

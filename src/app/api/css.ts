@@ -57,7 +57,8 @@ function render(sheet: Sheet, doc: Document) {
     doc.head.appendChild(element);
     sheet.elements.set(doc, element);
   }
-  element.textContent = sheet.css;
+  // Re-setting identical text still re-parses the sheet and invalidates style.
+  if (element.textContent !== sheet.css) element.textContent = sheet.css;
 }
 
 function drop(sheet: Sheet) {

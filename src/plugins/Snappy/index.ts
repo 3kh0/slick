@@ -8,16 +8,7 @@
 
 import { SlickPlugin } from '$slick';
 import * as meta from './meta.ts';
-
-// Slack animates almost everything through transitions; collapsing the
-// duration is what actually makes the client feel immediate.
-const NO_TRANSITIONS = `
-  .p-client_container,
-  .p-client_container * {
-    transition-duration: .01ms !important;
-    transition-delay: 0s !important;
-  }
-`;
+import { overrideTransitions } from './transitions.ts';
 
 /** How still the window must be before Slack is allowed to re-lay-out. */
 const QUIET_MS = 150;
@@ -49,7 +40,10 @@ export default class Snappy extends SlickPlugin<typeof meta.settings> {
   private samples: [number, number][] = [];
 
   start() {
-    this.api.setStyle(NO_TRANSITIONS, 'transitions');
+    // Slack animates almost everything through transitions; collapsing the
+    // duration is what actually makes the client feel immediate.
+    const transitions = overrideTransitions((css, key) => this.api.setStyle(css, key));
+    this.api.signal.addEventListener('abort', () => transitions.stop(), { once: true });
 
     // Not a live setting: registering and unregistering the gate is start/stop
     // work, so toggling it takes the restart path rather than silently doing

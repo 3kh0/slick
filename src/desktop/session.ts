@@ -17,7 +17,9 @@ export function privilegedSchemes() {
   return [
     {
       scheme: SLICK_SCHEME,
-      privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true },
+      // codeCache lets V8 keep compiled slick.js between launches, as it does
+      // for Slack's own https bundles; custom schemes are opted out otherwise.
+      privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, codeCache: true },
     },
   ];
 }

@@ -6,8 +6,9 @@
 // to change Slack's UI, and it is why v2 needs no MutationObserver at all:
 // work happens when React renders, not when the DOM changes.
 //
-// Object and function types that miss are cached after one matcher pass. Host
-// strings cannot be WeakSet keys, so keep their matcher path small.
+// Every type is resolved once per set of patches: objects and functions in
+// weak caches keyed on identity, host strings ('div', 'span') in a plain Map,
+// which stays small because there are only so many tag names.
 
 import { forEachExport, findModuleId, getExport, getValueSource, waitForExport } from './webpack.ts';
 import { Store } from '../store.ts';
@@ -225,20 +226,32 @@ function getRootFiber(): any | null {
 /**
  * Poisoning memoized props makes an already-mounted subtree re-run when React
  * next visits it. This does not itself schedule an update.
+ *
+ * Deferred to a microtask so a plugin starting with several patches -- or
+ * several plugins starting together -- costs one walk rather than one each,
+ * and iterative because a recursive walk down `sibling` recurses once per
+ * list item and can run out of stack on a long channel.
  */
-function dirtyMemoizationCache() {
-  const root = getRootFiber();
-  if (!root) return;
+let dirtyQueued = false;
 
-  const poison = (node: any) => {
-    if (!node) return;
-    if (node.memoizedProps && typeof node.memoizedProps === 'object') {
-      node.memoizedProps = { ...node.memoizedProps, __slickPoison: 1 };
+function dirtyMemoizationCache() {
+  if (dirtyQueued) return;
+  dirtyQueued = true;
+  queueMicrotask(() => {
+    dirtyQueued = false;
+    const root = getRootFiber();
+    if (!root) return;
+
+    const stack: any[] = [root];
+    while (stack.length) {
+      const node = stack.pop();
+      if (node.memoizedProps && typeof node.memoizedProps === 'object') {
+        node.memoizedProps = { ...node.memoizedProps, __slickPoison: 1 };
+      }
+      if (node.sibling) stack.push(node.sibling);
+      if (node.child) stack.push(node.child);
     }
-    poison(node.child);
-    poison(node.sibling);
-  };
-  poison(root);
+  });
 }
 
 // Component patching
@@ -250,10 +263,14 @@ const replacements = new Map<ComponentMatcher, ComponentReplacer>();
 // form. Both are caches keyed on identity, so matchers run once per type.
 let notPatched = new WeakSet<object>();
 let resolved = new WeakMap<object, ComponentType>();
+// Host elements are the bulk of what Slack renders, and before this cache
+// every one of them ran every patch's matcher on every render.
+let resolvedHosts = new Map<string, any>();
 
 function invalidateCaches() {
   notPatched = new WeakSet<object>();
   resolved = new WeakMap<object, ComponentType>();
+  resolvedHosts = new Map<string, any>();
 }
 
 const originalObjectCache = new Map<ComponentType, OriginalComponentObject>();
@@ -332,6 +349,17 @@ function applyReplacer<P = any>(replacer: ComponentReplacer<P>, original: Compon
  * Memoized per type identity, so matchers run at most once per component.
  */
 function resolveType(type: any, props: any): any {
+  if (typeof type === 'string' && !props?.__original) {
+    const host = resolvedHosts.get(type);
+    if (host !== undefined) return host;
+    const result = resolveUncached(type, props);
+    resolvedHosts.set(type, result);
+    return result;
+  }
+  return resolveUncached(type, props);
+}
+
+function resolveUncached(type: any, props: any): any {
   // `__original` lets a replacement render the component it wrapped without
   // recursing back into itself.
   if (props?.__original) {

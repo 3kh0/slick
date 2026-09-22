@@ -36,9 +36,74 @@ let holding = false;
 /** The most patient registration wins; nobody gets resumed early. */
 const quietMs = () => Math.max(...[...registrations].map((registration) => registration.quietMs));
 
+// ResizeObserver
+//
+// The `resize` gate leaves Slack's ResizeObservers running, and those fire per
+// frame during a drag too -- virtualised lists re-measuring rows, the composer
+// re-fitting. Slick runs first, so it can hand Slack a ResizeObserver whose
+// callbacks wait out the same hold. The browser counts a notification as
+// delivered once it fires, so a held one is never re-sent: each observer's
+// latest entry per target is kept and replayed when the hold ends.
+
+type HeldObserver = {
+  callback: ResizeObserverCallback;
+  observer: ResizeObserver;
+  entries: Map<Element, ResizeObserverEntry>;
+};
+
+const heldObservers = new Set<HeldObserver>();
+
+function releaseObservers() {
+  const pending = [...heldObservers];
+  heldObservers.clear();
+  for (const held of pending) {
+    try {
+      held.callback([...held.entries.values()], held.observer);
+    } catch (error) {
+      // Slack's callback, not ours; surface it as the browser would.
+      reportError(error);
+    }
+  }
+}
+
+function installResizeObserverHold() {
+  const Native = window.ResizeObserver;
+  if (typeof Native !== 'function') return;
+
+  class SlickResizeObserver extends Native {
+    constructor(callback: ResizeObserverCallback) {
+      let held: HeldObserver | undefined;
+      super((entries, observer) => {
+        if (!holding) return callback(entries, observer);
+        held ??= { callback, observer, entries: new Map() };
+        for (const entry of entries) held.entries.set(entry.target, entry);
+        heldObservers.add(held);
+      });
+      // Anything still queued when Slack disconnects is no longer wanted.
+      const disconnect = this.disconnect.bind(this);
+      this.disconnect = () => {
+        if (held) {
+          heldObservers.delete(held);
+          held.entries.clear();
+        }
+        disconnect();
+      };
+      const unobserve = this.unobserve.bind(this);
+      this.unobserve = (target: Element) => {
+        held?.entries.delete(target);
+        unobserve(target);
+      };
+    }
+  }
+  Object.defineProperty(SlickResizeObserver, 'name', { value: 'ResizeObserver' });
+  window.ResizeObserver = SlickResizeObserver;
+}
+
 function setHolding(next: boolean) {
   if (holding === next) return;
   holding = next;
+  // After the flag flips, so a callback that resizes something observes live.
+  if (!next) releaseObservers();
   for (const registration of registrations) {
     try {
       registration.onHoldChange?.(next);
@@ -74,6 +139,7 @@ function gate(event: Event) {
  */
 export function installResizeGate() {
   window.addEventListener('resize', gate, true);
+  installResizeObserverHold();
 }
 
 /**
