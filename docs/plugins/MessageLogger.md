@@ -125,7 +125,26 @@ plugin logs a warning if neither has rendered after 20s. Update
 `docs/slack-internals.md` when that happens.
 
 Persistence goes through `api.storage` (plugin-scoped, enumerable, survives
-correctly) rather than `localStorage`. The log is capped at 1,000 entries.
+correctly) rather than `localStorage`, one blob per entry under the `entry:`
+prefix. A single blob holding the whole log was simpler, but it meant rewriting
+every byte of it on every delete -- 881 KB per event, by the time this was
+measured. `restore()` migrates that layout on first run and deletes it.
+
+Four caps bound the log, in `retention.ts`:
+
+| Cap                       | Value            | What it bounds                   |
+| ------------------------- | ---------------- | -------------------------------- |
+| `retentionDays` (setting) | 30 days, 0 = off | how long an entry lives          |
+| `MAX_ENTRIES`             | 1,000            | how many entries survive at once |
+| `MAX_EDITS_PER_MESSAGE`   | 20               | revisions kept for one message   |
+| `MAX_MESSAGE_BYTES`       | 32 KB            | a retained message body          |
+
+The age cap is the one that matters, and it is the one that was missing: a
+count alone is not a retention policy, because what it works out to depends
+entirely on the rate. This workspace produced 591 entries in 0.6 days, so 1,000
+amounted to keeping about a day and a half. `normalize()` applies the size caps
+to entries already on disk at load, so lowering one takes effect without
+waiting for each message to be touched again.
 
 ---
 

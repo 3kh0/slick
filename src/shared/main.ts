@@ -49,6 +49,7 @@ export interface MainCtx {
   /** Durable per-plugin storage, the same namespace the renderer's api.storage uses. */
   storage: {
     list(): Promise<string[]>;
+    readAll(prefix?: string): Promise<Record<string, string>>;
     read(key: string): Promise<string | null>;
     write(key: string, value: string): Promise<boolean>;
     delete(key: string): Promise<boolean>;

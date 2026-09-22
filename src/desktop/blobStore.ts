@@ -32,6 +32,24 @@ export async function list(namespace: string): Promise<string[]> {
   }
 }
 
+/**
+ * Every value under `prefix`, in one call.
+ *
+ * A store kept as one blob per record is cheap to update but expensive to load
+ * a key at a time: MessageLogger alone holds a thousand of them, and a
+ * thousand IPC round trips at boot is not a trade worth making.
+ */
+export async function readAll(namespace: string, prefix = ''): Promise<Record<string, string>> {
+  const keys = (await list(namespace)).filter((key) => key.startsWith(prefix));
+  const out: Record<string, string> = {};
+  const values = await Promise.all(keys.map((key) => read(namespace, key)));
+  keys.forEach((key, index) => {
+    const value = values[index];
+    if (value !== null) out[key] = value;
+  });
+  return out;
+}
+
 export async function read(namespace: string, key: string): Promise<string | null> {
   try {
     return await fs.readFile(keyPath(namespace, key), 'utf8');

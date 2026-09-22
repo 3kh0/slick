@@ -6,6 +6,14 @@ export const description = 'Keep deleted and edited messages visible';
 export const defaultEnabled = false;
 
 export const settings = {
+  retentionDays: {
+    type: 'number',
+    label: 'Keep history for (days)',
+    description: 'Discard logged deletes and edits older than this. 0 keeps them until the entry limit evicts them.',
+    default: 30,
+    min: 0,
+    max: 3650,
+  },
   deletedStyle: {
     type: 'select',
     label: 'Deleted style',

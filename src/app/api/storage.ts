@@ -8,16 +8,37 @@
 export type BlobStore = {
   list(): Promise<string[]>;
   read(key: string): Promise<string | null>;
+  /** Every value whose key starts with `prefix`, in one round trip. */
+  readAll(prefix?: string): Promise<Record<string, string>>;
   write(key: string, value: string): Promise<boolean>;
   delete(key: string): Promise<boolean>;
   clear(): Promise<boolean>;
 };
 
 export class ScopedStorage {
-  constructor(private blob: BlobStore) {}
+  // Written out rather than declared as constructor parameter properties:
+  // node --experimental-strip-types cannot parse those, and the tests run
+  // under it.
+  private blob: BlobStore;
+
+  constructor(blob: BlobStore) {
+    this.blob = blob;
+  }
 
   keys(): Promise<string[]> {
     return this.blob.list().catch(() => []);
+  }
+
+  /** Every stored value under `prefix`, already parsed; unreadable ones are skipped. */
+  async entries<T>(prefix = ''): Promise<Map<string, T>> {
+    const raw = await this.blob.readAll(prefix).catch(() => ({}) as Record<string, string>);
+    const out = new Map<string, T>();
+    for (const [key, value] of Object.entries(raw)) {
+      try {
+        out.set(key, JSON.parse(value) as T);
+      } catch {}
+    }
+    return out;
   }
 
   async get<T>(key: string, fallback: T): Promise<T> {
@@ -58,19 +79,82 @@ export class ScopedStorage {
 export class Cache<T> {
   private memory = new Map<string, { value: T; expires: number }>();
   private inflight = new Map<string, Promise<T>>();
+  private swept = false;
+  private sinceSweep = 0;
 
-  constructor(
-    private storage: ScopedStorage,
-    private name: string,
-    private ttlMs = 60 * 60 * 1000,
-  ) {}
+  private storage: ScopedStorage;
+  private name: string;
+  private ttlMs: number;
+  /**
+   * How many entries to hold in memory. A TTL alone is not a bound: it says
+   * when an entry stops being *useful*, not when it stops being *resident*.
+   * ShowRealUser keys this per message, so without a ceiling the map grows
+   * for as long as the session lasts.
+   */
+  private maxEntries: number;
+
+  constructor(storage: ScopedStorage, name: string, ttlMs = 60 * 60 * 1000, maxEntries = 5000) {
+    this.storage = storage;
+    this.name = name;
+    this.ttlMs = ttlMs;
+    this.maxEntries = maxEntries;
+  }
 
   private storageKey(key: string) {
     return `cache:${this.name}:${key}`;
   }
 
+  /**
+   * Drop what has expired, and whatever is over the ceiling after that.
+   *
+   * Reading an expired entry only ever overwrote it, so a key that is never
+   * asked for again stayed resident for the life of the session and on disk
+   * for the life of the install. Maps iterate in insertion order, which is
+   * close enough to least-recently-added for a cache of this kind.
+   */
+  private prune() {
+    // `get` is on the render path for ShowRealUser and WhoReacted, so a full
+    // scan per call would cost more than the entries it reclaims. Amortise it.
+    if (++this.sinceSweep < 512) return;
+    this.sinceSweep = 0;
+    const now = Date.now();
+    for (const [key, entry] of this.memory) if (entry.expires <= now) this.memory.delete(key);
+  }
+
+  /** Costs only what it evicts, so it can run on every insert and keep `maxEntries` exact. */
+  private remember(key: string, entry: { value: T; expires: number }) {
+    this.memory.set(key, entry);
+    for (const oldest of this.memory.keys()) {
+      if (this.memory.size <= this.maxEntries) break;
+      this.memory.delete(oldest);
+    }
+  }
+
+  /**
+   * Delete expired blobs. Runs once per session, on first use rather than on
+   * construction so it never competes with boot, and is never awaited: a cache
+   * that cannot tidy up is still a working cache.
+   */
+  private async sweepStorage() {
+    const prefix = `cache:${this.name}:`;
+    const stored = await this.storage.entries<{ expires?: number } | null>(prefix);
+    const now = Date.now();
+    for (const [key, entry] of stored) {
+      if (entry && typeof entry.expires === 'number' && entry.expires > now) continue;
+      void this.storage.delete(key);
+    }
+  }
+
+  private sweepOnce() {
+    if (this.swept) return;
+    this.swept = true;
+    void this.sweepStorage().catch((error) => console.error(`[slick] cache sweep failed (${this.name}):`, error));
+  }
+
   async get(key: string, fetcher: (key: string) => Promise<T>): Promise<T> {
     const now = Date.now();
+    this.sweepOnce();
+    this.prune();
 
     const hit = this.memory.get(key);
     if (hit && hit.expires > now) return hit.value;
@@ -81,13 +165,13 @@ export class Cache<T> {
     const load = (async () => {
       const stored = await this.storage.get<{ value: T; expires: number } | null>(this.storageKey(key), null);
       if (stored && stored.expires > now) {
-        this.memory.set(key, stored);
+        this.remember(key, stored);
         return stored.value;
       }
 
       const value = await fetcher(key);
       const entry = { value, expires: Date.now() + this.ttlMs };
-      this.memory.set(key, entry);
+      this.remember(key, entry);
       void this.storage.set(this.storageKey(key), entry);
       return value;
     })();

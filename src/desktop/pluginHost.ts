@@ -166,6 +166,7 @@ function createCtx(plugin: SlickMainPlugin, entry: () => Registered): MainCtx {
     storage: {
       list: () => blobStore.list(namespace),
       read: (key) => blobStore.read(namespace, key),
+      readAll: (prefix) => blobStore.readAll(namespace, prefix),
       write: (key, value) => blobStore.write(namespace, key, value),
       delete: (key) => blobStore.remove(namespace, key),
       clear: () => blobStore.clear(namespace),
@@ -431,6 +432,7 @@ export function setupBlobRpc() {
   const methods: Record<string, (args: any[]) => unknown> = {
     blobList: ([namespace]) => blobStore.list(String(namespace)),
     blobRead: ([namespace, key]) => blobStore.read(String(namespace), String(key)),
+    blobReadAll: ([namespace, prefix]) => blobStore.readAll(String(namespace), prefix ? String(prefix) : ''),
     blobWrite: ([namespace, key, value]) => blobStore.write(String(namespace), String(key), String(value)),
     blobDelete: ([namespace, key]) => blobStore.remove(String(namespace), String(key)),
     blobClear: ([namespace]) => blobStore.clear(String(namespace)),

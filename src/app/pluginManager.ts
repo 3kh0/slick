@@ -200,7 +200,7 @@ function createScopedAPI(
     setStyle: tracked((css: string | null, key = 'default') => setStyle(css, `plugin:${id}:${key}`)),
 
     storage,
-    Cache: <T>(name: string, ttlMs?: number) => new Cache<T>(storage, name, ttlMs),
+    Cache: <T>(name: string, ttlMs?: number, maxEntries?: number) => new Cache<T>(storage, name, ttlMs, maxEntries),
 
     /**
      * This plugin's own settings, written back to the settings file so

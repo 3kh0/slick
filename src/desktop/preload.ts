@@ -163,6 +163,7 @@ void (async () => {
     blobStore: (namespace: string) => ({
       list: () => call('blobList', [namespace]),
       read: (key: string) => call('blobRead', [namespace, key]),
+      readAll: (prefix?: string) => call('blobReadAll', [namespace, prefix ?? '']),
       write: (key: string, value: string) => call('blobWrite', [namespace, key, value]),
       delete: (key: string) => call('blobDelete', [namespace, key]),
       clear: () => call('blobClear', [namespace]),

@@ -7,6 +7,7 @@
 
 import { SlickPlugin, type ComponentType, type RtmEvent, type SlackMessage } from '$slick';
 import * as meta from './meta.ts';
+import { MAX_EDIT_TEXT, MAX_EDITS_PER_MESSAGE, evictable, normalize, trim } from './retention.ts';
 
 type StoredEdit = { oldText: string; newText: string };
 
@@ -37,10 +38,9 @@ type ActionsMenuProps = {
 /** Slack's generic menu body: the rows are its children. */
 type MenuProps = { children?: React.ReactNode };
 
-const STORAGE_KEY = 'log';
-const MAX_ENTRIES = 1000;
-const MAX_EDITS_PER_MESSAGE = 100;
-const MAX_EDIT_TEXT = 4000;
+/** The pre-2026-09-22 layout: every entry in one blob. Migrated away from on load. */
+const LEGACY_STORAGE_KEY = 'log';
+const ENTRY_PREFIX = 'entry:';
 const RECENT_CAP = 400;
 const ROW_COMPONENTS = ['MessageWrapper', 'ThreadRootGeneric'] as const;
 
@@ -89,7 +89,7 @@ function asInjected(previous: SlackMessage, channel: string, ts: string): SlackM
   const message: SlackMessage = { ...previous, channel, ts };
   if (message.subtype === 'tombstone' || message.subtype === 'message_deleted') delete message.subtype;
   delete message.hidden;
-  return message;
+  return trim(message);
 }
 
 export default class MessageLogger extends SlickPlugin<typeof meta.settings> {
@@ -98,10 +98,13 @@ export default class MessageLogger extends SlickPlugin<typeof meta.settings> {
   static readonly description = meta.description;
   static readonly defaultEnabled = meta.defaultEnabled;
   static readonly settings = meta.settings;
-  static readonly liveSettings = ['deletedStyle'];
+  static readonly liveSettings = ['deletedStyle', 'retentionDays'];
 
   private readonly entries = new Map<string, LogEntry>();
   private readonly recent = new Map<string, SlackMessage>();
+  /** Keys written or removed since the last flush; see flush(). */
+  private readonly dirty = new Set<string>();
+  private writes: Promise<void> = Promise.resolve();
   private persistTimer: ReturnType<typeof setTimeout> | null = null;
   private rowTimer: ReturnType<typeof setTimeout> | null = null;
   private seenRow = false;
@@ -114,10 +117,10 @@ export default class MessageLogger extends SlickPlugin<typeof meta.settings> {
   private readonly MenuRowsContext = React.createContext<React.ReactNode[]>([]);
 
   async start() {
-    const saved = await this.api.storage.get<Record<string, LogEntry>>(STORAGE_KEY, {});
+    await this.restore();
     if (this.api.signal.aborted) return;
-    this.load(saved);
     this.cap();
+    this.flush();
 
     this.api.rtm.on('message', (event) => {
       if (isDeleteEvent(event) || isChangeEvent(event)) return;
@@ -135,6 +138,9 @@ export default class MessageLogger extends SlickPlugin<typeof meta.settings> {
 
   onSettingsChange() {
     this.api.setStyle(this.css(), 'deleted');
+    // Lowering the retention has to take effect now rather than at the next
+    // delete, which in a quiet workspace could be days away.
+    if (this.cap()) this.flush();
     this.api.redux.refresh();
   }
 
@@ -144,12 +150,39 @@ export default class MessageLogger extends SlickPlugin<typeof meta.settings> {
     this.flush();
   }
 
-  private load(saved: Record<string, LogEntry>) {
-    for (const [key, entry] of Object.entries(saved)) {
-      if (!entry || typeof entry !== 'object') continue;
-      if (typeof entry.channel !== 'string' || typeof entry.ts !== 'string') continue;
-      this.entries.set(key, entry);
+  private accept(key: string, entry: LogEntry | null | undefined): boolean {
+    if (!entry || typeof entry !== 'object') return false;
+    if (typeof entry.channel !== 'string' || typeof entry.ts !== 'string') return false;
+    // Entries written under looser caps are brought within the current ones
+    // here, rather than waiting for the message to be touched again.
+    if (normalize(entry)) this.dirty.add(key);
+    this.entries.set(key, entry);
+    return true;
+  }
+
+  /**
+   * Load the log, migrating the single-blob layout if it is still there.
+   *
+   * One blob per entry costs a little more at boot -- one batched read rather
+   * than one read -- and saves rewriting the whole log on every delete. That
+   * blob had already reached 881 KB here, and every edit rewrote all of it.
+   */
+  private async restore() {
+    const stored = await this.api.storage.entries<LogEntry>(ENTRY_PREFIX);
+    for (const [key, entry] of stored) this.accept(key.slice(ENTRY_PREFIX.length), entry);
+
+    const legacy = await this.api.storage.get<Record<string, LogEntry> | null>(LEGACY_STORAGE_KEY, null);
+    if (!legacy || typeof legacy !== 'object') return;
+    let migrated = 0;
+    for (const [key, entry] of Object.entries(legacy)) {
+      // Anything already written per-entry is the newer copy of the two.
+      if (this.entries.has(key)) continue;
+      if (!this.accept(key, entry)) continue;
+      this.dirty.add(key);
+      migrated++;
     }
+    await this.api.storage.delete(LEGACY_STORAGE_KEY);
+    this.log(`migrated ${migrated} entries out of the single-blob log`);
   }
 
   private key(channel: string, ts: string) {
@@ -233,6 +266,7 @@ export default class MessageLogger extends SlickPlugin<typeof meta.settings> {
       at: Date.now(),
     };
     this.entries.set(key, entry);
+    this.dirty.add(key);
     this.cap();
     this.persist();
     this.api.redux.refresh();
@@ -272,19 +306,28 @@ export default class MessageLogger extends SlickPlugin<typeof meta.settings> {
       edits,
       at: existing?.at ?? Date.now(),
     });
+    this.dirty.add(key);
     this.cap();
     this.persist();
     this.api.redux.refresh();
   }
 
-  private cap() {
-    if (this.entries.size <= MAX_ENTRIES) return;
-    const ordered = [...this.entries.entries()].toSorted((a, b) => (a[1].at ?? 0) - (b[1].at ?? 0));
-    while (this.entries.size > MAX_ENTRIES) {
-      const oldest = ordered.shift();
-      if (!oldest) break;
-      this.entries.delete(oldest[0]);
-    }
+  private forget(key: string) {
+    this.entries.delete(key);
+    this.dirty.add(key);
+  }
+
+  /**
+   * Evict by age, then by count. Returns whether anything went.
+   *
+   * Age is the cap that was missing: 1000 entries sounds generous until you
+   * measure the rate. This workspace produced 591 in 0.6 days, so the count
+   * alone amounted to a retention of about a day and a half.
+   */
+  private cap(): boolean {
+    const gone = evictable(this.entries, this.config.retentionDays);
+    for (const key of gone) this.forget(key);
+    return gone.length > 0;
   }
 
   private persist() {
@@ -300,7 +343,21 @@ export default class MessageLogger extends SlickPlugin<typeof meta.settings> {
       clearTimeout(this.persistTimer);
       this.persistTimer = null;
     }
-    void this.api.storage.set(STORAGE_KEY, Object.fromEntries(this.entries));
+    const keys = [...this.dirty];
+    this.dirty.clear();
+    // Serialised rather than fired off together: a normal flush is one or two
+    // keys, but the one-off migration in restore() hands over several hundred,
+    // and that many simultaneous writes is a burst worth not creating.
+    for (const key of keys) {
+      const entry = this.entries.get(key);
+      const storageKey = `${ENTRY_PREFIX}${key}`;
+      this.writes = this.writes
+        .then(() => (entry ? this.api.storage.set(storageKey, entry) : this.api.storage.delete(storageKey)))
+        .then(
+          () => {},
+          (error) => console.error('[slick] MessageLogger could not persist an entry:', error),
+        );
+    }
   }
 
   private injectable(): SlackMessage[] {
@@ -447,16 +504,18 @@ export default class MessageLogger extends SlickPlugin<typeof meta.settings> {
   }
 
   private hideEdits(entry: LogEntry) {
-    const current = this.entries.get(this.key(entry.channel, entry.ts));
+    const key = this.key(entry.channel, entry.ts);
+    const current = this.entries.get(key);
     if (!current) return;
-    if (current.deleted) this.entries.set(this.key(entry.channel, entry.ts), { ...current, edits: undefined });
-    else this.entries.delete(this.key(entry.channel, entry.ts));
+    if (current.deleted) this.entries.set(key, { ...current, edits: undefined });
+    else this.entries.delete(key);
+    this.dirty.add(key);
     this.persist();
     this.api.redux.refresh();
   }
 
   private acceptDelete(entry: LogEntry) {
-    this.entries.delete(this.key(entry.channel, entry.ts));
+    this.forget(this.key(entry.channel, entry.ts));
     this.persist();
     this.api.redux.refresh();
   }
