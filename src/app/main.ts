@@ -5,6 +5,7 @@
 // a Slick that half-starts can stop Slack booting entirely, and a Slack that
 // does not boot is much worse than a Slack without Slick.
 
+import { installResizeGate } from './api/resize.ts';
 import { bootstrap } from './bootstrap.ts';
 import { getBridge } from './bridge.ts';
 import { SlickPlugin } from '../shared/Plugin.ts';
@@ -84,6 +85,10 @@ function main() {
     exposeWebpackDebug();
     exposeReactDebug();
     exposeReduxDebug();
+    // Here rather than in bootstrap for the same reason: the gate only works
+    // if it is registered ahead of Slack's own resize listeners. It stays
+    // inert until a plugin registers with it.
+    installResizeGate();
   } catch (error) {
     console.error('[slick] failed to install interception; Slack will run unmodified:', error);
     return;

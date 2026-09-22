@@ -184,6 +184,16 @@ and how it was identified, so a break is diagnosable without re-deriving it.
 > They are recorded here as leads to confirm, not as identified names. Confirm
 > with `thunkNames()` on a focused client and then rewrite the row.
 
+## CSS class names in use
+
+Class names are a weaker contract than component names -- Slack regenerates
+them -- so nothing load-bearing may depend on one. Each row must say what
+happens when it stops matching.
+
+| Selector                         | Used by  | What it is                                                     | If it stops matching                                                                                   |
+| -------------------------------- | -------- | -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| `.p-ia4_top_nav__left_container` | `Snappy` | the top nav's left pane, whose `flex-basis` Slack sets from JS | resize gating still works; the top nav holds its width for the length of a drag instead of tracking it |
+
 ## Still to identify
 
 These gate the Group C and D plugin ports and need a live discovery session:

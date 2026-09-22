@@ -205,6 +205,8 @@ Maintainers can compare stock Slack, Slick core, defaults, and individual plugin
 - [Electron](https://www.electronjs.org/) for the runtime and APIs.
 - [@ImShyMike](https://github.com/ImShyMike) for advice on breaking into Slack.
 - [Vencord](https://github.com/vencord) for plugin inspiration.
+- [Taut](https://github.com/jeremy46231/taut) (MIT) by [@jeremy46231](https://github.com/jeremy46231), whose
+  injection and patching model v2 is built on, and whose resize-gating approach Slick ports directly.
 - Claude for cleaning up the code and generally being a good assistant.
 
 ## Legal

@@ -13,6 +13,7 @@ import { changedKeys, type PluginSettings } from '../shared/settings.ts';
 import { type BlobStore, Cache, ScopedStorage } from './api/storage.ts';
 import { Store } from './store.ts';
 import { onDocument, setStyle } from './api/css.ts';
+import { deferResizeWork } from './api/resize.ts';
 import type { PluginChannel, SlickBridge } from './bridge.ts';
 import type { ConfigStore } from './configStore.ts';
 import {
@@ -144,6 +145,7 @@ async function createBaseAPI(bridge: SlickBridge) {
     fetch: bridge.fetch.bind(bridge),
     userAPI,
     onDocument,
+    deferResizeWork,
   };
 }
 
@@ -189,6 +191,9 @@ function createScopedAPI(
     onMessageSendDelta: tracked(base.onMessageSendDelta),
 
     onDocument: tracked(base.onDocument),
+
+    /** Hold Slack's resize handlers until the window stops moving. */
+    deferResizeWork: tracked(base.deferResizeWork),
 
     // Keys are namespaced so one plugin cannot replace another's stylesheet.
     setStyle: tracked((css: string | null, key = 'default') => setStyle(css, `plugin:${id}:${key}`)),

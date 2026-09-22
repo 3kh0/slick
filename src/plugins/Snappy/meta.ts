@@ -6,6 +6,12 @@ export const description = 'Make Slack feel more responsive by disabling animati
 export const defaultEnabled = true;
 
 export const settings = {
+  optimizeResize: {
+    type: 'boolean',
+    label: 'Smooth window resizing',
+    description: "Pause Slack's layout work while a window edge is being dragged, and let it catch up once",
+    default: true,
+  },
   ignoreGpuBlocklist: {
     type: 'boolean',
     label: 'Ignore GPU blocklist',
