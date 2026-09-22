@@ -2,7 +2,11 @@ name: Release
 
 on:
   push:
-    tags: ['v*']
+    tags: ["v*"]
+
+permissions:
+  contents: read
+  issues: write
 
 jobs:
   validate-tag:
