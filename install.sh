@@ -13,6 +13,26 @@ NO_LAUNCH=0
 step() { printf '\033[1;35m==>\033[0m \033[1m%s\033[0m\n' "$*"; }
 die()  { printf '\033[1;31merror:\033[0m %s\n' "$*" >&2; exit 1; }
 
+# One entry point for every platform. The per-OS integration differs too much to
+# share -- app bundles and LaunchServices here, .desktop files and xdg-mime on
+# Linux, the registry on Windows -- so each keeps its own script and this picks.
+# Dispatched before any argument is parsed, so the target script sees them all.
+case "$(uname -s)" in
+Darwin) ;;
+Linux)
+  [ -f "$ROOT/install-linux.sh" ] || die "install-linux.sh is missing next to install.sh"
+  step "Linux detected; handing over to install-linux.sh"
+  exec bash "$ROOT/install-linux.sh" "$@"
+  ;;
+CYGWIN* | MINGW* | MSYS*)
+  die "On Windows, run install.ps1 from PowerShell instead:
+    powershell -ExecutionPolicy Bypass -File .\\install.ps1"
+  ;;
+*)
+  die "Unsupported platform: $(uname -s). Slick supports macOS, Linux and Windows."
+  ;;
+esac
+
 verify_release_artifact() {
   local file="$1"
   if ! command -v gh >/dev/null 2>&1; then
@@ -71,7 +91,6 @@ if [ "$BETA" -eq 1 ] && [ ! -f "$ROOT/scripts/byoe/build-handoff-app.js" ]; then
 fi
 
 step "Checking prerequisites"
-[ "$(uname -s)" = "Darwin" ] || die "Slick only supports macOS :("
 [ -f "$SLACK/Contents/Resources/app.asar" ] \
   || die "Slack not found at $SLACK, please install it from slack.com first."
 SLACK="$(cd "$(dirname "$SLACK")" && pwd)/$(basename "$SLACK")"

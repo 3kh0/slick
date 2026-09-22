@@ -90,6 +90,9 @@ export async function packageDesktop({ debug = false, platform = process.platfor
       },
 
       linux: {
+        // Pinned rather than derived from productName, because install-linux.sh
+        // and the .desktop file's Exec line both name it.
+        executableName: 'slick',
         category: 'Network;InstantMessaging',
         icon: path.join(ASSETS, 'icon.png'),
         target: [{ target: 'tar.gz', arch: ['x64', 'arm64'] }],

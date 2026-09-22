@@ -28,6 +28,13 @@ UNINSTALL=0
 # (curl | bash / bash <(curl ...) resolve ROOT to an unrelated directory).
 CLONED=0
 [ -f "$ROOT/scripts/byoe/build-handoff-linux.js" ] && CLONED=1
+# v2 builds through electron-builder. A v2 checkout still carries the v1
+# builder, so the v2 loader entry point is what distinguishes them.
+V2=0
+if [ -f "$ROOT/src/desktop/main.ts" ]; then
+  V2=1
+  CLONED=1
+fi
 
 step() { printf '\033[1;35m==>\033[0m \033[1m%s\033[0m\n' "$*"; }
 die() {
@@ -60,12 +67,12 @@ verify_release_artifact() {
 do_uninstall() {
   local fail=0
   step "Stopping Slick"
-  pkill -f "$TARGET/electron" 2>/dev/null || true
+  for BIN in slick electron; do pkill -f "$TARGET/$BIN" 2>/dev/null || true; done
   for _ in {1..20}; do
-    pgrep -f "$TARGET/electron" >/dev/null 2>&1 || break
+    pgrep -f "$TARGET/slick" >/dev/null 2>&1 || pgrep -f "$TARGET/electron" >/dev/null 2>&1 || break
     sleep 0.25
   done
-  if pgrep -f "$TARGET/electron" >/dev/null 2>&1; then
+  if pgrep -f "$TARGET/slick" >/dev/null 2>&1 || pgrep -f "$TARGET/electron" >/dev/null 2>&1; then
     printf '\033[1;33mwarning:\033[0m some Slick processes are still running\n' >&2
     fail=1
   fi
@@ -192,12 +199,15 @@ matching_byoe_electron() {
 
 write_desktop_file() {
   local target="$1"
+  # v2 (electron-builder) names the binary `slick`; v1 shipped Electron's own.
+  local binary="electron"
+  [ -x "$target/slick" ] && binary="slick"
   cat >"$target/slick.desktop" <<EOF
 [Desktop Entry]
 Type=Application
 Name=Slick
 Comment=Slack client mod (BYOE)
-Exec=${target}/electron --no-sandbox %U
+Exec=${target}/${binary} --no-sandbox %U
 Icon=slick
 Terminal=false
 Categories=Network;InstantMessaging;
@@ -250,6 +260,32 @@ if [ "$FROM_RELEASE" -eq 1 ]; then
     rm -f "$RUNTIME/.slick-beta"
   fi
   STAGED_APP="$TMP/Slick"
+elif [ "$V2" -eq 1 ]; then
+  command -v node >/dev/null 2>&1 || die "Node.js 22+ is required to build Slick v2."
+  node -e 'process.exit(parseInt(process.versions.node, 10) >= 22 ? 0 : 1)' 2>/dev/null ||
+    die "Node.js 22+ is required to build Slick v2 (found: $(node -v 2>/dev/null || echo none))."
+  [ "$BETA" -eq 0 ] || die "--beta is a v1 mechanism; in v2 the early path is the only path."
+
+  case "$(uname -m)" in
+  aarch64 | arm64) UNPACKED="linux-arm64-unpacked" ;;
+  *) UNPACKED="linux-unpacked" ;;
+  esac
+
+  mkdir -p "$(dirname "$TARGET")"
+  TMP="$(mktemp -d "$(dirname "$TARGET")/.slick-install.XXXXXX")"
+  trap 'rm -rf "$TMP"' EXIT
+  STAGED_APP="$TMP/Slick"
+
+  step "Building Slick v2 (this bundles Electron; give it a minute)"
+  (cd "$ROOT" && node scripts/build.ts package) >/dev/null ||
+    die "build failed; run 'node scripts/build.ts package' to see why"
+
+  BUILT="$ROOT/dist/release/$UNPACKED"
+  [ -d "$BUILT" ] || die "electron-builder produced no app at $BUILT"
+  # Copied rather than moved, so a failed install does not destroy the build.
+  cp -a "$BUILT" "$STAGED_APP"
+  [ -x "$STAGED_APP/slick" ] || die "build produced no slick binary in $BUILT"
+
 else
   command -v node >/dev/null 2>&1 || die "Node.js 18+ is required."
   node -e 'process.exit(parseInt(process.versions.node, 10) >= 18 ? 0 : 1)' 2>/dev/null ||
@@ -370,7 +406,9 @@ if [ "$NO_LAUNCH" -eq 0 ]; then
   export SLICK_LAUNCH_T0
   LOG_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/slick"
   mkdir -p "$LOG_DIR"
-  setsid "$TARGET/electron" --no-sandbox >"$LOG_DIR/launch.log" 2>&1 </dev/null &
+  LAUNCH_BIN="electron"
+  [ -x "$TARGET/slick" ] && LAUNCH_BIN="slick"
+  setsid "$TARGET/$LAUNCH_BIN" --no-sandbox >"$LOG_DIR/launch.log" 2>&1 </dev/null &
   disown
   echo "    launched in the background (log: $LOG_DIR/launch.log)"
 fi

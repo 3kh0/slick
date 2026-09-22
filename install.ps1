@@ -243,9 +243,35 @@ if ($slackArch -eq 'arm64') {
 }
 
 $InstallTarget = $Target
+# v2 builds through electron-builder. A v2 checkout still carries the v1
+# builder, so the v2 loader entry point is what distinguishes them.
+$V2 = [bool]$Root -and (Test-Path (Join-Path $Root 'src\desktop\main.ts'))
 $FromSource = [bool]$Root -and (Test-Path (Join-Path $Root 'scripts\byoe\build-handoff-app-win.js'))
+if ($V2) { $FromSource = $true }
 
-if ($FromSource) {
+if ($V2) {
+  if (-not (Get-Command node -EA SilentlyContinue)) { Die "Node.js 22+ is required to build Slick v2 (get it from nodejs.org)" }
+  if ($Beta) { Die "--beta is a v1 mechanism; in v2 the early path is the only path." }
+
+  $unpacked = if ($env:PROCESSOR_ARCHITECTURE -eq 'ARM64') { 'win-arm64-unpacked' } else { 'win-unpacked' }
+
+  Step "Building Slick v2 (this bundles Electron; give it a minute)"
+  Push-Location $Root
+  try {
+    & node (Join-Path $Root 'scripts\build.ts') package 2>&1 | Out-Null
+    if ($LASTEXITCODE -ne 0) { Die "build failed; run 'node scripts/build.ts package' to see why" }
+  } finally { Pop-Location }
+
+  $built = Join-Path $Root "dist\release\$unpacked"
+  if (-not (Test-Path (Join-Path $built 'Slick.exe'))) { Die "electron-builder produced no Slick.exe at $built" }
+
+  # Copied rather than moved, so a failed install does not destroy the build.
+  $Target = Join-Path (Split-Path $InstallTarget) ('slick-stage-' + [Guid]::NewGuid().ToString('N'))
+  Copy-Item $built $Target -Recurse -Force
+
+  # electron-builder already embeds the icon and version info, so the rcedit
+  # branding step the v1 path needs does not apply here.
+} elseif ($FromSource -and -not $V2) {
   if (-not (Get-Command node -EA SilentlyContinue)) { Die "Node.js is required to build from source (get it from nodejs.org)" }
 
   $betaArgs = @()
