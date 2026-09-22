@@ -1,8 +1,11 @@
 name: CI
 
 on:
+  # push is main only. Every other branch is covered by pull_request, and
+  # listing one here too (v2-rewrite did) runs the whole matrix twice on an
+  # open PR.
   push:
-    branches: [main, v2-rewrite]
+    branches: [main]
   pull_request:
 
 permissions:
