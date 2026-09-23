@@ -21,15 +21,27 @@ function validTeam(value: unknown): LocalConfigTeam | null {
 }
 
 async function load(ctx: MainCtx): Promise<Record<string, StoredAccount>> {
-  try {
-    return JSON.parse((await ctx.secrets.read(SECRET_KEY)) || '{}') as Record<string, StoredAccount>;
-  } catch {
-    return {};
-  }
+  const text = await ctx.secrets.read(SECRET_KEY);
+  if (text === null) return {};
+  const accounts = object(JSON.parse(text));
+  if (!accounts) throw new Error('saved accounts are unreadable');
+  return accounts as Record<string, StoredAccount>;
 }
 
 async function save(ctx: MainCtx, accounts: Record<string, StoredAccount>): Promise<void> {
   if (!(await ctx.secrets.write(SECRET_KEY, JSON.stringify(accounts)))) throw new Error('could not save accounts');
+}
+
+let queue: Promise<unknown> = Promise.resolve();
+function update<T>(ctx: MainCtx, change: (accounts: Record<string, StoredAccount>) => T): Promise<T> {
+  const run = queue.then(async () => {
+    const accounts = await load(ctx);
+    const result = change(accounts);
+    await save(ctx, accounts);
+    return result;
+  });
+  queue = run.catch(() => {});
+  return run;
 }
 
 function summary(account: StoredAccount): AccountSummary {
@@ -57,9 +69,9 @@ async function capture(ctx: MainCtx, teamId: unknown, value: unknown): Promise<A
     xoxd: cookie.value,
     updatedAt: Date.now(),
   };
-  const accounts = await load(ctx);
-  accounts[account.userId] = account;
-  await save(ctx, accounts);
+  await update(ctx, (accounts) => {
+    accounts[account.userId] = account;
+  });
   return summary(account);
 }
 
@@ -79,9 +91,9 @@ const plugin: SlickMainPlugin = {
     async forget(ctx, args) {
       const [userId] = args;
       if (typeof userId !== 'string' || !ID.test(userId)) throw new Error('bad user id');
-      const accounts = await load(ctx);
-      delete accounts[userId];
-      await save(ctx, accounts);
+      await update(ctx, (accounts) => {
+        delete accounts[userId];
+      });
     },
 
     async switchTo(ctx, args) {

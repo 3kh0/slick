@@ -108,7 +108,6 @@ export interface MainCtx {
     remove(url: string, name: string): Promise<void>;
   };
 
-  /** requires `secrets`; values are encrypted when Electron supports it. */
   secrets: {
     read(key: string): Promise<string | null>;
     write(key: string, value: string): Promise<boolean>;
