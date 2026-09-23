@@ -16,7 +16,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - id: check
-        run: node scripts/ci/electron-watch.js
+        run: node scripts/ci/electron-watch.cjs
 
       - name: Open tracking issue
         if: steps.check.outputs.mismatch == 'true'

@@ -39,6 +39,9 @@ const PREFERENCES_TAB_IDS = new Set([
 /** Enough matches to be sure, few enough to survive Slack dropping sections. */
 const MIN_PREFERENCES_TABS = 3;
 
+/** Slack's .c-select_input is absolutely positioned to fill a wrapper; keep ours in flow. */
+const SELECT_STYLE: React.CSSProperties = { position: 'relative', width: '320px', height: 'auto' };
+
 function queueConfigWrite(config: ConfigStore, write: () => Promise<boolean>): void {
   const previous = configWriteQueues.get(config) ?? Promise.resolve();
   const next = previous
@@ -404,7 +407,7 @@ function SettingControl({
           aria-label={setting.label}
           value={selected?.value ?? ''}
           onChange={(event) => save(event.currentTarget.value)}
-          style={{ width: '320px' }}
+          style={SELECT_STYLE}
         >
           {setting.options.map((option) => (
             <option key={option.value} value={option.value}>
@@ -480,7 +483,7 @@ function Appearance({ config, bridge }: { config: ConfigStore; bridge: SlickBrid
             const theme = event.currentTarget.value;
             queueConfigWrite(config, () => config.setTheme(theme));
           }}
-          style={{ width: '320px' }}
+          style={SELECT_STYLE}
         >
           {options.map((option) => (
             <option key={option.value} value={option.value}>
