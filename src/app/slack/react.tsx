@@ -64,7 +64,8 @@ function componentFilter(name: string, filter?: Filter): Filter {
   return (exp: any) => {
     if (!exp) return false;
     if (filter && !filter(exp)) return false;
-    return getComponentName(exp) === name;
+    if (getComponentName(exp) === name) return true;
+    return exp.$$typeof === Symbol.for('react.memo') && exp.displayName === name;
   };
 }
 
