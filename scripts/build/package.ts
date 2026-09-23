@@ -30,14 +30,19 @@ const { archive } = createRequire(import.meta.url)('app-builder-lib/out/targets/
   archive(format: string, outFile: string, dirToArchive: string): Promise<string>;
 };
 
+const MAC_ENTITLEMENTS = path.join(ROOT, 'packaging', 'mac', 'entitlements.plist');
+
+// Release builds sign with Developer ID and notarize (CSC_LINK, APPLE_* in
+// release.yml). electron-builder wants the certificate name without its prefix.
+const SIGN_IDENTITY = process.env.SLICK_SIGN_IDENTITY?.trim().replace(/^Developer ID Application:\s*/, '') || null;
+
 /**
- * Finish the macOS bundle before electron-builder zips it.
+ * Finish the macOS bundle before electron-builder signs and zips it. Icon
+ * variants go in first as they are sealed resources.
  *
- * With `identity: null` electron-builder signs nothing, yet its Info.plist and
- * Resources edits break Electron's original seal ("code has no resources but
- * signature indicates they must be present"). Release zips and updates never
- * pass through install.sh, so ad-hoc sign here. Icon variants go in first as
- * they are sealed resources too.
+ * Unsigned builds still need an ad-hoc signature: electron-builder's
+ * Info.plist and Resources edits break Electron's original seal ("code has no
+ * resources but signature indicates they must be present").
  */
 function finishMacApp(appPath: string) {
   const car = path.join(ASSETS, 'Assets.car');
@@ -51,8 +56,8 @@ function finishMacApp(appPath: string) {
       path.join(appPath, 'Contents', 'Info.plist'),
     ]);
   }
-  const entitlements = path.join(ROOT, 'packaging', 'mac', 'entitlements.plist');
-  execFileSync('/usr/bin/codesign', ['--force', '--deep', '--sign', '-', '--entitlements', entitlements, appPath]);
+  if (SIGN_IDENTITY) return;
+  execFileSync('/usr/bin/codesign', ['--force', '--deep', '--sign', '-', '--entitlements', MAC_ENTITLEMENTS, appPath]);
   execFileSync('/usr/bin/codesign', ['--verify', '--deep', '--strict', appPath]);
 }
 
@@ -152,9 +157,11 @@ export async function packageDesktop({ debug = false, platform = process.platfor
         icon: path.join(ASSETS, 'desktop.icns'),
         target: [{ target: 'zip', arch: ['arm64', 'x64'] }],
         artifactName: 'Slick-${version}-mac-${arch}.${ext}',
-        // Trust comes from the installer's GitHub attestation check, not
-        // notarization; ad-hoc signed in afterPack.
-        identity: null,
+        identity: SIGN_IDENTITY,
+        hardenedRuntime: true,
+        entitlements: MAC_ENTITLEMENTS,
+        entitlementsInherit: MAC_ENTITLEMENTS,
+        notarize: SIGN_IDENTITY ? undefined : false,
       },
 
       win: {

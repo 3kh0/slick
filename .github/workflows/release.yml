@@ -62,6 +62,22 @@ jobs:
         run: bun run build -- package --arch "${{ matrix.arch }}"
         env:
           SLICK_BUILD: ${{ needs.validate-tag.outputs.build }}
+          SLICK_SIGN_IDENTITY: ${{ secrets.SLICK_SIGN_IDENTITY }}
+          CSC_LINK: ${{ secrets.MACOS_CERT_P12 }}
+          CSC_KEY_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+      - name: Check signature
+        if: env.SLICK_SIGN_IDENTITY != ''
+        env:
+          SLICK_SIGN_IDENTITY: ${{ secrets.SLICK_SIGN_IDENTITY }}
+        run: |
+          app=$(find dist/release -maxdepth 2 -name Slick.app -print -quit)
+          codesign --verify --deep --strict "$app"
+          codesign -dv "$app" 2>&1 | grep -q 'Authority=Developer ID Application'
+          spctl --assess --type execute "$app"
+          xcrun stapler validate "$app"
       - name: Attest build provenance
         uses: actions/attest@v4.2.2
         with:
