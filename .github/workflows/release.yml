@@ -53,25 +53,39 @@ jobs:
       fail-fast: false
       matrix:
         arch: [arm64, x64]
+    env:
+      MACOS_CERT_P12: ${{ secrets.MACOS_CERT_P12 }}
+      MACOS_CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
+      SLICK_SIGN_IDENTITY: ${{ secrets.SLICK_SIGN_IDENTITY }}
     steps:
       - uses: actions/checkout@v7
       - uses: oven-sh/setup-bun@v2
       - name: Install tools
         run: bun install --frozen-lockfile
+      # electron-builder's own CSC_LINK import can't unlock the keychain it
+      # creates on these runners, so import the certificate here instead.
+      - name: Import signing cert
+        if: env.MACOS_CERT_P12 != ''
+        run: |
+          KEYCHAIN="$RUNNER_TEMP/build.keychain-db"
+          security create-keychain -p actions "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p actions "$KEYCHAIN"
+          echo "$MACOS_CERT_P12" | base64 -d > "$RUNNER_TEMP/cert.p12"
+          security import "$RUNNER_TEMP/cert.p12" -k "$KEYCHAIN" -P "$MACOS_CERT_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k actions "$KEYCHAIN"
+          security list-keychains -d user -s "$KEYCHAIN" login.keychain-db
+          rm "$RUNNER_TEMP/cert.p12"
+          echo "CSC_KEYCHAIN=$KEYCHAIN" >> "$GITHUB_ENV"
       - name: Build release artifacts
         run: bun run build -- package --arch "${{ matrix.arch }}"
         env:
           SLICK_BUILD: ${{ needs.validate-tag.outputs.build }}
-          SLICK_SIGN_IDENTITY: ${{ secrets.SLICK_SIGN_IDENTITY }}
-          CSC_LINK: ${{ secrets.MACOS_CERT_P12 }}
-          CSC_KEY_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
       - name: Check signature
         if: env.SLICK_SIGN_IDENTITY != ''
-        env:
-          SLICK_SIGN_IDENTITY: ${{ secrets.SLICK_SIGN_IDENTITY }}
         run: |
           app=$(find dist/release -maxdepth 2 -name Slick.app -print -quit)
           codesign --verify --deep --strict "$app"
