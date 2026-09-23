@@ -34,4 +34,6 @@ export const RELAY_BOTS: Record<string, (msg: RelayedMessage) => unknown> = {
   B0APKS1DZAQ: (msg) => msg.metadata?.event_payload?.source_user_id,
   // izie's pet
   B0AJHVBLHUN: (msg) => msg.metadata?.event_payload?.source_user_id,
+  // heidi the helper (nephthys)
+  B0BTRCXG41E: (msg) => msg.metadata?.event_payload?.source_user_id,
 };
