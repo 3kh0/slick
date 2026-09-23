@@ -18,146 +18,45 @@ Slick runs Slack's own `app.asar` inside its own Electron (with the handy BYOE a
 
 ## Installation
 
-Slick runs on MacOS, Windows, and Linux. Linux is still in beta.
+Slick runs Slack's own code, so install the official Slack app first. Then:
 
-Whatever platform you use, you'll need the official Slack app installed first, since Slick runs Slack's own code.
-
-### MacOS
-
-Install the official [Slack app](https://slack.com/downloads/mac) (not the App Store version) at `/Applications/Slack.app`, then use the installer script:
+**macOS** (the [official Slack](https://slack.com/downloads/mac) at `/Applications/Slack.app`, not the App Store version):
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/3kh0/slick/main/install.sh | bash
 ```
 
-If Slack is installed somewhere else, pass its app bundle with `--slack-app`:
+Slack somewhere else? Add `-s -- --slack-app "/path/to/Slack.app"` after `bash`. You can also grab the `.dmg` or `.zip` from the [releases page](https://github.com/3kh0/slick/releases/latest): `mac-arm64` for Apple Silicon, `mac-x64` for Intel.
 
-```bash
-./install.sh --slack-app "$HOME/Documents/Apps/Slack.app"
-```
-
-When using the remote installer, pass the option to `bash` like this:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/3kh0/slick/main/install.sh | bash -s -- --slack-app "$HOME/Documents/Apps/Slack.app"
-```
-
-If you prefer doing it by hand, grab the latest prebuilt app from the [releases page](https://github.com/3kh0/slick/releases/latest) and pick the build for your Mac (check > About This Mac > Chip if unsure):
-
-- `Slick-2.0.N-mac-arm64` — **Apple Silicon** (if there is a M in the name)
-- `Slick-2.0.N-mac-x64` — **Intel** Macs
-
-Each comes as a `.dmg` (open it and drag Slick to Applications) or a `.zip`.
-
-If you'd rather build it yourself (or hack on it), clone the repo and run:
-
-```bash
-./install.sh
-```
-
-To uninstall, run `./scripts/uninstall.sh` from a clone. It also removes your Slick sign-in and settings.
-
-### Windows
-
-> [!NOTE]
-> Both the standalone Slack download and the Microsoft Store version are supported. On ARM PCs the x64 Slack runs via emulation magic and Slick works, but expect a big performance hit. Slick is primarily for those on x64 Windows.
-
-Install the official [Slack app](https://slack.com/downloads/windows) first, then run this in PowerShell:
+**Windows** (the standalone and Microsoft Store versions of Slack both work), in PowerShell:
 
 ```powershell
 irm "https://raw.githubusercontent.com/3kh0/slick/main/install.ps1" | iex
 ```
 
-To uninstall or pass other arguments to the script, try this:
+Slick is built for x64. ARM PCs run x64 Slack through emulation, so it works there, just slower.
 
-```powershell
-& ([scriptblock]::Create((irm https://raw.githubusercontent.com/3kh0/slick/main/install.ps1))) -Uninstall -Purge
-```
-
-If you'd rather build it yourself (or hack on it), clone the repo and run:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File install.ps1
-```
-
-### Linux (beta)
-
-> [!NOTE]
-> Linux support is still in beta and x86_64-only. Slack doesn't ship an official arm64 Linux build, so there's nothing for an arm64 machine to run Slick against.
-
-Install Slack from your distro first (deb, rpm, AUR, whatever your package manager offers). Then grab the AppImage, deb or rpm from the [releases page](https://github.com/3kh0/slick/releases/latest), or use the installer script:
+**Linux** (x86_64): grab the AppImage, `.deb` or `.rpm` from the [releases page](https://github.com/3kh0/slick/releases/latest), run `nix run github:3kh0/slick`, or use the installer:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/3kh0/slick/main/install-linux.sh | bash
 ```
 
-The AppImage runs anywhere (`chmod +x` it first) and updates itself. The deb and rpm install to `/opt/Slick`, add `slick` to your `PATH` and handle `slack://`, and update through your package manager.
+### Uninstalling
 
-To uninstall:
+- **Windows:** `& ([scriptblock]::Create((irm https://raw.githubusercontent.com/3kh0/slick/main/install.ps1))) -Uninstall`
+- **Linux:** `curl -fsSL https://raw.githubusercontent.com/3kh0/slick/main/install-linux.sh | bash -s -- --uninstall`
+- **macOS:** run `./scripts/uninstall.sh` from a clone. This also removes your Slick data.
 
-```bash
-curl -fsSL https://raw.githubusercontent.com/3kh0/slick/main/install-linux.sh | bash -s -- --uninstall
-```
+On Windows and Linux your sign-in and settings are kept unless you add `-Purge` / `--purge`. To hand `slack://` links back to the official app without uninstalling, pass `-RestoreHandler` / `--restore-handler` to the installer.
 
-If you'd rather build it yourself (or hack on it), clone the repo and run:
+### Building from source
 
-```bash
-./install-linux.sh
-```
+Clone the repo and run `./install.sh` (macOS), `./install-linux.sh` (Linux) or `powershell -ExecutionPolicy Bypass -File install.ps1` (Windows). They build Slick from your checkout instead of downloading a release. Plugins live in `src/plugins/<Name>/`, one folder each.
 
-This builds from source into the same `~/.local/share/slick/app` location instead of using a prebuilt release. For manual launch or debugging:
+## Updates
 
-```bash
-~/.local/share/slick/app/slick --no-sandbox
-~/.local/share/slick/app/slick --no-sandbox --remote-debugging-port=9223
-```
-
-You also have some nice flags to play around with: `--restore-handler` on `install-linux.sh` to give `slack://` back to the official Slack app, `--from-release` to use a prebuilt tarball instead of building from source, and `--uninstall` to remove Slick. Your sign-in and settings are kept unless you add `--purge`.
-
-#### Nix (x86_64 Linux)
-
-With [Nix flakes](https://nixos.wiki/wiki/Flakes) enabled, install the official Slack package in your system or user profile, then run `nix run github:3kh0/slick` (or `nix build github:3kh0/slick#slick`). The flake builds Slick from source with nixpkgs' Electron; Slack itself is never bundled. For a non-profile Slack package, pass it as the optional `slackPackage` argument when overriding the Nix derivation. Nix-store installs update via Nix rather than Slick's self-updater. See [Linux distribution options](docs/linux-distribution.md) for details.
-
-#### Flatpak
-
-The Flatpak still uses Slack's installed `app.asar`, so install the official x86_64 Slack package first. Build and install it from the repository root with:
-
-```bash
-bun install --frozen-lockfile
-SLICK_BUILD="$(git tag --list 'v[0-9]*' --sort=-v:refname | head -1 | sed 's/^v//')"
-flatpak-builder --env="SLICK_BUILD=$SLICK_BUILD" --user --install --force-clean --install-deps-from=flathub \
-  .flatpak-build packaging/flatpak/dev.slick.Slick.yml
-flatpak run dev.slick.Slick
-```
-
-The sandbox has read-only access to the common Slack install locations and stores its separate Slick profile under `~/.var/app/dev.slick.Slick/`.
-
-## Release versioning
-
-Slick releases use integer build tags: `v100`, `v101`, and so on. The GitHub Release title reads like `Slick Build 100`, and the app version is `2.0.<build>` (e.g. `2.0.100`). v1 ended at build 85; v2 starts at build 100, and the release workflow refuses anything at or below 85. The updater compares build numbers only, so every v1 install sees v2 as an update.
-
-To ship the next build, tag and push the next integer:
-
-```bash
-BUILD=100 # replace with the next build number
-git tag "v$BUILD"
-git push origin "v$BUILD"
-```
-
-## Verifying builds
-
-All builds published from this repo include [GitHub artifact attestations](https://docs.github.com/en/actions/concepts/security/artifact-attestations) (SLSA build provenance). These prove a given zip, dmg, or tarball was built by this repository's release workflow, not swapped in after the fact.
-
-Install scripts check this automatically when they download a prebuilt release **and** the [GitHub CLI](https://cli.github.com/) (`gh`) is on your `PATH`. If `gh` is not installed, the check is skipped and install continues as before. In-app updates always verify builds after download.
-
-You can also verify a download by hand:
-
-```bash
-gh attestation verify path/to/Slick-2.0.N-….zip -R 3kh0/slick
-# same idea for .dmg or .tar.gz
-```
-
-A successful check confirms the file digest matches a signed attestation from this repo.
+Slick updates itself every few hours, and checks every download against its GitHub build attestation before installing it. To check by hand, use **Slick > Check for Updates…**. On macOS and standalone Windows it also keeps Slack itself up to date. The Microsoft Store, the deb and rpm packages, Flatpak and Nix update through their own package managers instead.
 
 ## Themes
 
@@ -173,19 +72,9 @@ Themes are defined in the `themes/` folder as JSON files exporting the following
 }
 ```
 
-No theme is applied by default, but you can pick one from the Slick tab in Preferences. `themes/amoled.json` (true black) and `themes/ultraviolet.json` (violet) are working examples. More documentation pending.
+No theme is applied by default, but you can pick one from the Slick tab in Preferences. `themes/amoled.json` (true black) and `themes/ultraviolet.json` (violet) are working examples.
 
 Prefer to write your own CSS instead? Slick also has a "Custom CSS" option at the top of the theme list.
-
-## Plugins
-
-Plugins live in `src/plugins/<Name>/`: `index.ts` for the part that runs in Slack's page, `meta.ts` for the name, description and settings, and an optional `main.ts` for anything that needs Electron's main process. [`docs/plugins.md`](docs/plugins.md) covers the plugin API and the traps, and [`docs/slack-internals.md`](docs/slack-internals.md) records every Slack-private name Slick depends on.
-
-## Updates
-
-Slick checks for new builds on its own every few hours, and every update is verified against its build attestation before it is installed. To check manually, use **Slick > Check for Updates…**, in the menu bar on macOS and in the menu behind the title-bar button on Windows. Choosing **Later** installs the downloaded update the next time Slick quits.
-
-Slick also keeps Slack itself current where nothing else does: on macOS it stages Slack updates and swaps them in at the next launch, and on Windows it updates the standalone Slack through Slack's own updater. The Microsoft Store and Linux package managers update Slack themselves.
 
 ## Credits
 

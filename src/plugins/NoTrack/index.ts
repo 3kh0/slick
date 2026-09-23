@@ -3,7 +3,7 @@
 //
 // Taut also no-ops getGenericTracer / getGenericTelemeter / getNoopTelemeter,
 // but those aren't thunk creators in Slack 4.52.155, so patching them by thunk
-// name does nothing. See docs/slack-internals.md.
+// name does nothing.
 
 import { SlickPlugin } from '$slick';
 import * as meta from './meta.ts';

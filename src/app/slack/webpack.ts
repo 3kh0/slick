@@ -324,7 +324,7 @@ export function allExports(): [string, any][] {
 
 export const stats = () => ({ modules: moduleRegistry.size, hasRequire: !!webpackRequire });
 
-// Discovery aids; see docs/slack-internals.md.
+// Discovery aids for DevTools.
 export function exposeDebugGlobals() {
   const debug = {
     __slickModuleRegistry: moduleRegistry,

@@ -11,7 +11,7 @@ let warnedUnrecognisedTabs = false;
 const configWriteQueues = new WeakMap<ConfigStore, Promise<void>>();
 
 /**
- * Preferences section ids (Slack 4.52.155, see docs/slack-internals.md). The
+ * Preferences section ids (Slack 4.52.155). The
  * sidebar rail uses the same `Tabs` component with disjoint ids, so the
  * Preferences list is identified by several matches from this set.
  */

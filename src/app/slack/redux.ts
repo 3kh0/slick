@@ -559,7 +559,7 @@ export const reduxReady = (async () => {
 
 export type ReduxAPI = Awaited<typeof reduxReady>;
 
-/** Discovery aids; see docs/slack-internals.md. */
+/** Discovery aids for DevTools. */
 export function exposeDebugGlobals() {
   const debug = {
     getStore,

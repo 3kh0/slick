@@ -20,8 +20,8 @@ function isJsxRuntime(exp: any): boolean {
   return !!(exp && typeof exp === 'object' && exp.jsx && exp.jsxs && exp.Fragment);
 }
 
-// Slack's displayName on connected/memo components is not a contract (see
-// docs/slack-internals.md); anything load-bearing should prefer a filter.
+// Slack's displayName on connected/memo components is not a contract;
+// anything load-bearing should prefer a filter.
 
 const originalComponentSymbol = Symbol.for('slick.originalComponent');
 

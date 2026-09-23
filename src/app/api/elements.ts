@@ -2,7 +2,7 @@
 // nothing until its chunk loads). Only Button, Tooltip, Label, MenuTrigger and
 // ConnectedBaseAvatar have been observed rendering; the other names and all
 // prop shapes are unverified Slack-private contracts, so don't put UI whose
-// silent loss breaks a feature on them. See docs/slack-internals.md.
+// silent loss breaks a feature on them.
 
 import { lazyComponent, reactReady } from '../slack/react.tsx';
 
