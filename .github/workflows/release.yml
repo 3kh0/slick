@@ -87,11 +87,9 @@ jobs:
       - name: Check signature
         if: env.SLICK_SIGN_IDENTITY != ''
         run: |
-          set -x
           app=$(find dist/release -maxdepth 2 -name Slick.app -print -quit)
-          codesign --verify --deep --strict --verbose=2 "$app"
-          codesign -dv "$app" 2>&1 | tee "$RUNNER_TEMP/codesign.txt"
-          grep 'Authority=Developer ID Application' "$RUNNER_TEMP/codesign.txt"
+          codesign --verify --deep --strict "$app"
+          codesign -dvv "$app" 2>&1 | grep 'Authority=Developer ID Application'
           spctl --assess --type execute -vv "$app"
           xcrun stapler validate "$app"
       - name: Attest build provenance
