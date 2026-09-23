@@ -19,7 +19,7 @@
     "test:early:electron": "npm run early:build && node scripts/early/test-electron.js"
   },
   "devDependencies": {
-    "oxfmt": "^0.67.0",
+    "oxfmt": "^0.68.0",
     "oxlint": "^1.83.0"
   }
 }
