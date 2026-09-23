@@ -1,9 +1,10 @@
-// Dispatches Slack's `openModal` thunk with owned markup: Slack provides the
-// modal stack and focus trap, without depending on private component props.
+// Dispatches Slack's `openModal` thunk with Slack's ConfirmationModal, which
+// provides the overlay, focus trap and Escape handling.
 
 import { reactReady } from '../slack/react.tsx';
 import { getStore } from '../slack/redux.ts';
 import { waitForExport } from '../slack/webpack.ts';
+import { elementsReady } from './elements.ts';
 
 type RawModalHandle = { close: () => void; render: (props: unknown) => void };
 type OpenModalThunk = (opts: { element: React.ReactElement; name?: string }) => unknown;
@@ -88,6 +89,7 @@ export function dialogHelpersFor(openModal: (options: OpenModalOptions) => Modal
 
 export const modalReady = (async () => {
   await reactReady;
+  const { ConfirmationModal } = await elementsReady;
 
   let openModalThunk: OpenModalThunk | undefined;
   void waitForExport<OpenModalThunk>((exp: any) => typeof exp === 'function' && exp.meta?.name === 'openModal').then(
@@ -115,36 +117,22 @@ export const modalReady = (async () => {
         closeRef.current();
       }
     };
+    // openModal mounts the element as-is; Slack's ConfirmationModal supplies the
+    // overlay and chrome. Bare markup lands unstyled below the client.
     const element = (
-      <section
-        role="dialog"
-        aria-modal="true"
-        aria-label={typeof options.title === 'string' ? options.title : 'Slick dialog'}
+      <ConfirmationModal
+        title={options.title}
+        submitButtonText={options.submitText ?? 'Save'}
+        cancelButtonText={options.cancelText ?? 'Cancel'}
+        submitButtonType={options.danger ? 'danger' : 'primary'}
+        showCancelButton={options.showCancelButton ?? true}
+        showSubmitButton={options.showSubmitButton ?? true}
+        onSubmit={() => finish('submit', options.onSubmit)}
+        onCancel={() => finish('cancel', options.onCancel)}
+        onClose={() => finish('close', options.onClose)}
       >
-        <header style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-          <h2 style={{ flex: 1, margin: 0 }}>{options.title}</h2>
-          <button type="button" aria-label="Close" onClick={() => finish('close', options.onClose)}>
-            ×
-          </button>
-        </header>
-        <div style={{ marginBlock: 20 }}>{options.body}</div>
-        <footer style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-          {(options.showCancelButton ?? true) && (
-            <button type="button" onClick={() => finish('cancel', options.onCancel)}>
-              {options.cancelText ?? 'Cancel'}
-            </button>
-          )}
-          {(options.showSubmitButton ?? true) && (
-            <button
-              type="button"
-              onClick={() => finish('submit', options.onSubmit)}
-              style={options.danger ? { color: 'var(--dt_color-content-destructive)' } : undefined}
-            >
-              {options.submitText ?? 'Save'}
-            </button>
-          )}
-        </footer>
-      </section>
+        {options.body}
+      </ConfirmationModal>
     );
 
     const name = typeof options.title === 'string' ? options.title : 'modal';

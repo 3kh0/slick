@@ -1,6 +1,6 @@
 // Slack's own React components by name, each a `lazyComponent` (renders
-// nothing until its chunk loads). Only Button, Tooltip, Label, MenuTrigger and
-// ConnectedBaseAvatar have been observed rendering; the other names and all
+// nothing until its chunk loads). Only Button, Tooltip, Label, MenuTrigger,
+// ConfirmationModal and ConnectedBaseAvatar have been observed rendering; the other names and all
 // prop shapes are unverified Slack-private contracts, so don't put UI whose
 // silent loss breaks a feature on them.
 
