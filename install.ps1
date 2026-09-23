@@ -1,8 +1,6 @@
 #Requires -Version 5.1
 [CmdletBinding()]
 param(
-  [Alias('-beta')]
-  [switch]$Beta,
   [switch]$Force,
   [switch]$RestoreHandler,
   [switch]$Uninstall,
@@ -42,6 +40,20 @@ function Assert-ReleaseAttestation([string]$Path) {
   Write-Host "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!" -ForegroundColor Red
   if ($out) { Write-Host $out }
   Die "refusing to install an unattested or mismatched build"
+}
+
+# PowerShell 5.1 turns redirected native stderr into ErrorRecords, fatal under
+# $ErrorActionPreference = 'Stop' (a Node warning aborted the build). Run with
+# errors non-terminating, judge by exit code, show the log only on failure.
+function Invoke-Logged([string]$Log, [scriptblock]$Command) {
+  $prevEap = $ErrorActionPreference
+  $ErrorActionPreference = 'Continue'
+  try {
+    & $Command *> $Log
+    return $LASTEXITCODE
+  } finally {
+    $ErrorActionPreference = $prevEap
+  }
 }
 
 function Get-File($url, $dest, $label) {
@@ -184,13 +196,24 @@ function New-Shortcuts($exe, $iconFile) {
   }
 }
 
-function Stop-Slick {
-  Get-Process Slick -EA SilentlyContinue | Stop-Process -Force -EA SilentlyContinue
+function Stop-Slick([string]$InstalledAt) {
+  $expected = [IO.Path]::GetFullPath((Join-Path $InstalledAt 'Slick.exe'))
+  Get-Process Slick -EA SilentlyContinue | Where-Object {
+    try { $_.Path -and ([IO.Path]::GetFullPath($_.Path) -eq $expected) } catch { $false }
+  } | Stop-Process -Force -EA SilentlyContinue
   Start-Sleep -Milliseconds 400
 }
 
 function Restore-OfficialHandler {
-  $exe = Slack-Exe (Find-SlackResources)
+  $res = Find-SlackResources
+  # The Store build registers slack:// via its package, at a path that changes
+  # every update; delete our override so the package's registration answers.
+  if ($res -match '\\WindowsApps\\') {
+    Remove-Item "HKCU:\Software\Classes\$Protocol" -Recurse -Force -EA SilentlyContinue
+    & ie4uinit.exe -show 2>$null
+    return $true
+  }
+  $exe = Slack-Exe $res
   if ($exe) {
     Reg "HKCU:\Software\Classes\$Protocol\shell\open\command" @{ '(default)' = "`"$($exe.FullName)`" `"%1`"" }
     & ie4uinit.exe -show 2>$null
@@ -208,7 +231,7 @@ if ($RestoreHandler) {
 
 if ($Uninstall) {
   Step "Uninstalling Slick"
-  Stop-Slick
+  Stop-Slick $Target
   Unregister-SlackHandler
   Restore-OfficialHandler | Out-Null
   $Shortcuts + $LegacyShortcuts | Select-Object -Unique | ForEach-Object { Remove-Item $_ -Force -EA SilentlyContinue }
@@ -243,73 +266,41 @@ if ($slackArch -eq 'arm64') {
 }
 
 $InstallTarget = $Target
-$FromSource = [bool]$Root -and (Test-Path (Join-Path $Root 'scripts\byoe\build-handoff-app-win.js'))
+# From a checkout, build; piped through `irm | iex`, download the latest release.
+$FromSource = [bool]$Root -and (Test-Path (Join-Path $Root 'src\desktop\main.ts'))
 
 if ($FromSource) {
-  if (-not (Get-Command node -EA SilentlyContinue)) { Die "Node.js is required to build from source (get it from nodejs.org)" }
+  if (-not (Get-Command node -EA SilentlyContinue)) { Die "Node.js 22+ is required to build Slick v2 (get it from nodejs.org)" }
 
-  $betaArgs = @()
-  if ($Beta) {
-    Step "Preflighting beta runtime"
-    & node (Join-Path $Root 'scripts\release\beta.js') $Root --build
-    if ($LASTEXITCODE -ne 0) { Die "source beta build failed; existing install was not changed" }
-    $betaArgs = @('--beta')
-  }
-  $Target = Join-Path (Split-Path $InstallTarget) ('slick-stage-' + [Guid]::NewGuid().ToString('N'))
+  $unpacked = if ($slackArch -eq 'arm64') { 'win-arm64-unpacked' } else { 'win-unpacked' }
 
-  $eVer = ((Get-Content (Join-Path $Root 'byoe\package.json') -Raw | ConvertFrom-Json).dependencies.electron -replace '[^\d.]', '')
-  if (-not $eVer) { Die "could not get electron version from byoe/package.json" }
-  $electronArch = $slackArch
-  Write-Host "    BYOE Electron pin: $eVer (win32-$electronArch)"
-
-  $dist = Join-Path $env:LOCALAPPDATA "slick-byoe\electron-$eVer-win32-$electronArch"
-  if (Test-Path (Join-Path $dist 'electron.exe')) {
-    Step "Found Electron $eVer in cache"
-  } else {
-    Step "Downloading Electron $eVer (win32-$electronArch, ~140MB)"
-    $zip = Join-Path $env:TEMP "electron-$eVer-win32-$electronArch.zip"
-    Get-File "https://github.com/electron/electron/releases/download/v$eVer/electron-v$eVer-win32-$electronArch.zip" $zip "Downloading Electron $eVer (win32-$electronArch)"
-    New-Item -ItemType Directory -Force $dist | Out-Null
-    Expand-Archive $zip -DestinationPath $dist -Force
-    Remove-Item $zip -EA SilentlyContinue
-    if (-not (Test-Path (Join-Path $dist 'electron.exe'))) { Die "extraction failed" }
+  if (-not (Test-Path (Join-Path $Root 'node_modules\electron-builder'))) {
+    Step "Installing build dependencies"
+    Push-Location $Root
+    try {
+      if (Get-Command bun -EA SilentlyContinue) { & bun install --frozen-lockfile }
+      else { & npm install --no-audit --no-fund }
+      if ($LASTEXITCODE -ne 0) { Die "dependency install failed" }
+    } finally { Pop-Location }
   }
 
-  $build = 0
+  Step "Building Slick v2 (this bundles Electron; give it a minute)"
+  Push-Location $Root
   try {
-    if ((Get-Command git -EA SilentlyContinue) -and (Test-Path (Join-Path $Root '.git'))) {
-      $tag = git -C $Root tag --list 'v[0-9]*' --sort=-v:refname 2>$null | Where-Object { $_ -match '^v([1-9][0-9]*)$' } | Select-Object -First 1
-      if ($tag -match '^v([1-9][0-9]*)$') { $build = [int]$Matches[1] }
+    $log = Join-Path $env:TEMP 'slick-build.log'
+    $code = Invoke-Logged $log { node (Join-Path $Root 'scripts\build.ts') package --arch $slackArch }
+    if ($code -ne 0) {
+      Get-Content $log -Tail 30 -EA SilentlyContinue | Write-Host
+      Die "build failed (full log: $log)"
     }
-  } catch {}
+  } finally { Pop-Location }
 
-  Step "Building Slick (Build $build) at $Target"
-  $out = & node (Join-Path $Root 'scripts\byoe\build-handoff-app-win.js') `
-    --target $Target --app-version "1.0.$build" --build-number "$build" --source-dist $dist --force @betaArgs 2>&1
-  if ($LASTEXITCODE -ne 0) { Write-Host $out; Die "build failed" }
+  $built = Join-Path $Root "dist\release\$unpacked"
+  if (-not (Test-Path (Join-Path $built 'Slick.exe'))) { Die "electron-builder produced no Slick.exe at $built" }
 
-  $icon = Join-Path $Root 'assets\icon.ico'
-  if (Test-Path $icon) {
-    Step "Branding Slick.exe (icon + version info)"
-    $rcedit = Join-Path $env:LOCALAPPDATA 'slick-byoe\rcedit-x64.exe'
-    if (-not (Test-Path $rcedit)) {
-      New-Item -ItemType Directory -Force (Split-Path $rcedit) | Out-Null
-      Get-File 'https://github.com/electron/rcedit/releases/download/v2.0.0/rcedit-x64.exe' $rcedit 'Downloading rcedit'
-    }
-    & $rcedit (Join-Path $Target 'Slick.exe') `
-      --set-icon $icon `
-      --set-version-string FileDescription 'Slick' `
-      --set-version-string ProductName 'Slick' `
-      --set-version-string InternalName 'Slick' `
-      --set-version-string OriginalFilename 'Slick.exe' `
-      --set-version-string CompanyName 'Slick' `
-      --set-version-string LegalCopyright 'Slick (Slack client mod) by @3kh0' `
-      --set-file-version "1.0.$build.0" `
-      --set-product-version "1.0.$build"
-    if ($LASTEXITCODE -ne 0) { Write-Host "    warning: rcedit failed; keeping the default Electron icon." -ForegroundColor Yellow }
-  } else {
-    Write-Host "    note: assets\icon.ico missing - skipping icon embed." -ForegroundColor Yellow
-  }
+  # Copied rather than moved, so a failed install does not destroy the build.
+  $Target = Join-Path (Split-Path $InstallTarget) ('slick-stage-' + [Guid]::NewGuid().ToString('N'))
+  Copy-Item $built $Target -Recurse -Force
 } else {
   Step "Finding the latest Slick release"
   $asset = $null; $tag = $null
@@ -344,24 +335,7 @@ if ($FromSource) {
 $exe = Join-Path $Target 'Slick.exe'
 if (-not (Test-Path $exe)) { Die "install incomplete: $exe is missing" }
 
-$runtime = Join-Path $Target 'resources\slick'
-if ($Beta -and -not $FromSource) {
-  Step "Building and enabling staged beta runtime"
-  $betaScript = Join-Path $runtime 'scripts\release\beta.js'
-  if (-not (Test-Path $betaScript)) { Die "this release does not support --beta; install a newer release" }
-  $prevRunAsNode = $env:ELECTRON_RUN_AS_NODE
-  try {
-    $env:ELECTRON_RUN_AS_NODE = '1'
-    & $exe $betaScript $runtime --beta | Out-Host
-    if ($LASTEXITCODE -ne 0) { Die "beta build failed" }
-  } finally {
-    $env:ELECTRON_RUN_AS_NODE = $prevRunAsNode
-  }
-} elseif (-not $Beta) {
-  Remove-Item (Join-Path $runtime '.slick-beta') -Force -EA SilentlyContinue
-}
-
-Stop-Slick
+Stop-Slick $InstallTarget
 $backup = $InstallTarget + '.previous-' + [Guid]::NewGuid().ToString('N')
 $hadInstall = Test-Path $InstallTarget
 if ($hadInstall) { Move-Item $InstallTarget $backup }
@@ -376,10 +350,6 @@ if ($hadInstall) { Remove-Item $backup -Recurse -Force }
 if (-not $FromSource) { Remove-Item $stage -Recurse -Force -EA SilentlyContinue }
 $Target = $InstallTarget
 $exe = Join-Path $Target 'Slick.exe'
-if ($FromSource) {
-  if ($Beta) { [IO.File]::WriteAllText((Join-Path $Root '.slick-beta'), '') }
-  else { Remove-Item (Join-Path $Root '.slick-beta') -Force -EA SilentlyContinue }
-}
 
 $iconFile = if ($FromSource) { Join-Path $Root 'assets\icon.ico' } else { $null }
 
@@ -408,14 +378,8 @@ Write-Host ""
 Write-Host "Yippee! " -ForegroundColor Green -NoNewline
 Write-Host "Slick is installed at $Target"
 Write-Host "Things to know:"
-Write-Host "- First launch shows a sign-in screen (separate profile from official Slack). Sign in once; it persists."
+Write-Host "- A new install starts at Slack's sign-in screen (Slick keeps its own session, separate from the official app). Sign in once; it persists."
 Write-Host "- Configure at Preferences -> Slick."
 Write-Host "- Uninstall:  powershell -File install.ps1 -Uninstall   (add -Purge to also wipe your profile)"
 Write-Host "- Restore slack:// to official Slack:  powershell -File install.ps1 -RestoreHandler"
 
-if ($Beta) {
-  Write-Host "Early-injection beta installed. Automatic Slick updates are disabled."
-  Write-Host "Update by rerunning this installer with -Beta; omit -Beta to return to stable."
-} else {
-  Write-Host "Stable loader installed."
-}

@@ -4,8 +4,46 @@ on:
   push:
     tags: ['v*']
 
+permissions:
+  contents: read
+  issues: write
+
 jobs:
+  validate-tag:
+    runs-on: ubuntu-latest
+    outputs:
+      build: ${{ steps.version.outputs.build }}
+    steps:
+      - name: Read build number
+        id: version
+        shell: bash
+        run: |
+          if [[ ! "$GITHUB_REF_NAME" =~ ^v[1-9][0-9]*$ ]]; then
+            echo "not understood" >&2
+            exit 1
+          fi
+          build="${GITHUB_REF_NAME#v}"
+          if (( build <= 85 )); then
+            echo "v2 releases must use build 86 or newer; v85 is already live on v1" >&2
+            exit 1
+          fi
+          echo "build=$build" >> "$GITHUB_OUTPUT"
+
+  electron-compatible:
+    needs: validate-tag
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v7
+      - id: check
+        run: node scripts/ci/electron-watch.js
+      - name: Reject an incompatible runtime
+        if: steps.check.outputs.mismatch == 'true'
+        run: |
+          echo "Slack and Slick use different Electron majors; refusing to release." >&2
+          exit 1
+
   build-mac:
+    needs: [validate-tag, electron-compatible]
     runs-on: macos-26
     permissions:
       contents: read
@@ -15,62 +53,49 @@ jobs:
       fail-fast: false
       matrix:
         arch: [arm64, x64]
-    env:
-      MACOS_CERT_P12: ${{ secrets.MACOS_CERT_P12 }}
-      MACOS_CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
-        with:
-          node-version: latest
       - uses: oven-sh/setup-bun@v2
-      - name: Read build number
-        id: version
-        shell: bash
-        run: |
-          if [[ ! "$GITHUB_REF_NAME" =~ ^v[1-9][0-9]*$ ]]; then
-            echo "not understood" >&2
-            exit 1
-          fi
-          echo "build=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
       - name: Install tools
-        run: bun install --cwd scripts/release --frozen-lockfile
-      - name: Import signing cert
-        if: env.MACOS_CERT_P12 != ''
-        run: |
-          KEYCHAIN="$RUNNER_TEMP/build.keychain-db"
-          security create-keychain -p actions "$KEYCHAIN"
-          security set-keychain-settings -lut 21600 "$KEYCHAIN"
-          security unlock-keychain -p actions "$KEYCHAIN"
-          echo "$MACOS_CERT_P12" | base64 -d > "$RUNNER_TEMP/cert.p12"
-          security import "$RUNNER_TEMP/cert.p12" -k "$KEYCHAIN" -P "$MACOS_CERT_PASSWORD" -T /usr/bin/codesign
-          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k actions "$KEYCHAIN"
-          security list-keychains -d user -s "$KEYCHAIN" login.keychain-db
-          rm "$RUNNER_TEMP/cert.p12"
+        run: bun install --frozen-lockfile
       - name: Build release artifacts
+        run: bun run build -- package --arch "${{ matrix.arch }}"
         env:
+          SLICK_BUILD: ${{ needs.validate-tag.outputs.build }}
           SLICK_SIGN_IDENTITY: ${{ secrets.SLICK_SIGN_IDENTITY }}
+          CSC_LINK: ${{ secrets.MACOS_CERT_P12 }}
+          CSC_KEY_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
-        run: node scripts/release/build-release-mac.js --build-number "${{ steps.version.outputs.build }}" --arch "${{ matrix.arch }}"
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+      - name: Check signature
+        if: env.SLICK_SIGN_IDENTITY != ''
+        env:
+          SLICK_SIGN_IDENTITY: ${{ secrets.SLICK_SIGN_IDENTITY }}
+        run: |
+          app=$(find dist/release -maxdepth 2 -name Slick.app -print -quit)
+          codesign --verify --deep --strict "$app"
+          codesign -dv "$app" 2>&1 | grep -q 'Authority=Developer ID Application'
+          spctl --assess --type execute "$app"
+          xcrun stapler validate "$app"
       - name: Attest build provenance
         uses: actions/attest@v4.2.2
         with:
           subject-path: |
-            dist/Slick-*.zip
-            dist/Slick-*.dmg
+            dist/release/Slick-*.zip
+            dist/release/Slick-*.dmg
       - name: Upload artifacts
         uses: actions/upload-artifact@v7
         with:
           name: slick-mac-${{ matrix.arch }}
           path: |
-            dist/Slick-*.zip
-            dist/Slick-*.dmg
+            dist/release/Slick-*.zip
+            dist/release/Slick-*.dmg
           if-no-files-found: error
           retention-days: 1
 
   build-win:
+    needs: [validate-tag, electron-compatible]
     runs-on: windows-latest
     permissions:
       contents: read
@@ -82,33 +107,26 @@ jobs:
         arch: [x64, arm64]
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
-        with:
-          node-version: latest
-      - name: Read build number
-        id: version
-        shell: bash
-        run: |
-          if [[ ! "$GITHUB_REF_NAME" =~ ^v[1-9][0-9]*$ ]]; then
-            echo "not understood" >&2
-            exit 1
-          fi
-          echo "build=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install --frozen-lockfile
       - name: Build release artifact
-        run: node scripts/release/build-release-win.js --build-number "${{ steps.version.outputs.build }}" --arch "${{ matrix.arch }}"
+        run: bun run build -- package --arch "${{ matrix.arch }}"
+        env:
+          SLICK_BUILD: ${{ needs.validate-tag.outputs.build }}
       - name: Attest build provenance
         uses: actions/attest@v4.2.2
         with:
-          subject-path: dist/Slick-*-win32-*.zip
+          subject-path: dist/release/Slick-*-win32-*.zip
       - name: Upload artifacts
         uses: actions/upload-artifact@v7
         with:
           name: slick-win32-${{ matrix.arch }}
-          path: dist/Slick-*-win32-*.zip
+          path: dist/release/Slick-*-win32-*.zip
           if-no-files-found: error
           retention-days: 1
 
   build-linux:
+    needs: [validate-tag, electron-compatible]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -120,47 +138,40 @@ jobs:
         arch: [x64]
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
-        with:
-          node-version: latest
-      - name: Read build number
-        id: version
-        shell: bash
-        run: |
-          if [[ ! "$GITHUB_REF_NAME" =~ ^v[1-9][0-9]*$ ]]; then
-            echo "not understood" >&2
-            exit 1
-          fi
-          echo "build=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
-      - name: Build release artifact
-        run: node scripts/release/build-release-linux.js --build-number "${{ steps.version.outputs.build }}" --arch "${{ matrix.arch }}"
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install --frozen-lockfile
+      - name: Install Linux packaging tools
+        run: sudo apt-get update && sudo apt-get install -y rpm fakeroot dpkg
+      - name: Build release artifacts
+        run: bun run build -- package --arch "${{ matrix.arch }}"
+        env:
+          SLICK_BUILD: ${{ needs.validate-tag.outputs.build }}
       - name: Attest build provenance
         uses: actions/attest@v4.2.2
         with:
-          subject-path: dist/Slick-*-linux-*.tar.gz
+          subject-path: |
+            dist/release/Slick-*-linux-*.tar.gz
+            dist/release/Slick-*.AppImage
+            dist/release/slick_*.deb
+            dist/release/slick-*.rpm
       - name: Upload artifacts
         uses: actions/upload-artifact@v7
         with:
           name: slick-linux-${{ matrix.arch }}
-          path: dist/Slick-*-linux-*.tar.gz
+          path: |
+            dist/release/Slick-*-linux-*.tar.gz
+            dist/release/Slick-*.AppImage
+            dist/release/slick_*.deb
+            dist/release/slick-*.rpm
           if-no-files-found: error
           retention-days: 1
 
   release:
-    needs: [build-mac, build-win, build-linux]
+    needs: [validate-tag, build-mac, build-win, build-linux]
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
-      - name: Read build number
-        id: version
-        shell: bash
-        run: |
-          if [[ ! "$GITHUB_REF_NAME" =~ ^v[1-9][0-9]*$ ]]; then
-            echo "not understood" >&2
-            exit 1
-          fi
-          echo "build=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
       - name: Download artifacts
         uses: actions/download-artifact@v8
         with:
@@ -169,9 +180,12 @@ jobs:
       - name: Create release
         uses: softprops/action-gh-release@v3
         with:
-          name: Slick Build ${{ steps.version.outputs.build }}
+          name: Slick Build ${{ needs.validate-tag.outputs.build }}
           files: |
             dist/Slick-*.zip
             dist/Slick-*.dmg
             dist/Slick-*.tar.gz
+            dist/Slick-*.AppImage
+            dist/slick_*.deb
+            dist/slick-*.rpm
           generate_release_notes: true

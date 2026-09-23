@@ -111,7 +111,7 @@ async function suggestedPin(wanted) {
 (async () => {
   if (process.platform !== 'darwin') die('needs macOS (plutil)');
 
-  const byoe = require(path.join(ROOT, 'byoe/package.json')).dependencies.electron.replace(/[^\d.]/g, '');
+  const byoe = require(path.join(ROOT, 'package.json')).devDependencies.electron.replace(/[^\d.]/g, '');
   const slackVersion = await latestSlackVersion().catch((e) => die(e.message));
   const slackElectron = await slackElectronVersion(slackVersion).catch((e) => die(e.message));
 
@@ -119,7 +119,7 @@ async function suggestedPin(wanted) {
   const suggested = mismatch ? await suggestedPin(major(slackElectron)) : '';
 
   console.log(`Slack ${slackVersion} ships Electron ${slackElectron}`);
-  console.log(`byoe/package.json pins Electron ${byoe}`);
+  console.log(`package.json pins Electron ${byoe}`);
   console.log(mismatch ? `MISMATCH: major ${major(slackElectron)} != ${major(byoe)}` : 'majors match');
 
   if (process.env.GITHUB_OUTPUT) {

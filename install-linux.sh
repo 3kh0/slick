@@ -7,8 +7,6 @@ BRANCH="main"
 RAW_BASE="https://raw.githubusercontent.com/$REPO/$BRANCH"
 DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}"
 TARGET="$DATA_HOME/slick/app"
-EDIST="$ROOT/byoe/node_modules/electron/dist"
-EBIN="$EDIST/electron"
 DESKTOP_FILE="$HOME/.local/share/applications/dev.slick.byoe.desktop"
 PROFILE="$HOME/.config/slick"
 ICON_SIZES=(16 32 64 128 256 512)
@@ -19,15 +17,15 @@ SLACK_PATHS=(
   "/opt/slack"
   "$HOME/.local/share/slack"
 )
-BETA=0
 NO_LAUNCH=0
 FROM_RELEASE=0
 UNINSTALL=0
+PURGE=0
 
 # Only true when this script is sitting inside an actual clone of the repo
 # (curl | bash / bash <(curl ...) resolve ROOT to an unrelated directory).
 CLONED=0
-[ -f "$ROOT/scripts/byoe/build-handoff-linux.js" ] && CLONED=1
+[ -f "$ROOT/src/desktop/main.ts" ] && CLONED=1
 
 step() { printf '\033[1;35m==>\033[0m \033[1m%s\033[0m\n' "$*"; }
 die() {
@@ -60,12 +58,12 @@ verify_release_artifact() {
 do_uninstall() {
   local fail=0
   step "Stopping Slick"
-  pkill -f "$TARGET/electron" 2>/dev/null || true
+  for BIN in slick electron; do pkill -f "$TARGET/$BIN" 2>/dev/null || true; done
   for _ in {1..20}; do
-    pgrep -f "$TARGET/electron" >/dev/null 2>&1 || break
+    pgrep -f "$TARGET/slick" >/dev/null 2>&1 || pgrep -f "$TARGET/electron" >/dev/null 2>&1 || break
     sleep 0.25
   done
-  if pgrep -f "$TARGET/electron" >/dev/null 2>&1; then
+  if pgrep -f "$TARGET/slick" >/dev/null 2>&1 || pgrep -f "$TARGET/electron" >/dev/null 2>&1; then
     printf '\033[1;33mwarning:\033[0m some Slick processes are still running\n' >&2
     fail=1
   fi
@@ -95,25 +93,29 @@ do_uninstall() {
   step "Removing Slick"
   rm -rf "$TARGET" "$TARGET.old"
 
-  step "Purging Slick data"
-  rm -rf "$PROFILE"
+  # Like the other platforms, the sign-in and settings survive an uninstall
+  # unless asked otherwise, so a reinstall picks up where it left off.
+  if [ "$PURGE" -eq 1 ]; then
+    step "Purging Slick data"
+    rm -rf "$PROFILE"
+  fi
   find "${TMPDIR:-/tmp}" -maxdepth 1 -type d -name 'slick-update-*' -exec rm -rf {} + 2>/dev/null || true
 
   if [ "$fail" -ne 0 ]; then
     printf '\n\033[1;33mSlick was partially removed, see the warnings above.\033[0m\n'
     exit 1
   fi
-  printf '\n\033[1;32mSlick has been fully removed.\033[0m\n'
+  printf '\n\033[1;32mSlick has been removed.\033[0m\n'
+  [ "$PURGE" -eq 1 ] || echo "Your sign-in and settings are kept at $PROFILE (rerun with --uninstall --purge to remove them too)."
   exit 0
 }
 
 while [ $# -gt 0 ]; do
   case "$1" in
   --help|-h)
-    echo "Usage: bash install-linux.sh [--beta] [--no-launch] [--from-release] [--uninstall] [--restore-handler]"
-    echo "Reinstall without --beta to return to stable while retaining settings."
+    echo "Usage: bash install-linux.sh [--no-launch] [--from-release] [--uninstall [--purge]] [--restore-handler]"
     exit 0 ;;
-  --beta) BETA=1 ;;
+  --purge) PURGE=1 ;;
   --no-launch) NO_LAUNCH=1 ;;
   --from-release) FROM_RELEASE=1 ;;
   --uninstall) UNINSTALL=1 ;;
@@ -146,58 +148,17 @@ find_slack() {
   return 1
 }
 
-parse_version() {
-  grep -Eo '[0-9]+[.][0-9]+[.][0-9]+' | head -1
-}
-
-electron_version() {
-  "$1" --version 2>/dev/null | parse_version
-}
-
-slack_electron_version() {
-  local slack_dir="$1"
-  if [ -f "$slack_dir/version" ]; then
-    parse_version <"$slack_dir/version"
-    return 0
-  fi
-  if [ -x "$slack_dir/slack" ]; then
-    "$slack_dir/slack" --version 2>/dev/null | parse_version
-    return 0
-  fi
-}
-
-matching_system_electron() {
-  local major="$1"
-  local bin version
-  for bin in "/usr/lib/electron$major/electron" "/usr/lib/electron/electron"; do
-    [ -x "$bin" ] || continue
-    version="$(electron_version "$bin" || true)"
-    [ "${version%%.*}" = "$major" ] && {
-      printf '%s\n' "$bin"
-      return 0
-    }
-  done
-  return 1
-}
-
-matching_byoe_electron() {
-  local major="$1"
-  local version=""
-  [ -x "$EBIN" ] || return 1
-  [ -f "$EDIST/version" ] && version="$(parse_version <"$EDIST/version")"
-  version="${version:-$(electron_version "$EBIN" || true)}"
-  [ "${version%%.*}" = "$major" ] || return 1
-  printf '%s\n' "$version"
-}
-
 write_desktop_file() {
   local target="$1"
+  local executable="${target}/slick"
+  executable="${executable//\\/\\\\}"
+  executable="${executable//\"/\\\"}"
   cat >"$target/slick.desktop" <<EOF
 [Desktop Entry]
 Type=Application
 Name=Slick
 Comment=Slack client mod (BYOE)
-Exec=${target}/electron --no-sandbox %U
+Exec="$executable" --no-sandbox %U
 Icon=slick
 Terminal=false
 Categories=Network;InstantMessaging;
@@ -240,82 +201,44 @@ if [ "$FROM_RELEASE" -eq 1 ]; then
   verify_release_artifact "$TMP/Slick.tar.gz"
 
   tar -xzf "$TMP/Slick.tar.gz" -C "$TMP"
-  [ -x "$TMP/Slick/electron" ] || die "release tarball did not contain Slick/electron"
-  RUNTIME="$TMP/Slick/resources/slick"
-  if [ "$BETA" -eq 1 ]; then
-    step "Building and enabling staged beta runtime"
-    [ -f "$RUNTIME/scripts/release/beta.js" ] || die "this release does not support --beta; install a newer release"
-    ELECTRON_RUN_AS_NODE=1 "$TMP/Slick/electron" "$RUNTIME/scripts/release/beta.js" "$RUNTIME" --beta
-  else
-    rm -f "$RUNTIME/.slick-beta"
-  fi
+  [ -x "$TMP/Slick/slick" ] || die "release tarball did not contain Slick/slick"
   STAGED_APP="$TMP/Slick"
 else
-  command -v node >/dev/null 2>&1 || die "Node.js 18+ is required."
-  node -e 'process.exit(parseInt(process.versions.node, 10) >= 18 ? 0 : 1)' 2>/dev/null ||
-    die "Node.js 18+ is required (found: $(node -v 2>/dev/null || echo none))."
+  command -v node >/dev/null 2>&1 || die "Node.js 22+ is required to build Slick v2."
+  node -e 'process.exit(parseInt(process.versions.node, 10) >= 22 ? 0 : 1)' 2>/dev/null ||
+    die "Node.js 22+ is required to build Slick v2 (found: $(node -v 2>/dev/null || echo none))."
 
-  BETA_ARGS=()
-  if [ "$BETA" -eq 1 ]; then
-    step "Preflighting beta runtime"
-    node "$ROOT/scripts/release/beta.js" "$ROOT" --build
-    BETA_ARGS=(--beta)
-  fi
-
-  EVER="$(slack_electron_version "$SLACK" || true)"
-  [ -n "$EVER" ] || die "Could not read Slack's Electron version from $SLACK."
-  EMAJOR="${EVER%%.*}"
-  echo "    Slack ships Electron $EVER"
-
-  if SYS_EBIN="$(matching_system_electron "$EMAJOR")"; then
-    step "Found matching system Electron at $SYS_EBIN"
-  elif HAVE="$(matching_byoe_electron "$EMAJOR")"; then
-    step "Electron $HAVE already installed in byoe/"
-  else
-    step "Installing Electron $EVER into byoe/ (~100MB download)"
-    cd "$ROOT/byoe"
-    npmi() { npm install --no-save --no-package-lock --no-audit --no-fund "$@"; }
+  if [ ! -d "$ROOT/node_modules/electron-builder" ]; then
+    step "Installing build dependencies"
     if command -v bun >/dev/null 2>&1; then
-      bun add --exact "electron@$EVER" || bun add "electron@$EMAJOR"
+      (cd "$ROOT" && bun install --frozen-lockfile) || die "dependency install failed"
     elif command -v npm >/dev/null 2>&1; then
-      npmi "electron@$EVER" || npmi "electron@$EMAJOR"
+      (cd "$ROOT" && npm install --no-audit --no-fund) || die "dependency install failed"
     else
-      die "Need bun or npm to install Electron."
+      die "npm or bun is required to install build dependencies."
     fi
-    [ -x "$EBIN" ] || node node_modules/electron/install.js || true
-    if [ ! -x "$EBIN" ]; then
-      command -v unzip >/dev/null 2>&1 || die "Electron install failed and unzip is missing to recover from cache."
-      ARCH="$(uname -m)"
-      case "$ARCH" in
-      aarch64) ARCH=arm64 ;;
-      *) ARCH=x64 ;;
-      esac
-      CACHE="${XDG_CACHE_HOME:-$HOME/.cache}/electron"
-      ZIP="$(find "$CACHE" -maxdepth 1 -name "electron-v$EVER-linux-$ARCH.zip" 2>/dev/null | head -1)"
-      [ -n "$ZIP" ] || ZIP="$(find "$CACHE" -maxdepth 1 -name "electron-v$EMAJOR.*-linux-$ARCH.zip" 2>/dev/null | sort -V | tail -1)"
-      [ -n "$ZIP" ] || die "Electron install failed: no electron binary and no cached zip to extract."
-      step "Extracting $(basename "$ZIP") manually"
-      mkdir -p "$EDIST" && unzip -oq "$ZIP" -d "$EDIST"
-    fi
-    matching_byoe_electron "$EMAJOR" >/dev/null || die "Electron install failed or did not match major $EMAJOR."
-    cd "$ROOT"
   fi
 
-  BUILD=""
-  if command -v git >/dev/null 2>&1; then
-    BUILD="$(git -C "$ROOT" tag --list 'v[0-9]*' --sort=-v:refname 2>/dev/null |
-      sed -nE 's/^v([1-9][0-9]*)$/\1/p' | head -1 || true)"
-  fi
-  BUILD="${BUILD:-0}"
-  VERSION="1.0.$BUILD"
+  case "$(uname -m)" in
+  aarch64 | arm64) UNPACKED="linux-arm64-unpacked"; BUILD_ARCH="arm64" ;;
+  *) UNPACKED="linux-unpacked"; BUILD_ARCH="x64" ;;
+  esac
 
   mkdir -p "$(dirname "$TARGET")"
   TMP="$(mktemp -d "$(dirname "$TARGET")/.slick-install.XXXXXX")"
   trap 'rm -rf "$TMP"' EXIT
   STAGED_APP="$TMP/Slick"
-  step "Building $TARGET (Build $BUILD)"
-  node "$ROOT/scripts/byoe/build-handoff-linux.js" --target "$STAGED_APP" \
-    --app-version "$VERSION" --build-number "$BUILD" --force ${BETA_ARGS[@]+"${BETA_ARGS[@]}"} >/dev/null
+
+  step "Building Slick v2 (this bundles Electron; give it a minute)"
+  (cd "$ROOT" && node scripts/build.ts package --arch "$BUILD_ARCH") >/dev/null ||
+    die "build failed; run 'node scripts/build.ts package --arch $BUILD_ARCH' to see why"
+
+  BUILT="$ROOT/dist/release/$UNPACKED"
+  [ -d "$BUILT" ] || die "electron-builder produced no app at $BUILT"
+  # Copied rather than moved, so a failed install does not destroy the build.
+  cp -a "$BUILT" "$STAGED_APP"
+  [ -x "$STAGED_APP/slick" ] || die "build produced no slick binary in $BUILT"
+
 fi
 
 step "Installing $TARGET"
@@ -328,14 +251,6 @@ if ! mv "$STAGED_APP" "$TARGET"; then
 fi
 rm -rf "$BACKUP"
 write_desktop_file "$TARGET"
-
-if [ "$CLONED" -eq 1 ]; then
-  if [ "$BETA" -eq 1 ] && [ "$FROM_RELEASE" -eq 0 ]; then
-    touch "$ROOT/.slick-beta"
-  elif [ "$BETA" -eq 0 ]; then
-    rm -f "$ROOT/.slick-beta"
-  fi
-fi
 
 step "Installing desktop integration"
 mkdir -p "$HOME/.local/share/applications"
@@ -364,13 +279,14 @@ else
   echo "    xdg-mime not found; could not register slack:// automatically."
 fi
 
+LAUNCH_BIN="slick"
 if [ "$NO_LAUNCH" -eq 0 ]; then
   step "Launching Slick"
   SLICK_LAUNCH_T0="$(date +%s%3N 2>/dev/null || echo '')"
   export SLICK_LAUNCH_T0
   LOG_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/slick"
   mkdir -p "$LOG_DIR"
-  setsid "$TARGET/electron" --no-sandbox >"$LOG_DIR/launch.log" 2>&1 </dev/null &
+  setsid "$TARGET/$LAUNCH_BIN" --no-sandbox >"$LOG_DIR/launch.log" 2>&1 </dev/null &
   disown
   echo "    launched in the background (log: $LOG_DIR/launch.log)"
 fi
@@ -378,16 +294,10 @@ fi
 printf '\n\033[1;32mYippee!\033[0m Slick is installed at %s\n' "$TARGET"
 cat <<EOF
 Things to know:
-- First launch shows a sign-in screen (separate profile from official Slack). Sign in once; it persists.
+- A new install starts at Slack's sign-in screen (Slick keeps its own session, separate from the official app). Sign in once; it persists.
 - Configure at Preferences -> Slick.
-- Manual launch: $TARGET/electron --no-sandbox
+- Manual launch: $TARGET/$LAUNCH_BIN --no-sandbox
 - Uninstall: ./install-linux.sh --uninstall (or curl -fsSL $RAW_BASE/install-linux.sh | bash -s -- --uninstall)
 - Make slack:// open the official Slack again: ./install-linux.sh --restore-handler
 EOF
 
-if [ "$BETA" -eq 1 ]; then
-  echo "Early-injection beta installed. Automatic Slick updates are disabled."
-  echo "Update by rerunning this installer with --beta; omit --beta to return to stable."
-else
-  echo "Stable loader installed."
-fi
