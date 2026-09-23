@@ -21,7 +21,7 @@ let
     dontFixup = true;
     outputHashMode = "recursive";
     outputHashAlgo = "sha256";
-    outputHash = "sha256-+Qw/4t1sSiBiV3rgyiR29Z1zABPaNrupwgPMMOH7ZmA=";
+    outputHash = "sha256-4YnUihrb5Gg7pQXDFtvTro1XL1fW3U6ZhRbvOrFfrvY=";
     installPhase = ''
       export HOME="$TMPDIR/home"
       export BUN_INSTALL_CACHE_DIR="$TMPDIR/bun-cache"
