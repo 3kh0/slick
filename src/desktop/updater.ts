@@ -371,7 +371,7 @@ export function createUpdater({ version, build }: { version: string; build: numb
         'APP="$1"; STAGE="$2"; DIR="$3"; PID="$4"; while kill -0 "$PID" 2>/dev/null; do sleep 0.2; done; ' +
         'rm -rf "$APP.old"; mv "$APP" "$APP.old" 2>/dev/null || true; ' +
         'if mv "$STAGE" "$APP"; then rm -rf "$APP.old"; else rm -rf "$APP"; mv "$APP.old" "$APP" 2>/dev/null || true; fi; ' +
-        'rm -rf "$DIR"; [ -z "$5" ] || "$APP/slick" >/dev/null 2>&1 &';
+        'rm -rf "$DIR"; [ -z "$5" ] || "$APP/slick" --no-sandbox >/dev/null 2>&1 &';
       spawn('/bin/sh', ['-c', sh, 'slick-updater', appDir, stage, dir, String(process.pid), again], {
         detached: true,
         stdio: 'ignore',
