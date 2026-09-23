@@ -1,6 +1,8 @@
 import type { ScheduleRule, Setting, SettingValue } from '../shared/settings.ts';
 import { coerceSetting } from '../shared/settings.ts';
 import { elementsReady, type SelectOption } from './api/elements.ts';
+import { setStyle } from './api/css.ts';
+import { settingsTabs, type SettingsTab } from './api/settingsTabs.ts';
 import type { SlickBridge } from './bridge.ts';
 import type { ConfigStore } from './configStore.ts';
 import type { PluginManager } from './pluginManager.ts';
@@ -36,6 +38,21 @@ const PREFERENCES_TAB_IDS = new Set([
   'send_on_behalf',
 ]);
 
+// this makes the preferences window wider and taller, and lets the tab list scroll rather than collapse
+const PREFERENCES_CSS = `
+.p-prefs_dialog .p-prefs_dialog__modal {
+  width: min(1200px, calc(100vw - 64px)) !important;
+  max-width: none !important;
+  height: min(1000px, calc(100vh - 64px)) !important;
+}
+.p-prefs_dialog .p-prefs_dialog__tabs { min-height: 0; }
+.p-prefs_dialog .p-prefs_dialog__menu {
+  max-height: 100%;
+  overflow-y: auto;
+  flex-shrink: 0;
+}
+`;
+
 /** Enough matches to be sure, few enough to survive Slack dropping sections. */
 const MIN_PREFERENCES_TABS = 3;
 
@@ -57,11 +74,13 @@ type TabsProps = {
     id?: string;
     label: React.ReactElement;
     content: React.ReactElement;
-    svgIcon: { name: string };
+    svgIcon?: { name: string };
+    customIcon?: React.ReactElement;
     'aria-label'?: string;
   }[];
   onTabChange?: (id: string, event: React.UIEvent) => void;
   currentTabId?: string;
+  collapsible?: boolean;
 };
 
 type PluginInfo = ReturnType<PluginManager['info']>[number];
@@ -69,11 +88,13 @@ type PluginInfo = ReturnType<PluginManager['info']>[number];
 export async function addSettingsTab(manager: PluginManager, config: ConfigStore, bridge: SlickBridge) {
   await reactReady;
   elements = await elementsReady;
+  setStyle(PREFERENCES_CSS, 'core:preferences');
 
   // Adapted from Taut's MIT-licensed settings tab. Keeping Slack on its real
   // Advanced route avoids teaching its Preferences router an unknown route.
   patchComponent<TabsProps>('Tabs', (Original) => (props) => {
-    const [slickSelected, setSlickSelected] = React.useState(false);
+    const [selected, setSelected] = React.useState<string | null>(null);
+    const pluginTabs = settingsTabs.use();
 
     const known = props.tabs.filter((tab) => tab.id !== undefined && PREFERENCES_TAB_IDS.has(tab.id));
     if (known.length < MIN_PREFERENCES_TABS) {
@@ -92,28 +113,31 @@ export async function addSettingsTab(manager: PluginManager, config: ConfigStore
     const tabs = [...props.tabs];
     const advanced = tabs.find((tab) => tab.id === 'advanced');
     const hostTab = advanced ?? known[known.length - 1];
-    if (!tabs.some((tab) => tab.id === 'slick')) {
-      tabs.push({
-        id: 'slick',
-        label: <>Slick</>,
-        content: <SlickSettings manager={manager} config={config} bridge={bridge} />,
-        // Borrow a rendered tab's icon rather than guess a private icon name.
-        svgIcon: hostTab.svgIcon ?? { name: 'settings' },
-        'aria-label': 'Slick',
-      });
-    }
+    const hostIcon = hostTab.svgIcon ?? { name: 'settings' };
+    const injected = new Set<string>();
+    const inject = (id: string, label: string, content: React.ReactElement, icon: SettingsTab['icon'] = undefined) => {
+      injected.add(id);
+      if (tabs.some((tab) => tab.id === id)) return;
+      const iconProps =
+        typeof icon === 'string' ? { svgIcon: { name: icon } } : icon ? { customIcon: icon } : { svgIcon: hostIcon };
+      tabs.push({ id, label: <>{label}</>, content, ...iconProps, 'aria-label': label });
+    };
+    inject('slick', 'Slick', <SlickSettings manager={manager} config={config} bridge={bridge} />);
+    for (const tab of pluginTabs) inject(tab.id, tab.label, <tab.render />, tab.icon);
 
     const onTabChange = (id: string, event: React.UIEvent) => {
-      setSlickSelected(id === 'slick');
-      props.onTabChange?.(id === 'slick' ? (hostTab.id ?? 'advanced') : id, event);
+      setSelected(injected.has(id) ? id : null);
+      props.onTabChange?.(injected.has(id) ? (hostTab.id ?? 'advanced') : id, event);
     };
 
     return (
       <Original
         {...props}
         tabs={tabs}
-        currentTabId={slickSelected ? 'slick' : props.currentTabId}
+        currentTabId={selected && injected.has(selected) ? selected : props.currentTabId}
         onTabChange={onTabChange}
+        // Otherwise tabs that don't fit collapse into a "More" menu; PREFERENCES_CSS scrolls the list instead.
+        collapsible={false}
       />
     );
   });

@@ -29,12 +29,13 @@ import { membersReady } from './slack/members.ts';
 import { messagesReady } from './slack/messages.ts';
 import { reduxReady } from './slack/redux.ts';
 import { rtmReady } from './slack/rtm.ts';
-import { getByProps, getExport, getValueSource, waitForExport } from './slack/webpack.ts';
+import { findModuleId, getByProps, getExport, getValueSource, moduleSources, waitForExport } from './slack/webpack.ts';
 import { elementsReady } from './api/elements.ts';
 import { menuReady } from './api/menu.tsx';
 import { modalReady } from './api/modal.tsx';
 import { setupMessageSendDelta } from './api/messageSend.tsx';
 import { userAPI } from './api/userAPI.ts';
+import { addSettingsTab, type SettingsTab } from './api/settingsTabs.ts';
 
 const PLUGIN_ID = /^[A-Za-z0-9_.-]{1,100}$/;
 const LIFECYCLE_TIMEOUT_MS = 5_000;
@@ -110,6 +111,8 @@ async function createBaseAPI(bridge: SlickBridge) {
     waitForRenderedComponent,
     getComponentSource,
     getValueSource,
+    findModuleId,
+    moduleSources,
     getFiberFromNode,
     patchComponent,
     redux: await reduxReady,
@@ -191,6 +194,7 @@ function createScopedAPI(
      */
     settings: {
       set: (key: string, value: unknown) => config.setPluginSetting(id, key, value),
+      addTab: tracked((tab: Omit<SettingsTab, 'id'>) => addSettingsTab({ ...tab, id: `slick-plugin-${id}` })),
     },
 
     /** This plugin's main-process half. The id is bound; it cannot be spoofed. */

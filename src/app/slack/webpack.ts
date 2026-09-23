@@ -306,6 +306,10 @@ export function getModuleSource(id: PropertyKey): string {
   return factory.toString();
 }
 
+export function* moduleSources(): Generator<[id: string, source: string]> {
+  for (const [id, factory] of moduleFactories) yield [id, factory.toString()];
+}
+
 export function findModuleId(value: any): string | undefined {
   if (!isIndexable(value)) return undefined;
   return exportOwners.get(value);
