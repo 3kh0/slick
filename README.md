@@ -35,7 +35,7 @@ Slick runs Slack's own `app.asar` inside its own Electron (with the handy BYOE a
 | Message Logger      | **Deletions + Edit history**              | Out of scope                                | No                                       |
 | Auto updates        | **Client and Slack update together**      | Slack version is pinned                     | Manual updating required                 |
 | Supported platforms | All desktop platforms                     | **Desktop + Browsers**                      | Browser only                             |
-| Privacy             | **Proactively blocks Slack telemetry**    | Collects usage data                         | No telemetry                             |
+| Privacy             | **Blocks all telemetry**                  | Replaces Slack's telemetry with its own     | Does not block telemetry                 |
 | Code sourcing       | **Bundled in the app**                    | Fetched from a remote server                | **Bundled in the userscript**            |
 
 I encourage you to try other Slack mods, but you will find that Slick is the better choice for most!
