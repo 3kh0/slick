@@ -2,9 +2,11 @@
 // extension options form. Coercion is central, so a hostile config can never
 // reach a plugin as the wrong type.
 
-export type SettingType = 'boolean' | 'number' | 'text' | 'select' | 'color' | 'file' | 'names';
+export type SettingType = 'boolean' | 'number' | 'text' | 'select' | 'color' | 'file' | 'names' | 'schedule';
 
 export type SelectOption = { value: string; label: string };
+
+export type ScheduleRule = { days: number[]; start: string; end: string; status: string };
 
 export type Setting =
   | { type: 'boolean'; label: string; description?: string; default: boolean; restartRequired?: boolean }
@@ -35,17 +37,26 @@ export type Setting =
       options: SelectOption[];
       restartRequired?: boolean;
     }
-  | { type: 'names'; label: string; description?: string; default: Record<string, string> };
+  | { type: 'names'; label: string; description?: string; default: Record<string, string> }
+  | {
+      type: 'schedule';
+      label: string;
+      description?: string;
+      default: ScheduleRule[];
+      statuses: SelectOption[];
+    };
 
 /** `enabled` is reserved: it is activation, not a setting, and is never declared. */
 export type SettingsSchema = Record<string, Setting>;
 
-export type SettingValue = boolean | number | string | Record<string, string>;
+export type SettingValue = boolean | number | string | Record<string, string> | ScheduleRule[];
 export type PluginSettings = Record<string, SettingValue> & { enabled: boolean };
 
 const MAX_TEXT = 4000;
 const MAX_NAMES = 2000;
+const MAX_RULES = 50;
 const USER_ID = /^[UW][A-Z0-9]{6,}$/;
+const TIME = /^([01]\d|2[0-3]):[0-5]\d$/;
 
 function coerceNames(value: unknown, fallback: Record<string, string>): Record<string, string> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return fallback;
@@ -60,6 +71,28 @@ function coerceNames(value: unknown, fallback: Record<string, string>): Record<s
     count++;
   }
   return names;
+}
+
+function coerceSchedule(value: unknown, setting: Extract<Setting, { type: 'schedule' }>): ScheduleRule[] {
+  if (!Array.isArray(value)) return setting.default;
+
+  const rules: ScheduleRule[] = [];
+  for (const rule of value.slice(0, MAX_RULES)) {
+    if (!rule || typeof rule !== 'object') continue;
+    const { days, start, end, status } = rule as Record<string, unknown>;
+    if (!Array.isArray(days) || typeof start !== 'string' || typeof end !== 'string') continue;
+    if (!TIME.test(start) || !TIME.test(end)) continue;
+    const valid = days.filter((day): day is number => Number.isInteger(day) && day >= 0 && day <= 6);
+    rules.push({
+      days: [...new Set(valid)].toSorted((a, b) => a - b),
+      start,
+      end,
+      status: setting.statuses.some((option) => option.value === status)
+        ? (status as string)
+        : setting.statuses[0].value,
+    });
+  }
+  return rules;
 }
 
 export function coerceSetting(setting: Setting, value: unknown): SettingValue {
@@ -83,6 +116,9 @@ export function coerceSetting(setting: Setting, value: unknown): SettingValue {
 
     case 'names':
       return coerceNames(value, setting.default);
+
+    case 'schedule':
+      return coerceSchedule(value, setting);
 
     default:
       return typeof value === 'string' ? value.slice(0, setting.maxLength ?? MAX_TEXT) : setting.default;
@@ -110,7 +146,6 @@ export function changedKeys(before: PluginSettings, after: PluginSettings): stri
     const a = before[key];
     const b = after[key];
     if (a === b) continue;
-    // `names` maps are the only structured value.
     if (typeof a === 'object' && typeof b === 'object' && JSON.stringify(a) === JSON.stringify(b)) continue;
     changed.push(key);
   }
