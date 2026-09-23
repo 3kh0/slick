@@ -1,0 +1,75 @@
+name: Nix pins
+
+# Keeps packaging/nix/pins.json current
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - bun.lock
+      - package.json
+      - flake.nix
+      - flake.lock
+      - packaging/nix/**
+  workflow_run:
+    workflows: [Release]
+    types: [completed]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: nix-pins
+  cancel-in-progress: true
+
+jobs:
+  sync:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    env:
+      PINS: packaging/nix/pins.json
+    steps:
+      - uses: actions/checkout@v7
+      - uses: cachix/install-nix-action@v31
+
+      - name: Sync build with the latest release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag="$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .tag_name)"
+          build="${tag#v}"
+          if [[ ! "$build" =~ ^[1-9][0-9]*$ ]]; then
+            echo "latest release tag '$tag' is not v<N>" >&2
+            exit 1
+          fi
+          jq --argjson b "$build" '.build = $b' "$PINS" > pins.tmp && mv pins.tmp "$PINS"
+
+      - name: Sync node_modules hash
+        run: |
+          set -euo pipefail
+          if nix build .#slick.nodeModules --no-link -L 2>&1 | tee build.log; then
+            exit 0
+          fi
+          got="$(grep -oP 'got:\s+\Ksha256-\S+' build.log)" || {
+            echo "node_modules failed for a reason other than a stale hash" >&2
+            exit 1
+          }
+          jq --arg h "$got" '.nodeModulesHash = $h' "$PINS" > pins.tmp && mv pins.tmp "$PINS"
+
+      - name: Build the package
+        run: nix build .#slick --no-link -L
+
+      - uses: peter-evans/create-pull-request@v8
+        with:
+          branch: ci/nix-pins
+          delete-branch: true
+          add-paths: packaging/nix/pins.json
+          commit-message: 'chore(nix): sync pins'
+          title: 'chore(nix): sync pins'
+          body: |
+            Syncs `packaging/nix/pins.json` with the latest release and `bun.lock`. `nix build .#slick` passed with these pins.
+
+            <sub>Opened automatically by <a href="${{ github.server_url }}/${{ github.repository }}/blob/main/.github/workflows/nix.yml">nix.yml</a>.</sub>
