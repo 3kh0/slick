@@ -368,7 +368,8 @@ export default class MessageLogger extends SlickPlugin<typeof meta.settings> {
         : `.slick-ml-deleted, .slick-ml-deleted * { color: #e01e5a !important; }`;
     return `
       ${deleted}
-      .slick-ml-edited-original { display: block; margin-bottom: 2px; opacity: .62; white-space: pre-wrap; word-break: break-word; }
+      .slick-ml-edited-original { display: block; padding: 4px 20px 0 64px; opacity: .62; white-space: pre-wrap; word-break: break-word; }
+      .slick-ml-edited-original-line { display: block; }
       .slick-ml-edited-original s { text-decoration: line-through; }
       .slick-ml-edited-marker { margin-left: 4px; font-size: .85em; opacity: .72; }
     `;
