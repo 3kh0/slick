@@ -62,7 +62,7 @@ function installFrameWatcher() {
   if (framesPatched) return;
   framesPatched = true;
 
-  app.on('web-contents-created', (_event, contents) => {
+  const watch = (contents: Electron.WebContents) => {
     contents.on('frame-created', (_e, { frame }) => {
       if (!frame) return;
       for (const listener of frameListeners) {
@@ -73,7 +73,9 @@ function installFrameWatcher() {
         }
       }
     });
-  });
+  };
+  for (const contents of webContents.getAllWebContents()) watch(contents);
+  app.on('web-contents-created', (_event, contents) => watch(contents));
 }
 
 let displayMediaHandler: ((request: any) => any) | null = null;
