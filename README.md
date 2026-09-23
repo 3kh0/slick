@@ -38,7 +38,7 @@ Slick runs Slack's own `app.asar` inside its own Electron (with the handy BYOE a
 | Privacy             | **Proactively blocks Slack telemetry**    | Collects usage data                         | No telemetry                             |
 | Code sourcing       | **Bundled in the app**                    | Fetched from a remote server                | **Bundled in the userscript**            |
 
-I encorage you to try other Slack mods, but you will find that Slick is the better choice for most!
+I encourage you to try other Slack mods, but you will find that Slick is the better choice for most!
 
 ## Installation
 
@@ -96,7 +96,7 @@ Themes are defined in the `themes/` folder as JSON files exporting the following
 }
 ```
 
-Sme people like how Slack looks by default, but you can pick one from the Slick tab in Preferences. `themes/amoled.json` (true black) and `themes/ultraviolet.json` (violet) are working examples.
+Some people like how Slack looks by default, but you can pick one from the Slick tab in Preferences. `themes/amoled.json` (true black) and `themes/ultraviolet.json` (violet) are working examples.
 
 Prefer to write your own CSS instead? Slick also has a "Custom CSS" option powered by Monaco at the top of the theme list.
 
