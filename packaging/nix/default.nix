@@ -10,10 +10,15 @@
 }:
 
 let
+  # Kept current by .github/workflows/nix.yml: build follows the latest GitHub
+  # release, nodeModulesHash follows bun.lock.
+  pins = lib.importJSON ./pins.json;
+  build = toString pins.build;
+  version = "2.0.${build}";
+
   nodeModules = stdenvNoCC.mkDerivation {
     pname = "slick-node-modules";
-    version = "2.0.0-dev";
-    inherit src;
+    inherit version src;
     nativeBuildInputs = [ bun ];
     dontConfigure = true;
     dontBuild = true;
@@ -21,7 +26,7 @@ let
     dontFixup = true;
     outputHashMode = "recursive";
     outputHashAlgo = "sha256";
-    outputHash = "sha256-4YnUihrb5Gg7pQXDFtvTro1XL1fW3U6ZhRbvOrFfrvY=";
+    outputHash = pins.nodeModulesHash;
     installPhase = ''
       export HOME="$TMPDIR/home"
       export BUN_INSTALL_CACHE_DIR="$TMPDIR/bun-cache"
@@ -35,13 +40,14 @@ let
 in
 stdenvNoCC.mkDerivation {
   pname = "slick";
-  version = "2.0.0-dev";
-  inherit src;
+  inherit version src;
   nativeBuildInputs = [ nodejs makeWrapper ];
   dontConfigure = true;
 
-  SLICK_BUILD = "0";
-  SLICK_VERSION = "2.0.0-dev";
+  SLICK_BUILD = build;
+  SLICK_VERSION = version;
+
+  passthru = { inherit nodeModules; };
 
   buildPhase = ''
     runHook preBuild

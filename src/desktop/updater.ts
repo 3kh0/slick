@@ -72,6 +72,9 @@ function selfUpdateBlocker(): string {
     if (installRoot() === '/opt/Slick') {
       return 'This copy of Slick is a system package. Update it with your package manager or download a new package from the release page.';
     }
+    if (process.execPath.startsWith('/nix/store/')) {
+      return 'This copy of Slick comes from Nix, so it is updated through Nix.';
+    }
     if (process.env.APPIMAGE) {
       try {
         fs.accessSync(path.dirname(process.env.APPIMAGE), fs.constants.W_OK);
