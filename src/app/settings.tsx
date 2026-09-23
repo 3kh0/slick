@@ -1,4 +1,4 @@
-import type { Setting, SettingValue } from '../shared/settings.ts';
+import type { ScheduleRule, Setting, SettingValue } from '../shared/settings.ts';
 import { coerceSetting } from '../shared/settings.ts';
 import { elementsReady, type SelectOption } from './api/elements.ts';
 import type { SlickBridge } from './bridge.ts';
@@ -41,6 +41,7 @@ const MIN_PREFERENCES_TABS = 3;
 
 /** Slack's .c-select_input is absolutely positioned to fill a wrapper; keep ours in flow. */
 const SELECT_STYLE: React.CSSProperties = { position: 'relative', width: '320px', height: 'auto' };
+const TEXT_STYLE: React.CSSProperties = { width: '320px', margin: 0 };
 
 function queueConfigWrite(config: ConfigStore, write: () => Promise<boolean>): void {
   const previous = configWriteQueues.get(config) ?? Promise.resolve();
@@ -331,7 +332,11 @@ function SettingRow({
     <div style={{ marginBottom: '16px' }}>
       <div style={{ fontWeight: 'bold', marginBottom: '5px' }}>{setting.label}</div>
       <SettingControl setting={setting} value={value} save={save} bridge={bridge} />
-      {setting.description && <Hint>{setting.description}</Hint>}
+      {setting.description && (
+        <div style={{ marginTop: '6px' }}>
+          <Hint>{setting.description}</Hint>
+        </div>
+      )}
       {note}
     </div>
   );
@@ -361,6 +366,7 @@ function NumberControl({
       value={text}
       onChange={(event) => setText(event.currentTarget.value)}
       onBlur={commit}
+      style={TEXT_STYLE}
     />
   );
 }
@@ -397,6 +403,7 @@ function SettingControl({
           value={String(value)}
           maxLength={setting.maxLength}
           onChange={(event) => save(event.currentTarget.value)}
+          style={TEXT_STYLE}
         />
       );
     case 'select': {
@@ -438,8 +445,10 @@ function SettingControl({
           <span style={{ overflowWrap: 'anywhere' }}>{String(value) || 'No file selected'}</span>
         </div>
       );
+    case 'schedule':
+      return <ScheduleControl setting={setting} value={value} save={save} />;
     case 'names': {
-      const names = typeof value === 'object' ? value : {};
+      const names = typeof value === 'object' && !Array.isArray(value) ? value : {};
       const remove = (id: string) => {
         const next = { ...names };
         delete next[id];
@@ -461,6 +470,221 @@ function SettingControl({
       );
     }
   }
+}
+
+const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const DAY_PRESETS = [
+  { label: 'Weekdays', short: 'Mon–Fri', days: [1, 2, 3, 4, 5] },
+  { label: 'Weekends', short: 'Sat–Sun', days: [0, 6] },
+  { label: 'Every day', short: 'Daily', days: [0, 1, 2, 3, 4, 5, 6] },
+];
+const CONTROL_HEIGHT = '32px';
+const SCHEDULE_GRID: React.CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: 'minmax(88px, 1fr) 60px 8px 60px 28px 172px 32px',
+  alignItems: 'center',
+  columnGap: '6px',
+  rowGap: '8px',
+  marginBottom: '10px',
+};
+const TIME_STYLE: React.CSSProperties = {
+  width: '100%',
+  height: CONTROL_HEIGHT,
+  margin: 0,
+  padding: '0 6px',
+  textAlign: 'center',
+  fontVariantNumeric: 'tabular-nums',
+};
+const MUTED: React.CSSProperties = { fontSize: '12px', opacity: 0.7, whiteSpace: 'nowrap' };
+
+function daysLabel(days: number[]): string {
+  const preset = DAY_PRESETS.find((option) => option.days.join() === days.join());
+  if (preset) return preset.short;
+  return days.length ? days.map((day) => DAY_NAMES[day]).join(', ') : 'Days';
+}
+
+function parseTime(text: string): string | undefined {
+  const match = /^(\d{1,2}):?(\d{2})?$/.exec(text.trim());
+  if (!match) return undefined;
+  const hours = Number(match[1]);
+  const minutes = Number(match[2] ?? 0);
+  if (hours > 23 || minutes > 59) return undefined;
+  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+}
+
+function DaysPicker({ days, onChange }: { days: number[]; onChange: (days: number[]) => void }) {
+  const [open, setOpen] = React.useState(false);
+  const ref = React.useRef<HTMLDivElement>(null);
+  React.useEffect(() => {
+    if (!open) return;
+    const close = (event: Event) => {
+      if (event instanceof KeyboardEvent ? event.key === 'Escape' : !ref.current?.contains(event.target as Node)) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', close);
+    document.addEventListener('keydown', close);
+    return () => {
+      document.removeEventListener('mousedown', close);
+      document.removeEventListener('keydown', close);
+    };
+  }, [open]);
+  const toggle = (day: number) =>
+    onChange(days.includes(day) ? days.filter((other) => other !== day) : [...days, day].toSorted((a, b) => a - b));
+
+  return (
+    <div ref={ref} style={{ position: 'relative' }}>
+      <elements.Button
+        type="outline"
+        size="small"
+        aria-expanded={open}
+        title={daysLabel(days)}
+        onClick={() => setOpen(!open)}
+        style={{ width: '100%', height: CONTROL_HEIGHT, justifyContent: 'space-between', gap: '6px' }}
+      >
+        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{daysLabel(days)}</span>
+        <span style={{ opacity: 0.6 }}>▾</span>
+      </elements.Button>
+      {open && (
+        <div
+          style={{
+            position: 'absolute',
+            top: 'calc(100% + 4px)',
+            left: 0,
+            zIndex: 10,
+            width: '180px',
+            padding: '6px',
+            borderRadius: '8px',
+            background: 'rgb(var(--sk_primary_background, 255, 255, 255))',
+            border: '1px solid rgba(var(--sk_foreground_low, 29, 28, 29), 0.13)',
+            boxShadow: '0 4px 12px rgba(0, 0, 0, 0.25)',
+          }}
+        >
+          <div
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              paddingBottom: '6px',
+              marginBottom: '6px',
+              borderBottom: '1px solid rgba(var(--sk_foreground_low, 29, 28, 29), 0.13)',
+            }}
+          >
+            {DAY_PRESETS.map((preset) => (
+              <elements.Button
+                key={preset.label}
+                type="ghost"
+                size="small"
+                onClick={() => onChange(preset.days)}
+                style={{ width: '100%', justifyContent: 'space-between' }}
+              >
+                <span>{preset.label}</span>
+                <span>{preset.days.join() === days.join() ? '✓' : ''}</span>
+              </elements.Button>
+            ))}
+          </div>
+          {DAY_NAMES.map((name, day) => (
+            <label
+              key={name}
+              style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '3px 2px', cursor: 'pointer' }}
+            >
+              <input
+                className="c-input_checkbox"
+                type="checkbox"
+                checked={days.includes(day)}
+                onChange={() => toggle(day)}
+              />
+              {name}
+            </label>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function TimeInput({ value, label, onChange }: { value: string; label: string; onChange: (time: string) => void }) {
+  const [text, setText] = React.useState(value);
+  React.useEffect(() => setText(value), [value]);
+  const commit = () => {
+    const time = parseTime(text);
+    setText(time ?? value);
+    if (time && time !== value) onChange(time);
+  };
+  return (
+    <input
+      className="c-input_text"
+      type="text"
+      inputMode="numeric"
+      placeholder="HH:MM"
+      aria-label={label}
+      value={text}
+      onChange={(event) => setText(event.currentTarget.value)}
+      onBlur={commit}
+      onKeyDown={(event) => event.key === 'Enter' && commit()}
+      style={TIME_STYLE}
+    />
+  );
+}
+
+function ScheduleControl({
+  setting,
+  value,
+  save,
+}: {
+  setting: Extract<Setting, { type: 'schedule' }>;
+  value: SettingValue;
+  save: (value: SettingValue) => void;
+}) {
+  const rules = Array.isArray(value) ? value : [];
+  const update = (index: number, patch: Partial<ScheduleRule>) =>
+    save(rules.map((rule, other) => (other === index ? { ...rule, ...patch } : rule)));
+  const add = () => save([...rules, { days: [], start: '17:00', end: '09:00', status: setting.statuses[0].value }]);
+
+  return (
+    <div>
+      {rules.length > 0 && (
+        <div style={SCHEDULE_GRID}>
+          {rules.map((rule, index) => (
+            <React.Fragment key={index}>
+              <DaysPicker days={rule.days} onChange={(days) => update(index, { days })} />
+              <TimeInput value={rule.start} label="Start time" onChange={(start) => update(index, { start })} />
+              <span style={{ textAlign: 'center', opacity: 0.7 }}>–</span>
+              <TimeInput value={rule.end} label="End time" onChange={(end) => update(index, { end })} />
+              <span style={MUTED} title={rule.end <= rule.start ? 'Ends the next day' : undefined}>
+                {rule.end <= rule.start ? '+1d' : ''}
+              </span>
+              <select
+                className="c-select_input"
+                aria-label="Status"
+                value={rule.status}
+                onChange={(event) => update(index, { status: event.currentTarget.value })}
+                style={{ ...SELECT_STYLE, width: '100%', height: CONTROL_HEIGHT }}
+              >
+                {setting.statuses.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+              <elements.Button
+                type="ghost"
+                size="small"
+                aria-label="Remove"
+                title="Remove"
+                onClick={() => save(rules.filter((_, other) => other !== index))}
+                style={{ width: CONTROL_HEIGHT, height: CONTROL_HEIGHT, padding: 0, justifyContent: 'center' }}
+              >
+                ✕
+              </elements.Button>
+            </React.Fragment>
+          ))}
+        </div>
+      )}
+      <elements.Button type="outline" size="small" onClick={add} style={{ height: CONTROL_HEIGHT }}>
+        + New
+      </elements.Button>
+    </div>
+  );
 }
 
 function Appearance({ config, bridge }: { config: ConfigStore; bridge: SlickBridge }) {
