@@ -14,7 +14,31 @@
 
 ![screenshot](https://github.com/user-attachments/assets/a5cc6152-cd94-4894-9bc0-cd7c605c291c)
 
-Slick runs Slack's own `app.asar` inside its own Electron (with the handy BYOE acronym, bring your own electron). Slick's code runs before Slack's bundle and patches Slack from the inside, through its module system, React, and Redux, rather than by poking at the page afterwards. Slack's files are never altered, both apps keep updating, and there's no open debug port or resident watcher.
+Slick runs Slack's own `app.asar` inside its own Electron (with the handy BYOE acronym, bring your own electron). Slick's code runs before Slack's bundle and patches Slack from the inside, through its module system, React, and Redux, rather than by poking at the page afterwards. Slack's files are never altered, both apps keep updating, and there's no open debug port or resident watcher. This means we are able to patch Slack in a performant and safe way, while still keeping Slack's own updates and security intact.
+
+## Features
+
+- **Kick ass plugins**: Slick has the most plugins of any Slack mod, and you can write your own in JavaScript or TypeScript.
+- **Themes**: pick from a few built-in themes, or write your own CSS with Monaco.
+- **Updates**: Slick handles all the updates for itself and Slack automatically, so you don't have to worry about it.
+- **Cross-platform**: Slick works on macOS, Windows, and Linux with browsers coming soon.
+- **Open source**: Slick is free and open source under the GPLv3 license. You can inspect the code, contribute, or fork it to your heart's content.
+- **Fully private**: Slick does not collect any of its own and disables Slack's spyware.
+
+## Compare
+
+| Feature             | **Slick**                                 | [Taut](https://github.com/jeremy46231/taut) | [Rope](https://github.com/anirudhb/rope) |
+| ------------------- | ----------------------------------------- | ------------------------------------------- | ---------------------------------------- |
+| Actively updated    | **Yes**                                   | **Yes**                                     | No                                       |
+| Theme support       | **2 Built in themes + Monaco CSS editor** | CSS editor                                  | No                                       |
+| Plugins             | **29**                                    | 24                                          | 6                                        |
+| Message Logger      | **Deletions + Edit history**              | Out of scope                                | No                                       |
+| Auto updates        | **Client and Slack update together**      | Slack version is pinned                     | Manual updating required                 |
+| Supported platforms | All desktop platforms                     | **Desktop + Browsers**                      | Browser only                             |
+| Privacy             | **Proactively blocks Slack telemetry**    | Collects usage data                         | No telemetry                             |
+| Code sourcing       | **Bundled in the app**                    | Fetched from a remote server                | **Bundled in the userscript**            |
+
+I encorage you to try other Slack mods, but you will find that Slick is the better choice for most!
 
 ## Installation
 
@@ -26,7 +50,7 @@ Slick runs Slack's own code, so install the official Slack app first. Then:
 curl -fsSL https://raw.githubusercontent.com/3kh0/slick/main/install.sh | bash
 ```
 
-Slack somewhere else? Add `-s -- --slack-app "/path/to/Slack.app"` after `bash`. You can also grab the `.dmg` or `.zip` from the [releases page](https://github.com/3kh0/slick/releases/latest): `mac-arm64` for Apple Silicon, `mac-x64` for Intel.
+Got Slack running somewhere else? Add `-s -- --slack-app "/path/to/Slack.app"` after `bash`. You can also grab the `.dmg` or `.zip` from the [releases page](https://github.com/3kh0/slick/releases/latest): `mac-arm64` for Apple Silicon, `mac-x64` for Intel.
 
 **Windows** (the standalone and Microsoft Store versions of Slack both work), in PowerShell:
 
@@ -34,9 +58,9 @@ Slack somewhere else? Add `-s -- --slack-app "/path/to/Slack.app"` after `bash`.
 irm "https://raw.githubusercontent.com/3kh0/slick/main/install.ps1" | iex
 ```
 
-Slick is built for x64. ARM PCs run x64 Slack through emulation, so it works there, just slower.
+Slick is built for x64. ARM PCs run x64 Slack through emulation, so it works there, just a little slower.
 
-**Linux** (x86_64): grab the AppImage, `.deb` or `.rpm` from the [releases page](https://github.com/3kh0/slick/releases/latest), run `nix run github:3kh0/slick`, or use the installer:
+**Linux** (x86_64): grab the AppImage, `.deb` or `.rpm` from the [releases page](https://github.com/3kh0/slick/releases/latest), run `nix run github:3kh0/slick`, or use the installer below. Whatever floats your penguin loving boat.
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/3kh0/slick/main/install-linux.sh | bash
@@ -46,17 +70,17 @@ curl -fsSL https://raw.githubusercontent.com/3kh0/slick/main/install-linux.sh | 
 
 - **Windows:** `& ([scriptblock]::Create((irm https://raw.githubusercontent.com/3kh0/slick/main/install.ps1))) -Uninstall`
 - **Linux:** `curl -fsSL https://raw.githubusercontent.com/3kh0/slick/main/install-linux.sh | bash -s -- --uninstall`
-- **macOS:** run `./scripts/uninstall.sh` from a clone. This also removes your Slick data.
+- **macOS:** Drag the Slick app to the Trash or run `./scripts/uninstall.sh` from a clone.
 
 On Windows and Linux your sign-in and settings are kept unless you add `-Purge` / `--purge`. To hand `slack://` links back to the official app without uninstalling, pass `-RestoreHandler` / `--restore-handler` to the installer.
 
-### Building from source
+### Build from source
 
 Clone the repo and run `./install.sh` (macOS), `./install-linux.sh` (Linux) or `powershell -ExecutionPolicy Bypass -File install.ps1` (Windows). They build Slick from your checkout instead of downloading a release. Plugins live in `src/plugins/<Name>/`, one folder each.
 
 ## Updates
 
-Slick updates itself every few hours, and checks every download against its GitHub build attestation before installing it. To check by hand, use **Slick > Check for Updates…**. On macOS and standalone Windows it also keeps Slack itself up to date. The Microsoft Store, the deb and rpm packages, Flatpak and Nix update through their own package managers instead.
+Slick updates itself every few hours, and checks every download against its GitHub build attestation before installing it. To check by hand, use **Slick > Check for Updates…**. On macOS and standalone Windows it also keeps Slack itself up to date. The Microsoft Store, the deb and rpm packages, Flatpak and Nix update through their own package managers instead. Running through the installer again will also get you the latest version if it somehow breaks.
 
 ## Themes
 
@@ -72,9 +96,9 @@ Themes are defined in the `themes/` folder as JSON files exporting the following
 }
 ```
 
-No theme is applied by default, but you can pick one from the Slick tab in Preferences. `themes/amoled.json` (true black) and `themes/ultraviolet.json` (violet) are working examples.
+Sme people like how Slack looks by default, but you can pick one from the Slick tab in Preferences. `themes/amoled.json` (true black) and `themes/ultraviolet.json` (violet) are working examples.
 
-Prefer to write your own CSS instead? Slick also has a "Custom CSS" option at the top of the theme list.
+Prefer to write your own CSS instead? Slick also has a "Custom CSS" option powered by Monaco at the top of the theme list.
 
 ## Credits
 
@@ -82,8 +106,7 @@ Prefer to write your own CSS instead? Slick also has a "Custom CSS" option at th
 - [Electron](https://www.electronjs.org/) for the runtime and APIs.
 - [@ImShyMike](https://github.com/ImShyMike) for advice on breaking into Slack.
 - [Vencord](https://github.com/vencord) for plugin inspiration.
-- [Taut](https://github.com/jeremy46231/taut) (MIT) by [@jeremy46231](https://github.com/jeremy46231), whose
-  injection and patching model v2 is built on, and whose resize-gating approach Slick ports directly.
+- [Taut](https://github.com/jeremy46231/taut) (MIT) by [@jeremy46231](https://github.com/jeremy46231), which has a lovely injection and patching model Slick is built on.
 - Claude for cleaning up the code and generally being a good assistant.
 
 ## Legal
