@@ -91,3 +91,24 @@ export function normalize(entry: { message?: SlackMessage; edits?: { oldText: st
 
   return changed;
 }
+
+type Mergeable = {
+  at: number;
+  user?: string;
+  deleted?: boolean;
+  message?: SlackMessage;
+  edits?: { oldText: string; newText: string }[];
+};
+
+export function mergeEntry<T extends Mergeable>(stored: T, live: T): T {
+  const edits = [...(stored.edits ?? []), ...(live.edits ?? [])].slice(-MAX_EDITS_PER_MESSAGE);
+  return {
+    ...stored,
+    ...live,
+    user: live.user || stored.user,
+    deleted: live.deleted || stored.deleted,
+    message: live.message ?? stored.message,
+    edits: edits.length ? edits : undefined,
+    at: live.deleted && !stored.deleted ? live.at : Math.min(stored.at, live.at),
+  };
+}

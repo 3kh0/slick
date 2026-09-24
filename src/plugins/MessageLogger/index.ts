@@ -4,7 +4,7 @@
 
 import { SlickPlugin, type ComponentType, type RtmEvent, type SlackMessage } from '$slick';
 import * as meta from './meta.ts';
-import { MAX_EDIT_TEXT, MAX_EDITS_PER_MESSAGE, evictable, normalize, trim } from './retention.ts';
+import { MAX_EDIT_TEXT, MAX_EDITS_PER_MESSAGE, evictable, mergeEntry, normalize, trim } from './retention.ts';
 
 type StoredEdit = { oldText: string; newText: string };
 
@@ -17,6 +17,8 @@ type LogEntry = {
   edits?: StoredEdit[];
   at: number;
 };
+
+type Loaded = { entries: Map<string, LogEntry>; dirty: Set<string> };
 
 type RowProps = {
   msg?: SlackMessage;
@@ -106,11 +108,10 @@ export default class MessageLogger extends SlickPlugin<typeof meta.settings> {
   /** `MessageActionsMenu` knows the message; the generic `Menu` that renders rows does not. */
   private readonly MenuRowsContext = React.createContext<React.ReactNode[]>([]);
 
-  async start() {
-    await this.restore();
-    if (this.api.signal.aborted) return;
-    this.cap();
-    this.flush();
+  start() {
+    // Not awaited: reading ~1000 entry files can outlast the lifecycle timeout
+    // while Slack is booting, and the listeners below must not wait on it.
+    void this.restore().catch((error) => console.error('[slick] MessageLogger could not restore its log:', error));
 
     this.api.rtm.on('message', (event) => {
       if (isDeleteEvent(event) || isChangeEvent(event)) return;
@@ -123,7 +124,6 @@ export default class MessageLogger extends SlickPlugin<typeof meta.settings> {
     this.api.setStyle(this.css(), 'deleted');
     this.patchRows();
     this.patchMenu();
-    this.log(`logging deletes and edits (${this.entries.size} stored)`);
   }
 
   onSettingsChange() {
@@ -139,31 +139,51 @@ export default class MessageLogger extends SlickPlugin<typeof meta.settings> {
     this.flush();
   }
 
-  private accept(key: string, entry: LogEntry | null | undefined): boolean {
+  private accept(loaded: Loaded, key: string, entry: LogEntry | null | undefined): boolean {
     if (!entry || typeof entry !== 'object') return false;
     if (typeof entry.channel !== 'string' || typeof entry.ts !== 'string') return false;
-    if (normalize(entry)) this.dirty.add(key);
-    this.entries.set(key, entry);
+    loaded.entries.set(key, entry);
+    if (normalize(entry)) loaded.dirty.add(key);
     return true;
   }
 
   /** One key per entry so a delete doesn't rewrite the whole log (the blob reached 881 KB). */
   private async restore() {
+    const started = performance.now();
+    // Kept apart from `entries`/`dirty` until merged: a stop() mid-load flushes
+    // `dirty`, and a dirty key missing from `entries` is deleted from disk.
+    const loaded: Loaded = { entries: new Map(), dirty: new Set() };
     const stored = await this.api.storage.entries<LogEntry>(ENTRY_PREFIX);
-    for (const [key, entry] of stored) this.accept(key.slice(ENTRY_PREFIX.length), entry);
+    for (const [key, entry] of stored) this.accept(loaded, key.slice(ENTRY_PREFIX.length), entry);
 
     const legacy = await this.api.storage.get<Record<string, LogEntry> | null>(LEGACY_STORAGE_KEY, null);
-    if (!legacy || typeof legacy !== 'object') return;
-    let migrated = 0;
-    for (const [key, entry] of Object.entries(legacy)) {
-      // A per-entry copy is newer.
-      if (this.entries.has(key)) continue;
-      if (!this.accept(key, entry)) continue;
-      this.dirty.add(key);
-      migrated++;
+    if (this.api.signal.aborted) return;
+    const hasLegacy = !!legacy && typeof legacy === 'object';
+    if (hasLegacy) {
+      let migrated = 0;
+      for (const [key, entry] of Object.entries(legacy)) {
+        // A per-entry copy is newer.
+        if (loaded.entries.has(key)) continue;
+        if (!this.accept(loaded, key, entry)) continue;
+        loaded.dirty.add(key);
+        migrated++;
+      }
+      this.log(`migrated ${migrated} entries out of the single-blob log`);
     }
-    await this.api.storage.delete(LEGACY_STORAGE_KEY);
-    this.log(`migrated ${migrated} entries out of the single-blob log`);
+
+    // Anything in `entries` already was recorded live while this was loading.
+    for (const [key, entry] of loaded.entries) {
+      const live = this.entries.get(key);
+      if (live || loaded.dirty.has(key)) this.dirty.add(key);
+      this.entries.set(key, live ? mergeEntry(entry, live) : entry);
+    }
+    this.cap();
+    this.flush();
+    // Only once the migrated entries are written, so a crash can't lose them.
+    if (hasLegacy) this.writes = this.writes.then(() => this.api.storage.delete(LEGACY_STORAGE_KEY)).then(() => {});
+    this.api.redux.refresh();
+    const ms = Math.round(performance.now() - started);
+    this.log(`logging deletes and edits (${this.entries.size} stored, loaded in ${ms}ms)`);
   }
 
   private key(channel: string, ts: string) {

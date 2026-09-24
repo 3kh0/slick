@@ -7,6 +7,7 @@ import {
   MAX_ENTRIES,
   MAX_MESSAGE_BYTES,
   evictable,
+  mergeEntry,
   normalize,
   trim,
   weigh,
@@ -109,4 +110,34 @@ test('normalize: truncates over-long edit text', () => {
 test('normalize: leaves a conforming entry alone', () => {
   const entry = { message: { text: 'hi' } as any, edits: [{ oldText: 'a', newText: 'b' }] };
   assert.equal(normalize(entry), false);
+});
+
+test('mergeEntry: a live delete keeps the stored edit history and restarts the clock', () => {
+  const stored = { at: NOW - DAY_MS, edits: [{ oldText: 'a', newText: 'b' }] };
+  const live = { at: NOW, deleted: true, message: { ts: '1', text: 'b' } };
+  assert.deepEqual(mergeEntry<typeof stored & typeof live>(stored as never, live as never), {
+    at: NOW,
+    deleted: true,
+    message: { ts: '1', text: 'b' },
+    edits: [{ oldText: 'a', newText: 'b' }],
+    user: undefined,
+  });
+});
+
+test('mergeEntry: live edits follow stored ones, capped, and keep the original age', () => {
+  const edit = (n: number) => ({ oldText: String(n), newText: String(n + 1) });
+  const stored = {
+    at: NOW - DAY_MS,
+    user: 'U1',
+    deleted: true,
+    edits: Array.from({ length: MAX_EDITS_PER_MESSAGE }, (_, i) => edit(i)),
+  };
+  const live = { at: NOW, edits: [edit(99)] };
+  const merged = mergeEntry<{ at: number; user?: string; deleted?: boolean; edits?: typeof live.edits }>(stored, live);
+  assert.equal(merged.at, NOW - DAY_MS);
+  assert.equal(merged.user, 'U1');
+  assert.equal(merged.deleted, true);
+  assert.equal(merged.edits?.length, MAX_EDITS_PER_MESSAGE);
+  assert.deepEqual(merged.edits?.at(-1), edit(99));
+  assert.deepEqual(merged.edits?.[0], edit(1));
 });
