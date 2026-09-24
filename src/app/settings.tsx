@@ -157,10 +157,21 @@ function Hint({ children }: { children: React.ReactNode }) {
   return <div style={{ fontSize: '12px', opacity: 0.7 }}>{children}</div>;
 }
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+function Section({ title, action, children }: { title: string; action?: React.ReactNode; children: React.ReactNode }) {
   return (
     <section style={{ marginBottom: '28px' }}>
-      <h2 style={{ fontSize: '18px', marginBottom: '12px' }}>{title}</h2>
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: '12px',
+          marginBottom: '12px',
+        }}
+      >
+        <h2 style={{ fontSize: '18px', margin: 0 }}>{title}</h2>
+        {action}
+      </div>
       {children}
     </section>
   );
@@ -177,12 +188,42 @@ function SlickSettings({
 }) {
   useConfigChanges(config);
   useManagerChanges(manager);
+  const [query, setQuery] = React.useState('');
+  const terms = query.toLowerCase().split(/\s+/).filter(Boolean);
+  const plugins = manager.info().filter((info) => {
+    const haystack = [info.id, info.name, info.description, info.authors].join(' ').toLowerCase();
+    return terms.every((term) => haystack.includes(term));
+  });
   return (
     <div style={{ paddingBottom: '24px' }}>
-      <Section title="Plugins">
-        {manager.info().map((info) => (
+      <Section
+        title="Plugins"
+        action={
+          <input
+            className="c-input_text"
+            type="search"
+            placeholder="Search plugins"
+            aria-label="Search plugins"
+            value={query}
+            onChange={(event) => setQuery(event.currentTarget.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Escape' && query) {
+                event.stopPropagation();
+                setQuery('');
+              }
+            }}
+            style={{ ...TEXT_STYLE, width: '240px' }}
+          />
+        }
+      >
+        {plugins.map((info) => (
           <PluginRow key={info.id} info={info} config={config} bridge={bridge} />
         ))}
+        {!plugins.length && (
+          <div style={{ borderTop: '1px solid rgba(127,127,127,.2)', padding: '14px 0' }}>
+            <Hint>No plugins match “{query.trim()}”.</Hint>
+          </div>
+        )}
       </Section>
       <Appearance config={config} bridge={bridge} />
       <Section title="About">
