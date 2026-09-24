@@ -59,7 +59,7 @@ export function getCachedChannel(channelId: string): SlackChannel | undefined {
 }
 
 export function getCurrentChannelId(): string | undefined {
-  return getStore()?.getState().view?.channelId;
+  return location.pathname.match(/^\/client\/[^/]+\/([CDG][A-Z0-9]+)/)?.[1];
 }
 
 export const channelsReady = (async () => ({ getCachedChannel, getCurrentChannelId, makeChannelObject }))();

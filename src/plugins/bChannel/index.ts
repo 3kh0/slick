@@ -37,7 +37,12 @@ type SendProps = {
   teamId?: string;
 };
 
-type AutocompleteProps = { includeAllBroadcastKeywords?: boolean };
+type AutocompleteProps = { includeAllBroadcastKeywords?: boolean; channelId?: string };
+
+type SlashCommand = { name?: string; teams?: unknown };
+
+/** Slack's own check for whether this user may @channel in a channel. */
+type CanAtChannel = (state: unknown, channelId: string) => boolean;
 
 type Staged = { commandText: string; token: string; setup?: { botUserId?: string } };
 
@@ -141,6 +146,8 @@ export default class BChannel extends SlickPlugin<typeof meta.settings> {
   private readonly changes: Change[] = [];
   private readonly thunkNames = new Map<string, string>();
   private readonly missingThunks = new Set<string>();
+  private canAtChannelCheck: CanAtChannel | undefined;
+  private relayCommands: { commands: object; teams: Set<string> | null } | null = null;
   private pruneTimer: ReturnType<typeof setInterval> | null = null;
 
   start() {
@@ -177,10 +184,55 @@ export default class BChannel extends SlickPlugin<typeof meta.settings> {
 
   private patchAutocomplete() {
     this.api.patchComponent<AutocompleteProps>('TextyAutocomplete', (Original) => (props) => {
-      const channelId = this.api.channels.getCurrentChannelId();
-      const include = isChannelId(channelId) ? true : props.includeAllBroadcastKeywords;
+      const channelId = props.channelId || this.api.channels.getCurrentChannelId();
+      const include = this.shouldRelay(channelId) || props.includeAllBroadcastKeywords;
       return this.api.react.createElement(Original, { ...props, includeAllBroadcastKeywords: include });
     });
+  }
+
+  private shouldRelay(channelId: unknown): channelId is string {
+    return isChannelId(channelId) && this.relayInstalled(channelId) && !this.canAtChannel(channelId);
+  }
+
+  private relayInstalled(channelId: string): boolean {
+    const state = this.api.redux.getRawState();
+    const commands = state?.slashCommand?.commands as Record<string, SlashCommand> | undefined;
+    if (!commands || typeof commands !== 'object') return false;
+    // Thousands of commands, and this runs on every autocomplete render.
+    if (this.relayCommands?.commands !== commands) {
+      const found = Object.values(commands).filter((command) => command?.name === '/bchannel');
+      const teams = found.map((command) => command.teams);
+      this.relayCommands = {
+        commands,
+        teams: !found.length ? new Set() : teams.every(Array.isArray) ? new Set(teams.flat().map(String)) : null,
+      };
+    }
+    const { teams } = this.relayCommands;
+    if (!teams) return true;
+    // An org-wide channel's context is the org; its workspaces are listed apart.
+    const channel = state?.channels?.[channelId] as
+      | { context_team_id?: unknown; internal_team_ids?: unknown }
+      | undefined;
+    const owners = [
+      channel?.context_team_id,
+      ...(Array.isArray(channel?.internal_team_ids) ? channel.internal_team_ids : []),
+    ]
+      .filter(Boolean)
+      .map(String);
+    if (!owners.length && this.teamId()) owners.push(this.teamId());
+    return owners.length ? owners.some((team) => teams.has(team)) : teams.size > 0;
+  }
+
+  private canAtChannel(channelId: string): boolean {
+    // Looked up until found: its module may not have loaded yet.
+    this.canAtChannelCheck ??= this.api.getExport<CanAtChannel>(
+      (exp: any) => typeof exp === 'function' && exp.name === 'canUserAtChannelInChannelById',
+    );
+    try {
+      return !!this.canAtChannelCheck?.(this.api.redux.getRawState(), channelId);
+    } catch {
+      return false;
+    }
   }
 
   private installFetch() {
@@ -200,14 +252,16 @@ export default class BChannel extends SlickPlugin<typeof meta.settings> {
     }
     if (url.includes('/api/chat.postMessage') || url.includes('/api/files.completeUploadExternal')) {
       const candidate = url.includes('completeUploadExternal') ? this.fileCandidate(body) : this.postCandidate(body);
-      if (candidate?.requiresHandoff) return this.handoffAsResponse(candidate);
+      if (candidate?.requiresHandoff && this.shouldRelay(candidate.intent.channelId)) {
+        return this.handoffAsResponse(candidate);
+      }
     }
     return original(input, init);
   }
 
   private async onSend(props: SendProps, args: SendArgs): Promise<unknown> {
     const channelId = String(args.channelId || props.channelId || '');
-    if (!isChannelId(channelId) || !deltaCandidateKinds(args.delta).size) {
+    if (!deltaCandidateKinds(args.delta).size || !this.shouldRelay(channelId)) {
       return props.prepareAndSendMessage(args);
     }
 

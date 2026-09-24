@@ -6,7 +6,11 @@ export type BroadcastKind = 'channel' | 'here';
 export type DeltaLike = {
   ops?: Array<{
     insert?: unknown;
-    attributes?: { slackmention?: { id?: string; label?: string }; code?: boolean; 'code-block'?: unknown };
+    attributes?: {
+      slackmention?: { id?: string; label?: string; unverified?: boolean };
+      code?: boolean;
+      'code-block'?: unknown;
+    };
   }>;
 };
 
@@ -59,7 +63,8 @@ export function deltaCandidateKinds(delta: DeltaLike | undefined): Set<Broadcast
     if (typeof op?.insert !== 'string') continue;
     const mention = op.attributes?.slackmention;
     if (mention) {
-      searchable += mention.id === 'BKchannel' || mention.id === 'BKhere' ? op.insert : ' ';
+      const keyword = mention.id === 'BKchannel' || mention.id === 'BKhere' || mention.id === 'UNVERIFIED';
+      searchable += keyword ? op.insert : ' ';
       continue;
     }
     searchable += op.attributes?.code === true || op.attributes?.['code-block'] ? ' ' : op.insert;

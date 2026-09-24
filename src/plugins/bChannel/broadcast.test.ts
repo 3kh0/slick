@@ -37,6 +37,20 @@ test('deltaCandidateKinds: mention ops and typed text, not code', () => {
   assert.equal(kinds.has('here'), false);
 });
 
+test('deltaCandidateKinds: a typed @channel Slack marked unverified', () => {
+  const delta = {
+    ops: [
+      {
+        insert: '@channel',
+        attributes: { slackmention: { id: 'UNVERIFIED', label: '@channel', unverified: true } },
+      },
+      { insert: ' hi <@U123>' },
+      { insert: '@here-ish', attributes: { slackmention: { id: 'U123', label: '@here-ish' } } },
+    ],
+  };
+  assert.deepEqual([...deltaCandidateKinds(delta)], ['channel']);
+});
+
 test('normalizeRestrictedBroadcasts: typed @channel becomes a broadcast node', () => {
   const found = new Set<'channel' | 'here'>();
   const out = normalizeRestrictedBroadcasts(
