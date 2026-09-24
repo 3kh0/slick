@@ -3,7 +3,9 @@
   stdenvNoCC,
   bun,
   nodejs,
-  electron_44,
+  pkgs,
+  # Must share Slack's Electron major; defaults to what nixpkgs' Slack bundles.
+  electron ? null,
   makeWrapper,
   src,
   slackPackage ? null,
@@ -11,8 +13,9 @@
 
 let
   # Kept current by .github/workflows/nix.yml: build follows the latest GitHub
-  # release, nodeModulesHash follows bun.lock.
+  # release, nodeModulesHash follows bun.lock, electron follows nixpkgs' Slack.
   pins = lib.importJSON ./pins.json;
+  electron' = if electron != null then electron else pkgs."electron_${toString pins.electron}";
   build = toString pins.build;
   version = "2.0.${build}";
 
@@ -62,7 +65,7 @@ stdenvNoCC.mkDerivation {
     cp -r themes $out/lib/slick/resources/themes
     cp dist/desktop/slick.js $out/lib/slick/resources/slick.js
     cp -r dist/desktop/monaco $out/lib/slick/resources/monaco
-    makeWrapper ${electron_44}/bin/electron $out/bin/slick \
+    makeWrapper ${electron'}/bin/electron $out/bin/slick \
       --add-flags "$out/lib/slick/resources/app" \
       --set SLICK_RESOURCES_PATH "$out/lib/slick/resources" \
       ${lib.optionalString (slackPackage != null) ''--set SLICK_SLACK_RESOURCES "${slackPackage}/lib/slack/resources"''}

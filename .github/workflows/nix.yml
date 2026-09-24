@@ -47,6 +47,22 @@ jobs:
           fi
           jq --argjson b "$build" '.build = $b' "$PINS" > pins.tmp && mv pins.tmp "$PINS"
 
+      # Slick runs under nixpkgs' Electron but loads Slack's native modules, so the
+      # majors must match. Slack's deb records its Electron version in lib/slack/version.
+      - name: Sync Electron with nixpkgs' Slack
+        env:
+          NIXPKGS_ALLOW_UNFREE: '1'
+        run: |
+          set -euo pipefail
+          slack="$(nix build --impure --no-link --print-out-paths \
+            --expr '(builtins.getFlake (toString ./.)).inputs.nixpkgs.legacyPackages.x86_64-linux.slack')"
+          major="$(sed 's/^v//; s/\..*//' "$slack/lib/slack/version")"
+          if [[ ! "$major" =~ ^[1-9][0-9]*$ ]]; then
+            echo "could not read Slack's Electron major from $slack/lib/slack/version" >&2
+            exit 1
+          fi
+          jq --argjson e "$major" '.electron = $e' "$PINS" > pins.tmp && mv pins.tmp "$PINS"
+
       - name: Sync node_modules hash
         run: |
           set -euo pipefail
@@ -70,6 +86,6 @@ jobs:
           commit-message: 'chore(nix): sync pins'
           title: 'chore(nix): sync pins'
           body: |
-            Syncs `packaging/nix/pins.json` with the latest release and `bun.lock`. `nix build .#slick` passed with these pins.
+            Syncs `packaging/nix/pins.json` with the latest release, `bun.lock` and the Electron major of nixpkgs' Slack. `nix build .#slick` passed with these pins.
 
             <sub>Opened automatically by <a href="${{ github.server_url }}/${{ github.repository }}/blob/main/.github/workflows/nix.yml">nix.yml</a>.</sub>
