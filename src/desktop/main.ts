@@ -71,14 +71,16 @@ function electronMajorMismatch(asar: string): { ours: number; theirs: number } |
 }
 
 /**
- * Asked before Slack is required, not at app-ready: a mismatched bundle can
- * crash the process in the native module loader first.
+ * Decided before Slack is required: a mismatched bundle can crash the process in
+ * the native module loader first. The dialog only works after app-ready, so ask
+ * then, and relaunch with the preflight off to go ahead.
  */
-function launchAnyway(mismatch: { ours: number; theirs: number }): boolean {
+function askLaunchAnyway(mismatch: { ours: number; theirs: number }) {
   const detail =
     `Slick is on Electron ${mismatch.ours}, the installed Slack is on ${mismatch.theirs}. ` +
     'Running them together usually fails. Update Slick, or launch anyway to try.';
-  try {
+  console.error(`[slick] ${detail}`);
+  app.whenReady().then(() => {
     const choice = dialog.showMessageBoxSync({
       type: 'warning',
       title: 'Slick',
@@ -88,18 +90,20 @@ function launchAnyway(mismatch: { ours: number; theirs: number }): boolean {
       defaultId: 0,
       cancelId: 0,
     });
-    return choice === 1;
-  } catch (error) {
-    // The dialog isn't always available this early; refusing is the safe answer.
-    console.error(`[slick] ${detail}`, error);
-    return false;
-  }
+    if (choice === 1) {
+      process.env.SLICK_SKIP_PREFLIGHT = '1';
+      app.relaunch();
+      app.exit(0);
+    } else {
+      app.exit(1);
+    }
+  });
 }
 
 function startSlack(asar: string) {
   const mismatch = electronMajorMismatch(asar);
-  if (mismatch && !launchAnyway(mismatch)) {
-    app.exit(1);
+  if (mismatch) {
+    askLaunchAnyway(mismatch);
     return;
   }
 
