@@ -11,8 +11,6 @@ separate-locales: false
 
 build-options:
   append-path: /usr/lib/sdk/node22/bin
-  secret-env:
-    - SLICK_BUILD
 
 finish-args:
   - --share=ipc

@@ -72,10 +72,14 @@ jobs:
         env:
           GPG_KEY_ID: ${{ steps.signing.outputs.key-id }}
         run: |
+          sed "/^  append-path:/a\\
+            env:\\
+              SLICK_BUILD: '$SLICK_BUILD'" \
+            packaging/flatpak/dev.slick.Slick.yml > packaging/flatpak/dev.slick.Slick.ci.yml
           flatpak-builder --user --force-clean --disable-updates \
             --install-deps-from=flathub --default-branch=stable \
             --gpg-sign="$GPG_KEY_ID" --repo="$FLATPAK_REPO" \
-            "$FLATPAK_BUILD_DIR" packaging/flatpak/dev.slick.Slick.yml
+            "$FLATPAK_BUILD_DIR" packaging/flatpak/dev.slick.Slick.ci.yml
           flatpak build-update-repo --gpg-sign="$GPG_KEY_ID" \
             --generate-static-deltas --prune "$FLATPAK_REPO"
 
