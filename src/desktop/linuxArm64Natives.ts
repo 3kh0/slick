@@ -8,6 +8,14 @@ const replacements: Record<string, string> = {
   'node_modules/file-handler-info/build/Release/file_handler_info.node': 'file_handler_info.node',
 };
 
+export function prepareLinuxArm64Natives(asar: string, slickResources: string): void {
+  const dlopen = process.dlopen;
+  process.dlopen = function slickDlopen(this: unknown, module: object, filename: string, flags?: number) {
+    const mapped = linuxArm64NativePath(filename, path.dirname(asar), slickResources);
+    return flags === undefined ? dlopen.call(this, module, mapped) : dlopen.call(this, module, mapped, flags);
+  } as typeof process.dlopen;
+}
+
 export function linuxArm64NativePath(filename: string, resources: string, slickResources: string): string {
   const source = path.resolve(resources, 'app.asar.unpacked') + path.sep;
   const resolved = path.resolve(filename);
