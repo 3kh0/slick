@@ -23,13 +23,21 @@ export class ConfigStore {
   private configListeners = new Set<() => void>();
   private cssListeners = new Set<(css: string) => void>();
 
-  constructor(private bridge: SlickBridge) {}
+  private bridge: SlickBridge;
+
+  constructor(bridge: SlickBridge) {
+    this.bridge = bridge;
+  }
 
   async init() {
-    const initial = this.parse(await this.bridge.readSettings().catch(() => '{}'));
+    const [settings, userCss] = await Promise.all([
+      this.bridge.readSettings().catch(() => '{}'),
+      this.bridge.readUserCss().catch(() => ''),
+    ]);
+    const initial = this.parse(settings);
     this.stored = initial.config;
     this.storedIsValid = initial.valid;
-    this.userCss = await this.bridge.readUserCss().catch(() => '');
+    this.userCss = userCss;
 
     this.bridge.onSettingsChange((text) => {
       const next = this.parse(text);
