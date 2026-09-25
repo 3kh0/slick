@@ -22,8 +22,8 @@
     "electron-builder": "^26.15.3",
     "esbuild": "^0.28.2",
     "monaco-editor": "0.56.0",
-    "oxfmt": "^0.68.0",
-    "oxlint": "^1.83.0",
+    "oxfmt": "^0.70.0",
+    "oxlint": "^1.85.0",
     "typescript": "^7.0.2"
   }
 }
