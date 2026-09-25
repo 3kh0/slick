@@ -101,6 +101,19 @@ export function applyPatches(
 ) {
   const slackResources = path.dirname(slackAsarPath);
 
+  if (process.platform === 'linux' && process.env.FLATPAK_ID === 'dev.slick.Slick') {
+    overrides.app = new Proxy(app, {
+      get(target, prop: string) {
+        if (prop === 'setAsDefaultProtocolClient') {
+          return (scheme: string, ...args: any[]) =>
+            scheme === 'slack' ? true : target.setAsDefaultProtocolClient(scheme, ...args);
+        }
+        const value = Reflect.get(target, prop, target);
+        return typeof value === 'function' ? value.bind(target) : value;
+      },
+    });
+  }
+
   // Our preload evals Slack's original (see preload.ts).
   const originalPreloads = new Map<string, string>();
   ipcMain.handle('slick:get-original-preload', (_event, key: string) => originalPreloads.get(key) ?? null);

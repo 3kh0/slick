@@ -74,6 +74,10 @@ The Flatpak uses a signed Slick repo, so it can update normally via `flatpak upd
 flatpak install --user https://3kh0.github.io/slick/dev.slick.Slick.flatpakref
 ```
 
+Launch with `flatpak run dev.slick.Slick` if your desktop menu has not refreshed for some reason. If the browser sign in points elsewhere, run `xdg-mime default dev.slick.Slick.desktop x-scheme-handler/slack` so it takes the slack handler.
+
+To remove the Flatpak, run `flatpak uninstall --user dev.slick.Slick` (use `--system` instead if installed system-wide)
+
 ### Uninstalling
 
 - **Windows:** `& ([scriptblock]::Create((irm https://raw.githubusercontent.com/3kh0/slick/main/install.ps1))) -Uninstall`
