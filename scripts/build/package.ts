@@ -15,6 +15,7 @@ import { Arch, archFromString, build as electronBuild, Platform } from 'electron
 import { ASSETS, DIST, DIST_DESKTOP, ROOT, THEMES } from '../lib/paths.ts';
 import { versions } from '../lib/versions.ts';
 import { buildDesktop } from './desktop.ts';
+import { buildLinuxArm64Natives } from './linuxNatives.ts';
 
 /** The Electron major must track Slack's; .github/workflows/electron-watch.yml enforces it. */
 function electronVersion(): string {
@@ -112,9 +113,10 @@ export async function packageDesktop({ debug = false, platform = process.platfor
   await buildDesktop({ debug });
 
   const selectedArch = targetArch(arch);
-  if (platform === 'linux' && selectedArch !== Arch.x64) {
-    throw new Error('[build:package] Linux releases require x64 Slack');
+  if (platform === 'linux' && selectedArch !== Arch.x64 && selectedArch !== Arch.arm64) {
+    throw new Error('[build:package] Linux releases require x64 or arm64');
   }
+  if (platform === 'linux' && selectedArch === Arch.arm64) await buildLinuxArm64Natives();
   const selectedPlatform =
     platform === 'darwin' ? Platform.MAC : platform === 'win32' ? Platform.WINDOWS : Platform.LINUX;
   const targets = selectedPlatform.createTarget(
@@ -148,6 +150,12 @@ export async function packageDesktop({ debug = false, platform = process.platfor
         { from: path.join(DIST_DESKTOP, 'slick.js'), to: 'slick.js' },
         { from: path.join(DIST_DESKTOP, 'monaco'), to: 'monaco' },
         { from: THEMES, to: 'themes', filter: ['**/*.json'] },
+        ...(platform === 'linux' && selectedArch === Arch.arm64
+          ? [
+              { from: path.join(DIST_DESKTOP, 'native', 'linux-arm64'), to: 'native/linux-arm64' },
+              { from: path.join(ROOT, 'packaging', 'linux', 'TAUT-LICENSE.txt'), to: 'TAUT-LICENSE.txt' },
+            ]
+          : []),
       ],
 
       protocols: [{ name: 'Slack URL', schemes: ['slack'] }],
@@ -176,23 +184,26 @@ export async function packageDesktop({ debug = false, platform = process.platfor
         category: 'Network;InstantMessaging',
         icon: path.join(ASSETS, 'desktop-linux'),
         target: [
-          { target: 'AppImage', arch: ['x64'] },
-          { target: 'deb', arch: ['x64'] },
-          { target: 'rpm', arch: ['x64'] },
+          { target: 'AppImage', arch: ['x64', 'arm64'] },
+          { target: 'deb', arch: ['x64', 'arm64'] },
+          { target: 'rpm', arch: ['x64', 'arm64'] },
         ],
         desktop: { entry: { Name: 'Slick', MimeType: 'x-scheme-handler/slack;' } },
       },
       appImage: {
-        artifactName: 'Slick-${version}-linux-x86_64.AppImage',
+        artifactName:
+          selectedArch === Arch.arm64
+            ? 'Slick-${version}-linux-aarch64.AppImage'
+            : 'Slick-${version}-linux-x86_64.AppImage',
         executableArgs: ['--no-sandbox'],
       },
       deb: {
-        artifactName: 'slick_${version}_amd64.deb',
+        artifactName: selectedArch === Arch.arm64 ? 'slick_${version}_arm64.deb' : 'slick_${version}_amd64.deb',
         packageName: 'slick',
         maintainer: 'Echo <github@3kh0.net>',
       },
       rpm: {
-        artifactName: 'slick-${version}.x86_64.rpm',
+        artifactName: selectedArch === Arch.arm64 ? 'slick-${version}.aarch64.rpm' : 'slick-${version}.x86_64.rpm',
         packageName: 'slick',
         maintainer: 'Echo <github@3kh0.net>',
       },

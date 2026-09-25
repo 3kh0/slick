@@ -242,7 +242,9 @@ export function createUpdater({ version, build }: { version: string; build: numb
         : PLATFORM === 'win32'
           ? `-win32-${arch}.zip`
           : process.env.APPIMAGE
-            ? '-linux-x86_64.AppImage'
+            ? process.arch === 'arm64'
+              ? '-linux-aarch64.AppImage'
+              : '-linux-x86_64.AppImage'
             : `-linux-${arch}.tar.gz`;
     return (release.assets ?? []).find((a) => typeof a?.name === 'string' && a.name.endsWith(suffix)) ?? null;
   }

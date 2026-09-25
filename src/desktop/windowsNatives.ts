@@ -10,6 +10,14 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { settingsDir } from './paths.js';
+import { linuxArm64NativePath } from './linuxArm64Natives.js';
+
+export function prepareLinuxArm64Natives(asar: string, slickResources: string): void {
+  const dlopen = process.dlopen;
+  process.dlopen = function slickDlopen(this: unknown, module: object, filename: string, flags?: number) {
+    return dlopen.call(this, module, linuxArm64NativePath(filename, path.dirname(asar), slickResources), flags);
+  } as typeof process.dlopen;
+}
 
 /** Slack's full Electron version (the `version` file beside slack.exe), or a stable fallback. */
 function mirrorId(appDir: string): string {

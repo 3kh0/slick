@@ -42,7 +42,7 @@ I encourage you to try other Slack mods, but you will find that Slick is the bet
 
 ## Installation
 
-Slick runs Slack's own code, so install the official Slack app first. Then:
+Slick runs Slack's own code. Install the official Slack app first on macOS, Windows, and x86_64 Linux; on arm64 Linux Slick downloads a pinned copy on first launch. Then:
 
 **macOS** (the [official Slack](https://slack.com/downloads/mac) at `/Applications/Slack.app`, not the App Store version):
 
@@ -60,11 +60,13 @@ irm "https://raw.githubusercontent.com/3kh0/slick/main/install.ps1" | iex
 
 Slick is built for x64. ARM PCs run x64 Slack through emulation, so it works there, just a little slower.
 
-**Linux** (x86_64): grab the AppImage, `.deb` or `.rpm` from the [releases page](https://github.com/3kh0/slick/releases/latest), run `nix run github:3kh0/slick`, install the Flatpak, or use the installer below. Whatever floats your penguin loving boat.
+**Linux** (x86_64 or arm64): grab the AppImage, `.deb` or `.rpm` from the [releases page](https://github.com/3kh0/slick/releases/latest), run `nix run github:3kh0/slick`, install the Flatpak, or use the installer below. Whatever floats your penguin loving boat.
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/3kh0/slick/main/install-linux.sh | bash
 ```
+
+On arm64, the AppImage downloads a pinned Slack Linux bundle on first launch, then loads arm64 native addons. This approach is based on [Taut](https://github.com/jeremy46231/taut) (MIT); see [its license notice](./packaging/linux/TAUT-LICENSE.txt). Flatpak, Nix and AUR remain x64-only: arm64 needs separate Slack resources, native addons and platform-specific packaging/pins for each.
 
 The Flatpak uses a signed Slick repo, so it can update normally via `flatpak update`:
 
@@ -86,7 +88,7 @@ Clone the repo and run `./install.sh` (macOS), `./install-linux.sh` (Linux) or `
 
 ## Updates
 
-Slick updates itself every few hours, and checks every download against its GitHub build attestation before installing it. To check by hand, use **Slick > Check for Updates…**. On macOS and standalone Windows it also keeps Slack itself up to date. The Microsoft Store, the deb and rpm packages, Flatpak and Nix update through their own package managers instead. Running through the installer again will also get you the latest version if it somehow breaks.
+Slick updates itself every few hours, and checks every download against its GitHub build attestation before installing it. To check by hand, use **Slick > Check for Updates…**. On macOS and standalone Windows it also keeps Slack itself up to date. On Linux arm64, Slick pins the downloaded Slack bundle to its release and downloads a new pin when Slick updates. The Microsoft Store, the deb and rpm packages, Flatpak and Nix update through their own package managers instead. Running through the installer again will also get you the latest version if it somehow breaks.
 
 ## Themes
 

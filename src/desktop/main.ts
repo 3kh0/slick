@@ -21,7 +21,8 @@ import { findSlackAsar, macSlackApp, slackElectronMajor } from './slackFinder.js
 import { privilegedSchemes, setupSession } from './session.js';
 import { createSlackUpdater } from './slackUpdater.js';
 import { createUpdater } from './updater.js';
-import { prepareWindowsNatives } from './windowsNatives.js';
+import { prepareLinuxArm64Natives, prepareWindowsNatives } from './windowsNatives.js';
+import { downloadLinuxArm64Slack } from './linuxArm64Slack.js';
 
 const cjsRequire = createRequire(import.meta.url);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -41,7 +42,25 @@ slackUpdater.applyStagedIfAny();
 
 const slackAsar = findSlackAsar();
 
-if (!slackAsar) {
+if (!slackAsar && process.platform === 'linux' && process.arch === 'arm64' && !process.env.SLICK_SLACK_RESOURCES) {
+  app.whenReady().then(async () => {
+    try {
+      await downloadLinuxArm64Slack();
+      app.relaunch();
+      app.exit(0);
+    } catch (error) {
+      console.error('[slick] could not download Slack:', error);
+      dialog.showMessageBoxSync({
+        type: 'error',
+        title: 'Slick',
+        message: 'Slack could not be downloaded',
+        detail: `Check your connection and restart Slick to retry. ${String(error)}`,
+        buttons: ['Quit'],
+      });
+      app.exit(1);
+    }
+  });
+} else if (!slackAsar) {
   app.whenReady().then(() => {
     dialog.showMessageBoxSync({
       type: 'error',
@@ -50,7 +69,9 @@ if (!slackAsar) {
       detail:
         'Slick runs the official Slack app’s own code, so Slack has to be installed first. ' +
         (process.platform === 'linux'
-          ? 'Install the official Slack desktop app from https://slack.com/downloads/linux (or your distro’s Slack package), then open Slick again. Slick looks for Slack in /usr/lib/slack and /opt/Slack.'
+          ? process.arch === 'arm64'
+            ? 'Slick downloads Slack automatically on arm64. Check SLICK_SLACK_RESOURCES if you set it, or restart Slick to retry.'
+            : 'Install the official Slack desktop app from https://slack.com/downloads/linux (or your distro’s Slack package), then open Slick again. Slick looks for Slack in /usr/lib/slack and /opt/Slack.'
           : 'Install Slack, then open Slick again.'),
       buttons: ['Quit'],
     });
@@ -107,6 +128,9 @@ function startSlack(asar: string) {
     return;
   }
 
+  if (process.platform === 'linux' && process.arch === 'arm64') {
+    prepareLinuxArm64Natives(asar, slickResourcesPath);
+  }
   if (process.platform === 'win32') {
     try {
       if (prepareWindowsNatives(asar)) console.log('[slick] mirrored Slack native modules');
