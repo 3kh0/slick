@@ -1,0 +1,133 @@
+name: Flatpak repository
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to publish
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: flatpak-pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      FLATPAK_GPG_PRIVATE_KEY: ${{ secrets.FLATPAK_GPG_PRIVATE_KEY }}
+      FLATPAK_BUILD_DIR: /tmp/slick-flatpak-build
+      FLATPAK_REPO: /tmp/slick-flatpak-repo
+      RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          ref: ${{ inputs.tag || github.ref }}
+      - uses: oven-sh/setup-bun@v2
+
+      - name: Read build number
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ ! "$RELEASE_TAG" =~ ^v[1-9][0-9]*$ ]]; then
+            echo "release tag must be v<N>, got '$RELEASE_TAG'" >&2
+            exit 1
+          fi
+          echo "SLICK_BUILD=${RELEASE_TAG#v}" >> "$GITHUB_ENV"
+
+      - name: Import repository signing key
+        id: signing
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -z "$FLATPAK_GPG_PRIVATE_KEY" ]]; then
+            echo "FLATPAK_GPG_PRIVATE_KEY is not configured" >&2
+            exit 1
+          fi
+          printf '%s' "$FLATPAK_GPG_PRIVATE_KEY" | gpg --batch --import
+          key_id="$(gpg --batch --with-colons --list-secret-keys | awk -F: '$1 == "sec" { print $5; exit }')"
+          if [[ -z "$key_id" ]]; then
+            echo "the configured secret did not contain a private GPG key" >&2
+            exit 1
+          fi
+          echo "key-id=$key_id" >> "$GITHUB_OUTPUT"
+          gpg --batch --export "$key_id" > public.gpg
+
+      - name: Install build dependencies
+        run: |
+          bun install --frozen-lockfile
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends flatpak flatpak-builder
+          flatpak remote-add --user --if-not-exists flathub \
+            https://dl.flathub.org/repo/flathub.flatpakrepo
+
+      - name: Build signed repository
+        env:
+          GPG_KEY_ID: ${{ steps.signing.outputs.key-id }}
+        run: |
+          flatpak-builder --user --force-clean --disable-updates \
+            --install-deps-from=flathub --default-branch=stable \
+            --gpg-sign="$GPG_KEY_ID" --repo="$FLATPAK_REPO" \
+            "$FLATPAK_BUILD_DIR" packaging/flatpak/dev.slick.Slick.yml
+          flatpak build-update-repo --gpg-sign="$GPG_KEY_ID" \
+            --generate-static-deltas --prune "$FLATPAK_REPO"
+
+      - name: Add repository descriptors
+        shell: bash
+        run: |
+          set -euo pipefail
+          repo_url="https://${GITHUB_REPOSITORY_OWNER}.github.io/${GITHUB_REPOSITORY#*/}/"
+          public_key="$(base64 -w0 public.gpg)"
+          cat > "$FLATPAK_REPO/slick.flatpakrepo" <<EOF
+          [Flatpak Repo]
+          Title=Slick
+          Url=$repo_url
+          Homepage=https://github.com/$GITHUB_REPOSITORY
+          Comment=Official Slick Flatpak repository
+          Description=Signed Flatpak releases of Slick
+          DefaultBranch=stable
+          GPGKey=$public_key
+          EOF
+          cat > "$FLATPAK_REPO/dev.slick.Slick.flatpakref" <<EOF
+          [Flatpak Ref]
+          Title=Slick
+          Name=dev.slick.Slick
+          Branch=stable
+          Url=$repo_url
+          SuggestRemoteName=slick
+          Homepage=https://github.com/$GITHUB_REPOSITORY
+          RuntimeRepo=https://dl.flathub.org/repo/flathub.flatpakrepo
+          IsRuntime=false
+          GPGKey=$public_key
+          EOF
+
+      - name: Verify signed repository
+        run: |
+          flatpak remote-add --user --gpg-import=public.gpg slick-test "file://$FLATPAK_REPO"
+          flatpak install --user --noninteractive slick-test dev.slick.Slick
+          flatpak info --user dev.slick.Slick
+
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: /tmp/slick-flatpak-repo
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy repository
+        id: deployment
+        uses: actions/deploy-pages@v5

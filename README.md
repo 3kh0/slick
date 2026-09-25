@@ -60,10 +60,16 @@ irm "https://raw.githubusercontent.com/3kh0/slick/main/install.ps1" | iex
 
 Slick is built for x64. ARM PCs run x64 Slack through emulation, so it works there, just a little slower.
 
-**Linux** (x86_64): grab the AppImage, `.deb` or `.rpm` from the [releases page](https://github.com/3kh0/slick/releases/latest), run `nix run github:3kh0/slick`, or use the installer below. Whatever floats your penguin loving boat.
+**Linux** (x86_64): grab the AppImage, `.deb` or `.rpm` from the [releases page](https://github.com/3kh0/slick/releases/latest), run `nix run github:3kh0/slick`, install the Flatpak, or use the installer below. Whatever floats your penguin loving boat.
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/3kh0/slick/main/install-linux.sh | bash
+```
+
+The Flatpak uses a signed Slick repo, so it can update normally via `flatpak update`:
+
+```bash
+flatpak install --user https://3kh0.github.io/slick/dev.slick.Slick.flatpakref
 ```
 
 ### Uninstalling
