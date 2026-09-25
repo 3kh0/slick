@@ -66,7 +66,7 @@ Slick is built for x64. ARM PCs run x64 Slack through emulation, so it works the
 curl -fsSL https://raw.githubusercontent.com/3kh0/slick/main/install-linux.sh | bash
 ```
 
-On arm64, the AppImage downloads a pinned Slack Linux bundle on first launch, then loads arm64 native addons. This approach is based on [Taut](https://github.com/jeremy46231/taut) (MIT); see [its license notice](./packaging/linux/TAUT-LICENSE.txt). Flatpak, Nix and AUR remain x64-only: arm64 needs separate Slack resources, native addons and platform-specific packaging/pins for each.
+On arm64, the AppImage downloads a pinned Slack Linux bundle on first launch, then loads arm64 native addons. This approach is based on [Taut](https://github.com/jeremy46231/taut) (MIT); see [its license notice](./packaging/linux/TAUT-LICENSE.txt). Nix and AUR remain x64-only: arm64 needs separate Slack resources, native addons and platform-specific packaging/pins for each. The arm64 Flatpak downloads the pinned Slack bundle on first launch; the x64 Flatpak still requires installed Slack.
 
 The Flatpak uses a signed Slick repo, so it can update normally via `flatpak update`:
 

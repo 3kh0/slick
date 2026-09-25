@@ -19,9 +19,12 @@ concurrency:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.arch == 'aarch64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [x86_64, aarch64]
     env:
-      FLATPAK_GPG_PRIVATE_KEY: ${{ secrets.FLATPAK_GPG_PRIVATE_KEY }}
       FLATPAK_BUILD_DIR: /tmp/slick-flatpak-build
       FLATPAK_REPO: /tmp/slick-flatpak-repo
       RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
@@ -45,6 +48,52 @@ jobs:
           fi
           echo "SLICK_BUILD=${RELEASE_TAG#v}" >> "$GITHUB_ENV"
 
+      - name: Install build dependencies
+        run: |
+          bun install --frozen-lockfile
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends elfutils flatpak flatpak-builder
+          if [[ "${{ matrix.arch }}" == aarch64 ]]; then
+            sudo apt-get install -y --no-install-recommends libx11-dev libxkbfile-dev
+            node --experimental-strip-types scripts/build/flatpakArm64Natives.ts
+          fi
+          flatpak remote-add --user --if-not-exists flathub \
+            https://dl.flathub.org/repo/flathub.flatpakrepo
+
+      - name: Build architecture bundle
+        run: |
+          awk -v build="$SLICK_BUILD" '
+            /^  append-path:/ { print; print "  env:"; print "    SLICK_BUILD: \"" build "\""; next }
+            { print }
+          ' packaging/flatpak/dev.slick.Slick.yml > packaging/flatpak/dev.slick.Slick.ci.yml
+          flatpak-builder --user --force-clean --disable-updates \
+            --install-deps-from=flathub --default-branch=stable \
+            --repo="$FLATPAK_REPO" \
+            "$FLATPAK_BUILD_DIR" packaging/flatpak/dev.slick.Slick.ci.yml
+          flatpak build-bundle --arch="${{ matrix.arch }}" \
+            "$FLATPAK_REPO" "/tmp/slick-${{ matrix.arch }}.flatpak" dev.slick.Slick stable
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: slick-flatpak-${{ matrix.arch }}
+          path: /tmp/slick-${{ matrix.arch }}.flatpak
+          if-no-files-found: error
+          retention-days: 1
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    env:
+      FLATPAK_GPG_PRIVATE_KEY: ${{ secrets.FLATPAK_GPG_PRIVATE_KEY }}
+      FLATPAK_REPO: /tmp/slick-flatpak-repo
+    steps:
+      - name: Install repository tools
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends flatpak ostree
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: slick-flatpak-*
+          path: /tmp/slick-bundles
+          merge-multiple: true
       - name: Import repository signing key
         id: signing
         shell: bash
@@ -63,26 +112,16 @@ jobs:
           echo "key-id=$key_id" >> "$GITHUB_OUTPUT"
           gpg --batch --export "$key_id" > public.gpg
 
-      - name: Install build dependencies
-        run: |
-          bun install --frozen-lockfile
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends elfutils flatpak flatpak-builder
-          flatpak remote-add --user --if-not-exists flathub \
-            https://dl.flathub.org/repo/flathub.flatpakrepo
-
-      - name: Build signed repository
+      - name: Import both architectures into signed repository
         env:
           GPG_KEY_ID: ${{ steps.signing.outputs.key-id }}
         run: |
-          sed "/^  append-path:/a\\
-            env:\\
-              SLICK_BUILD: '$SLICK_BUILD'" \
-            packaging/flatpak/dev.slick.Slick.yml > packaging/flatpak/dev.slick.Slick.ci.yml
-          flatpak-builder --user --force-clean --disable-updates \
-            --install-deps-from=flathub --default-branch=stable \
-            --gpg-sign="$GPG_KEY_ID" --repo="$FLATPAK_REPO" \
-            "$FLATPAK_BUILD_DIR" packaging/flatpak/dev.slick.Slick.ci.yml
+          set -euo pipefail
+          ostree init --repo="$FLATPAK_REPO" --mode=archive-z2
+          for arch in x86_64 aarch64; do
+            flatpak build-import-bundle --gpg-sign="$GPG_KEY_ID" \
+              "$FLATPAK_REPO" "/tmp/slick-bundles/slick-$arch.flatpak"
+          done
           flatpak build-update-repo --gpg-sign="$GPG_KEY_ID" \
             --generate-static-deltas --prune "$FLATPAK_REPO"
 
@@ -120,13 +159,14 @@ jobs:
           flatpak remote-add --user --gpg-import=public.gpg slick-test "file://$FLATPAK_REPO"
           flatpak install --user --noninteractive slick-test dev.slick.Slick
           flatpak info --user dev.slick.Slick
+          flatpak remote-ls --arch=aarch64 slick-test | grep -F dev.slick.Slick
 
       - uses: actions/upload-pages-artifact@v5
         with:
           path: /tmp/slick-flatpak-repo
 
   deploy:
-    needs: build
+    needs: publish
     runs-on: ubuntu-latest
     permissions:
       pages: write

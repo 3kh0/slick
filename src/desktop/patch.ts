@@ -121,6 +121,9 @@ export function applyPatches(
         const value = Reflect.get(target, prop, target);
         return typeof value === 'function' ? value.bind(target) : value;
       },
+      set(target, prop, value) {
+        return Reflect.set(target, prop, value, target);
+      },
     });
   }
 
