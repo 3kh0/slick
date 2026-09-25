@@ -23,6 +23,7 @@ finish-args:
   - --filesystem=/opt/Slack:ro
   - --filesystem=/opt/slack:ro
   - --filesystem=xdg-data/slack:ro
+  - --filesystem=xdg-run/slick:create
   - --env=ELECTRON_TRASH=gio
   - --env=XCURSOR_PATH=/run/host/user-share/icons:/run/host/share/icons
   - --talk-name=com.canonical.AppMenu.Registrar

@@ -102,8 +102,18 @@ export function applyPatches(
   const slackResources = path.dirname(slackAsarPath);
 
   if (process.platform === 'linux' && process.env.FLATPAK_ID === 'dev.slick.Slick') {
+    app.on('second-instance', () => console.log('[slick] Flatpak received second-instance handoff'));
     overrides.app = new Proxy(app, {
       get(target, prop: string) {
+        // Flatpak installs resources/app without an asar; Slack otherwise skips its singleton lock.
+        if (prop === 'isPackaged') return true;
+        if (prop === 'requestSingleInstanceLock') {
+          return (...args: Parameters<typeof app.requestSingleInstanceLock>) => {
+            const acquired = target.requestSingleInstanceLock(...args);
+            console.log(`[slick] Flatpak single-instance lock ${acquired ? 'acquired' : 'held by another process'}`);
+            return acquired;
+          };
+        }
         if (prop === 'setAsDefaultProtocolClient') {
           return (scheme: string, ...args: any[]) =>
             scheme === 'slack' ? true : target.setAsDefaultProtocolClient(scheme, ...args);
