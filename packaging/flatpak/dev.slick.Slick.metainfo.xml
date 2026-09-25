@@ -7,7 +7,7 @@
   <project_license>GPL-3.0-only</project_license>
   <description>
     <p>Slick runs an installed copy of Slack with custom themes and plugins without modifying Slack's files.</p>
-    <p>The official Slack Linux package must be installed separately.</p>
+    <p>On x86_64, the official Slack Linux package must be installed separately. On aarch64, Slick downloads a pinned Slack bundle on first launch.</p>
   </description>
   <launchable type="desktop-id">dev.slick.Slick.desktop</launchable>
   <url type="homepage">https://github.com/3kh0/slick</url>

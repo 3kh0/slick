@@ -65,6 +65,12 @@ export async function buildDesktop({ debug = false } = {}) {
       bundle: true,
       platform: 'node',
       format,
+      banner:
+        format === 'esm'
+          ? {
+              js: "import { createRequire as slickCreateRequire } from 'node:module'; const require = slickCreateRequire(import.meta.url);",
+            }
+          : undefined,
       target: 'node22',
       minify: !debug,
       sourcemap: debug ? 'inline' : false,

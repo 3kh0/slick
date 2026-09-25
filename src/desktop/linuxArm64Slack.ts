@@ -57,7 +57,7 @@ async function unpackTar(stream: NodeJS.ReadableStream, into: string, prefix: st
       extract.destroy(new Error('unsafe Slack archive entry'));
       return;
     }
-    const dest = path.join(into, relative);
+    const dest = path.join(into, relative === 'app.asar' ? 'app.asar.download' : relative);
     mkdir(path.dirname(dest), { recursive: true })
       .then(() => pipeline(entry, createWriteStream(dest)))
       .then(
@@ -120,7 +120,9 @@ export async function downloadLinuxArm64Slack(): Promise<string> {
     console.log(`[slick] downloading Slack ${version} from ${url}`);
     await download(url, archive);
     await unpackDeb(archive, resources);
-    if (!fs.existsSync(path.join(resources, 'app.asar'))) throw new Error('Slack download has no app.asar');
+    const stagedAsar = path.join(resources, 'app.asar.download');
+    if (!fs.existsSync(stagedAsar)) throw new Error('Slack download has no app.asar');
+    await rename(stagedAsar, path.join(resources, 'app.asar'));
     await downloadNative(resources).catch((error) =>
       console.warn('[slick] arm64 slack-desktop-utils unavailable:', error),
     );
