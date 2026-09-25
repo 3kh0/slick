@@ -30,6 +30,9 @@ jobs:
         with:
           fetch-depth: 0
           ref: ${{ inputs.tag || github.ref }}
+      - name: Use current packaging for a backfill
+        if: github.event_name == 'workflow_dispatch'
+        run: git checkout "$GITHUB_SHA" -- packaging/flatpak
       - uses: oven-sh/setup-bun@v2
 
       - name: Read build number
