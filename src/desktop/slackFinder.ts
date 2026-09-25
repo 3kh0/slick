@@ -4,6 +4,7 @@ import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { settingsDir } from './paths.js';
+import { downloadedSlackResources } from './linuxArm64Slack.js';
 
 const MAC_DEFAULT_APP = '/Applications/Slack.app';
 
@@ -181,6 +182,10 @@ function findLinux(): string {
   for (const dir of LINUX_CANDIDATES) {
     const resources = path.join(dir, 'resources');
     if (hasAsar(resources)) return resources;
+  }
+  if (process.arch === 'arm64') {
+    const cached = downloadedSlackResources();
+    if (hasAsar(cached)) return cached;
   }
   return '';
 }

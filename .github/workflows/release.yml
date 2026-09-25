@@ -141,7 +141,7 @@ jobs:
 
   build-linux:
     needs: [validate-tag, electron-compatible]
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
     permissions:
       contents: read
       id-token: write
@@ -149,13 +149,13 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        arch: [x64]
+        arch: [x64, arm64]
     steps:
       - uses: actions/checkout@v7
       - uses: oven-sh/setup-bun@v2
       - run: bun install --frozen-lockfile
       - name: Install Linux packaging tools
-        run: sudo apt-get update && sudo apt-get install -y rpm fakeroot dpkg
+        run: sudo apt-get update && sudo apt-get install -y rpm fakeroot dpkg libx11-dev libxkbfile-dev
       - name: Build release artifacts
         run: bun run build -- package --arch "${{ matrix.arch }}"
         env:

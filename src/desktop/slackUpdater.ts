@@ -19,6 +19,7 @@ import https from 'node:https';
 import os from 'node:os';
 import path from 'node:path';
 import { settingsDir } from './paths.js';
+import { downloadedSlackResources, downloadLinuxArm64Slack, LINUX_ARM64_SLACK_VERSION } from './linuxArm64Slack.js';
 
 const MAC = process.platform === 'darwin';
 const FRAMEWORK_PLIST_REL = 'Contents/Frameworks/Electron Framework.framework/Resources/Info.plist';
@@ -92,6 +93,21 @@ export function createSlackUpdater({
   const installedVersion = () => plistValue(slackInfoPlist, 'CFBundleShortVersionString');
 
   if (process.platform === 'win32') return createWindowsSlackUpdater(`Slick/${version || '0'}`);
+  if (process.platform === 'linux' && process.arch === 'arm64') {
+    return {
+      applyStagedIfAny: () => {},
+      scheduleChecks: () => {},
+      latestVersion: async () => LINUX_ARM64_SLACK_VERSION,
+      installedVersion: () =>
+        fs.existsSync(path.join(downloadedSlackResources(), 'app.asar')) ? LINUX_ARM64_SLACK_VERSION : '',
+      checkNow: async () => {
+        if (!fs.existsSync(path.join(downloadedSlackResources(), 'app.asar'))) {
+          await downloadLinuxArm64Slack();
+          log(`Slack ${LINUX_ARM64_SLACK_VERSION} downloaded; restart Slick to use it`);
+        }
+      },
+    };
+  }
   if (!MAC) {
     const noop = () => {};
     return {
