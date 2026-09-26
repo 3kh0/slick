@@ -14,7 +14,7 @@
     "build": "node scripts/build.ts",
     "desktop:dev": "node scripts/desktop.ts",
     "test:extension": "node --experimental-strip-types --test src/extension/*.test.ts scripts/lib/plugin.test.ts",
-    "extension:lint": "web-ext lint --source-dir dist/extension/firefox --warnings-as-errors",
+    "extension:lint": "web-ext lint --source-dir dist/extension/firefox --self-hosted --warnings-as-errors",
     "extension:dev": "web-ext run --source-dir dist/extension/firefox --start-url https://app.slack.com/client",
     "typecheck": "node scripts/generate-main-plugins.ts && tsc --noEmit"
   },
