@@ -153,6 +153,10 @@ test('settings reach running halves; storage is per plugin and bounded', async (
 
 test('plugin.call and tabMode requests are validated before reaching the background', () => {
   assert.equal(validRequest({ method: 'plugin.call', args: ['Click2Load', 'allow', '["https://x"]'] }), true);
+  assert.equal(
+    validRequest({ method: 'plugin.call', args: ['PrivateChannelMapper', 'channel', '["C0266FRGT"]'] }),
+    true,
+  );
   assert.equal(validRequest({ method: 'plugin.call', args: ['AccountSwitcher', 'switch', '[]'] }), false);
   assert.equal(validRequest({ method: 'plugin.call', args: ['NoTrack', '__proto__.x', '[]'] }), false);
   assert.equal(validRequest({ method: 'plugin.call', args: ['NoTrack', 'x', '[]', 'extra'] }), false);

@@ -389,13 +389,39 @@ db.commit(); db.execute('PRAGMA wal_checkpoint(TRUNCATE)'); db.execute('VACUUM')
   const clearUrls = await rpc('plugin.call', ['ClearURLs', 'rules', '[]']);
   assert.equal(clearUrls.ok, true);
   assert.ok(Object.keys(JSON.parse(clearUrls.value).providers).length > 100);
+  const setPcm = async (on: boolean) => {
+    const current = (await rpc('readSettings')).value;
+    const parsed = JSON.parse(current);
+    parsed.plugins.PrivateChannelMapper = { enabled: true, flaron: on, mentions: on };
+    assert.equal((await rpc('compareAndSwapSettings', [current, JSON.stringify(parsed)])).value, true);
+  };
+  const pcm = (method: string, value: string) =>
+    rpc('plugin.call', ['PrivateChannelMapper', method, JSON.stringify([value])]);
+  await setPcm(true);
+  const byId = await until(
+    () => pcm('channel', 'C0266FRGT'),
+    (r: any) => r.ok,
+    'Flaron channel lookup',
+    20,
+  );
+  assert.equal(JSON.parse(byId.value), 'announcements');
+  assert.match(JSON.parse((await pcm('byName', 'general')).value), /^[CG][A-Z0-9]{6,}$/);
+  await setPcm(false);
+  await until(
+    () => pcm('channel', 'C0266FRGT'),
+    (r: any) => r.ok === false && /disabled/.test(r.error),
+    'Flaron off',
+    10,
+  );
   await execute("sessionStorage.setItem('slick:firefox:bypass', '1')");
   await command('/refresh', {});
   await until(telemetry, (outcome) => outcome === 'loaded', 'bypassed tab exempt from blocking', 10);
   await execute("sessionStorage.removeItem('slick:firefox:bypass')");
   await command('/refresh', {});
   await until(telemetry, (outcome) => outcome === 'blocked', 'blocking back after resume', 10);
-  console.log('PASS: NoTrack and Click2Load block via Slack-scoped rules; allow, bypass and ClearURLs rules work.');
+  console.log(
+    'PASS: NoTrack and Click2Load block via Slack-scoped rules; allow, bypass, ClearURLs rules and Flaron lookups work.',
+  );
   // Toolbar icon: read the images Firefox's own UI uses for light and dark toolbars.
   const toolbarIcons = async () => {
     await command('/moz/context', { context: 'chrome' });
