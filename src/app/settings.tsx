@@ -780,6 +780,10 @@ function Appearance({ config, bridge }: { config: ConfigStore; bridge: SlickBrid
             </option>
           ))}
         </select>
+        <div style={{ marginTop: '6px' }}>
+          When using these themes, it is recommend to set your native Slack theme to Dark mode for the best visual
+          experience.
+        </div>
       </div>
       {bridge.loader === 'extension' ? (
         // Slack's page may not open extension tabs; the toolbar popup owns the editor.
