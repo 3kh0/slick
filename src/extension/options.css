@@ -1,176 +1,458 @@
-:root {
-  color-scheme: dark;
-  font-family:
-    system-ui,
-    -apple-system,
-    BlinkMacSystemFont,
-    'Segoe UI',
-    sans-serif;
-  background: #100d18;
-  color: #eee8f8;
-  font-size: 14px;
-  line-height: 1.6;
-  accent-color: #b496ff;
+@font-face {
+  font-family: Lato;
+  font-weight: 400;
+  font-display: block;
+  src: url(fonts/lato-400.woff2) format('woff2');
+  unicode-range:
+    U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC,
+    U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
 }
+@font-face {
+  font-family: Lato;
+  font-weight: 700;
+  font-display: block;
+  src: url(fonts/lato-700.woff2) format('woff2');
+  unicode-range:
+    U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC,
+    U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: Lato;
+  font-weight: 900;
+  font-display: block;
+  src: url(fonts/lato-900.woff2) format('woff2');
+  unicode-range:
+    U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC,
+    U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+:root {
+  color-scheme: light dark;
+  --bg: #fff;
+  --text: #1d1c1d;
+  --muted: #616061;
+  --border: rgba(29, 28, 29, 0.13);
+  --control-border: rgba(29, 28, 29, 0.3);
+  --hover: rgba(29, 28, 29, 0.04);
+  --selected: #1164a3;
+  --link: #1264a3;
+  --focus: #1d9bd1;
+  --primary: #007a5a;
+  --primary-hover: #148567;
+  --danger: #e01e5a;
+  --toast-bg: #1d1c1d;
+  --toast-text: #fff;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #1a1d21;
+    --text: #d1d2d3;
+    --muted: #ababad;
+    --border: rgba(232, 232, 232, 0.13);
+    --control-border: rgba(232, 232, 232, 0.3);
+    --hover: rgba(232, 232, 232, 0.06);
+    --link: #1d9bd1;
+    --toast-bg: #e8e8e8;
+    --toast-text: #1d1c1d;
+  }
+}
+
+/* A Slick theme picked in settings (all dark) restyles this page too; options.ts
+   sets --theme-bg / --theme-accent from the theme file. */
+:root[data-theme] {
+  color-scheme: dark;
+  --text: #d1d2d3;
+  --muted: #ababad;
+  --border: rgba(232, 232, 232, 0.13);
+  --control-border: rgba(232, 232, 232, 0.3);
+  --hover: rgba(232, 232, 232, 0.06);
+  --link: #1d9bd1;
+  --toast-bg: #e8e8e8;
+  --toast-text: #1d1c1d;
+  --bg: var(--theme-bg, #1a1d21);
+  --selected: var(--theme-accent, #1164a3);
+}
+
 * {
   box-sizing: border-box;
 }
+html,
 body {
   margin: 0;
-  min-width: 320px;
+  height: 100%;
 }
-main {
-  width: min(100%, 720px);
-  margin: 0 auto;
-  padding: 28px 22px 40px;
+body {
+  background: var(--bg);
+  color: var(--text);
+  font:
+    15px/1.46668 Lato,
+    'Slack-Lato',
+    -apple-system,
+    BlinkMacSystemFont,
+    'Segoe UI',
+    Roboto,
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
 }
-header,
-.switch,
-.actions {
+/* The toolbar popup sizes itself to the document. */
+html.popup,
+html.popup body {
+  width: 720px;
+  height: 540px;
+}
+html:not(.popup) body {
+  display: grid;
+  place-items: center;
+  padding: 32px;
+  background: color-mix(in srgb, var(--bg) 92%, #000);
+}
+
+.dialog {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  background: var(--bg);
+}
+html:not(.popup) .dialog {
+  width: min(900px, 100%);
+  height: min(700px, calc(100vh - 64px));
+  border-radius: 8px;
+  box-shadow:
+    0 0 0 1px var(--border),
+    0 18px 48px rgba(0, 0, 0, 0.35);
+  overflow: hidden;
+}
+.dialog__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 20px 16px 28px;
+}
+h1 {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 900;
+  line-height: 1.27;
+}
+.dialog__body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+.dialog__content {
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
+  padding: 0 28px 28px 20px;
+}
+
+/* Tab rail */
+.tabs {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 212px;
+  flex: none;
+  padding: 0 12px 0 16px;
+}
+[role='tab'] {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 32px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+[role='tab']:hover {
+  background: var(--hover);
+}
+[role='tab'][aria-selected='true'] {
+  background: var(--selected);
+  color: #fff;
+}
+svg {
+  width: 20px;
+  height: 20px;
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+h2 {
+  margin: 0 0 16px;
+  font-size: 18px;
+  font-weight: 900;
+  line-height: 1.33;
+}
+.panel-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+  margin-bottom: 12px;
 }
-header {
-  flex-wrap: wrap;
-}
-h1 {
-  font-size: 38px;
-  line-height: 1;
-  letter-spacing: -2px;
-  margin: 4px 0 12px;
-}
-h1 span {
-  color: #b496ff;
-}
-h2 {
-  font-size: 16px;
-  margin: 0 0 14px;
-  font-weight: 650;
-}
-p {
-  margin: 8px 0 16px;
-}
-.eyebrow {
-  color: #b496ff;
-  text-transform: uppercase;
-  letter-spacing: 1.5px;
-  font-size: 10px;
+.panel-head h2 {
   margin: 0;
 }
-.intro,
-.hint,
-#css-status {
-  color: #b9afca;
+p {
+  margin: 0 0 16px;
 }
 .hint {
-  font-size: 12px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.38463;
 }
-section {
-  background: #191422;
-  border: 1px solid #352940;
-  border-radius: 12px;
-  padding: 20px;
-  margin-top: 18px;
+a {
+  color: var(--link);
+  text-decoration: none;
+}
+a:hover {
+  text-decoration: underline;
 }
 fieldset {
   border: 0;
-  margin: 0;
+  margin: 0 0 16px;
   padding: 0;
   min-width: 0;
 }
-.switch {
-  padding: 10px 0;
+
+/* Rows, as in the Slick tab inside Slack */
+.row {
+  border-top: 1px solid var(--border);
+  padding: 14px 0;
+  margin: 0;
+}
+.plugin {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
   cursor: pointer;
 }
+.plugin__name,
+.setting__name {
+  font-weight: 700;
+}
+.plugin__description {
+  display: block;
+  color: var(--muted);
+  font-size: 13px;
+}
+.setting {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+/* Controls */
 input[type='checkbox'] {
-  width: 19px;
-  height: 19px;
-  flex-shrink: 0;
-}
-.select-label {
-  display: block;
-  margin: 16px 0 6px;
-}
-button,
-select,
-textarea {
-  font: inherit;
-  color: inherit;
-  background: #231a32;
-  border: 1px solid #534066;
-  border-radius: 7px;
-}
-button {
-  padding: 8px 13px;
+  appearance: none;
+  flex: none;
+  width: 16px;
+  height: 16px;
+  margin: 3px 0 0;
+  border: 1px solid var(--control-border);
+  border-radius: 4px;
+  background: var(--bg) center / 12px no-repeat;
   cursor: pointer;
-  font-weight: 600;
 }
-button:hover:not(:disabled) {
-  background: #352548;
-  border-color: #b496ff;
+input[type='checkbox']:checked {
+  border-color: var(--selected);
+  background-color: var(--selected);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M2.5 6.2 5 8.6l4.5-5' fill='none' stroke='%23fff' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
 }
-button:disabled,
-fieldset:disabled,
-textarea:disabled {
-  opacity: 0.55;
-  cursor: not-allowed;
-}
-select {
+.input {
   width: 100%;
-  padding: 9px;
+  border: 1px solid var(--control-border);
+  border-radius: 8px;
+  background: var(--bg);
+  color: inherit;
+  font: inherit;
 }
-textarea {
+input.input,
+.select {
+  height: 36px;
+  padding: 0 12px;
+}
+#search {
+  width: 220px;
+}
+.select {
+  appearance: none;
+  max-width: 320px;
+  padding-right: 32px;
+  background: var(--bg)
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='m3 4.5 3 3 3-3' fill='none' stroke='%23888' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")
+    right 12px center / 12px no-repeat;
+  margin-bottom: 24px;
   display: block;
-  width: 100%;
-  min-height: 230px;
-  resize: vertical;
-  padding: 12px;
-  background: #100d18;
-  font:
-    12px/1.7 ui-monospace,
-    monospace;
-  tab-size: 2;
 }
-:focus-visible {
-  outline: 2px solid #cbb4ff;
-  outline-offset: 3px;
+textarea.input {
+  display: block;
+  min-height: 180px;
+  padding: 8px 12px;
+  resize: vertical;
+  font:
+    13px/1.5 Monaco,
+    Menlo,
+    Consolas,
+    'Courier New',
+    monospace;
+}
+.field-label {
+  display: block;
+  margin-bottom: 8px;
+  font-weight: 700;
 }
 .actions {
-  justify-content: flex-start;
-  flex-wrap: wrap;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
   margin-top: 12px;
 }
-#save-css {
-  background: #66449b;
-  border-color: #9871d2;
+.button {
+  flex: none;
+  height: 36px;
+  padding: 0 12px;
+  border: 1px solid var(--control-border);
+  border-radius: 8px;
+  background: var(--bg);
+  color: inherit;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
 }
-#error {
-  color: #ffd5de;
-  background: #391d2e;
-  border: 1px solid #8e4964;
-  border-radius: 7px;
-  padding: 12px;
-  overflow-wrap: anywhere;
+.button:hover:not(:disabled) {
+  background: var(--hover);
 }
-#status:empty {
+.button--primary {
+  border-color: var(--primary);
+  background: var(--primary);
+  color: #fff;
+}
+.button--primary:hover:not(:disabled) {
+  background: var(--primary-hover);
+}
+.button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.icon-button {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+}
+.icon-button:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+html:not(.popup) #open-editor {
   display: none;
+}
+.link-button {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--link);
+  font: inherit;
+  cursor: pointer;
+}
+.link-button:hover {
+  text-decoration: underline;
+}
+:focus-visible {
+  outline: none;
+  box-shadow:
+    0 0 0 1px var(--focus),
+    0 0 0 5px color-mix(in srgb, var(--focus) 30%, transparent);
+}
+
+.banner {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  margin: 0 0 16px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--link);
+  border-radius: 8px;
+  font-size: 13px;
+}
+.banner--error {
+  border-left-color: var(--danger);
+}
+[hidden] {
+  display: none !important;
+}
+
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: 20px;
+  transform: translate(-50%, 8px);
+  padding: 8px 14px;
+  border-radius: 8px;
+  background: var(--toast-bg);
+  color: var(--toast-text);
+  font-size: 13px;
+  font-weight: 700;
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    opacity 0.15s,
+    transform 0.15s;
+}
+.toast.visible {
+  opacity: 1;
+  transform: translate(-50%, 0);
 }
 .sr-only {
   position: absolute;
   width: 1px;
   height: 1px;
-  padding: 0;
   overflow: hidden;
   clip-path: inset(50%);
-  white-space: nowrap;
 }
-@media (max-width: 440px) {
-  main {
-    padding: 20px 14px;
+
+/* A narrow options tab (e.g. Firefox's add-on manager) stacks the rail. */
+@media (max-width: 640px) {
+  html:not(.popup) body {
+    padding: 0;
   }
-  section {
-    padding: 16px;
+  html:not(.popup) .dialog {
+    height: 100vh;
+    border-radius: 0;
+  }
+  .dialog__body {
+    flex-direction: column;
+  }
+  .tabs {
+    flex-direction: row;
+    width: auto;
+    overflow-x: auto;
+    padding: 0 16px 12px;
+  }
+  .dialog__content {
+    padding: 0 16px 24px;
+  }
+  #search {
+    width: 160px;
   }
 }

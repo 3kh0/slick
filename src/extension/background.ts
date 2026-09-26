@@ -1,6 +1,18 @@
 import { extensionBrowser, validRequest } from './rpc.ts';
 import type { ExtensionBrowser, Response, Sender } from './rpc.ts';
-import { createStorage } from './storage.ts';
+import { SETTINGS_KEY, createStorage } from './storage.ts';
+
+export const TOOLBAR_ICONS = { black: 'icons/black.svg', white: 'icons/white.svg' } as const;
+
+/** The chosen toolbar mark, or null to follow the Firefox theme (manifest theme_icons). */
+export function toolbarIconPath(settings: unknown): string | null {
+  try {
+    const choice: unknown = JSON.parse(String(settings)).toolbarIcon;
+    return choice === 'black' || choice === 'white' ? TOOLBAR_ICONS[choice] : null;
+  } catch {
+    return null;
+  }
+}
 
 function ownedUi(sender: Sender, extensionRoot: string): boolean {
   try {
@@ -31,6 +43,14 @@ export function allowedSender(sender: Sender, id: string, extensionRoot: string)
 }
 export function createBackground(api: ExtensionBrowser) {
   const storage = createStorage(api.storage.local);
+  // setIcon({ path: null }) restores the manifest icon, theme_icons included.
+  const applyIcon = (settings: unknown) => api.action?.setIcon({ path: toolbarIconPath(settings) }).catch(() => {});
+  void storage.dispatch({ method: 'readSettings', args: [] }).then((r) => {
+    if (r.ok) void applyIcon(r.value);
+  });
+  api.storage.onChanged.addListener((changes, area) => {
+    if (area === 'local' && SETTINGS_KEY in changes) applyIcon(changes[SETTINGS_KEY].newValue);
+  });
   return async (message: unknown, sender: Sender): Promise<Response> => {
     if (!allowedSender(sender, api.runtime.id, api.runtime.getURL('')) || !validRequest(message))
       return { ok: false, error: 'Request denied' };

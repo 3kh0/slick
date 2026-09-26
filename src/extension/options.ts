@@ -17,6 +17,7 @@ type Send = ExtensionBrowser['runtime']['sendMessage'];
 export type Change =
   | { property: 'enabled'; value: boolean }
   | { property: 'theme'; value: string }
+  | { property: 'toolbarIcon'; value: string }
   | { property: 'plugin'; id: (typeof RENDERERS)[number]; value: boolean };
 
 export async function request(send: Send, method: Method, args: string[] = []) {
@@ -114,35 +115,138 @@ export async function recover(api: OptionsBrowser, mode: Recovery): Promise<void
   if (results.length !== 1 || results[0].result !== true) throw new Error('Recovery not confirmed');
 }
 
-function mount(api: OptionsBrowser | undefined) {
+export type OptionsData = {
+  plugins: { id: string; name: string; description: string }[];
+  themes: { id: string; name: string; background: string | null; accent: string | null }[];
+  version: string;
+};
+
+const TABS = ['plugins', 'appearance', 'troubleshooting', 'about'] as const;
+const TAB_KEY = 'slick:options:tab';
+const THEME_KEY = 'slick:options:theme';
+
+export function mount(api: OptionsBrowser | undefined, data: OptionsData) {
   const element = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
+  const popup = new URLSearchParams(location.search).has('popup');
+  document.documentElement.classList.toggle('popup', popup);
+
   const error = element('error');
+  const errorText = element('error-text');
   const status = element('status');
   const settings = element<HTMLFieldSetElement>('settings');
-  const enabled = element<HTMLInputElement>('enabled');
+  const paused = element('paused');
   const theme = element<HTMLSelectElement>('theme');
+  const toolbarIcon = element<HTMLSelectElement>('toolbar-icon');
   const css = element<HTMLTextAreaElement>('css');
   const save = element<HTMLButtonElement>('save-css');
   const cssStatus = element('css-status');
+  const search = element<HTMLInputElement>('search');
+  const noResults = element('no-results');
   const draft = new CssDraft();
-  const pluginList = element('plugins');
-  for (const id of RENDERERS) {
-    const label = document.createElement('label');
-    label.className = 'switch';
-    const name = document.createElement('span');
-    name.textContent = id;
-    const input = document.createElement('input');
-    input.id = id;
-    input.type = 'checkbox';
-    label.append(name, input);
-    pluginList.append(label);
+
+  // Mirror the Slack theme on this page. Cached so the popup opens already themed.
+  function applyTheme(id: string) {
+    const root = document.documentElement;
+    const found = data.themes.find((t) => t.id === id);
+    if (found) root.dataset.theme = found.id;
+    else delete root.dataset.theme;
+    root.style.setProperty('--theme-bg', found?.background ?? null);
+    root.style.setProperty('--theme-accent', found?.accent ?? null);
+    try {
+      localStorage.setItem(THEME_KEY, id);
+    } catch {}
   }
+  try {
+    applyTheme(localStorage.getItem(THEME_KEY) ?? '');
+  } catch {}
+
+  // Tabs: roving focus, arrow keys, last choice remembered per profile.
+  const tabs = TABS.map((name) => element<HTMLButtonElement>(`tab-${name}`));
+  function select(name: (typeof TABS)[number], focus = false) {
+    TABS.forEach((other, index) => {
+      const selected = other === name;
+      tabs[index].setAttribute('aria-selected', String(selected));
+      tabs[index].tabIndex = selected ? 0 : -1;
+      element(`panel-${other}`).hidden = !selected;
+    });
+    if (focus) tabs[TABS.indexOf(name)].focus();
+    try {
+      localStorage.setItem(TAB_KEY, name);
+    } catch {}
+  }
+  tabs.forEach((tab, index) => {
+    tab.addEventListener('click', () => select(TABS[index]));
+    tab.addEventListener('keydown', (event) => {
+      const step = { ArrowDown: 1, ArrowRight: 1, ArrowUp: -1, ArrowLeft: -1 }[event.key];
+      if (!step) return;
+      event.preventDefault();
+      select(TABS[(index + step + TABS.length) % TABS.length], true);
+    });
+  });
+  let initial: string | null = null;
+  try {
+    initial = localStorage.getItem(TAB_KEY);
+  } catch {}
+  select((TABS as readonly string[]).includes(initial ?? '') ? (initial as (typeof TABS)[number]) : 'plugins');
+
+  const rows = new Map<string, HTMLElement>();
+  for (const plugin of data.plugins) {
+    const label = document.createElement('label');
+    label.className = 'row plugin';
+    const input = document.createElement('input');
+    input.id = plugin.id;
+    input.type = 'checkbox';
+    const text = document.createElement('span');
+    const name = document.createElement('span');
+    name.className = 'plugin__name';
+    name.textContent = plugin.name;
+    const description = document.createElement('span');
+    description.className = 'plugin__description';
+    description.textContent = plugin.description;
+    text.append(name, description);
+    label.append(input, text);
+    element('plugins').append(label);
+    rows.set(plugin.id, label);
+  }
+  search.addEventListener('input', () => {
+    const terms = search.value.toLowerCase().split(/\s+/).filter(Boolean);
+    let shown = 0;
+    for (const plugin of data.plugins) {
+      const haystack = `${plugin.id} ${plugin.name} ${plugin.description}`.toLowerCase();
+      const match = terms.every((term) => haystack.includes(term));
+      rows.get(plugin.id)!.hidden = !match;
+      if (match) shown++;
+    }
+    noResults.hidden = shown > 0;
+    noResults.textContent = `No plugins match “${search.value.trim()}”.`;
+  });
+  search.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && search.value) {
+      event.preventDefault();
+      search.value = '';
+      search.dispatchEvent(new Event('input'));
+    }
+  });
+
+  for (const [value, label] of [['', 'None'], ...data.themes.map((t) => [t.id, t.name]), ['custom', 'Custom']]) {
+    theme.append(new Option(label, value));
+  }
+  element('version').textContent = `Version ${data.version}`;
+  element('tab-mode-hint').hidden = popup;
+
+  let toastTimer: ReturnType<typeof setTimeout> | undefined;
+  const toast = (message: string) => {
+    status.textContent = message;
+    status.classList.add('visible');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => status.classList.remove('visible'), 2500);
+  };
   const report = (message: string) => {
-    error.textContent = message;
+    errorText.textContent = message;
     error.hidden = false;
   };
   if (!api) {
-    report('Firefox extension APIs are unavailable. Open this page from the installed extension.');
+    report('Open this page from the Slick button in the Firefox toolbar.');
     return;
   }
   const send: Send = (message) => api.runtime.sendMessage(message);
@@ -159,9 +263,11 @@ function mount(api: OptionsBrowser | undefined) {
     const [text, userCss] = await Promise.all([request(send, 'readSettings'), request(send, 'readUserCss')]);
     if (current !== generation) return;
     const config = parseSettings(text as string);
-    enabled.checked = config.enabled !== false;
+    paused.hidden = config.enabled !== false;
     theme.value = typeof config.theme === 'string' ? config.theme : '';
     if (theme.selectedIndex < 0) theme.value = '';
+    applyTheme(theme.value);
+    toolbarIcon.value = config.toolbarIcon === 'black' || config.toolbarIcon === 'white' ? config.toolbarIcon : 'auto';
     const plugins = record(config.plugins) ? config.plugins : {};
     for (const id of RENDERERS) {
       const plugin = plugins[id];
@@ -169,22 +275,25 @@ function mount(api: OptionsBrowser | undefined) {
     }
     loaded = true;
     settings.disabled = busy;
+    theme.disabled = busy;
+    toolbarIcon.disabled = busy;
     css.disabled = false;
+    error.hidden = true;
     draft.remote(userCss as string);
     renderCss();
   }
   async function change(selected: Change) {
     busy = true;
     settings.disabled = true;
+    theme.disabled = true;
+    toolbarIcon.disabled = true;
     error.hidden = true;
-    status.textContent = 'Saving setting…';
     try {
       await updateSetting(send, selected);
       await refresh();
-      status.textContent = 'Setting saved.';
+      toast('Saved');
     } catch {
-      status.textContent = '';
-      report('Could not save or confirm the setting. Retry; existing settings were not replaced with defaults.');
+      report("Couldn't save that setting. Your other settings weren't changed.");
       try {
         await refresh();
       } catch {
@@ -193,10 +302,16 @@ function mount(api: OptionsBrowser | undefined) {
     } finally {
       busy = false;
       settings.disabled = !loaded;
+      theme.disabled = !loaded;
+      toolbarIcon.disabled = !loaded;
     }
   }
-  enabled.addEventListener('change', () => void change({ property: 'enabled', value: enabled.checked }));
-  theme.addEventListener('change', () => void change({ property: 'theme', value: theme.value }));
+  element('resume-plugins').addEventListener('click', () => void change({ property: 'enabled', value: true }));
+  toolbarIcon.addEventListener('change', () => void change({ property: 'toolbarIcon', value: toolbarIcon.value }));
+  theme.addEventListener('change', () => {
+    applyTheme(theme.value);
+    void change({ property: 'theme', value: theme.value });
+  });
   for (const id of RENDERERS) {
     const input = element<HTMLInputElement>(id);
     input.addEventListener('change', () => void change({ property: 'plugin', id, value: input.checked }));
@@ -214,7 +329,7 @@ function mount(api: OptionsBrowser | undefined) {
       await pending;
       await refresh();
     } catch {
-      report('Could not save or confirm CSS. Your draft is still here; retry when the extension is available.');
+      report("Couldn't save your CSS. Your changes are still here.");
     } finally {
       renderCss();
     }
@@ -222,8 +337,9 @@ function mount(api: OptionsBrowser | undefined) {
   element('open-editor').addEventListener('click', async () => {
     try {
       if ((await request(send, 'openCssEditor')) !== true) throw new Error('Not opened');
+      window.close();
     } catch {
-      report('Could not open the full editor.');
+      report("Couldn't open a new tab.");
     }
   });
   for (const mode of ['bypass', 'resume', 'safe-mode'] as const) {
@@ -233,18 +349,15 @@ function mount(api: OptionsBrowser | undefined) {
       error.hidden = true;
       try {
         await recover(api, mode);
-        status.textContent = 'Recovery applied to the active Slack tab; reloading.';
+        toast('Reloading Slack…');
       } catch {
-        report(
-          'Recovery not confirmed. Use the action popup on an active app.slack.com/client tab. The extension needs scripting and https://app.slack.com/* host permission.',
-        );
+        report('Switch to a Slack tab, then open Slick from the toolbar to use this.');
       } finally {
         button.disabled = false;
       }
     });
   }
-  const reload = () =>
-    void refresh().catch(() => report('Could not load settings. Your unsaved CSS is preserved. Retry loading.'));
+  const reload = () => void refresh().catch(() => report("Couldn't load your settings."));
   element('retry').addEventListener('click', reload);
   api.storage.onChanged.addListener((changes, area) => {
     if (area === 'local' && (SETTINGS_KEY in changes || CSS_KEY in changes)) reload();
@@ -252,4 +365,4 @@ function mount(api: OptionsBrowser | undefined) {
   reload();
 }
 
-if (typeof document !== 'undefined') mount(extensionBrowser() as OptionsBrowser | undefined);
+export const optionsBrowser = () => extensionBrowser() as OptionsBrowser | undefined;

@@ -271,6 +271,13 @@ db.commit(); db.execute('PRAGMA wal_checkpoint(TRUNCATE)'); db.execute('VACUUM')
     throw error;
   });
   assert.equal(await execute('return document.querySelector("#theme").value'), 'ultraviolet');
+  assert.equal(await execute('return document.documentElement.dataset.theme'), 'ultraviolet');
+  const fonts = await asyncExecute(
+    `const done = arguments[arguments.length - 1];
+    const faces = [...document.fonts].filter((face) => face.family.replace(/"/g, '') === 'Lato');
+    Promise.all(faces.map((face) => face.load().then(() => face.status, () => 'error'))).then(done);`,
+  );
+  assert.deepEqual(fonts, ['loaded', 'loaded', 'loaded']);
   await execute(
     'const input = document.querySelector("#css"); input.value = ":root { --slick-firefox-smoke: 2; }"; input.dispatchEvent(new Event("input", {bubbles:true})); document.querySelector("#save-css").click();',
   );
@@ -290,6 +297,47 @@ db.commit(); db.execute('PRAGMA wal_checkpoint(TRUNCATE)'); db.execute('VACUUM')
   await command('/refresh', {});
   assert.equal(await execute('return window.__fixture.early'), true);
   console.log('PASS: bypass and resume across reloads.');
+  // Toolbar icon: read the images Firefox's own UI uses for light and dark toolbars.
+  const toolbarIcons = async () => {
+    await command('/moz/context', { context: 'chrome' });
+    try {
+      return await execute(String.raw`
+        // The action usually sits in the Extensions panel, outside the live DOM.
+        const widget = CustomizableUI.getWidget('slick_3kh0_net-browser-action')?.forWindow(window)?.node;
+        const button = widget?.querySelector('.webextension-browser-action') ?? widget;
+        const style = button?.getAttribute('style') ?? '';
+        const pick = (name) => {
+          const decl = style.split(';').map((d) => d.trim()).find((d) => d.startsWith(name + ':'));
+          return decl?.match(/\/icons\/([a-z]+)\.svg/)?.[1] ?? null;
+        };
+        return { light: pick('--webextension-toolbar-image'), dark: pick('--webextension-toolbar-image-dark') };
+      `);
+    } finally {
+      await command('/moz/context', { context: 'content' });
+    }
+  };
+  const setToolbarIcon = async (choice: string) => {
+    const current = (await rpc('readSettings')).value;
+    const next = JSON.stringify({ ...JSON.parse(current), toolbarIcon: choice });
+    assert.equal((await rpc('compareAndSwapSettings', [current, next])).value, true);
+  };
+  for (const [choice, expected] of [
+    ['white', { light: 'white', dark: 'white' }],
+    ['black', { light: 'black', dark: 'black' }],
+    ['auto', { light: 'black', dark: 'white' }],
+  ] as const) {
+    await setToolbarIcon(choice);
+    await until(
+      toolbarIcons,
+      (icons: any) => icons.light === expected.light && icons.dark === expected.dark,
+      `toolbar icon ${choice}`,
+      20,
+    ).catch(async (error) => {
+      console.error('toolbar icons:', JSON.stringify(await toolbarIcons()));
+      throw error;
+    });
+  }
+  console.log('PASS: toolbar icon follows the setting (white, black, and theme-matched auto).');
   await bidi('network.removeIntercept', { intercept: intercept.intercept });
   if (liveUrl) {
     await command('/url', { url: liveUrl });

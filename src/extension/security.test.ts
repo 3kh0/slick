@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { allowedSender, createBackground } from './background.ts';
+import { allowedSender, createBackground, toolbarIconPath } from './background.ts';
+import { SETTINGS_KEY } from './storage.ts';
 import { installBridge, oneShot } from './bridge-setup.ts';
 import { validRequest, validResponse, MAX_TEXT } from './rpc.ts';
 import type { ExtensionBrowser } from './rpc.ts';
@@ -38,7 +39,7 @@ test('UI runtime contract and editor destination are fixed', async () => {
   const opened: string[] = [];
   const api = {
     runtime: { id: 'slick@test', getURL: (path: string) => 'moz-extension://own/' + path },
-    storage: { local: { get: async () => ({}), set: async () => {} } },
+    storage: { local: { get: async () => ({}), set: async () => {} }, onChanged: { addListener() {} } },
     tabs: {
       create: async ({ url }: { url: string }) => {
         opened.push(url);
@@ -88,4 +89,28 @@ test('one-shot claim, bypass and safe mode without runtime bridge import', async
   await assert.rejects(bridge.plugin('Censorship').call('anything'));
   assert.throws(() => bridge.blobStore('plugin:Other'));
   assert.doesNotThrow(() => bridge.blobStore('plugin:HumanCount'));
+});
+
+test('toolbar icon follows settings; unknown or missing choices fall back to the theme icons', async () => {
+  assert.equal(toolbarIconPath('{"toolbarIcon":"white"}'), 'icons/white.svg');
+  assert.equal(toolbarIconPath('{"toolbarIcon":"black"}'), 'icons/black.svg');
+  for (const settings of ['{"toolbarIcon":"auto"}', '{"toolbarIcon":"../x.svg"}', '{}', 'not json', undefined])
+    assert.equal(toolbarIconPath(settings), null);
+
+  const icons: (string | null)[] = [];
+  let onChanged!: (changes: Record<string, { newValue?: unknown }>, area: string) => void;
+  const api = {
+    runtime: { id: 'slick@test', getURL: (path: string) => 'moz-extension://own/' + path },
+    storage: {
+      local: { get: async () => ({ [SETTINGS_KEY]: '{"toolbarIcon":"white"}' }), set: async () => {} },
+      onChanged: { addListener: (cb: typeof onChanged) => (onChanged = cb) },
+    },
+    tabs: { create: async () => {} },
+    action: { setIcon: async ({ path }: { path: string | null }) => void icons.push(path) },
+  } as unknown as ExtensionBrowser;
+  createBackground(api);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  onChanged({ [SETTINGS_KEY]: { newValue: '{"toolbarIcon":"auto"}' } }, 'local');
+  onChanged({ [SETTINGS_KEY]: { newValue: '{"toolbarIcon":"black"}' } }, 'sync');
+  assert.deepEqual(icons, ['icons/white.svg', null]);
 });

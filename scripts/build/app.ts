@@ -10,7 +10,7 @@ import { versions } from '../lib/versions.ts';
 
 const SOURCE_ORIGIN = 'slick:///';
 
-async function bundleThemes(): Promise<Record<string, ThemeJson>> {
+export async function bundleThemes(): Promise<Record<string, ThemeJson>> {
   const themes: Record<string, ThemeJson> = {};
   const files = (await readdir(THEMES)).filter((file) => file.endsWith('.json')).toSorted();
   for (const file of files) {

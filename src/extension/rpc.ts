@@ -108,6 +108,7 @@ export type ExtensionBrowser = {
     onChanged: { addListener(cb: (changes: Record<string, { newValue?: unknown }>, area: string) => void): void };
   };
   tabs: { create(options: { url: string }): Promise<unknown> };
+  action?: { setIcon(details: { path: string | null }): Promise<void> };
 };
 export function extensionBrowser(): ExtensionBrowser | undefined {
   return (globalThis as typeof globalThis & { browser?: ExtensionBrowser }).browser;
