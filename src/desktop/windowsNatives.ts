@@ -3,22 +3,24 @@
 //   * MSIX Slack lives in WindowsApps, which other processes may read but not
 //     load code from (ERROR_ACCESS_DENIED).
 // So app.asar.unpacked is mirrored into our settings dir once per Slack
-// Electron version and dlopen() is redirected to it. Standalone Slack doesn't
+// install and dlopen() is redirected to it. Standalone Slack doesn't
 // need the mirror but uses it too, for a single code path.
 
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import { settingsDir } from './paths.js';
-export { prepareLinuxArm64Natives } from './linuxArm64Natives.js';
+import { settingsDir } from './paths.ts';
+export { prepareLinuxArm64Natives } from './linuxArm64Natives.ts';
 
-/** Slack's full Electron version (the `version` file beside slack.exe), or a stable fallback. */
+/** The install directory changes on both standalone and MSIX Slack updates,
+ * even when the Electron version (and thus the `version` file) stays the same. */
 function mirrorId(appDir: string): string {
+  let version = 'unknown';
   try {
-    const version = fs.readFileSync(path.join(appDir, 'version'), 'utf8').trim();
-    if (version) return version;
+    version = fs.readFileSync(path.join(appDir, 'version'), 'utf8').trim() || version;
   } catch {}
-  return `unknown-${crypto.createHash('sha256').update(appDir).digest('hex').slice(0, 12)}`;
+  const install = crypto.createHash('sha256').update(path.resolve(appDir).toLowerCase()).digest('hex').slice(0, 12);
+  return `${version}-${install}`;
 }
 
 /** A few hundred MB each. */
@@ -75,7 +77,7 @@ export function prepareWindowsNatives(asar: string): boolean {
     const mapped = resolved.toLowerCase().startsWith(source)
       ? path.join(mirror, resolved.slice(source.length))
       : filename;
-    return dlopen.call(this, module, mapped, flags);
+    return flags === undefined ? dlopen.call(this, module, mapped) : dlopen.call(this, module, mapped, flags);
   } as typeof process.dlopen;
 
   return copied;
