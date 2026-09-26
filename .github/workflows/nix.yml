@@ -80,6 +80,8 @@ jobs:
 
       - uses: peter-evans/create-pull-request@v8
         with:
+          author: 'github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>'
+          committer: 'github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>'
           branch: ci/nix-pins
           delete-branch: true
           add-paths: packaging/nix/pins.json
