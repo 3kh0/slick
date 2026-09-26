@@ -90,7 +90,7 @@ export default class Experiments extends SlickPlugin<typeof meta.settings> {
     this.overrides.set(next);
     // Slice patches memoize on the patch version.
     this.api.redux.refresh();
-    void this.api.storage.set(STORAGE_KEY, next);
+    void this.api.storage.set(STORAGE_KEY, next).then((saved) => saved || this.log('could not save overrides'));
   }
 
   /** Experiment names in the code Slack has loaded so far, with the groups each is compared against. */

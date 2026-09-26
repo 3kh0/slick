@@ -12,6 +12,7 @@ export const EXTENSION_PLUGINS = [
   'CopyReacted',
   'CustomNameRecording',
   'CustomSlackbot',
+  'Experiments',
   'HcaStatus',
   'HumanCount',
   'LastSeen',
