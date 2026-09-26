@@ -157,7 +157,7 @@ jobs:
       - name: Verify signed repository
         run: |
           flatpak remote-add --user --gpg-import=public.gpg slick-test "file://$FLATPAK_REPO"
-          flatpak install --user --noninteractive slick-test dev.slick.Slick
+          flatpak install --user --noninteractive --no-deps slick-test dev.slick.Slick
           flatpak info --user dev.slick.Slick
           flatpak remote-ls --arch=aarch64 slick-test | grep -F dev.slick.Slick
 
