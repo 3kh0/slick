@@ -1,7 +1,7 @@
 // MUST remain type-only: importing bridge.ts here would claim before installation.
 import type { SlickBridge } from '../app/bridge.ts';
 import { BACKGROUND_PLUGINS } from './plugins.ts';
-import { CHANNEL, MAX_TEXT, createClient, namespace, record } from './rpc.ts';
+import { CHANNEL, MAX_TEXT, PAGE_KEYS, createClient, namespace, record } from './rpc.ts';
 
 export function oneShot<T>(value: T): () => T | null {
   let claimed = false;
@@ -90,10 +90,27 @@ export function installBridge(target: Window & typeof globalThis) {
     }),
     blobStore: (id) => {
       if (!namespace(id)) throw new Error('Unsupported renderer namespace');
+      const last = (keys: string[]) => keys.reduce((a, b) => (b > a ? b : a));
       return {
-        list: () => client.call('blob.list', id),
+        async list() {
+          const keys: string[] = [];
+          for (let cursor = ''; ;) {
+            const page = await client.call<string[]>('blob.list', id, cursor);
+            keys.push(...page);
+            if (page.length < PAGE_KEYS) return keys;
+            cursor = last(page);
+          }
+        },
         read: (key) => client.call('blob.read', id, key),
-        readAll: (prefix = '') => client.call('blob.readAll', id, prefix),
+        async readAll(prefix = '') {
+          const entries: [string, string][] = [];
+          for (let cursor = ''; ;) {
+            const page = Object.entries(await client.call<Record<string, string>>('blob.readAll', id, prefix, cursor));
+            if (!page.length) return Object.fromEntries(entries);
+            entries.push(...page);
+            cursor = last(page.map(([key]) => key));
+          }
+        },
         write: (key, value) => client.call('blob.write', id, key, value),
         delete: (key) => client.call('blob.delete', id, key),
         clear: () => client.call('blob.clear', id),

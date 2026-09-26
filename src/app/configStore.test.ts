@@ -2,16 +2,21 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { ConfigStore } from './configStore.ts';
 import type { SlickBridge } from './bridge.ts';
+import { memoryBackend } from '../extension/blobs.ts';
 import { createStorage } from '../extension/storage.ts';
 
 test('CAS retries preserve concurrent tab updates and queued same-tab mutations', async () => {
   const data: Record<string, unknown> = {};
-  const storage = createStorage({
-    get: async () => structuredClone(data),
-    set: async (items) => {
-      Object.assign(data, items);
+  const storage = createStorage(
+    {
+      get: async () => structuredClone(data),
+      set: async (items) => {
+        Object.assign(data, items);
+      },
+      remove: async () => {},
     },
-  });
+    memoryBackend(),
+  );
   const call = async (method: string, args: string[] = []) => {
     const response = await storage.dispatch({ method, args });
     if (!response.ok) throw new Error(response.error);

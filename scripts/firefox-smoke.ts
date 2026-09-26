@@ -241,6 +241,58 @@ db.commit(); db.execute('PRAGMA wal_checkpoint(TRUNCATE)'); db.execute('VACUUM')
   );
   assert.equal((await rpc('writeUserCss', [':root { --slick-firefox-smoke: 1; }'])).value, true);
   console.log('PASS: isolated/background bridge and settings/CSS persistence.');
+  const blobs = await asyncExecute(
+    `const done = arguments[arguments.length - 1];
+    const call = (method, args) => new Promise((resolve) => {
+      const id = 'smoke-' + Math.random().toString(36).slice(2);
+      const handler = (event) => {
+        if (event.source !== window || event.data?.channel !== 'slick:firefox:v1' || event.data?.id !== id || event.data?.kind !== 'response') return;
+        window.removeEventListener('message', handler); resolve(event.data.response);
+      };
+      window.addEventListener('message', handler);
+      window.postMessage({ channel: 'slick:firefox:v1', kind: 'request', id, method, args }, location.origin);
+    });
+    (async () => {
+      const ns = 'plugin:MessageLogger';
+      await call('blob.clear', [ns]);
+      const writes = [];
+      for (let i = 0; i < 600; i++) writes.push([ns, 'entry:' + String(i).padStart(4, '0'), '{"n":' + i + '}']);
+      for (let i = 0; i < 4; i++) writes.push([ns, 'entry:big' + i, 'x'.repeat(100000)]);
+      let written = true;
+      // The relay drops requests past MAX_PENDING (64) in flight.
+      for (let i = 0; i < writes.length; i += 50)
+        for (const r of await Promise.all(writes.slice(i, i + 50).map((args) => call('blob.write', args))))
+          written &&= r.ok && r.value === true;
+      const pages = [];
+      for (let cursor = '';;) {
+        const response = await call('blob.readAll', [ns, 'entry:', cursor]);
+        if (!response.ok) return done({ written, pages, error: response.error });
+        const page = response.value;
+        const keys = Object.keys(page);
+        if (!keys.length) break;
+        pages.push(keys.length);
+        cursor = keys.reduce((a, b) => (b > a ? b : a));
+      }
+      const listed = (await call('blob.list', [ns, ''])).value.length;
+      // Oversized requests never reach the background (the relay drops them), so
+      // probe the small tier's 512 KB total instead: the ninth 64000-char value is refused.
+      await call('blob.clear', ['plugin:Censorship']);
+      const small = [];
+      for (let i = 0; i < 9; i++) small.push((await call('blob.write', ['plugin:Censorship', 'k' + i, 'x'.repeat(64000)])).ok);
+      await call('blob.clear', ['plugin:Censorship']);
+      await call('blob.clear', [ns]);
+      done({ written, pages, listed, smallRefused: small.slice(0, 8).every(Boolean) && !small[8] });
+    })();`,
+  );
+  assert.equal(blobs.written, true);
+  assert.equal(
+    blobs.pages.reduce((a: number, b: number) => a + b, 0),
+    604,
+  );
+  assert.ok(blobs.pages.length > 1);
+  assert.equal(blobs.listed, 512);
+  assert.equal(blobs.smallRefused, true);
+  console.log(`PASS: IndexedDB blob store pages ${blobs.pages.join('+')} entries; small quota still enforced.`);
   const slackHandle = await command('/window');
   // Content-context WebDriver and BiDi both refuse moz-extension:// navigation,
   // so open the tab from browser chrome (geckodriver --allow-system-access).
@@ -427,6 +479,13 @@ db.commit(); db.execute('PRAGMA wal_checkpoint(TRUNCATE)'); db.execute('VACUUM')
       40,
     );
     console.log('PASS: ClearURLs loaded its rules through the background half.');
+    await until(
+      async () => slickLog.some((line) => /logging deletes and edits \(\d+ stored/.test(line)),
+      Boolean,
+      'MessageLogger restore',
+      40,
+    );
+    console.log('PASS: MessageLogger restored its log from the IndexedDB blob store.');
     // Open Preferences from the account menu with real pointer clicks: headless
     // keyboard shortcuts and synthetic click() don't reach Slack's handlers.
     const click = async (using: string, value: string) => {

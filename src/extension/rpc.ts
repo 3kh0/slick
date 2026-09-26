@@ -1,12 +1,13 @@
 // Public page traffic is not secret or authenticated. Keep this surface unprivileged.
 import type { Dnr } from './mainHost.ts';
-import { BACKGROUND_PLUGINS, EXTENSION_PLUGINS } from './plugins.ts';
+import { BACKGROUND_PLUGINS, EXTENSION_PLUGINS, LARGE_STORAGE_PLUGINS } from './plugins.ts';
 
 export const CHANNEL = 'slick:firefox:v1';
 export const RENDERERS = EXTENSION_PLUGINS;
 export const MAX_TEXT = 256 * 1024;
 export const MAX_BLOB = 64 * 1024;
 export const MAX_KEYS = 128;
+export const PAGE_KEYS = 512;
 export const MAX_PENDING = 64;
 export const METHODS = [
   'readSettings',
@@ -39,6 +40,15 @@ const text = (v: unknown, max = MAX_TEXT): v is string => typeof v === 'string' 
 export function namespace(v: unknown): v is string {
   return typeof v === 'string' && v.startsWith('plugin:') && (RENDERERS as readonly string[]).includes(v.slice(7));
 }
+// Per-namespace quota. Logging plugins get room for their history (MessageLogger keeps 1000 entries).
+export function blobLimits(ns: string) {
+  return (LARGE_STORAGE_PLUGINS as readonly string[]).includes(ns.slice(7))
+    ? // A key plus its value must fit one readAll page.
+      { keys: 5000, value: MAX_TEXT - 128, bytes: 64 * 1024 * 1024 }
+    : { keys: MAX_KEYS, value: MAX_BLOB, bytes: 512 * 1024 };
+}
+// Empty keys are refused (as on desktop), so '' can mean "from the start" in a page cursor.
+const blobKey = (v: unknown): v is string => text(v, 128) && v.length > 0;
 export function validRequest(v: unknown): v is Request {
   if (!record(v) || !Array.isArray(v.args) || typeof v.method !== 'string') return false;
   const a = v.args;
@@ -52,15 +62,19 @@ export function validRequest(v: unknown): v is Request {
       return a.length === 1 && text(a[0]);
     case 'compareAndSwapSettings':
       return a.length === 2 && a.every((x) => text(x));
-    case 'blob.list':
     case 'blob.clear':
       return a.length === 1 && namespace(a[0]);
+    // [namespace, cursor]: keys after the cursor ('' for the first page).
+    case 'blob.list':
+      return a.length === 2 && namespace(a[0]) && text(a[1], 128);
     case 'blob.read':
     case 'blob.delete':
+      return a.length === 2 && namespace(a[0]) && blobKey(a[1]);
+    // [namespace, prefix, cursor]
     case 'blob.readAll':
-      return a.length === 2 && namespace(a[0]) && text(a[1], 128);
+      return a.length === 3 && namespace(a[0]) && text(a[1], 128) && text(a[2], 128);
     case 'blob.write':
-      return a.length === 3 && namespace(a[0]) && text(a[1], 128) && text(a[2], MAX_BLOB);
+      return a.length === 3 && namespace(a[0]) && blobKey(a[1]) && text(a[2], blobLimits(a[0]).value);
     // [plugin id, rpc method, JSON-encoded argument array]
     case 'plugin.call':
       return (
@@ -81,15 +95,15 @@ export function validResponse(v: unknown): v is Response {
   if (v.ok === false) return text(v.error, 256);
   if (v.ok !== true) return false;
   const x = v.value;
-  return (
-    x === null ||
-    typeof x === 'boolean' ||
-    text(x) ||
-    (Array.isArray(x) && x.length <= MAX_KEYS && x.every((s) => text(s, 128))) ||
-    (record(x) &&
-      Object.keys(x).length <= MAX_KEYS &&
-      Object.entries(x).every(([k, s]) => text(k, 128) && text(s, MAX_BLOB)))
-  );
+  if (x === null || typeof x === 'boolean' || text(x)) return true;
+  if (Array.isArray(x)) return x.length <= PAGE_KEYS && x.every((s) => text(s, 128));
+  if (!record(x) || Object.keys(x).length > PAGE_KEYS) return false;
+  let size = 0;
+  for (const [k, s] of Object.entries(x)) {
+    if (!text(k, 128) || typeof s !== 'string') return false;
+    size += k.length + s.length;
+  }
+  return size <= MAX_TEXT;
 }
 export function validMethodResponse(method: Method, response: unknown): response is Response {
   if (!validResponse(response)) return false;
@@ -110,6 +124,7 @@ export type Sender = { id?: string; frameId?: number; url?: string; tab?: { id?:
 export type StorageArea = {
   get(keys: string | string[]): Promise<Record<string, unknown>>;
   set(items: Record<string, unknown>): Promise<void>;
+  remove(keys: string | string[]): Promise<void>;
 };
 export type ExtensionBrowser = {
   runtime: {

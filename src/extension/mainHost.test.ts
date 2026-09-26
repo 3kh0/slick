@@ -21,6 +21,7 @@ function memoryArea() {
     data,
     get: async (key: string | string[]) => ({ [String(key)]: structuredClone(data[String(key)]) }),
     set: async (items: Record<string, unknown>) => void Object.assign(data, structuredClone(items)),
+    remove: async () => {},
   };
 }
 

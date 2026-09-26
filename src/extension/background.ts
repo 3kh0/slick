@@ -2,6 +2,7 @@ import { validMethodResponse, validRequest } from './rpc.ts';
 import type { ExtensionBrowser, Response, Sender } from './rpc.ts';
 import { createMainHost, type BackgroundPlugin } from './mainHost.ts';
 import { SETTINGS_KEY, createStorage } from './storage.ts';
+import { indexedDbBackend, type BlobBackend } from './blobs.ts';
 
 export const TOOLBAR_ICONS = { black: 'icons/black.svg', white: 'icons/white.svg' } as const;
 
@@ -50,8 +51,8 @@ const parse = (text: unknown) => {
   }
 };
 
-export function createBackground(api: ExtensionBrowser, plugins: BackgroundPlugin[] = []) {
-  const storage = createStorage(api.storage.local);
+export function createBackground(api: ExtensionBrowser, plugins: BackgroundPlugin[] = [], blobs?: BlobBackend) {
+  const storage = createStorage(api.storage.local, blobs ?? indexedDbBackend());
   const host = createMainHost(api.storage.local, api.declarativeNetRequest, plugins);
   // Settings arrive before any rules, so a suspended page's rules are replaced, not doubled.
   const hostReady = host
