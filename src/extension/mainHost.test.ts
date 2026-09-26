@@ -157,6 +157,7 @@ test('plugin.call and tabMode requests are validated before reaching the backgro
     validRequest({ method: 'plugin.call', args: ['PrivateChannelMapper', 'channel', '["C0266FRGT"]'] }),
     true,
   );
+  assert.equal(validRequest({ method: 'plugin.call', args: ['HcaStatus', 'check', '["U0266FRGP"]'] }), true);
   assert.equal(validRequest({ method: 'plugin.call', args: ['AccountSwitcher', 'switch', '[]'] }), false);
   assert.equal(validRequest({ method: 'plugin.call', args: ['NoTrack', '__proto__.x', '[]'] }), false);
   assert.equal(validRequest({ method: 'plugin.call', args: ['NoTrack', 'x', '[]', 'extra'] }), false);

@@ -12,6 +12,7 @@ export const EXTENSION_PLUGINS = [
   'CopyReacted',
   'CustomNameRecording',
   'CustomSlackbot',
+  'HcaStatus',
   'HumanCount',
   'LastSeen',
   'MessageLogger',
@@ -31,7 +32,7 @@ export const EXTENSION_PLUGINS = [
 
 // Plugins whose privileged half runs in the extension background: browser.ts
 // when present, else main.ts, through extension/mainHost.ts.
-export const BACKGROUND_PLUGINS = ['ClearURLs', 'Click2Load', 'NoTrack', 'PrivateChannelMapper'] as const;
+export const BACKGROUND_PLUGINS = ['ClearURLs', 'Click2Load', 'HcaStatus', 'NoTrack', 'PrivateChannelMapper'] as const;
 
 // Plugins whose logs outgrow the default blob quota; see extension/blobs.ts.
 export const LARGE_STORAGE_PLUGINS = ['LastSeen', 'MessageLogger'] as const;
