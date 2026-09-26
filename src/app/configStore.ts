@@ -13,6 +13,9 @@ export type StoredConfig = {
 
 type SchemaEntry = { schema: SettingsSchema; defaultEnabled: boolean };
 
+// Themes that were replaced, so a saved pick keeps working.
+const RENAMED_THEMES: Record<string, string> = { ultraviolet: 'catppuccin-mocha' };
+
 export class ConfigStore {
   private stored: StoredConfig = {};
   private storedIsValid = true;
@@ -97,7 +100,8 @@ export class ConfigStore {
   }
 
   get theme(): string {
-    return typeof this.stored.theme === 'string' ? this.stored.theme : '';
+    const theme = typeof this.stored.theme === 'string' ? this.stored.theme : '';
+    return RENAMED_THEMES[theme] ?? theme;
   }
 
   getUserCss(): string {

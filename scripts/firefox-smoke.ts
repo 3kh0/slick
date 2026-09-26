@@ -219,7 +219,7 @@ db.commit(); db.execute('PRAGMA wal_checkpoint(TRUNCATE)'); db.execute('VACUUM')
       await rpc('compareAndSwapSettings', [
         config.value,
         JSON.stringify({
-          theme: 'ultraviolet',
+          theme: 'catppuccin-mocha',
           plugins: Object.fromEntries(EXTENSION_PLUGINS.map((id) => [id, { enabled: true }])),
         }),
       ])
@@ -270,8 +270,8 @@ db.commit(); db.execute('PRAGMA wal_checkpoint(TRUNCATE)'); db.execute('VACUUM')
     console.error('options state:', JSON.stringify(await probe()));
     throw error;
   });
-  assert.equal(await execute('return document.querySelector("#theme").value'), 'ultraviolet');
-  assert.equal(await execute('return document.documentElement.dataset.theme'), 'ultraviolet');
+  assert.equal(await execute('return document.querySelector("#theme").value'), 'catppuccin-mocha');
+  assert.equal(await execute('return document.documentElement.dataset.theme'), 'catppuccin-mocha');
   const fonts = await asyncExecute(
     `const done = arguments[arguments.length - 1];
     const faces = [...document.fonts].filter((face) => face.family.replace(/"/g, '') === 'Lato');

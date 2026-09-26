@@ -86,9 +86,21 @@ test('initial settings and CSS reads begin together and retain their values', as
   assert.equal(config.getUserCss(), 'body { color: red; }');
 });
 
-test('failed CSS read still falls back without losing valid settings', async () => {
+test('renamed themes map to their replacement', async () => {
   const bridge = {
     readSettings: async () => '{"theme":"ultraviolet"}',
+    readUserCss: async () => '',
+    onSettingsChange: () => () => {},
+    onUserCssChange: () => () => {},
+  } as unknown as SlickBridge;
+  const config = new ConfigStore(bridge);
+  await config.init();
+  assert.equal(config.theme, 'catppuccin-mocha');
+});
+
+test('failed CSS read still falls back without losing valid settings', async () => {
+  const bridge = {
+    readSettings: async () => '{"theme":"catppuccin-mocha"}',
     readUserCss: async () => {
       throw new Error('unavailable');
     },
@@ -97,6 +109,6 @@ test('failed CSS read still falls back without losing valid settings', async () 
   } as unknown as SlickBridge;
   const config = new ConfigStore(bridge);
   await config.init();
-  assert.equal(config.theme, 'ultraviolet');
+  assert.equal(config.theme, 'catppuccin-mocha');
   assert.equal(config.getUserCss(), '');
 });
