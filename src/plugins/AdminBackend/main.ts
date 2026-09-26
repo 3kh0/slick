@@ -3,15 +3,7 @@
 // arbitrary external links.
 
 import type { SlickMainPlugin } from '$slick';
-
-const USER_ID = /^[UW][A-Z0-9]{6,}$/;
-
-const TOOLS: Record<string, (id: string) => string> = {
-  identity: (id) => `https://auth.hackclub.com/backend/identities?search=${encodeURIComponent(id)}`,
-  joe: (id) => `https://joe.fraud.hackclub.com/profile/${encodeURIComponent(id)}`,
-  telescreen: (id) => `https://telescreen.hackclub.com/subjects/${encodeURIComponent(id)}`,
-  fire_engine: (id) => `https://nemo.hackclub.com/fd/members/${encodeURIComponent(id)}`,
-};
+import { TOOLS, USER_ID } from './meta.ts';
 
 const plugin: SlickMainPlugin = {
   id: 'AdminBackend',
@@ -20,12 +12,13 @@ const plugin: SlickMainPlugin = {
   rpc: {
     async open(ctx, args) {
       const [target, memberId] = args;
-      if (typeof target !== 'string' || !Object.hasOwn(TOOLS, target)) throw new Error('unknown tool');
+      const tool = TOOLS.find((candidate) => candidate.id === target);
+      if (!tool) throw new Error('unknown tool');
       if (typeof memberId !== 'string' || !USER_ID.test(memberId)) throw new Error('bad member id');
       // The renderer filters the menu, but the RPC is reachable without it.
-      if (ctx.settings[target] === false) throw new Error(`${target} is disabled`);
+      if (ctx.settings[tool.id] === false) throw new Error(`${tool.id} is disabled`);
 
-      await ctx.shell.openExternal(TOOLS[target](memberId));
+      await ctx.shell.openExternal(tool.url(memberId));
     },
   },
 };

@@ -131,6 +131,7 @@ async function createBaseAPI(bridge: SlickBridge) {
     Store,
     react: await reactReady,
     fetch: bridge.fetch.bind(bridge),
+    loader: bridge.loader,
     userAPI,
     onDocument,
     deferResizeWork,

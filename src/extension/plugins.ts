@@ -3,6 +3,7 @@
 // background (see BACKGROUND_PLUGINS). Each was checked to start cleanly against the live Slack
 // web client (scripts/firefox-smoke.ts).
 export const EXTENSION_PLUGINS = [
+  'AdminBackend',
   'AnonymiseFileNames',
   'bChannel',
   'Censorship',

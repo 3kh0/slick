@@ -32,10 +32,28 @@ export const settings = {
   },
 } as const satisfies SettingsSchema;
 
-/** The tools offered, in menu order. The URLs live in the main half. */
+/** The tools offered, in menu order, each with the one URL it may open. */
 export const TOOLS = [
-  { id: 'identity', label: 'Open in Identity' },
-  { id: 'joe', label: 'Open in Joe' },
-  { id: 'telescreen', label: 'Open in Telescreen' },
-  { id: 'fire_engine', label: 'Open in Fire Engine' },
+  {
+    id: 'identity',
+    label: 'Open in Identity',
+    url: (member: string) => `https://auth.hackclub.com/backend/identities?search=${encodeURIComponent(member)}`,
+  },
+  {
+    id: 'joe',
+    label: 'Open in Joe',
+    url: (member: string) => `https://joe.fraud.hackclub.com/profile/${encodeURIComponent(member)}`,
+  },
+  {
+    id: 'telescreen',
+    label: 'Open in Telescreen',
+    url: (member: string) => `https://telescreen.hackclub.com/subjects/${encodeURIComponent(member)}`,
+  },
+  {
+    id: 'fire_engine',
+    label: 'Open in Fire Engine',
+    url: (member: string) => `https://nemo.hackclub.com/fd/members/${encodeURIComponent(member)}`,
+  },
 ] as const;
+
+export const USER_ID = /^[UW][A-Z0-9]{6,}$/;

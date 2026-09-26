@@ -512,12 +512,63 @@ db.commit(); db.execute('PRAGMA wal_checkpoint(TRUNCATE)'); db.execute('VACUUM')
       40,
     );
     console.log('PASS: MessageLogger restored its log from the IndexedDB blob store.');
-    // Open Preferences from the account menu with real pointer clicks: headless
-    // keyboard shortcuts and synthetic click() don't reach Slack's handlers.
+    // Real pointer clicks: headless keyboard shortcuts and synthetic click()
+    // don't reach Slack's handlers.
     const click = async (using: string, value: string) => {
       const element = await command('/element', { using, value });
       await command(`/element/${Object.values(element)[0]}/click`, {});
     };
+    const clicked = (using: string, value: string) =>
+      click(using, value).then(
+        () => true,
+        () => false,
+      );
+    // AdminBackend opens its tools from a profile's overflow menu straight from
+    // the page, like a link, since Firefox has no main half to hand them to.
+    const before = new Set((await command('/window/handles')) as string[]);
+    await execute(
+      `const open = window.open; window.open = function (...args) { window.__slickOpened = args; return open.apply(this, args); }`,
+    );
+    await until(
+      async () => {
+        if (await clicked('css selector', '[data-qa="member_profile_more_btn"]')) return true;
+        if (!(await clicked('xpath', "//*[@role='menuitem'][normalize-space()='Profile']")))
+          await click('css selector', '[data-qa="user-button"]').catch(() => {});
+        return false;
+      },
+      Boolean,
+      'profile overflow menu',
+      20,
+    );
+    await until(
+      () => clicked('xpath', "//*[@role='menuitem'][normalize-space()='Open in Identity']"),
+      Boolean,
+      'Open in Identity menu item',
+      10,
+    );
+    const adminTab = await until(
+      async () => ((await command('/window/handles')) as string[]).find((handle) => !before.has(handle)),
+      Boolean,
+      'Identity tab',
+      10,
+    );
+    const [opened, target, features] = await execute('return window.__slickOpened');
+    assert.match(opened, /^https:\/\/auth\.hackclub\.com\/backend\/identities\?search=[UW][A-Z0-9]{6,}$/);
+    assert.deepEqual([target, features], ['_blank', 'noopener,noreferrer']);
+    await command('/window', { handle: adminTab });
+    // Identity may bounce a signed-out profile to its login page on the same host.
+    const adminUrl = await until(
+      () => command('/url'),
+      (url: string) => url.startsWith('https://auth.hackclub.com/'),
+      'Identity URL',
+      20,
+    );
+    await command('/window', undefined, 'DELETE');
+    await command('/window', { handle: slackHandle });
+    console.log(
+      `PASS: AdminBackend opens Identity for the member in a new tab (landed on ${new URL(adminUrl).pathname}).`,
+    );
+    // Open Preferences from the account menu.
     await until(
       async () => {
         const menuItem = "//*[@role='menuitem'][normalize-space()='Preferences']";

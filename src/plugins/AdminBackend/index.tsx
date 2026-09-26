@@ -1,8 +1,9 @@
 // Open a member in Hack Club's admin tools, from their profile menu.
 //
-// The renderer never names a URL: it asks the main half for a tool by id, and
-// the main half owns the allow-list, so a compromised page can't open
-// arbitrary links.
+// On desktop the renderer asks the main half for a tool by id, and the main
+// half checks it against the allow-list, so a compromised page can't open
+// arbitrary external links. In a browser the page could open any tab anyway, so
+// it opens the tool itself, like a link.
 
 import { SlickPlugin, type MenuTemplateItem } from '$slick';
 import * as meta from './meta.ts';
@@ -51,7 +52,13 @@ export default class AdminBackend extends SlickPlugin<typeof meta.settings> {
     });
   }
 
-  private async open(target: string, memberId: string) {
+  private async open(target: (typeof meta.TOOLS)[number]['id'], memberId: string) {
+    if (this.api.loader !== 'electron') {
+      const tool = meta.TOOLS.find((candidate) => candidate.id === target);
+      // Called from the click itself, so the popup blocker lets it through.
+      if (tool && meta.USER_ID.test(memberId)) window.open(tool.url(memberId), '_blank', 'noopener,noreferrer');
+      return;
+    }
     try {
       await this.api.main.call('open', target, memberId);
     } catch (error) {
