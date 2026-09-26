@@ -1,14 +1,12 @@
 // Config store -> plugin manager -> plugins, then hand back to Slack.
 
+import plugins from 'slick:plugins';
 import { setStyle } from './api/css.ts';
 import type { SlickBridge } from './bridge.ts';
 import { ConfigStore } from './configStore.ts';
 import { PluginManager } from './pluginManager.ts';
 import { addSettingsTab } from './settings.tsx';
 import { installTheme } from './theme.ts';
-
-/** Injected by esbuild: { PluginName: "<bundled iife source>" }. */
-declare const __SLICK_PLUGINS__: Record<string, string>;
 
 export async function bootstrap(bridge: SlickBridge): Promise<void> {
   const config = new ConfigStore(bridge);
@@ -28,8 +26,8 @@ export async function bootstrap(bridge: SlickBridge): Promise<void> {
   }
 
   const registered: string[] = [];
-  for (const [name, code] of Object.entries(__SLICK_PLUGINS__)) {
-    const id = manager.register(code);
+  for (const [name, PluginClass] of Object.entries(plugins)) {
+    const id = manager.register(PluginClass);
     if (id) registered.push(id);
     else console.error(`[slick] could not register plugin: ${name}`);
   }

@@ -203,3 +203,52 @@ jobs:
             dist/slick_*.deb
             dist/slick-*.rpm
           generate_release_notes: true
+
+  firefox:
+    needs: [validate-tag, release]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    env:
+      BUILD: ${{ needs.validate-tag.outputs.build }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install --frozen-lockfile
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+      - name: Build and lint
+        run: |
+          bun run build -- firefox
+          bun run extension:lint
+        env:
+          SLICK_BUILD: ${{ env.BUILD }}
+      - name: Source archive for AMO review
+        run: |
+          mkdir -p dist/release
+          git archive --format=zip -o "dist/release/slick-firefox-2.0.$BUILD-source.zip" HEAD
+      - name: Sign on AMO
+        run: |
+          bunx web-ext sign --channel unlisted \
+            --source-dir dist/extension/firefox \
+            --artifacts-dir dist/signed \
+            --upload-source-code "dist/release/slick-firefox-2.0.$BUILD-source.zip"
+          signed=$(find dist/signed -name '*.xpi' -print -quit)
+          test -n "$signed"
+          mv "$signed" "dist/release/slick-firefox-2.0.$BUILD.xpi"
+        env:
+          WEB_EXT_API_KEY: ${{ secrets.AMO_JWT_ISSUER }}
+          WEB_EXT_API_SECRET: ${{ secrets.AMO_JWT_SECRET }}
+      - name: Update manifest
+        run: node scripts/firefox-updates.ts "dist/release/slick-firefox-2.0.$BUILD.xpi" "$BUILD" dist/release/updates.json
+      - name: Attest build provenance
+        uses: actions/attest@v4.2.2
+        with:
+          subject-path: dist/release/slick-firefox-*.xpi
+      - name: Attach to release
+        run: gh release upload "$GITHUB_REF_NAME" dist/release/slick-firefox-*.xpi dist/release/slick-firefox-*-source.zip dist/release/updates.json --clobber
+        env:
+          GH_TOKEN: ${{ github.token }}

@@ -4,8 +4,8 @@ import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { build } from 'esbuild';
 import type { ThemeJson } from '../../src/app/theme.ts';
-import { APP, DIST_APP, ROOT, SLICK_JS, THEMES } from '../lib/paths.ts';
-import { bundleAllRenderers } from '../lib/plugin.ts';
+import { APP, ROOT, SLICK_JS, THEMES } from '../lib/paths.ts';
+import { rendererRegistryPlugin, slickSharedAlias, type RendererRegistryOptions } from '../lib/plugin.ts';
 import { versions } from '../lib/versions.ts';
 
 const SOURCE_ORIGIN = 'slick:///';
@@ -20,11 +20,25 @@ async function bundleThemes(): Promise<Record<string, ThemeJson>> {
   return themes;
 }
 
-export async function buildApp({ debug = false } = {}) {
-  const [plugins, themes] = await Promise.all([bundleAllRenderers(debug), bundleThemes()]);
+export type BuildAppOptions = RendererRegistryOptions & {
+  debug?: boolean;
+  /** Paths are resolved relative to the repository root. */
+  entryPoint?: string;
+  outFile?: string;
+};
+
+export async function buildApp({
+  debug = false,
+  entryPoint = `${APP}/main.ts`,
+  outFile = SLICK_JS,
+  targetLoader = 'electron',
+  pluginNames,
+}: BuildAppOptions = {}) {
+  const themes = await bundleThemes();
+  const output = path.resolve(ROOT, outFile);
 
   const result = await build({
-    entryPoints: [`${APP}/main.ts`],
+    entryPoints: [entryPoint],
     absWorkingDir: ROOT,
     bundle: true,
     write: false,
@@ -32,11 +46,13 @@ export async function buildApp({ debug = false } = {}) {
     format: 'iife',
     target: 'es2022',
     minify: !debug,
+    plugins: [rendererRegistryPlugin({ targetLoader, pluginNames }), slickSharedAlias],
+    // Inline assets to preserve offline use without additional requests.
+    loader: { '.gif': 'dataurl', '.png': 'dataurl', '.svg': 'dataurl', '.woff2': 'dataurl' },
     sourcemap: debug ? 'inline' : false,
     define: {
       __SLICK_VERSION__: JSON.stringify(versions.version),
       __SLICK_BUILD__: JSON.stringify(versions.build),
-      __SLICK_PLUGINS__: JSON.stringify(plugins),
       __SLICK_THEMES__: JSON.stringify(themes),
       // Page bundle: reaching for Node globals is a bug, so fail loudly.
       process: 'undefined',
@@ -47,8 +63,8 @@ export async function buildApp({ debug = false } = {}) {
   // Otherwise DevTools shows an anonymous script attributed to app.slack.com.
   code += `\n//# sourceURL=${SOURCE_ORIGIN}slick.js\n`;
 
-  await mkdir(DIST_APP, { recursive: true });
-  await writeFile(SLICK_JS, code);
-  console.log(`[build:app] slick.js  ${(Buffer.byteLength(code) / 1024).toFixed(1)} KB`);
-  return SLICK_JS;
+  await mkdir(path.dirname(output), { recursive: true });
+  await writeFile(output, code);
+  console.log(`[build:app] ${path.basename(output)}  ${(Buffer.byteLength(code) / 1024).toFixed(1)} KB`);
+  return output;
 }

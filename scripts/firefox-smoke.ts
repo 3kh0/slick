@@ -1,0 +1,400 @@
+// Real Firefox smoke test. Requires geckodriver on PATH; never uses a user's profile.
+// node scripts/firefox-smoke.ts [--firefox /path/to/firefox]
+// Optional authenticated check: --profile /source/profile --slack-url https://app.slack.com/client/...
+// Only Slack cookies/site storage are copied to an owner-only temporary profile, deleted on exit.
+import assert from 'node:assert/strict';
+import { spawn, execFileSync } from 'node:child_process';
+import { mkdtemp, mkdir, readdir, cp, rm, chmod } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { setTimeout as delay } from 'node:timers/promises';
+import { EXTENSION_PLUGINS } from '../src/extension/plugins.ts';
+
+const args = process.argv.slice(2);
+const arg = (name: string) => {
+  const index = args.indexOf(name);
+  if (index < 0) return undefined;
+  const value = args[index + 1];
+  if (!value || value.startsWith('--')) throw new Error(`${name} requires a value`);
+  return value;
+};
+const liveUrl = arg('--slack-url');
+if (liveUrl) {
+  const url = new URL(liveUrl);
+  assert.equal(url.origin, 'https://app.slack.com');
+  assert.match(url.pathname, /^\/client\//);
+}
+const sourceProfile = arg('--profile');
+if (sourceProfile && !liveUrl) throw new Error('--profile requires --slack-url');
+const profile = await mkdtemp(path.join(tmpdir(), 'slick-firefox-'));
+await chmod(profile, 0o700);
+const endpoint = process.env.GECKODRIVER_URL ?? 'http://127.0.0.1:4447';
+const driver = process.env.GECKODRIVER_URL
+  ? null
+  : spawn('geckodriver', ['--port', '4447', '--log', 'fatal', '--allow-system-access'], { stdio: 'ignore' });
+let driverError: Error | undefined;
+driver?.on('error', (error) => {
+  driverError = error;
+});
+let session = '';
+let socket: WebSocket | undefined;
+const outstanding = new Map<number, { resolve: (value: any) => void; reject: (error: Error) => void }>();
+let seq = 0;
+const slickLog: string[] = [];
+async function http(route: string, body?: unknown, method = body === undefined ? 'GET' : 'POST') {
+  const response = await fetch(endpoint + route, {
+    method,
+    headers: { 'Content-Type': 'application/json' },
+    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+  });
+  const json = (await response.json()) as any;
+  if (!response.ok)
+    throw new Error(
+      `WebDriver ${json.value?.error ?? response.status} (${method} ${route.replace(/^\/session\/[^/]+/, '')})`,
+    );
+  return json.value;
+}
+const command = (route: string, body?: unknown, method?: string) => http(`/session/${session}${route}`, body, method);
+const execute = (script: string, scriptArgs: unknown[] = []) => command('/execute/sync', { script, args: scriptArgs });
+const asyncExecute = (script: string, scriptArgs: unknown[] = []) =>
+  command('/execute/async', { script, args: scriptArgs });
+const bidi = (method: string, params: unknown) =>
+  new Promise<any>((resolve, reject) => {
+    const id = ++seq;
+    outstanding.set(id, { resolve, reject });
+    socket!.send(JSON.stringify({ id, method, params }));
+  });
+async function until<T>(
+  operation: () => Promise<T>,
+  ready: (v: T) => boolean,
+  label: string,
+  attempts = 60,
+): Promise<T> {
+  for (let i = 0; i < attempts; i++) {
+    const value = await operation();
+    if (ready(value)) return value;
+    await delay(500);
+  }
+  throw new Error(`${label} timed out`);
+}
+const fixture = `<!doctype html><html><head><meta charset="utf-8"><title>Slick fixture</title>
+<script nonce="slick-fixture">
+window.__fixture = { early: typeof Object.getOwnPropertyDescriptor(window, 'webpackChunkwebapp')?.get === 'function' };
+try { eval('1'); window.__fixture.evalBlocked = false; } catch { window.__fixture.evalBlocked = true; }
+window.webpackChunkwebapp = [];
+window.webpackChunkwebapp.push([[1], {fixture: function(module) { module.exports = { slickFixture: true }; }}, function() {}]);
+window.webpackChunkwebapp[0][1].fixture({exports: {}}, {}, function(){});
+</script></head><body><h1>Local Slick test fixture</h1></body></html>`;
+try {
+  if (sourceProfile) {
+    // A running Firefox holds cookies.sqlite with an exclusive lock, so snapshot
+    // the database + WAL first and filter the copy; the source is never opened.
+    const cookies = path.join(profile, 'cookies.sqlite');
+    for (const suffix of ['', '-wal']) {
+      await cp(path.join(sourceProfile, `cookies.sqlite${suffix}`), cookies + suffix).catch((error) => {
+        if (suffix === '' || error.code !== 'ENOENT') throw error;
+      });
+    }
+    execFileSync(
+      'python3',
+      [
+        '-c',
+        `import sqlite3,sys
+db=sqlite3.connect(sys.argv[1])
+db.execute("DELETE FROM moz_cookies WHERE NOT (host = 'slack.com' OR host = '.slack.com' OR host LIKE '%.slack.com')")
+db.commit(); db.execute('PRAGMA wal_checkpoint(TRUNCATE)'); db.execute('VACUUM'); db.close()
+`,
+        cookies,
+      ],
+      { stdio: 'pipe', timeout: 30000 },
+    );
+    const root = path.join(sourceProfile, 'storage/default');
+    for (const name of await readdir(root)) {
+      if (!/^https\+\+\+([a-z0-9-]+\.)*slack\.com(?:\^|$)/.test(name)) continue;
+      const dest = path.join(profile, 'storage/default', name);
+      await mkdir(path.dirname(dest), { recursive: true });
+      await cp(path.join(root, name), dest, { recursive: true });
+    }
+    console.log('Copied Slack-only session data into disposable profile.');
+  }
+  for (let i = 0; i < 40; i++) {
+    if (driverError) throw driverError;
+    try {
+      await http('/status');
+      break;
+    } catch {
+      if (i === 39) throw new Error('geckodriver not ready');
+    }
+    await delay(250);
+  }
+  const created = await http('/session', {
+    capabilities: {
+      alwaysMatch: {
+        browserName: 'firefox',
+        webSocketUrl: true,
+        // Slack keeps loading after the client is interactive.
+        pageLoadStrategy: 'eager',
+        'moz:firefoxOptions': {
+          ...(arg('--firefox') ? { binary: arg('--firefox') } : {}),
+          args: ['-headless', '-profile', profile],
+          prefs: {
+            'browser.shell.checkDefaultBrowser': false,
+            'browser.startup.page': 0,
+            'datareporting.healthreport.uploadEnabled': false,
+            'toolkit.telemetry.enabled': false,
+          },
+        },
+      },
+    },
+  });
+  session = created.sessionId;
+  console.log(`Firefox ${created.capabilities.browserVersion}`);
+  await command('/timeouts', { script: 15000, pageLoad: 90000 });
+  await command('/moz/addon/install', { path: path.resolve('dist/extension/slick-firefox.xpi'), temporary: true });
+  socket = new WebSocket(created.capabilities.webSocketUrl);
+  await new Promise<void>((resolve, reject) => {
+    socket!.addEventListener('open', () => resolve(), { once: true });
+    socket!.addEventListener('error', () => reject(new Error('BiDi connection failed')), { once: true });
+  });
+  socket.addEventListener('message', (event) => {
+    const message = JSON.parse(String(event.data));
+    if (message.id) {
+      const pending = outstanding.get(message.id);
+      outstanding.delete(message.id);
+      if (message.type === 'error') pending?.reject(new Error(`BiDi: ${message.error}`));
+      else pending?.resolve(message.result);
+    } else if (message.method === 'log.entryAdded') {
+      const text = String(message.params.text ?? '');
+      // Slick's own lines only: Slack's console may contain workspace data.
+      if (text.startsWith('[slick')) slickLog.push(`${message.params.level}: ${text.slice(0, 300)}`);
+    } else if (message.method === 'network.beforeRequestSent' && message.params.isBlocked) {
+      void bidi('network.provideResponse', {
+        request: message.params.request.request,
+        statusCode: 200,
+        headers: [
+          { name: 'Content-Type', value: { type: 'string', value: 'text/html; charset=utf-8' } },
+          {
+            name: 'Content-Security-Policy',
+            value: {
+              type: 'string',
+              value: "default-src 'none'; script-src 'nonce-slick-fixture'; style-src 'unsafe-inline'",
+            },
+          },
+          { name: 'Cache-Control', value: { type: 'string', value: 'no-store' } },
+        ],
+        body: { type: 'string', value: fixture },
+      }).catch((error) => console.error(error.message));
+    }
+  });
+  await bidi('session.subscribe', { events: ['network.beforeRequestSent', 'log.entryAdded'] });
+  const intercept = await bidi('network.addIntercept', {
+    phases: ['beforeRequestSent'],
+    urlPatterns: [{ type: 'string', pattern: 'https://app.slack.com/client/slick-fixture' }],
+  });
+  await command('/url', { url: 'https://app.slack.com/client/slick-fixture' });
+  const observed = await execute(
+    'return { ...window.__fixture, captured: !!window.getExport?.(x => x.slickFixture) };',
+  );
+  assert.deepEqual(observed, { early: true, evalBlocked: true, captured: true });
+  console.log('PASS: MAIN document_start hooks run before page scripts; CSP blocks eval; module capture works.');
+  const rpc = (method: string, rpcArgs: string[] = []) =>
+    asyncExecute(
+      `
+    const done = arguments[arguments.length - 1];
+    const id = 'smoke-' + Math.random().toString(36).slice(2);
+    const handler = event => {
+      if (event.source !== window || event.origin !== location.origin || event.data?.channel !== 'slick:firefox:v1' || event.data?.id !== id || event.data?.kind !== 'response') return;
+      window.removeEventListener('message', handler); done(event.data.response);
+    };
+    window.addEventListener('message', handler);
+    window.postMessage({channel: 'slick:firefox:v1', kind: 'request', id, method: arguments[0], args: arguments[1]}, location.origin);
+  `,
+      [method, rpcArgs],
+    );
+  const config = await rpc('readSettings');
+  assert.equal(config.ok, true);
+  assert.equal(JSON.parse(config.value).plugins.HumanCount.enabled, false);
+  assert.equal(
+    (
+      await rpc('compareAndSwapSettings', [
+        config.value,
+        JSON.stringify({
+          theme: 'ultraviolet',
+          plugins: Object.fromEntries(EXTENSION_PLUGINS.map((id) => [id, { enabled: true }])),
+        }),
+      ])
+    ).value,
+    true,
+  );
+  assert.equal((await rpc('writeUserCss', [':root { --slick-firefox-smoke: 1; }'])).value, true);
+  console.log('PASS: isolated/background bridge and settings/CSS persistence.');
+  const slackHandle = await command('/window');
+  // Content-context WebDriver and BiDi both refuse moz-extension:// navigation,
+  // so open the tab from browser chrome (geckodriver --allow-system-access).
+  // A load issued while the extension process is still spinning up can leave
+  // the tab on about:blank, so keep reissuing it until the URL sticks.
+  await command('/moz/context', { context: 'chrome' });
+  const optionsUrl: string = await execute(
+    `const url = WebExtensionPolicy.getByID('slick@3kh0.net').getURL('options.html');
+    window.__slickOptionsTab = gBrowser.addTab('about:blank', {
+      triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal(),
+    });
+    gBrowser.selectedTab = window.__slickOptionsTab;
+    return url;`,
+  );
+  await until(
+    () =>
+      execute(
+        `const browser = window.__slickOptionsTab.linkedBrowser;
+        if (browser.currentURI.spec === arguments[0]) return true;
+        browser.fixupAndLoadURIString(arguments[0], {
+          triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal(),
+        });
+        return false;`,
+        [optionsUrl],
+      ),
+    Boolean,
+    'options tab',
+    20,
+  );
+  await command('/moz/context', { context: 'content' });
+  for (const handle of (await command('/window/handles')) as string[]) {
+    await command('/window', { handle });
+    if ((await command('/url')) === optionsUrl) break;
+  }
+  const probe = () =>
+    execute(
+      'return { url: location.href, ready: document.readyState, disabled: document.querySelector("#settings")?.disabled, error: document.querySelector("#error")?.textContent, browser: typeof browser }',
+    );
+  await until(probe, (v: any) => v.disabled === false, 'options load', 20).catch(async (error) => {
+    console.error('options state:', JSON.stringify(await probe()));
+    throw error;
+  });
+  assert.equal(await execute('return document.querySelector("#theme").value'), 'ultraviolet');
+  await execute(
+    'const input = document.querySelector("#css"); input.value = ":root { --slick-firefox-smoke: 2; }"; input.dispatchEvent(new Event("input", {bubbles:true})); document.querySelector("#save-css").click();',
+  );
+  await until(
+    () => execute('return document.querySelector("#css-status")?.textContent'),
+    (value) => value === 'Saved',
+    'CSS save',
+  );
+  assert.equal(await execute('return document.querySelector("#error").hidden'), true);
+  console.log('PASS: standalone options UI loads, reflects settings, acknowledges CSS saves.');
+  await command('/window', { handle: slackHandle });
+  assert.equal((await rpc('readUserCss')).value, ':root { --slick-firefox-smoke: 2; }');
+  await execute("sessionStorage.setItem('slick:firefox:bypass', '1')");
+  await command('/refresh', {});
+  assert.equal(await execute('return window.__fixture.early'), false);
+  await execute("sessionStorage.removeItem('slick:firefox:bypass')");
+  await command('/refresh', {});
+  assert.equal(await execute('return window.__fixture.early'), true);
+  console.log('PASS: bypass and resume across reloads.');
+  await bidi('network.removeIntercept', { intercept: intercept.intercept });
+  if (liveUrl) {
+    await command('/url', { url: liveUrl });
+    const state = await until(
+      () =>
+        execute(`return {
+      client: location.hostname === 'app.slack.com' && location.pathname.startsWith('/client/'),
+      modules: window.__slickModuleRegistry?.size ?? 0,
+      plugins: window.__slickPluginManager?.info().map(p => ({id:p.id, running:p.running, error:p.startError})) ?? [],
+      theme: !!document.querySelector('[data-slick-style="theme"]'),
+      css: getComputedStyle(document.documentElement).getPropertyValue('--slick-firefox-smoke').trim(),
+    }`),
+      // Registration precedes reconcile; wait for HumanCount to settle either way.
+      (value: any) =>
+        value.plugins.length === EXTENSION_PLUGINS.length && value.plugins.every((p: any) => p.running || p.error),
+      'live Slack bootstrap',
+      180,
+    ).catch((error) => {
+      console.error(`Slick console:\n${slickLog.join('\n')}`);
+      throw error;
+    });
+    // Structural diagnostics only: never read Slack messages, tokens, or user identities.
+    console.log('Live Slack structural diagnostics:', JSON.stringify(state));
+    const slickErrors = slickLog.filter((line) => /^(error|warn)/.test(line));
+    if (slickErrors.length) console.log(`Slick warnings/errors:\n${slickErrors.join('\n')}`);
+    assert.equal(state.client, true);
+    assert.ok(state.modules > 0);
+    assert.deepEqual(
+      state.plugins.filter((p: any) => !p.running || p.error),
+      [],
+    );
+    assert.equal(state.theme, true);
+    assert.equal(state.css, '2');
+    console.log(`PASS: authenticated Slack, theme/custom CSS and all ${EXTENSION_PLUGINS.length} plugins running.`);
+    // Open Preferences from the account menu with real pointer clicks: headless
+    // keyboard shortcuts and synthetic click() don't reach Slack's handlers.
+    const click = async (using: string, value: string) => {
+      const element = await command('/element', { using, value });
+      await command(`/element/${Object.values(element)[0]}/click`, {});
+    };
+    await until(
+      async () => {
+        const menuItem = "//*[@role='menuitem'][normalize-space()='Preferences']";
+        if (
+          await click('xpath', menuItem).then(
+            () => true,
+            () => false,
+          )
+        )
+          return true;
+        await click('css selector', '[data-qa="user-button"]').catch(() => {});
+        return false;
+      },
+      Boolean,
+      'Preferences menu item',
+      20,
+    );
+    await until(
+      () => execute(`return !!document.querySelector('.p-prefs_dialog__modal [role="tab"][aria-label="Slick"]')`),
+      Boolean,
+      'Slick Preferences tab',
+      40,
+    ).catch(async (error) => {
+      console.error(
+        'prefs state:',
+        JSON.stringify(
+          await execute(`return {
+        dialog: !!document.querySelector('.p-prefs_dialog__modal'),
+        dialogs: [...document.querySelectorAll('[role="dialog"], .ReactModal__Content')].map((d) => String(d.className).slice(0, 120)),
+        anyTabs: [...document.querySelectorAll('[role="tab"]')].map((t) => t.id).slice(0, 30),
+        tabs: [...document.querySelectorAll('.p-prefs_dialog__modal [role="tab"]')].map((t) => [t.id, t.getAttribute('aria-label'), t.textContent.trim().slice(0, 30)]),
+        active: document.activeElement?.tagName,
+      }`),
+        ),
+      );
+      console.error(`Slick console:\n${slickLog.join('\n')}`);
+      throw error;
+    });
+    console.log('PASS: Slick tab injected into Slack Preferences.');
+    await click('css selector', '.p-prefs_dialog__modal [role="tab"][aria-label="Slick"]');
+    await until(
+      () => execute(`return document.querySelectorAll('input[id^="slick-plugin-"]:checked').length`),
+      (count: number) => count === EXTENSION_PLUGINS.length,
+      'Slick plugin list',
+      20,
+    );
+    // Toggling in Slack's UI must go through CAS into extension storage and stop the plugin.
+    await click('css selector', '#slick-plugin-oneko');
+    await until(
+      async () => {
+        const stored = JSON.parse((await rpc('readSettings')).value);
+        const running = await execute(
+          `return window.__slickPluginManager.info().find((p) => p.id === 'oneko').running`,
+        );
+        return stored.plugins.oneko.enabled === false && running === false;
+      },
+      Boolean,
+      'plugin toggle from Preferences',
+      20,
+    );
+    console.log('PASS: Preferences tab lists plugins; toggling persists to extension storage and stops the plugin.');
+  }
+} finally {
+  socket?.close();
+  if (session) await command('', undefined, 'DELETE').catch(() => {});
+  driver?.kill();
+  await rm(profile, { recursive: true, force: true });
+}
