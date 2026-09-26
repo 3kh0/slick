@@ -30,17 +30,16 @@ export default class OfficeHours extends SlickPlugin<typeof meta.settings> {
   static readonly liveSettings = Object.keys(meta.settings);
 
   private state: State = { held: {}, backoff: {} };
+  private key: string | null = null;
   private timer: ReturnType<typeof setInterval> | null = null;
   private queue: Promise<void> = Promise.resolve();
   private warned = false;
+  private reapply = false;
 
   start() {
-    void this.api.storage.get<State>(STORAGE_KEY, this.state).then((state) => {
-      if (this.api.signal.aborted) return;
-      this.state = { held: state.held ?? {}, backoff: state.backoff ?? {} };
-      this.timer = setInterval(() => this.schedule(), TICK_MS);
-      this.schedule();
-    });
+    // A late tick is harmless: each one works from the clock, not a count.
+    this.timer = setInterval(() => this.schedule(), TICK_MS);
+    this.schedule();
   }
 
   async stop() {
@@ -52,9 +51,8 @@ export default class OfficeHours extends SlickPlugin<typeof meta.settings> {
   }
 
   onSettingsChange(changed: string[]) {
-    const ooo = this.state.held.ooo;
     // Re-apply so a new message or pause setting takes effect mid-window.
-    if (ooo && (changed.includes('oooMessage') || changed.includes('pauseNotifications'))) ooo.until = 0;
+    if (changed.includes('oooMessage') || changed.includes('pauseNotifications')) this.reapply = true;
     this.schedule();
   }
 
@@ -65,6 +63,11 @@ export default class OfficeHours extends SlickPlugin<typeof meta.settings> {
   private async tick() {
     const self = this.self();
     if (!self || this.api.signal.aborted) return;
+    // self() found a member, so there is a current member id.
+    await this.load(this.api.members.getCurrentMemberId()!);
+    if (this.api.signal.aborted) return;
+    if (this.reapply && this.state.held.ooo) this.state.held.ooo.until = 0;
+    this.reapply = false;
 
     const now = new Date();
     const rules = this.config.schedule as ScheduleRule[];
@@ -107,6 +110,21 @@ export default class OfficeHours extends SlickPlugin<typeof meta.settings> {
     }
 
     if (changed) await this.save();
+  }
+
+  /**
+   * On the web every Slack tab runs its own copy, maybe signed in to another
+   * workspace: keep one record per user and re-read it each tick so tabs agree.
+   */
+  private async load(userId: string) {
+    const shared = this.api.loader !== 'electron';
+    const key = shared ? `${STORAGE_KEY}:${userId}` : STORAGE_KEY;
+    if (!shared && this.key === key) return;
+    // Null is missing or unreadable; keep what we have rather than forget what we hold.
+    const stored = await this.api.storage.get<State | null>(key, null);
+    if (stored) this.state = { held: stored.held ?? {}, backoff: stored.backoff ?? {} };
+    else if (this.key !== key) this.state = { held: {}, backoff: {} };
+    this.key = key;
   }
 
   private self() {
@@ -185,8 +203,8 @@ export default class OfficeHours extends SlickPlugin<typeof meta.settings> {
     this.log(`${kind} ended`);
   }
 
-  private save() {
-    return this.api.storage.set(STORAGE_KEY, this.state);
+  private async save() {
+    if (this.key) await this.api.storage.set(this.key, this.state);
   }
 
   private warn = (error: unknown) => {

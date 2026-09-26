@@ -19,6 +19,7 @@ export const EXTENSION_PLUGINS = [
   'Nicknames',
   'NoTrack',
   'NotShitMarkdown',
+  'OfficeHours',
   'oneko',
   'PrivateChannelMapper',
   'QuickJoin',
