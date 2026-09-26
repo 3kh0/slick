@@ -105,6 +105,8 @@ export default class MessageLogger extends SlickPlugin<typeof meta.settings> {
   private rowTimer: ReturnType<typeof setTimeout> | null = null;
   private seenRow = false;
 
+  private readonly EditContext = React.createContext<{ ts: string; edits: StoredEdit[]; blocks: boolean } | null>(null);
+
   /** `MessageActionsMenu` knows the message; the generic `Menu` that renders rows does not. */
   private readonly MenuRowsContext = React.createContext<React.ReactNode[]>([]);
 
@@ -388,7 +390,7 @@ export default class MessageLogger extends SlickPlugin<typeof meta.settings> {
         : `.slick-ml-deleted, .slick-ml-deleted * { color: #e01e5a !important; }`;
     return `
       ${deleted}
-      .slick-ml-edited-original { display: block; padding: 4px 20px 0 64px; opacity: .62; white-space: pre-wrap; word-break: break-word; }
+      .slick-ml-edited-original { display: block; padding: 4px 20px 0 0; opacity: .62; white-space: pre-wrap; word-break: break-word; }
       .slick-ml-edited-original-line { display: block; }
       .slick-ml-edited-original s { text-decoration: line-through; }
       .slick-ml-edited-marker { margin-left: 4px; font-size: .85em; opacity: .72; }
@@ -398,6 +400,20 @@ export default class MessageLogger extends SlickPlugin<typeof meta.settings> {
   private patchRows() {
     for (const name of ROW_COMPONENTS) {
       this.api.patchComponent<RowProps>(name, (Original) => (props) => this.renderRow(Original, props));
+    }
+    for (const name of ['Blocks', 'MessageText'] as const) {
+      this.api.patchComponent<{ msg?: SlackMessage }>(name, (Original) => (props) => {
+        const React = this.api.react;
+        const edit = React.useContext(this.EditContext);
+        if (!edit || props.msg?.ts !== edit.ts || (name === 'Blocks') !== edit.blocks)
+          return React.createElement(Original, props);
+        return React.createElement(
+          React.Fragment,
+          null,
+          this.editHistory(edit.edits),
+          React.createElement(Original, props),
+        );
+      });
     }
     this.rowTimer = setTimeout(() => {
       if (this.api.signal.aborted || this.seenRow) return;
@@ -420,11 +436,12 @@ export default class MessageLogger extends SlickPlugin<typeof meta.settings> {
       .join(' ');
 
     // Dismiss actions live in the overflow menu; inline they read as message body.
+    const row = React.createElement('div', { className: classes || undefined }, React.createElement(Original, props));
+    if (!entry.edits?.length || !msg?.ts) return row;
     return React.createElement(
-      'div',
-      { className: classes || undefined },
-      entry.edits?.length ? this.editHistory(entry.edits) : null,
-      React.createElement(Original, props),
+      this.EditContext.Provider,
+      { value: { ts: msg.ts, edits: entry.edits, blocks: Array.isArray(msg.blocks) && msg.blocks.length > 0 } },
+      row,
     );
   }
 
