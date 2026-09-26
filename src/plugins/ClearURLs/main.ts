@@ -5,11 +5,22 @@ import type { MainCtx, SlickMainPlugin } from '$slick';
 
 const RULES_URL = 'https://raw.githubusercontent.com/ClearURLs/Rules/master/data.min.json';
 const CACHE_KEY = 'rules.json';
+const FETCHED_KEY = 'rules.fetchedAt';
+// Firefox's background restarts often; don't refetch on every start.
+const FRESH_MS = 12 * 60 * 60 * 1000;
 
 let rules: Promise<unknown> | null = null;
 
 async function fetchRules(ctx: MainCtx): Promise<unknown> {
   const cached = await ctx.storage.read(CACHE_KEY).catch(() => null);
+  const fetchedAt = Number(await ctx.storage.read(FETCHED_KEY).catch(() => null));
+  if (cached && Date.now() - fetchedAt < FRESH_MS) {
+    try {
+      return JSON.parse(cached);
+    } catch {
+      // Corrupt cache: fetch below.
+    }
+  }
 
   try {
     const response = await ctx.net.fetch(RULES_URL);
@@ -19,6 +30,7 @@ async function fetchRules(ctx: MainCtx): Promise<unknown> {
     if (!data || typeof data.providers !== 'object') throw new Error('unexpected payload');
 
     await ctx.storage.write(CACHE_KEY, response.body).catch(() => {});
+    await ctx.storage.write(FETCHED_KEY, String(Date.now())).catch(() => {});
     ctx.log(`fetched ${Object.keys(data.providers).length} providers`);
     return data;
   } catch (error) {

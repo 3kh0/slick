@@ -94,7 +94,7 @@ Clone the repo and run `./install.sh` (macOS), `./install-linux.sh` (Linux) or `
 
 Slick can also run in the Slack web client as a Firefox extension. Download `slick-firefox-*.xpi` from the [latest release](https://github.com/3kh0/slick/releases/latest) and open it in Firefox.
 
-The extension includes themes, custom CSS and page-side plugins only. Plugins that need the desktop app or network access (AccountSwitcher, NoTrack, CustomSounds and the like) are not in the Firefox build. Settings, custom CSS and recovery controls live behind the Slick toolbar button. **Bypass Slick** reloads the current tab without Slick if Slack ever breaks. Slack's Content Security Policy stays on; nothing is removed or loaded remotely.
+The extension includes themes, custom CSS and page-side plugins only. Plugins that need the desktop app or network access (AccountSwitcher, CustomFonts, CustomSounds and the like) are not in the Firefox build. Settings, custom CSS and recovery controls live behind the Slick toolbar button. **Bypass Slick** reloads the current tab without Slick if Slack ever breaks. Slack's Content Security Policy stays on; nothing is removed or loaded remotely.
 
 ## Updates
 

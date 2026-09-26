@@ -3,6 +3,11 @@ declare module 'slick:plugins' {
   export default plugins;
 }
 
+declare module 'slick:background-plugins' {
+  const plugins: import('./extension/mainHost.ts').BackgroundPlugin[];
+  export default plugins;
+}
+
 declare module 'slick:options-data' {
   export const plugins: { id: string; name: string; description: string }[];
   export const themes: { id: string; name: string; background: string | null; accent: string | null }[];

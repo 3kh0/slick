@@ -1,5 +1,6 @@
 // MUST remain type-only: importing bridge.ts here would claim before installation.
 import type { SlickBridge } from '../app/bridge.ts';
+import { BACKGROUND_PLUGINS } from './plugins.ts';
 import { CHANNEL, MAX_TEXT, createClient, namespace, record } from './rpc.ts';
 
 export function oneShot<T>(value: T): () => T | null {
@@ -79,7 +80,14 @@ export function installBridge(target: Window & typeof globalThis) {
     openCssEditor: () => Promise.reject(new Error('Use the Slick toolbar to open options')),
     openFile: denied,
     fetch: denied,
-    plugin: () => ({ call: denied, on: () => () => {} }),
+    // Privileged halves run in the background (extension/mainHost.ts); events aren't bridged.
+    plugin: (id) => ({
+      call: async <T>(method: string, ...args: unknown[]) => {
+        if (!(BACKGROUND_PLUGINS as readonly string[]).includes(id)) return denied();
+        return JSON.parse(await client.call<string>('plugin.call', id, method, JSON.stringify(args))) as T;
+      },
+      on: () => () => {},
+    }),
     blobStore: (id) => {
       if (!namespace(id)) throw new Error('Unsupported renderer namespace');
       return {

@@ -41,6 +41,7 @@ let socket: WebSocket | undefined;
 const outstanding = new Map<number, { resolve: (value: any) => void; reject: (error: Error) => void }>();
 let seq = 0;
 const slickLog: string[] = [];
+const embedEvents: { url: string; event: string }[] = [];
 async function http(route: string, body?: unknown, method = body === undefined ? 'GET' : 'POST') {
   const response = await fetch(endpoint + route, {
     method,
@@ -163,6 +164,15 @@ db.commit(); db.execute('PRAGMA wal_checkpoint(TRUNCATE)'); db.execute('VACUUM')
       outstanding.delete(message.id);
       if (message.type === 'error') pending?.reject(new Error(`BiDi: ${message.error}`));
       else pending?.resolve(message.result);
+    } else if (
+      ['network.beforeRequestSent', 'network.fetchError', 'network.responseCompleted'].includes(message.method) &&
+      String(message.params?.request?.url ?? '').includes('spotify.com')
+    ) {
+      embedEvents.push({
+        url: message.params.request.url,
+        event: `${message.method} ${message.params.errorText ?? ''}`.trim(),
+      });
+      if (message.method === 'network.beforeRequestSent' && message.params.isBlocked) return;
     } else if (message.method === 'log.entryAdded') {
       const text = String(message.params.text ?? '');
       // Slick's own lines only: Slack's console may contain workspace data.
@@ -177,7 +187,8 @@ db.commit(); db.execute('PRAGMA wal_checkpoint(TRUNCATE)'); db.execute('VACUUM')
             name: 'Content-Security-Policy',
             value: {
               type: 'string',
-              value: "default-src 'none'; script-src 'nonce-slick-fixture'; style-src 'unsafe-inline'",
+              value:
+                "default-src 'none'; script-src 'nonce-slick-fixture'; style-src 'unsafe-inline'; frame-src https://open.spotify.com; connect-src https://slackb.com",
             },
           },
           { name: 'Cache-Control', value: { type: 'string', value: 'no-store' } },
@@ -186,7 +197,9 @@ db.commit(); db.execute('PRAGMA wal_checkpoint(TRUNCATE)'); db.execute('VACUUM')
       }).catch((error) => console.error(error.message));
     }
   });
-  await bidi('session.subscribe', { events: ['network.beforeRequestSent', 'log.entryAdded'] });
+  await bidi('session.subscribe', {
+    events: ['network.beforeRequestSent', 'network.fetchError', 'network.responseCompleted', 'log.entryAdded'],
+  });
   const intercept = await bidi('network.addIntercept', {
     phases: ['beforeRequestSent'],
     urlPatterns: [{ type: 'string', pattern: 'https://app.slack.com/client/slick-fixture' }],
@@ -297,6 +310,40 @@ db.commit(); db.execute('PRAGMA wal_checkpoint(TRUNCATE)'); db.execute('VACUUM')
   await command('/refresh', {});
   assert.equal(await execute('return window.__fixture.early'), true);
   console.log('PASS: bypass and resume across reloads.');
+  // Background halves: NoTrack and Click2Load block through declarativeNetRequest,
+  // scoped to Slack; ClearURLs fetches its rules in the background.
+  const frameOutcome = async (src: string) => {
+    embedEvents.length = 0;
+    await execute('const f = document.createElement("iframe"); f.src = arguments[0]; document.body.append(f);', [src]);
+    const settled = await until(
+      async () => embedEvents.find((e) => e.url === src && /fetchError|responseCompleted/.test(e.event)),
+      Boolean,
+      `frame ${src}`,
+      30,
+    );
+    return settled!.event.startsWith('network.fetchError') ? 'blocked' : 'loaded';
+  };
+  const telemetry = () =>
+    asyncExecute(`const done = arguments[arguments.length - 1];
+      fetch('https://slackb.com/slick-smoke', { mode: 'no-cors' }).then(() => done('loaded'), () => done('blocked'));`);
+  assert.equal(await telemetry(), 'blocked');
+  assert.equal(await frameOutcome('https://open.spotify.com/embed/track/slick-smoke-1'), 'blocked');
+  const allowed = 'https://open.spotify.com/embed/track/slick-smoke-2';
+  assert.deepEqual(await rpc('plugin.call', ['Click2Load', 'allow', JSON.stringify([allowed])]), {
+    ok: true,
+    value: 'true',
+  });
+  assert.equal(await frameOutcome(allowed), 'loaded');
+  const clearUrls = await rpc('plugin.call', ['ClearURLs', 'rules', '[]']);
+  assert.equal(clearUrls.ok, true);
+  assert.ok(Object.keys(JSON.parse(clearUrls.value).providers).length > 100);
+  await execute("sessionStorage.setItem('slick:firefox:bypass', '1')");
+  await command('/refresh', {});
+  await until(telemetry, (outcome) => outcome === 'loaded', 'bypassed tab exempt from blocking', 10);
+  await execute("sessionStorage.removeItem('slick:firefox:bypass')");
+  await command('/refresh', {});
+  await until(telemetry, (outcome) => outcome === 'blocked', 'blocking back after resume', 10);
+  console.log('PASS: NoTrack and Click2Load block via Slack-scoped rules; allow, bypass and ClearURLs rules work.');
   // Toolbar icon: read the images Firefox's own UI uses for light and dark toolbars.
   const toolbarIcons = async () => {
     await command('/moz/context', { context: 'chrome' });
@@ -372,6 +419,14 @@ db.commit(); db.execute('PRAGMA wal_checkpoint(TRUNCATE)'); db.execute('VACUUM')
     assert.equal(state.theme, true);
     assert.equal(state.css, '2');
     console.log(`PASS: authenticated Slack, theme/custom CSS and all ${EXTENSION_PLUGINS.length} plugins running.`);
+    // ClearURLs' renderer got its rule set from the background half (page → background → GitHub).
+    await until(
+      async () => slickLog.some((line) => /providers loaded/.test(line)),
+      Boolean,
+      'ClearURLs rules in Slack',
+      40,
+    );
+    console.log('PASS: ClearURLs loaded its rules through the background half.');
     // Open Preferences from the account menu with real pointer clicks: headless
     // keyboard shortcuts and synthetic click() don't reach Slack's handlers.
     const click = async (using: string, value: string) => {

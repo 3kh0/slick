@@ -1,5 +1,6 @@
 // Public page traffic is not secret or authenticated. Keep this surface unprivileged.
-import { EXTENSION_PLUGINS } from './plugins.ts';
+import type { Dnr } from './mainHost.ts';
+import { BACKGROUND_PLUGINS, EXTENSION_PLUGINS } from './plugins.ts';
 
 export const CHANNEL = 'slick:firefox:v1';
 export const RENDERERS = EXTENSION_PLUGINS;
@@ -20,6 +21,8 @@ export const METHODS = [
   'blob.write',
   'blob.delete',
   'blob.clear',
+  'plugin.call',
+  'tabMode',
 ] as const;
 export type Method = (typeof METHODS)[number];
 // Options UI: runtime.sendMessage({method,args}) -> {ok:true,value}|{ok:false,error}.
@@ -58,6 +61,17 @@ export function validRequest(v: unknown): v is Request {
       return a.length === 2 && namespace(a[0]) && text(a[1], 128);
     case 'blob.write':
       return a.length === 3 && namespace(a[0]) && text(a[1], 128) && text(a[2], MAX_BLOB);
+    // [plugin id, rpc method, JSON-encoded argument array]
+    case 'plugin.call':
+      return (
+        a.length === 3 &&
+        (BACKGROUND_PLUGINS as readonly unknown[]).includes(a[0]) &&
+        typeof a[1] === 'string' &&
+        /^[A-Za-z]\w{0,63}$/.test(a[1]) &&
+        text(a[2])
+      );
+    case 'tabMode':
+      return a.length === 1 && ['normal', 'safe', 'bypass'].includes(a[0]);
     default:
       return false;
   }
@@ -85,6 +99,7 @@ export function validMethodResponse(method: Method, response: unknown): response
   if (method === 'blob.read') return value === null || typeof value === 'string';
   if (method === 'blob.list') return Array.isArray(value);
   if (method === 'blob.readAll') return record(value);
+  if (method === 'plugin.call') return typeof value === 'string';
   return typeof value === 'boolean';
 }
 export function validId(v: unknown): v is string {
@@ -107,7 +122,11 @@ export type ExtensionBrowser = {
     local: StorageArea;
     onChanged: { addListener(cb: (changes: Record<string, { newValue?: unknown }>, area: string) => void): void };
   };
-  tabs: { create(options: { url: string }): Promise<unknown> };
+  tabs: {
+    create(options: { url: string }): Promise<unknown>;
+    onRemoved?: { addListener(cb: (tabId: number) => void): void };
+  };
+  declarativeNetRequest?: Dnr;
   action?: { setIcon(details: { path: string | null }): Promise<void> };
 };
 export function extensionBrowser(): ExtensionBrowser | undefined {

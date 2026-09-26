@@ -1,5 +1,6 @@
-import { extensionBrowser, validRequest } from './rpc.ts';
+import { validMethodResponse, validRequest } from './rpc.ts';
 import type { ExtensionBrowser, Response, Sender } from './rpc.ts';
+import { createMainHost, type BackgroundPlugin } from './mainHost.ts';
 import { SETTINGS_KEY, createStorage } from './storage.ts';
 
 export const TOOLBAR_ICONS = { black: 'icons/black.svg', white: 'icons/white.svg' } as const;
@@ -41,15 +42,32 @@ export function allowedSender(sender: Sender, id: string, extensionRoot: string)
     return false;
   }
 }
-export function createBackground(api: ExtensionBrowser) {
+const parse = (text: unknown) => {
+  try {
+    return JSON.parse(String(text));
+  } catch {
+    return null;
+  }
+};
+
+export function createBackground(api: ExtensionBrowser, plugins: BackgroundPlugin[] = []) {
   const storage = createStorage(api.storage.local);
+  const host = createMainHost(api.storage.local, api.declarativeNetRequest, plugins);
+  // Settings arrive before any rules, so a suspended page's rules are replaced, not doubled.
+  const hostReady = host
+    .reset()
+    .then(() => storage.dispatch({ method: 'readSettings', args: [] }))
+    .then((r) => (r.ok ? host.update(parse(r.value)) : undefined));
+  api.tabs.onRemoved?.addListener((tabId) => host.setExempt(tabId, false));
   // setIcon({ path: null }) restores the manifest icon, theme_icons included.
   const applyIcon = (settings: unknown) => api.action?.setIcon({ path: toolbarIconPath(settings) }).catch(() => {});
   void storage.dispatch({ method: 'readSettings', args: [] }).then((r) => {
     if (r.ok) void applyIcon(r.value);
   });
   api.storage.onChanged.addListener((changes, area) => {
-    if (area === 'local' && SETTINGS_KEY in changes) applyIcon(changes[SETTINGS_KEY].newValue);
+    if (area !== 'local' || !(SETTINGS_KEY in changes)) return;
+    applyIcon(changes[SETTINGS_KEY].newValue);
+    void hostReady.then(() => host.update(parse(changes[SETTINGS_KEY].newValue)));
   });
   return async (message: unknown, sender: Sender): Promise<Response> => {
     if (!allowedSender(sender, api.runtime.id, api.runtime.getURL('')) || !validRequest(message))
@@ -65,8 +83,26 @@ export function createBackground(api: ExtensionBrowser) {
         return { ok: false, error: 'Could not open options' };
       }
     }
+    if (message.method === 'tabMode') {
+      const tabId = sender.tab?.id;
+      if (tabId === undefined || ownedUi(sender, api.runtime.getURL(''))) return { ok: false, error: 'Request denied' };
+      host.setExempt(tabId, message.args[0] !== 'normal');
+      return { ok: true, value: true };
+    }
+    if (message.method === 'plugin.call') {
+      const [id, method, args] = message.args;
+      try {
+        await hostReady;
+        const decoded: unknown = JSON.parse(args);
+        if (!Array.isArray(decoded)) throw new Error('bad args');
+        const value = JSON.stringify((await host.call(id, method, decoded)) ?? null);
+        return validMethodResponse('plugin.call', { ok: true, value })
+          ? { ok: true, value }
+          : { ok: false, error: 'Plugin response too large' };
+      } catch (error) {
+        return { ok: false, error: String((error as Error)?.message ?? error).slice(0, 200) };
+      }
+    }
     return storage.dispatch(message);
   };
 }
-const api = extensionBrowser();
-if (api) api.runtime.onMessage.addListener(createBackground(api));

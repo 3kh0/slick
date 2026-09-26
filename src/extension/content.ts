@@ -19,7 +19,13 @@ export function installRelay(api: ExtensionBrowser, window: Window) {
       return true;
     }
   };
-  if (bypassed()) return;
+  let mode = 'normal';
+  try {
+    if (window.sessionStorage.getItem('slick:firefox:safe-mode') === '1') mode = 'safe';
+  } catch {}
+  if (bypassed()) mode = 'bypass';
+  void api.runtime.sendMessage({ method: 'tabMode', args: [mode] }).catch(() => {});
+  if (mode === 'bypass') return;
   let closed = false;
   const generations = { settings: 0, css: 0 };
   const inflight = new Set<string>();

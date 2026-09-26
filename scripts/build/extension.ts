@@ -3,7 +3,8 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { build, type Plugin } from 'esbuild';
 import { zipSync } from 'fflate';
-import { EXTENSION_PLUGINS } from '../../src/extension/plugins.ts';
+import { existsSync } from 'node:fs';
+import { BACKGROUND_PLUGINS, EXTENSION_PLUGINS } from '../../src/extension/plugins.ts';
 import { PLUGINS, ROOT } from '../lib/paths.ts';
 import { versions } from '../lib/versions.ts';
 import { buildApp, bundleThemes } from './app.ts';
@@ -42,6 +43,35 @@ async function optionsData(): Promise<Plugin> {
   };
 }
 
+function backgroundPlugins(): Plugin {
+  const lines = BACKGROUND_PLUGINS.flatMap((id, i) => {
+    const dir = path.join(PLUGINS, id);
+    const half = existsSync(path.join(dir, 'browser.ts')) ? 'browser.ts' : 'main.ts';
+    return [
+      `import h${i} from ${JSON.stringify(path.join(dir, half))};`,
+      `import * as m${i} from ${JSON.stringify(path.join(dir, 'meta.ts'))};`,
+    ];
+  });
+  const contents = [
+    ...lines,
+    'export default [',
+    ...BACKGROUND_PLUGINS.map(
+      (_, i) => `  { plugin: h${i}, schema: m${i}.settings ?? {}, defaultEnabled: m${i}.defaultEnabled === true },`,
+    ),
+    '];',
+  ].join('\n');
+  return {
+    name: 'slick-background-plugins',
+    setup(builder) {
+      builder.onResolve({ filter: /^slick:background-plugins$/ }, () => ({
+        path: 'background-plugins',
+        namespace: 'slick-bg',
+      }));
+      builder.onLoad({ filter: /.*/, namespace: 'slick-bg' }, () => ({ contents, resolveDir: ROOT, loader: 'ts' }));
+    },
+  };
+}
+
 export async function buildExtension({ debug = false } = {}) {
   const source = path.join(ROOT, 'src/extension');
   const out = path.join(ROOT, 'dist/extension/firefox');
@@ -60,14 +90,15 @@ export async function buildExtension({ debug = false } = {}) {
     'page.js': await readFile(path.join(out, 'page.js')),
   };
   const dataPlugin = await optionsData();
+  const hostPlugin = backgroundPlugins();
   for (const [name, entry] of [
-    ['background', 'background.ts'],
+    ['background', 'background-entry.ts'],
     ['content', 'content.ts'],
     ['options', 'options-entry.ts'],
   ] as const) {
     const result = await build({
       entryPoints: [path.join(source, entry)],
-      plugins: [dataPlugin],
+      plugins: [dataPlugin, hostPlugin],
       bundle: true,
       write: false,
       platform: 'browser',

@@ -5,13 +5,25 @@ import type { SlickMainPlugin } from '$slick';
 import { PROVIDERS } from './meta.ts';
 
 /** Long enough to navigate, short enough not to be a standing permission. */
-const ALLOW_MS = 15_000;
+export const ALLOW_MS = 15_000;
 
 const allowed = new Map<string, number>();
 
 const patterns = PROVIDERS.flatMap((provider) =>
   provider.domains.flatMap((domain) => [`*://${domain}/*`, `*://*.${domain}/*`]),
 );
+
+/** The one argument of `allow`: an http(s) URL. Shared with browser.ts. */
+export function allowableUrl(url: unknown): string {
+  if (typeof url !== 'string') throw new Error('bad argument');
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') throw new Error('bad protocol');
+  } catch {
+    throw new Error('bad url');
+  }
+  return url;
+}
 
 function isAllowed(url: string): boolean {
   const expires = allowed.get(url);
@@ -50,14 +62,7 @@ const plugin: SlickMainPlugin = {
 
   rpc: {
     allow(_ctx, args) {
-      const [url] = args;
-      if (typeof url !== 'string') throw new Error('bad argument');
-      try {
-        const parsed = new URL(url);
-        if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') throw new Error('bad protocol');
-      } catch {
-        throw new Error('bad url');
-      }
+      const url = allowableUrl(args[0]);
 
       // Swept on write: the map only grows on click.
       const now = Date.now();

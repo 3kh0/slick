@@ -27,6 +27,8 @@ test('isolated relay rejects foreign source/origin, malformed messages and runti
     storage: { onChanged: { addListener: () => {} } },
   } as unknown as ExtensionBrowser;
   installRelay(api, target);
+  // Reported first, so background request rules can skip safe-mode and bypassed tabs.
+  assert.deepEqual(calls.splice(0), [{ method: 'tabMode', args: ['normal'] }]);
   const data = { channel: CHANNEL, kind: 'request', id: 'test-1', method: 'readSettings', args: [] };
   const event = { source: target, origin: target.location.origin, data };
   const receive = listeners.get('message')!;

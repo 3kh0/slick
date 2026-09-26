@@ -17,7 +17,7 @@
       "strict_min_version": "142.0"
     }
   },
-  "permissions": ["storage", "scripting"],
+  "permissions": ["storage", "scripting", "declarativeNetRequest"],
   "host_permissions": ["https://app.slack.com/*"],
   "background": {
     "scripts": ["background.js"]
