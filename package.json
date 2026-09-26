@@ -29,6 +29,7 @@
     "monaco-editor": "0.56.0",
     "oxfmt": "^0.70.0",
     "oxlint": "^1.85.0",
-    "typescript": "^7.0.2"
+    "typescript": "^7.0.2",
+    "web-ext": "^10.7.0"
   }
 }
