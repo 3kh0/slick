@@ -1,5 +1,6 @@
 import type { ScheduleRule, Setting, SettingValue } from '../shared/settings.ts';
 import { coerceSetting } from '../shared/settings.ts';
+import { fileLabel } from './api/storedFiles.ts';
 import { elementsReady, type SelectOption } from './api/elements.ts';
 import { setStyle } from './api/css.ts';
 import { settingsTabs, type SettingsTab } from './api/settingsTabs.ts';
@@ -396,7 +397,13 @@ function SettingRow({
   return (
     <div style={{ marginBottom: '16px' }}>
       <div style={{ fontWeight: 'bold', marginBottom: '5px' }}>{setting.label}</div>
-      <SettingControl setting={setting} value={value} save={save} bridge={bridge} />
+      <SettingControl
+        setting={setting}
+        value={value}
+        save={save}
+        bridge={bridge}
+        owner={{ plugin: pluginId, setting: settingKey }}
+      />
       {setting.description && (
         <div style={{ marginTop: '6px' }}>
           <Hint>{setting.description}</Hint>
@@ -441,11 +448,13 @@ function SettingControl({
   value,
   save,
   bridge,
+  owner,
 }: {
   setting: Setting;
   value: SettingValue;
   save: (value: SettingValue) => void;
   bridge: SlickBridge;
+  owner: { plugin: string; setting: string };
 }) {
   switch (setting.type) {
     case 'boolean':
@@ -503,11 +512,16 @@ function SettingControl({
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <elements.Button
             size="small"
-            onClick={() => void bridge.openFile(setting.label, setting.accept).then((file) => file && save(file))}
+            onClick={() =>
+              void bridge
+                .openFile(setting.label, setting.accept, owner)
+                .then((file) => file && save(file))
+                .catch((error) => console.error('[slick] could not use that file:', error))
+            }
           >
             Choose file…
           </elements.Button>
-          <span style={{ overflowWrap: 'anywhere' }}>{String(value) || 'No file selected'}</span>
+          <span style={{ overflowWrap: 'anywhere' }}>{fileLabel(value) || 'No file selected'}</span>
         </div>
       );
     case 'schedule':

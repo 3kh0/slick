@@ -10,8 +10,10 @@ export const EXTENSION_PLUGINS = [
   'ClearURLs',
   'Click2Load',
   'CopyReacted',
+  'CustomFonts',
   'CustomNameRecording',
   'CustomSlackbot',
+  'CustomSounds',
   'Experiments',
   'HcaStatus',
   'HumanCount',
@@ -36,5 +38,6 @@ export const EXTENSION_PLUGINS = [
 // when present, else main.ts, through extension/mainHost.ts.
 export const BACKGROUND_PLUGINS = ['ClearURLs', 'Click2Load', 'HcaStatus', 'NoTrack', 'PrivateChannelMapper'] as const;
 
-// Plugins whose logs outgrow the default blob quota; see extension/blobs.ts.
-export const LARGE_STORAGE_PLUGINS = ['LastSeen', 'MessageLogger'] as const;
+// Plugins whose logs or picked files (app/api/storedFiles.ts) outgrow the
+// default blob quota; see extension/blobs.ts.
+export const LARGE_STORAGE_PLUGINS = ['CustomFonts', 'CustomSounds', 'LastSeen', 'MessageLogger'] as const;

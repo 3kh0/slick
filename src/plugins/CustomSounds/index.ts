@@ -1,6 +1,8 @@
 // Swaps in `HTMLMediaElement.prototype.play`: Slack creates the element and
 // calls play in the same tick, so watching for elements is too late. Installed
-// before Slack's first script, so no audio element predates the patch.
+// before Slack's first script, so no audio element predates the patch. In a
+// browser the sound lives in plugin storage and plays from a blob: URL, loaded
+// ahead of time because the swap has to be synchronous.
 
 import { SlickPlugin } from '$slick';
 import { customSoundUrl, isNotificationSound } from './sounds.ts';
@@ -17,6 +19,8 @@ export default class CustomSounds extends SlickPlugin<typeof meta.settings> {
   private restore: (() => void) | null = null;
   /** Pre-swap sources, so stop() can undo. */
   private readonly originals = new Map<HTMLMediaElement, string>();
+  private storedUrl: string | null = null;
+  private generation = 0;
 
   private get soundPath(): string {
     return String(this.config.soundPath ?? '').trim();
@@ -46,6 +50,29 @@ export default class CustomSounds extends SlickPlugin<typeof meta.settings> {
     this.restore = () => {
       HTMLMediaElement.prototype.play = original;
     };
+    void this.load();
+  }
+
+  onSettingsChange() {
+    void this.load();
+  }
+
+  private async load() {
+    if (this.api.loader === 'electron') return;
+    const generation = ++this.generation;
+    const url = this.soundPath ? await this.api.storedFileUrl('soundPath') : null;
+    if (generation !== this.generation || this.api.signal.aborted) {
+      if (url) URL.revokeObjectURL(url);
+      return;
+    }
+    if (this.storedUrl) URL.revokeObjectURL(this.storedUrl);
+    this.storedUrl = url;
+  }
+
+  private soundUrl(): string | null {
+    const path = this.soundPath;
+    if (!path) return null;
+    return this.api.loader === 'electron' ? customSoundUrl(path) : this.storedUrl;
   }
 
   stop() {
@@ -58,10 +85,10 @@ export default class CustomSounds extends SlickPlugin<typeof meta.settings> {
   }
 
   private swap(element: HTMLMediaElement) {
-    const path = this.soundPath;
+    const next = this.soundUrl();
     const remembered = this.originals.get(element);
 
-    if (!path) {
+    if (!next) {
       // Cleared while swapped: put it back.
       if (remembered !== undefined && element.src !== remembered) element.src = remembered;
       this.originals.delete(element);
@@ -69,7 +96,6 @@ export default class CustomSounds extends SlickPlugin<typeof meta.settings> {
     }
 
     if (remembered !== undefined) {
-      const next = customSoundUrl(path);
       if (element.src !== next) element.src = next;
       return;
     }
@@ -78,6 +104,6 @@ export default class CustomSounds extends SlickPlugin<typeof meta.settings> {
     if (!src || !isNotificationSound(src, location.href)) return;
 
     this.originals.set(element, src);
-    element.src = customSoundUrl(path);
+    element.src = next;
   }
 }

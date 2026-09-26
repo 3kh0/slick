@@ -1,5 +1,6 @@
 // MUST remain type-only: importing bridge.ts here would claim before installation.
 import type { SlickBridge } from '../app/bridge.ts';
+import { writeStoredFile } from '../app/api/storedFiles.ts';
 import { BACKGROUND_PLUGINS } from './plugins.ts';
 import { CHANNEL, MAX_TEXT, PAGE_KEYS, createClient, namespace, record } from './rpc.ts';
 
@@ -78,7 +79,20 @@ export function installBridge(target: Window & typeof globalThis) {
       };
     },
     openCssEditor: () => Promise.reject(new Error('Use the Slick toolbar to open options')),
-    openFile: denied,
+    openFile(_title, accept, owner) {
+      if (!owner || !namespace(`plugin:${owner.plugin}`)) return denied();
+      const input = target.document.createElement('input');
+      input.type = 'file';
+      if (accept) input.accept = accept;
+      const picked = new Promise<File | null>((resolve) => {
+        input.addEventListener('change', () => resolve(input.files?.[0] ?? null), { once: true });
+        input.addEventListener('cancel', () => resolve(null), { once: true });
+      });
+      input.click();
+      return picked.then((file) =>
+        file ? writeStoredFile(bridge.blobStore(`plugin:${owner.plugin}`), owner.setting, file) : '',
+      );
+    },
     fetch: denied,
     // Privileged halves run in the background (extension/mainHost.ts); events aren't bridged.
     plugin: (id) => ({

@@ -6,6 +6,7 @@
 import { SlickPlugin, type SlickPluginConstructor } from '../shared/Plugin.ts';
 import { changedKeys, type PluginSettings } from '../shared/settings.ts';
 import { type BlobStore, Cache, ScopedStorage } from './api/storage.ts';
+import { readStoredFile } from './api/storedFiles.ts';
 import { Store } from './store.ts';
 import { onDocument, setStyle } from './api/css.ts';
 import { deferResizeWork } from './api/resize.ts';
@@ -187,6 +188,13 @@ function createScopedAPI(
     setStyle: tracked((css: string | null, key = 'default') => setStyle(css, `plugin:${id}:${key}`)),
 
     storage,
+    storedFileUrl: async (setting: string) => {
+      const file = await readStoredFile(blob, setting).catch(() => null);
+      if (!file || scope.signal.aborted) return null;
+      const url = URL.createObjectURL(file);
+      scope.track(() => URL.revokeObjectURL(url));
+      return url;
+    },
     Cache: <T>(name: string, ttlMs?: number, maxEntries?: number) => new Cache<T>(storage, name, ttlMs, maxEntries),
 
     /**
