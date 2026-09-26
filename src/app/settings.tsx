@@ -781,7 +781,12 @@ function Appearance({ config, bridge }: { config: ConfigStore; bridge: SlickBrid
           ))}
         </select>
       </div>
-      <elements.Button onClick={() => void bridge.openCssEditor()}>Open CSS editor</elements.Button>
+      {bridge.loader === 'extension' ? (
+        // Slack's page may not open extension tabs; the toolbar popup owns the editor.
+        <div style={{ opacity: 0.85 }}>Edit custom CSS from the Slick button in the Firefox toolbar.</div>
+      ) : (
+        <elements.Button onClick={() => void bridge.openCssEditor()}>Open CSS editor</elements.Button>
+      )}
     </Section>
   );
 }

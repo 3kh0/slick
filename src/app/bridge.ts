@@ -16,6 +16,8 @@ export interface SlickBridge {
 
   readSettings(): Promise<string>;
   writeSettings(text: string): Promise<boolean>;
+  /** Optional atomic update. False means the expected text is stale; reread and retry. */
+  compareAndSwapSettings?(expected: string, text: string): Promise<boolean>;
   onSettingsChange(cb: (text: string) => void): () => void;
 
   readUserCss(): Promise<string>;

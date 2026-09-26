@@ -16,6 +16,7 @@ type SchemaEntry = { schema: SettingsSchema; defaultEnabled: boolean };
 export class ConfigStore {
   private stored: StoredConfig = {};
   private storedIsValid = true;
+  private settingsGeneration = 0;
   private schemas = new Map<string, SchemaEntry>();
   private resolved = new Map<string, PluginSettings>();
   private userCss = '';
@@ -42,16 +43,8 @@ export class ConfigStore {
     this.bridge.onSettingsChange((text) => {
       const next = this.parse(text);
       if (!next.valid) return;
-      this.stored = next.config;
-      this.storedIsValid = true;
-      this.resolved.clear();
-      for (const notify of this.configListeners) {
-        try {
-          notify();
-        } catch (error) {
-          console.error('[slick] config listener threw:', error);
-        }
-      }
+      this.settingsGeneration++;
+      this.acceptSettings(next.config, !this.bridge.compareAndSwapSettings);
     });
 
     this.bridge.onUserCssChange((css) => {
@@ -64,6 +57,21 @@ export class ConfigStore {
         }
       }
     });
+  }
+
+  private acceptSettings(config: StoredConfig, notifyUnchanged = false) {
+    const changed = !this.storedIsValid || JSON.stringify(config) !== JSON.stringify(this.stored);
+    this.stored = config;
+    this.storedIsValid = true;
+    if (!changed && !notifyUnchanged) return;
+    this.resolved.clear();
+    for (const notify of this.configListeners) {
+      try {
+        notify();
+      } catch (error) {
+        console.error('[slick] config listener threw:', error);
+      }
+    }
   }
 
   private parse(text: string): { config: StoredConfig; valid: boolean } {
@@ -123,7 +131,38 @@ export class ConfigStore {
     return () => void this.cssListeners.delete(cb);
   }
 
+  private updateTail: Promise<unknown> = Promise.resolve();
+
   async update(mutate: (config: StoredConfig) => void): Promise<boolean> {
+    if (this.bridge.compareAndSwapSettings) {
+      const run = this.updateTail
+        .then(async () => {
+          // Read on every attempt: multiple tabs and the options UI share storage.
+          for (let attempt = 0; attempt < 8; attempt++) {
+            const prior = await this.bridge.readSettings();
+            const parsed = this.parse(prior);
+            if (!parsed.valid) return false;
+            mutate(parsed.config);
+            const text = JSON.stringify(parsed.config, null, 2);
+            if (await this.bridge.compareAndSwapSettings!(prior, text)) {
+              // Notifications received while the refresh is in flight supersede
+              // its snapshot. Never replace them with an older read response.
+              const generation = this.settingsGeneration;
+              try {
+                const latest = this.parse(await this.bridge.readSettings());
+                if (latest.valid && generation === this.settingsGeneration) this.acceptSettings(latest.config);
+              } catch {
+                /* The CAS already committed; a failed refresh is not a failed write. */
+              }
+              return true;
+            }
+          }
+          return false;
+        })
+        .catch(() => false);
+      this.updateTail = run;
+      return run;
+    }
     if (!this.storedIsValid) {
       console.error('[slick] refusing to overwrite an unreadable settings file');
       return false;

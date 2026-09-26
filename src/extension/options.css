@@ -1,0 +1,176 @@
+:root {
+  color-scheme: dark;
+  font-family:
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    'Segoe UI',
+    sans-serif;
+  background: #100d18;
+  color: #eee8f8;
+  font-size: 14px;
+  line-height: 1.6;
+  accent-color: #b496ff;
+}
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+  min-width: 320px;
+}
+main {
+  width: min(100%, 720px);
+  margin: 0 auto;
+  padding: 28px 22px 40px;
+}
+header,
+.switch,
+.actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+header {
+  flex-wrap: wrap;
+}
+h1 {
+  font-size: 38px;
+  line-height: 1;
+  letter-spacing: -2px;
+  margin: 4px 0 12px;
+}
+h1 span {
+  color: #b496ff;
+}
+h2 {
+  font-size: 16px;
+  margin: 0 0 14px;
+  font-weight: 650;
+}
+p {
+  margin: 8px 0 16px;
+}
+.eyebrow {
+  color: #b496ff;
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+  font-size: 10px;
+  margin: 0;
+}
+.intro,
+.hint,
+#css-status {
+  color: #b9afca;
+}
+.hint {
+  font-size: 12px;
+}
+section {
+  background: #191422;
+  border: 1px solid #352940;
+  border-radius: 12px;
+  padding: 20px;
+  margin-top: 18px;
+}
+fieldset {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+}
+.switch {
+  padding: 10px 0;
+  cursor: pointer;
+}
+input[type='checkbox'] {
+  width: 19px;
+  height: 19px;
+  flex-shrink: 0;
+}
+.select-label {
+  display: block;
+  margin: 16px 0 6px;
+}
+button,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+  background: #231a32;
+  border: 1px solid #534066;
+  border-radius: 7px;
+}
+button {
+  padding: 8px 13px;
+  cursor: pointer;
+  font-weight: 600;
+}
+button:hover:not(:disabled) {
+  background: #352548;
+  border-color: #b496ff;
+}
+button:disabled,
+fieldset:disabled,
+textarea:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+select {
+  width: 100%;
+  padding: 9px;
+}
+textarea {
+  display: block;
+  width: 100%;
+  min-height: 230px;
+  resize: vertical;
+  padding: 12px;
+  background: #100d18;
+  font:
+    12px/1.7 ui-monospace,
+    monospace;
+  tab-size: 2;
+}
+:focus-visible {
+  outline: 2px solid #cbb4ff;
+  outline-offset: 3px;
+}
+.actions {
+  justify-content: flex-start;
+  flex-wrap: wrap;
+  margin-top: 12px;
+}
+#save-css {
+  background: #66449b;
+  border-color: #9871d2;
+}
+#error {
+  color: #ffd5de;
+  background: #391d2e;
+  border: 1px solid #8e4964;
+  border-radius: 7px;
+  padding: 12px;
+  overflow-wrap: anywhere;
+}
+#status:empty {
+  display: none;
+}
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+@media (max-width: 440px) {
+  main {
+    padding: 20px 14px;
+  }
+  section {
+    padding: 16px;
+  }
+}

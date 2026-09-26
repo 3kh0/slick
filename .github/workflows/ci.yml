@@ -21,6 +21,7 @@ jobs:
           - 'lint:sh'
           - typecheck
           - 'test:app'
+          - 'test:extension'
     steps:
       - uses: actions/checkout@v7
       - uses: oven-sh/setup-bun@v2
@@ -41,6 +42,24 @@ jobs:
         env:
           ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
       - run: bun run build
+
+  extension:
+    name: firefox extension
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install --frozen-lockfile
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+      - run: bun run build -- firefox
+      - run: bun run extension:lint
+      - uses: actions/upload-artifact@v7
+        with:
+          name: slick-firefox-unsigned
+          path: dist/extension/slick-firefox.xpi
 
   package:
     name: package (${{ matrix.os }}, ${{ matrix.arch }})

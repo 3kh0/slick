@@ -5,8 +5,9 @@ import { applyPendingAccountSwitch } from './api/accounts.ts';
 import { registerDocument } from './api/css.ts';
 import { installResizeGate } from './api/resize.ts';
 import { bootstrap } from './bootstrap.ts';
+// Extension entries must import their bridge-setup side effect before this module.
+// bridge.ts claims the preinstalled SlickBridge synchronously during evaluation.
 import { getBridge } from './bridge.ts';
-import { SlickPlugin } from '../shared/Plugin.ts';
 import { installChildWindows, onChildWindow } from './slack/childWindows.ts';
 import { exposeDebugGlobals as exposeReactDebug, patchingReady } from './slack/react.tsx';
 // Side effects: redux.ts wraps createStore and the thunk factory at module
@@ -32,19 +33,6 @@ const preconditions: Precondition[] = [
     name: 'bridge',
     detail: 'no SlickBridge: the loader did not expose it',
     ok: () => getBridge() !== null,
-  },
-  {
-    name: 'csp-removed',
-    detail: 'Content Security Policy is still active: the loader did not rebuild the document',
-    ok: () => {
-      try {
-        // oxlint-disable-next-line no-eval
-        (0, eval)('1');
-        return true;
-      } catch {
-        return false;
-      }
-    },
   },
   {
     name: 'before-slack',
@@ -93,10 +81,6 @@ function main() {
   }
 
   console.log(`[slick] ${version} running before Slack — preconditions passed`);
-
-  // Plugins resolve their base class through this global, so every plugin
-  // shares the runtime's SlickPlugin identity (see scripts/lib/plugin.ts).
-  (globalThis as any).__slick = { SlickPlugin };
 
   void patchingReady.then(async () => {
     await reduxReady;

@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Slick · Firefox</title>
+    <link rel="stylesheet" href="options.css" />
+    <script type="module" src="options.js"></script>
+  </head>
+  <body>
+    <main>
+      <header>
+        <div>
+          <p class="eyebrow">Firefox · Experimental</p>
+          <h1>Slick<span>.</span></h1>
+        </div>
+        <button id="open-editor" type="button">Open full editor</button>
+      </header>
+      <p class="intro">A quieter Slack. A little more yours.</p>
+      <p id="error" role="alert" hidden></p>
+      <p id="status" role="status"></p>
+      <section aria-labelledby="settings-title">
+        <h2 id="settings-title">Your setup</h2>
+        <fieldset id="settings" disabled>
+          <legend class="sr-only">Plugin and theme settings</legend>
+          <label class="switch"><span>Enable Slick plugins</span><input id="enabled" type="checkbox" /></label>
+          <p class="hint">
+            Global disable stops plugins only. Themes, custom CSS and the runtime may remain active. Use Bypass for a
+            true bypass.
+          </p>
+          <label class="select-label" for="theme">Theme</label>
+          <select id="theme">
+            <option value="">Default (Slack)</option>
+            <option value="amoled">AMOLED</option>
+            <option value="ultraviolet">Ultraviolet</option>
+            <option value="custom">Custom</option>
+          </select>
+          <p class="hint">Custom leaves the palette to your CSS. Saved CSS also applies with other themes.</p>
+          <div id="plugins"></div>
+        </fieldset>
+        <p class="hint">
+          Only page-side plugins are included. Plugins that need desktop or network access are not in the Firefox build.
+        </p>
+      </section>
+      <section aria-labelledby="css-title">
+        <h2 id="css-title"><label for="css">Custom CSS</label></h2>
+        <p id="css-help" class="hint">
+          Local stylesheet, applied to Slack after saving. Only paste CSS you trust; CSS can reference external
+          resources. Unsaved edits stay here while this page is open.
+        </p>
+        <textarea
+          id="css"
+          disabled
+          spellcheck="false"
+          aria-describedby="css-help css-status"
+          placeholder="/* Make Slack yours */"
+        ></textarea>
+        <div class="actions">
+          <button id="save-css" type="button" disabled>Save CSS</button
+          ><span id="css-status" role="status">Loading…</span>
+        </div>
+      </section>
+      <section aria-labelledby="recovery-title">
+        <h2 id="recovery-title">Recovery</h2>
+        <p class="hint">
+          Session-only controls for the active Slack client tab in this window. Each action reloads that tab. Other tabs
+          are never targeted.
+        </p>
+        <div class="actions recovery">
+          <button id="bypass" type="button">Bypass Slick</button>
+          <button id="safe-mode" type="button">Safe mode</button>
+          <button id="resume" type="button">Resume</button>
+        </div>
+        <p class="hint">
+          Bypass skips Slick startup. Safe mode loads Slick without plugins. Resume clears both flags; it does not
+          change your saved settings.
+        </p>
+        <p class="hint">
+          Use these controls from the action popup while Slack is active. In a full options tab, recovery safely refuses
+          to target a background tab. Requires scripting and host access to https://app.slack.com/*.
+        </p>
+      </section>
+      <section aria-labelledby="diagnostics-title">
+        <h2 id="diagnostics-title">Experimental · limited compatibility</h2>
+        <p class="hint">
+          Slack updates can break renderer hooks; some workspaces and layouts may not work. This MVP has no
+          desktop/native integrations, remote executable code, or credential permissions. No current tab URL or
+          credentials are displayed here.
+        </p>
+        <button id="retry" type="button">Reload settings</button>
+      </section>
+    </main>
+  </body>
+</html>

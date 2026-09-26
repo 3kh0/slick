@@ -1,11 +1,12 @@
-// Plugin discovery and bundling. Renderer halves (index.ts(x)) become IIFE
-// expressions inlined into slick.js so they can be toggled without a reload;
+// Plugin discovery and bundling. Renderer halves are statically imported into
+// slick.js so they can be toggled without dynamic code evaluation;
 // main halves (main.ts) are bundled into the loader, unreachable from the page.
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { build, type Plugin } from 'esbuild';
-import { PLUGINS, ROOT, SHARED } from './paths.ts';
+import type { Plugin } from 'esbuild';
+import { EXTENSION_PLUGINS } from '../../src/extension/plugins.ts';
+import { PLUGINS, SHARED } from './paths.ts';
 
 export type PluginEntry = { name: string; dir: string; renderer: string; main: string | null };
 
@@ -31,22 +32,6 @@ export function discoverPlugins(): PluginEntry[] {
     .toSorted((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
 }
 
-// `$slick` reads the host bundle's globals: a second compiled copy of
-// SlickPlugin would fail `instanceof` and every plugin would be rejected.
-const slickGlobalShim: Plugin = {
-  name: 'slick-global-shim',
-  setup(builder) {
-    builder.onResolve({ filter: /^\$slick$/ }, () => ({ path: '$slick', namespace: 'slick-global' }));
-    builder.onLoad({ filter: /.*/, namespace: 'slick-global' }, () => ({
-      contents: `
-        export const SlickPlugin = globalThis.__slick.SlickPlugin
-        export default SlickPlugin
-      `,
-      loader: 'js',
-    }));
-  },
-};
-
 const slickSharedAlias: Plugin = {
   name: 'slick-shared-alias',
   setup(builder) {
@@ -54,41 +39,48 @@ const slickSharedAlias: Plugin = {
   },
 };
 
-export async function bundleRenderer(entry: PluginEntry, debug: boolean): Promise<string> {
-  const result = await build({
-    entryPoints: [entry.renderer],
-    absWorkingDir: ROOT,
-    bundle: true,
-    write: false,
-    platform: 'browser',
-    format: 'esm',
-    target: 'es2022',
-    minify: !debug,
-    sourcemap: false,
-    jsx: 'transform',
-    plugins: [slickGlobalShim],
-    // Inline assets: fetching them would leak privacy and break offline.
-    loader: { '.gif': 'dataurl', '.png': 'dataurl', '.svg': 'dataurl', '.woff2': 'dataurl' },
-    define: { process: 'undefined' },
-  });
+export type RendererRegistryOptions = {
+  targetLoader?: 'electron' | 'extension';
+  /** Explicit selection overrides the target default. Unknown names fail the build. */
+  pluginNames?: readonly string[];
+};
 
-  let code = `(() => {\n${result.outputFiles[0].text}\n})()`;
-  code = code.replace(/export\s*\{\s*(\w+)\s+as\s+default\s*\};?/g, 'return $1;');
-  code = code.replace(/export\s+default\s+(\w+);?/g, 'return $1;');
+export { EXTENSION_PLUGINS as EXTENSION_PLUGIN_NAMES };
 
-  if (!/\breturn\s+[A-Za-z_$][\w$]*\s*;/.test(code)) {
-    throw new Error(`[build:plugins] ${entry.name} must default-export a named plugin class`);
+export function rendererRegistryModule({
+  targetLoader = 'electron',
+  pluginNames,
+}: RendererRegistryOptions = {}): string {
+  const all = discoverPlugins();
+  const names = pluginNames ?? (targetLoader === 'extension' ? EXTENSION_PLUGINS : undefined);
+  if (names) {
+    const available = new Set(all.map((entry) => entry.name));
+    for (const name of names) {
+      if (!available.has(name)) throw new Error(`[build:plugins] unknown renderer plugin: ${name}`);
+    }
   }
-  return code;
+  const selected = names ? all.filter((entry) => names.includes(entry.name)) : all;
+  return [
+    ...selected.map((entry, index) => `import p${index} from ${JSON.stringify(entry.renderer)};`),
+    'export default {',
+    ...selected.map((entry, index) => `  [${JSON.stringify(entry.name)}]: p${index},`),
+    '};',
+  ].join('\n');
 }
 
-export async function bundleAllRenderers(debug: boolean): Promise<Record<string, string>> {
-  const plugins: Record<string, string> = {};
-  for (const entry of discoverPlugins()) {
-    plugins[entry.name] = await bundleRenderer(entry, debug);
-  }
-  console.log(`[build:plugins] ${Object.keys(plugins).length} renderer halves bundled`);
-  return plugins;
+/** Bundle constructors in the host graph, sharing its SlickPlugin class identity. */
+export function rendererRegistryPlugin(options: RendererRegistryOptions = {}): Plugin {
+  return {
+    name: 'slick-plugins',
+    setup(builder) {
+      builder.onResolve({ filter: /^slick:plugins$/ }, () => ({ path: 'slick:plugins', namespace: 'slick-plugins' }));
+      builder.onLoad({ filter: /.*/, namespace: 'slick-plugins' }, () => ({
+        contents: rendererRegistryModule(options),
+        resolveDir: PLUGINS,
+        loader: 'js',
+      }));
+    },
+  };
 }
 
 // Written to a file, not resolved dynamically, so the set of privileged

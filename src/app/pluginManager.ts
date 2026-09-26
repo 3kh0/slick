@@ -242,16 +242,7 @@ export class PluginManager {
     return result;
   }
 
-  register(code: string): string | null {
-    let PluginClass: SlickPluginConstructor;
-    try {
-      const result = new Function(`return ${code}`)();
-      PluginClass = (result?.prototype instanceof SlickPlugin ? result : result?.default) as SlickPluginConstructor;
-    } catch (error) {
-      console.error('[slick] plugin failed to evaluate:', error);
-      return null;
-    }
-
+  register(PluginClass: SlickPluginConstructor): string | null {
     if (typeof PluginClass !== 'function' || !(PluginClass.prototype instanceof SlickPlugin)) {
       console.error('[slick] plugin does not extend SlickPlugin');
       return null;

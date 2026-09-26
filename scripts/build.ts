@@ -3,6 +3,7 @@
 import { buildApp } from './build/app.ts';
 import { buildDesktop } from './build/desktop.ts';
 import { packageDesktop } from './build/package.ts';
+import { buildExtension } from './build/extension.ts';
 
 const args = process.argv.slice(2);
 const debug = args.includes('--debug');
@@ -16,7 +17,7 @@ if (archIndex >= 0 && (!arch || arch.startsWith('--'))) {
 const archValueIndex = archIndex < 0 ? -1 : archIndex + 1;
 const targets = args.filter((arg, index) => !arg.startsWith('--') && index !== archValueIndex);
 
-const all = { app: buildApp, desktop: buildDesktop, package: packageDesktop };
+const all = { app: buildApp, desktop: buildDesktop, package: packageDesktop, firefox: buildExtension };
 const chosen = targets.length ? targets : ['desktop'];
 
 for (const target of chosen) {
