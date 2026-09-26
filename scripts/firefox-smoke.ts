@@ -143,6 +143,8 @@ db.commit(); db.execute('PRAGMA wal_checkpoint(TRUNCATE)'); db.execute('VACUUM')
             'browser.startup.page': 0,
             'datareporting.healthreport.uploadEnabled': false,
             'toolkit.telemetry.enabled': false,
+            'media.navigator.streams.fake': true,
+            'media.navigator.permission.disabled': true,
           },
         },
       },
@@ -567,6 +569,67 @@ db.commit(); db.execute('PRAGMA wal_checkpoint(TRUNCATE)'); db.execute('VACUUM')
     await command('/window', { handle: slackHandle });
     console.log(
       `PASS: AdminBackend opens Identity for the member in a new tab (landed on ${new URL(adminUrl).pathname}).`,
+    );
+    const streamer = () =>
+      execute(`return {
+        on: document.documentElement.classList.contains('slick-streamer-mode'),
+        blurred: [...document.querySelectorAll('body *')].filter((e) => getComputedStyle(e).filter.includes('blur')).length,
+      }`);
+    assert.deepEqual(await streamer(), { on: false, blurred: 0 });
+    await click('css selector', '.slick-streamer-mode__button');
+    const manual = await until(
+      streamer,
+      (redaction: any) => redaction.on && redaction.blurred > 0,
+      'StreamerMode toggle on',
+      10,
+    );
+    await click('css selector', '.slick-streamer-mode__button');
+    await until(streamer, (redaction: any) => !redaction.on && redaction.blurred === 0, 'StreamerMode toggle off', 10);
+    await execute(`const button = document.createElement('button');
+      button.id = 'slick-smoke-share';
+      button.textContent = 'share';
+      button.style.cssText = 'position:fixed;top:0;left:0;z-index:2147483647';
+      button.onclick = () => navigator.mediaDevices.getDisplayMedia({ video: true }).then(
+        (stream) => { window.__slickShare = stream; },
+        (error) => { window.__slickShare = String(error); },
+      );
+      document.body.append(button);`);
+    await click('css selector', '#slick-smoke-share');
+    const shared = await until(
+      () =>
+        execute(`const s = window.__slickShare; return s === undefined ? null : typeof s === 'string' ? s : 'stream'`),
+      Boolean,
+      'fake screen share',
+      10,
+    ).catch(async (error) => {
+      console.error(
+        'share state:',
+        JSON.stringify(
+          await execute(
+            `return { focus: document.hasFocus(), visible: document.visibilityState, active: navigator.userActivation?.hasBeenActive, button: !!document.getElementById('slick-smoke-share') }`,
+          ),
+        ),
+      );
+      throw error;
+    });
+    assert.equal(shared, 'stream');
+    const sharing = await until(
+      streamer,
+      (redaction: any) => redaction.on && redaction.blurred > 0,
+      'StreamerMode on share',
+      10,
+    );
+    await execute(
+      `window.__slickShare.getTracks().forEach((track) => track.stop()); document.getElementById('slick-smoke-share').remove();`,
+    );
+    await until(
+      streamer,
+      (redaction: any) => !redaction.on && redaction.blurred === 0,
+      'StreamerMode off after share',
+      10,
+    );
+    console.log(
+      `PASS: StreamerMode blurs ${manual.blurred} elements from its toggle and ${sharing.blurred} during a screen share, then clears.`,
     );
     // Open Preferences from the account menu.
     await until(

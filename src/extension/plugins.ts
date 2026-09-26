@@ -24,6 +24,7 @@ export const EXTENSION_PLUGINS = [
   'ShowRealUser',
   'SilentTyping',
   'SlimMessageBox',
+  'StreamerMode',
   'UserPronouns',
   'WhoReacted',
 ] as const;

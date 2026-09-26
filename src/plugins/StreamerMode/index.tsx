@@ -48,7 +48,7 @@ export default class StreamerMode extends SlickPlugin<typeof meta.settings> {
       this.originalGetDisplayMedia = null;
     }
     // Leave the main half unmuted even if the plugin stopped mid-share.
-    void this.api.main.call('setActive', false).catch(() => {});
+    if (this.api.loader === 'electron') void this.api.main.call('setActive', false).catch(() => {});
   }
 
   onSettingsChange() {
@@ -77,6 +77,7 @@ export default class StreamerMode extends SlickPlugin<typeof meta.settings> {
   private apply(active: boolean) {
     this.active.set(active);
     document.documentElement.classList.toggle(ROOT_CLASS, active);
+    if (this.api.loader !== 'electron') return;
     // Worst case on failure is a visible notification, so just log.
     void this.api.main.call('setActive', active).catch((error) => this.log('could not reach the main half', error));
   }

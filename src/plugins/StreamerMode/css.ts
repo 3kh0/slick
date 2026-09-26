@@ -63,7 +63,7 @@ export function streamerCss(options: StreamerCss): string {
   // Hovering a row reveals it, so the client stays usable while redacted.
   const inRow = `:is(${preview}, ${destination}, [data-qa="dms-channel-sender-name"])`;
   const revealed = [
-    `${root} .p-channel_sidebar:hover ${sidebarRow} .p-channel_sidebar__name`,
+    `${root} ${sidebarRow}:hover .p-channel_sidebar__name`,
     `${root} .c-inline_channel_entity:hover .c-channel_entity__name`,
     `${root} ${activityRow}:hover ${inRow}`,
     `${root} ${dmsRow}:hover ${inRow}`,
