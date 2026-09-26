@@ -188,6 +188,7 @@
     ".p-member_profile_hover_card__container_deleted{background:#181825 !important;border:1px solid #313244 !important;}",
     ".p-member_profile_hover_card__banner_deactivated_dark,.p-member_profile_hover_card__banner_deactivated_light,.p-member_profile_restriction_deleted,.p-member_profile_hover_card__container_deleted .c-avatar{background:#313244 !important;}",
     ".p-view_contents--primary:has([data-qa^=outbox_tab_]) .p-view_header,.p-outbox_page__tab-menu,.p-drafts_page,.p-sent_page{background:#1e1e2e !important;}",
-    ".p-view_contents--primary:has([data-qa=threads_view]) .p-view_header,.p-threads_view,.p-threads_view .p-threads_footer,.p-threads_view .p-threads_footer__input_container{background:#1e1e2e !important;}"
+    ".p-view_contents--primary:has([data-qa=threads_view]) .p-view_header,.p-threads_view{background:#1e1e2e !important;}",
+    ".c-virtual_list__item:has(> [data-qa=reply_container]),.c-virtual_list__item > [data-qa=reply_container],.c-virtual_list__item > [data-qa=reply_container] > .p-threads_footer__input{background:#1e1e2e !important;}"
   ]
 }
