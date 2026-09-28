@@ -31,7 +31,7 @@
     "electron-builder": "^26.15.3",
     "esbuild": "^0.28.2",
     "fflate": "^0.8.3",
-    "monaco-editor": "0.56.0",
+    "monaco-editor": "0.57.0",
     "oxfmt": "^0.70.0",
     "oxlint": "^1.85.0",
     "typescript": "^7.0.2",
