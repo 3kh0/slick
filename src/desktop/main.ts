@@ -15,6 +15,7 @@ import {
   updateSettings,
   windowCreated,
 } from './pluginHost.js';
+import { refreshInstalledIcons } from './iconRefresh.js';
 import { readStoredSettings, watchSettings } from './settingsFile.js';
 import { applyPatches, setMenuHandlers } from './patch.js';
 import { findSlackAsar, macSlackApp, slackElectronMajor } from './slackFinder.js';
@@ -159,6 +160,7 @@ function startSlack(asar: string) {
 
   app.whenReady().then(async () => {
     setupSession([slickResourcesPath, __dirname]);
+    void refreshInstalledIcons(slickResourcesPath, app.isPackaged);
     await readyMainPlugins();
     watchSettings((text, settings) => {
       updateSettings(settings);
