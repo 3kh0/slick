@@ -9,6 +9,7 @@ import { createRequire } from 'node:module';
 import path from 'node:path';
 import { app, ipcMain, Menu, MenuItem, shell } from 'electron';
 import { profileDir } from './paths.js';
+import { trayDir, wrapTray } from './trayIcons.js';
 
 const cjsRequire = createRequire(import.meta.url);
 const NodeModule = cjsRequire('module') as any;
@@ -97,9 +98,12 @@ function injectSlickMenu(items: AnyItem[]) {
 export function applyPatches(
   slackAsarPath: string,
   slickPreloadPath: string,
+  slickResources: string,
   onWindow?: (window: Electron.BrowserWindow) => void,
 ) {
   const slackResources = path.dirname(slackAsarPath);
+  const tray = trayDir(slickResources);
+  overrides.Tray = wrapTray(electronCjs.Tray, tray);
 
   if (process.platform === 'linux' && process.env.FLATPAK_ID === 'dev.slick.Slick') {
     app.on('second-instance', () => console.log('[slick] Flatpak received second-instance handoff'));
@@ -240,6 +244,7 @@ export function applyPatches(
     applicationName: 'Slick',
     applicationVersion: typeof __SLICK_VERSION__ === 'string' ? __SLICK_VERSION__ : 'dev',
     website: 'https://github.com/3kh0/slick',
+    ...(tray && process.platform !== 'darwin' ? { iconPath: path.join(tray, 'tile.png') } : {}),
   });
 
   // Make Slack believe it runs from its own bundle, or it can't find its assets

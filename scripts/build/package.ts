@@ -150,6 +150,7 @@ export async function packageDesktop({ debug = false, platform = process.platfor
         { from: path.join(DIST_DESKTOP, 'slick.js'), to: 'slick.js' },
         { from: path.join(DIST_DESKTOP, 'monaco'), to: 'monaco' },
         { from: THEMES, to: 'themes', filter: ['**/*.json'] },
+        { from: path.join(ASSETS, 'tray'), to: 'tray' },
         ...(platform === 'linux' ? [{ from: path.join(ASSETS, 'desktop-linux'), to: 'icons', filter: ['*.png'] }] : []),
         ...(platform === 'linux' && selectedArch === Arch.arm64
           ? [

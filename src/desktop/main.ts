@@ -148,7 +148,7 @@ function startSlack(asar: string) {
   if (stored) updateSettings(stored);
   bootMainPlugins();
 
-  applyPatches(asar, path.join(__dirname, 'preload.js'), windowCreated);
+  applyPatches(asar, path.join(__dirname, 'preload.js'), slickResourcesPath, windowCreated);
   setupBridge();
   setupPluginRpc();
 
