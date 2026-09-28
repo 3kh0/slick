@@ -65,6 +65,7 @@ stdenvNoCC.mkDerivation {
     cp -r themes $out/lib/slick/resources/themes
     cp dist/desktop/slick.js $out/lib/slick/resources/slick.js
     cp -r dist/desktop/monaco $out/lib/slick/resources/monaco
+    cp -r assets/tray $out/lib/slick/resources/tray
     makeWrapper ${electron'}/bin/electron $out/bin/slick \
       --add-flags "$out/lib/slick/resources/app" \
       --set SLICK_RESOURCES_PATH "$out/lib/slick/resources" \

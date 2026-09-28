@@ -48,6 +48,7 @@ modules:
       - cp slick/dist/desktop/slick.js /app/lib/slick/resources/slick.js
       - cp -a slick/dist/desktop/monaco /app/lib/slick/resources/monaco
       - cp -a slick/themes /app/lib/slick/resources/themes
+      - cp -a slick/assets/tray /app/lib/slick/resources/tray
       - if [ "$(uname -m)" = aarch64 ]; then test -f slick/dist/desktop/native/linux-arm64/keymapping.node; mkdir -p /app/lib/slick/resources/native/linux-arm64; cp slick/dist/desktop/native/linux-arm64/*.node /app/lib/slick/resources/native/linux-arm64/; install -Dm644 slick/packaging/linux/TAUT-LICENSE.txt /app/lib/slick/resources/TAUT-LICENSE.txt; fi
       - install -Dm755 flatpak/slick.sh /app/bin/slick
       - install -Dm644 flatpak/dev.slick.Slick.desktop /app/share/applications/dev.slick.Slick.desktop

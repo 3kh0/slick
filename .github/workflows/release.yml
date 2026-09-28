@@ -77,6 +77,8 @@ jobs:
           security list-keychains -d user -s "$KEYCHAIN" login.keychain-db
           rm "$RUNNER_TEMP/cert.p12"
           echo "CSC_KEYCHAIN=$KEYCHAIN" >> "$GITHUB_ENV"
+      - name: Compile icon variants
+        run: scripts/icon/render-icon.sh
       - name: Build release artifacts
         run: bun run build -- package --arch "${{ matrix.arch }}"
         env:

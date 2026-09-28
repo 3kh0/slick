@@ -12,16 +12,18 @@ CAR="$ROOT/assets/Assets.car"
 [ -f "$SRC" ] || { echo "source not found: $SRC"; exit 1; }
 
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
-echo "rendering $OUT..."
+echo "rendering icns, linux pngs and ico..."
 CLANG_MODULE_CACHE_PATH="${CLANG_MODULE_CACHE_PATH:-$TMP/clang-module-cache}" \
-  swift "$ROOT/scripts/icon/gen-icon.swift" "$SRC" "$OUT" >/dev/null
-echo "rendered $OUT ($(du -h "$OUT" | cut -f1))"
+  swift "$ROOT/scripts/icon/gen-icon.swift" "$SRC" "$ROOT/assets" >/dev/null
+echo "rendered $OUT ($(du -h "$OUT" | cut -f1)), assets/desktop-linux, assets/icon.ico"
 
-if xcrun --find actool >/dev/null 2>&1; then
+ACTOOL="$(xcrun --find actool 2>/dev/null || true)"
+[ -x "$ACTOOL" ] || ACTOOL=/Applications/Xcode.app/Contents/Developer/usr/bin/actool
+if [ -x "$ACTOOL" ]; then
   echo "compiling $CAR..."
   cp "$SRC" "$ICON/Assets/desktop.svg"
   mkdir -p "$TMP/actool"
-  xcrun actool "$ICON" --compile "$TMP/actool" \
+  "$ACTOOL" "$ICON" --compile "$TMP/actool" \
     --output-format human-readable-text --notices --warnings --errors \
     --output-partial-info-plist "$TMP/actool/partial.plist" \
     --app-icon desktop --include-all-app-icons \
@@ -35,4 +37,5 @@ if xcrun --find actool >/dev/null 2>&1; then
   echo "compiled $CAR ($(du -h "$CAR" | cut -f1))"
 else
   echo "actool not found (needs full Xcode); skipped $CAR (macOS 26 icon variants)"
+  [ -z "${CI:-}" ] || exit 1
 fi

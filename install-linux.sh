@@ -258,8 +258,11 @@ for size in "${ICON_SIZES[@]}"; do
   ICON_DIR="$HOME/.local/share/icons/hicolor/${size}x${size}/apps"
   mkdir -p "$ICON_DIR"
   SRC_ICON="$ROOT/assets/desktop-linux/$size.png"
+  BUNDLED_ICON="$TARGET/resources/icons/$size.png"
   if [ "$CLONED" -eq 1 ] && [ -f "$SRC_ICON" ]; then
     cp "$SRC_ICON" "$ICON_DIR/slick.png"
+  elif [ -f "$BUNDLED_ICON" ]; then
+    cp "$BUNDLED_ICON" "$ICON_DIR/slick.png"
   elif ! curl -fsSL "$RAW_BASE/assets/desktop-linux/$size.png" -o "$ICON_DIR/slick.png" 2>/dev/null; then
     rm -f "$ICON_DIR/slick.png"
     echo "    note: could not fetch the ${size}x${size} icon"
