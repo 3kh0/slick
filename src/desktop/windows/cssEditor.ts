@@ -2,7 +2,7 @@ import path from 'node:path';
 import { BrowserWindow, ipcMain, nativeTheme, type WebContents } from 'electron';
 
 const CHANNEL = 'slick-custom-css';
-export const MONACO_VERSION = '0.56.0';
+export const MONACO_VERSION = '0.57.0';
 export const CSS_EDITOR_URL = 'slick://editor/index.html';
 export const MONACO_URL_PREFIX = `/monaco-${MONACO_VERSION}/vs/`;
 
