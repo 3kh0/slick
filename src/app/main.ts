@@ -16,6 +16,7 @@ import { exposeDebugGlobals as exposeReduxDebug, getStore, reduxReady } from './
 // Same for rtm.ts (wraps `routeMessages` and the degraded-mode thunk).
 import './slack/rtm.ts';
 import {
+  CHUNK_GLOBALS,
   exposeDebugGlobals as exposeWebpackDebug,
   installWebpackHooks,
   stats as webpackStats,
@@ -37,7 +38,7 @@ const preconditions: Precondition[] = [
   {
     name: 'before-slack',
     detail: 'Slack loaded before Slick: injected too late to patch anything',
-    ok: () => !(globalThis as any).webpackChunkwebapp && !(globalThis as any).rspackChunkwebapp,
+    ok: () => CHUNK_GLOBALS.every((name) => !(globalThis as any)[name]),
   },
 ];
 

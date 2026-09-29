@@ -207,9 +207,9 @@ function wrapPush(originalPush: PushFn): PushFn {
   };
 }
 
-// Slack has migrated from webpack to rspack; both globals are hooked because
-// which one is live depends on the build being served.
-const CHUNK_GLOBALS = ['webpackChunkwebapp', 'rspackChunkwebapp'];
+// Slack has migrated from webpack to rspack, then to its Gantry v2 shell; all
+// globals are hooked because which one is live depends on the build being served.
+export const CHUNK_GLOBALS = ['webpackChunkwebapp', 'rspackChunkwebapp', 'rspackChunkGantryV2'];
 
 function installHook(globalName: string) {
   let backing: Chunk[] | null = null;
