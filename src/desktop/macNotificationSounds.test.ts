@@ -17,6 +17,52 @@ test('maps Slack sounds only when the converted file exists in Slick resources',
   assert.equal(macNotificationOptions(silent, resources), silent);
 });
 
+test('stages packaged sounds in the user sound search directory without touching the bundle', (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'slick-sound-install-test-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const resources = path.join(root, 'Resources');
+  const sounds = path.join(root, 'Library', 'Sounds');
+  fs.mkdirSync(resources);
+  fs.writeFileSync(path.join(resources, 'slick-b2.caf'), 'converted');
+  const options = { sound: 'b2.mp3' };
+  const mapped = macNotificationOptions(options, resources, sounds);
+  assert.match(mapped.sound!, /^slick-stock-[a-f0-9]{64}\.caf$/);
+  assert.notEqual(mapped.sound, 'slick-b2.caf');
+  assert.equal(fs.readFileSync(path.join(sounds, mapped.sound!), 'utf8'), 'converted');
+  assert.deepEqual(macNotificationOptions(options, resources, sounds), mapped);
+  assert.equal(fs.readdirSync(sounds).length, 1);
+  assert.equal(fs.readFileSync(path.join(resources, 'slick-b2.caf'), 'utf8'), 'converted');
+  assert.equal(options.sound, 'b2.mp3');
+});
+
+test('updated bundled audio gets a fresh native name rather than reusing a cached sound', (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'slick-sound-update-test-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const sounds = path.join(root, 'Sounds');
+  const source = path.join(root, 'slick-knock_brush.caf');
+  fs.writeFileSync(source, 'old audio');
+  const original = { sound: 'knock_brush.mp3', hasReply: true };
+  const first = macNotificationOptions(original, root, sounds);
+  fs.writeFileSync(source, 'new audio');
+  const second = macNotificationOptions(original, root, sounds);
+  assert.notEqual(first.sound, second.sound);
+  assert.equal(second.hasReply, true);
+  assert.equal(original.sound, 'knock_brush.mp3');
+  assert.equal(fs.readFileSync(path.join(sounds, first.sound!), 'utf8'), 'old audio');
+  assert.equal(fs.readFileSync(path.join(sounds, second.sound!), 'utf8'), 'new audio');
+});
+
+test('muted, web-playback, and unknown sounds do not stage any files', (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'slick-sound-muted-test-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const sounds = path.join(root, 'Sounds');
+  fs.writeFileSync(path.join(root, 'slick-b2.caf'), 'audio');
+  for (const options of [{ sound: 'b2.mp3', silent: true }, { sound: 'none' }, { sound: 'Glass' }, {}]) {
+    macNotificationOptions(options, root, sounds);
+  }
+  assert.equal(fs.existsSync(sounds), false);
+});
+
 test('Slack none suppresses the native fallback for muted sounds and web playback', () => {
   assert.deepEqual(macNotificationOptions({ sound: 'none', silent: false }, '/missing'), {
     sound: 'none',
