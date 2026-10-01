@@ -16,6 +16,7 @@ import { ASSETS, DIST, DIST_DESKTOP, ROOT, THEMES } from '../lib/paths.ts';
 import { versions } from '../lib/versions.ts';
 import { buildDesktop } from './desktop.ts';
 import { buildLinuxArm64Natives } from './linuxNatives.ts';
+import { prepareMacNotificationSounds } from './macSounds.ts';
 
 /** The Electron major must track Slack's; .github/workflows/electron-watch.yml enforces it. */
 function electronVersion(): string {
@@ -117,6 +118,12 @@ export async function packageDesktop({ debug = false, platform = process.platfor
     throw new Error('[build:package] Linux releases require x64 or arm64');
   }
   if (platform === 'linux' && selectedArch === Arch.arm64) await buildLinuxArm64Natives();
+  const macSounds = path.join(DIST, 'mac-sounds');
+  if (platform === 'darwin') {
+    const installed = '/Applications/Slack.app/Contents/Resources';
+    const source = process.env.SLICK_SLACK_RESOURCES ?? (existsSync(path.join(installed, 'app.asar')) ? installed : '');
+    await prepareMacNotificationSounds(source, macSounds);
+  }
   const selectedPlatform =
     platform === 'darwin' ? Platform.MAC : platform === 'win32' ? Platform.WINDOWS : Platform.LINUX;
   const targets = selectedPlatform.createTarget(
@@ -145,6 +152,7 @@ export async function packageDesktop({ debug = false, platform = process.platfor
       asar: true,
 
       extraResources: [
+        ...(platform === 'darwin' ? [{ from: macSounds, to: '.', filter: ['*.caf'] }] : []),
         // Served over slick:// from Slick's own resources. main.ts captures
         // `process.resourcesPath` before patch.ts spoofs it to Slack's.
         { from: path.join(DIST_DESKTOP, 'slick.js'), to: 'slick.js' },

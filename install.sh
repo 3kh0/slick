@@ -108,7 +108,7 @@ if [ -f "$ROOT/src/desktop/main.ts" ]; then
   [ "$ARCH" = "arm64" ] && OUTDIR="mac-arm64" || OUTDIR="mac"
 
   step "Building Slick v2 (this bundles Electron; give it a minute)"
-  ( cd "$ROOT" && node scripts/build.ts package --arch "$ARCH" ) >/dev/null \
+  ( cd "$ROOT" && SLICK_SLACK_RESOURCES="$SLACK/Contents/Resources" node scripts/build.ts package --arch "$ARCH" ) >/dev/null \
     || die "build failed; run 'node scripts/build.ts package --arch $ARCH' to see why"
 
   BUILT="$ROOT/dist/release/$OUTDIR/Slick.app"
