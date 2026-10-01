@@ -10,6 +10,7 @@ import path from 'node:path';
 import { app, ipcMain, Menu, MenuItem, shell } from 'electron';
 import { profileDir } from './paths.js';
 import { trayDir, wrapTray } from './trayIcons.js';
+import { wrapMacNotifications } from './macNotificationSounds.js';
 
 const cjsRequire = createRequire(import.meta.url);
 const NodeModule = cjsRequire('module') as any;
@@ -104,6 +105,9 @@ export function applyPatches(
   const slackResources = path.dirname(slackAsarPath);
   const tray = trayDir(slickResources);
   overrides.Tray = wrapTray(electronCjs.Tray, tray);
+  if (process.platform === 'darwin') {
+    overrides.Notification = wrapMacNotifications(electronCjs.Notification, slickResources);
+  }
 
   if (process.platform === 'linux' && process.env.FLATPAK_ID === 'dev.slick.Slick') {
     app.on('second-instance', () => console.log('[slick] Flatpak received second-instance handoff'));
