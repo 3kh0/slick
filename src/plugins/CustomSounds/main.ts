@@ -3,10 +3,11 @@
 // configured path, never trusted, or page script could read any file.
 
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { Readable } from 'node:stream';
 import type { SlickMainPlugin } from '$slick';
+import { macSoundsDirectory } from '../../desktop/macNotificationSounds.ts';
+import { expandSoundPath, overrideNativeSound, prepareNativeSound } from './native.ts';
 
 const SCHEME = 'slick-custom-sounds';
 
@@ -25,12 +26,42 @@ const MIME: Record<string, string> = {
   '.webm': 'audio/webm',
 };
 
-const expand = (value: string) => value.replace(/^~(?=[/\\]|$)/, os.homedir()).trim();
+const expand = expandSoundPath;
 const notFound = () => new Response('', { status: 404 });
 
 const plugin: SlickMainPlugin = {
   id: 'CustomSounds',
-  capabilities: ['protocol'],
+  capabilities: ['protocol', 'notifications'],
+
+  async ready(ctx) {
+    if (process.platform !== 'darwin') return;
+    let sound: string | null = null;
+    let generation = 0;
+    const refresh = async () => {
+      const current = ++generation;
+      sound = null;
+      const configured = expand(String(ctx.settings.soundPath ?? ''));
+      if (!configured) return;
+      try {
+        const prepared = await prepareNativeSound(configured, macSoundsDirectory());
+        if (current === generation) sound = prepared;
+      } catch (error) {
+        ctx.log('could not prepare native notification sound', error);
+      }
+    };
+    await refresh();
+    const unsubscribe = ctx.onSettingsChange(() => void refresh());
+    const removeFilter = ctx.notifications.filter((options) => {
+      overrideNativeSound(options, sound);
+      return true;
+    });
+    return () => {
+      ++generation;
+      sound = null;
+      unsubscribe();
+      removeFilter();
+    };
+  },
 
   boot(ctx) {
     ctx.protocol.register(SCHEME, { standard: true, secure: true, stream: true }, (request) => {
