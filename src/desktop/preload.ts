@@ -10,17 +10,42 @@
 // Slack's bundle loads before slick.js every hook is too late. A failure after
 // step 1 leaves a blank window, so those paths reload via `abandon`.
 
+import { applyPendingAccountSwitch, PENDING_ACCOUNT_SWITCH_KEY } from '../app/api/accounts.ts';
+
 const { contextBridge, ipcRenderer } = require('electron');
+const accountDiagnostic = (event: string) => {
+  try {
+    ipcRenderer.send('slick:account-diagnostic', event);
+  } catch {}
+};
+accountDiagnostic('preload.start');
 
 // Started in parallel: all of it blocks the rebuild and Slack's first paint.
 const preloadKey = process.argv.find((arg: string) => arg.startsWith('--slick-preload-key='))?.slice(20) ?? '';
 const originalPreloadPromise = ipcRenderer.invoke('slick:get-original-preload', preloadKey) as Promise<string | null>;
-const originalResponsePromise = fetch(location.href);
+if (location.hostname === 'app.slack.com' && /^\/client(\/|$)/.test(location.pathname)) {
+  const pending = ipcRenderer.sendSync('slick:account-handoff');
+  if (pending) {
+    try {
+      localStorage.setItem(PENDING_ACCOUNT_SWITCH_KEY, JSON.stringify(pending));
+      applyPendingAccountSwitch(true);
+      accountDiagnostic('preload.handoff-applied');
+    } catch {
+      accountDiagnostic('preload.failed');
+      document.open();
+      document.write(
+        '<!doctype html><h2>Account switch paused</h2><p>Slack session storage could not be restored. Restart Slick and sign in again.</p>',
+      );
+      document.close();
+      throw new Error('Account handoff could not be applied safely.');
+    }
+  }
+}
+const isClientPage = location.hostname === 'app.slack.com' && /\/client(\/|$)/.test(location.pathname);
+const originalResponsePromise = isClientPage ? fetch(location.href) : Promise.resolve(null);
 const appUrlPromise = ipcRenderer.invoke('slick:get-app-url') as Promise<string>;
 const pathsPromise = ipcRenderer.invoke('slick:get-paths') as Promise<Record<string, string>>;
 const safeModePromise = ipcRenderer.invoke('slick:get-safe-mode') as Promise<boolean>;
-
-const isClientPage = location.hostname === 'app.slack.com' && /\/client(\/|$)/.test(location.pathname);
 
 // Set before a recovery reload; that pass loads stock Slack instead of looping.
 const RECOVERY_KEY = 'slick:preload-recovery';
@@ -41,6 +66,7 @@ if (rebuilding) {
 
 /** The document is already blank, so reload into stock Slack rather than return. */
 function abandon(message: string, error: unknown): void {
+  accountDiagnostic('preload.failed');
   console.error(`[slick] ${message}`, error);
   if (!rebuilding) return;
   try {
@@ -58,6 +84,7 @@ void (async () => {
     // biome-ignore lint/security/noGlobalEval: the preload we displaced has to run
     // oxlint-disable-next-line no-eval
     eval(originalPreload);
+    accountDiagnostic('preload.original-ready');
   } catch (error) {
     return abandon('failed to evaluate Slack preload:', error);
   }
@@ -67,6 +94,7 @@ void (async () => {
   let doc: Document;
   try {
     const response = await originalResponsePromise;
+    if (!response) throw new Error('not a Slack client page');
     const responseUrl = new URL(response.url);
     const contentType = response.headers.get('content-type') ?? '';
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
@@ -195,6 +223,7 @@ void (async () => {
     document.open();
     document.write(`<!DOCTYPE html>${doc.documentElement.outerHTML}`);
     document.close();
+    accountDiagnostic('preload.ready');
   } catch (error) {
     abandon('failed to commit replacement HTML:', error);
   }

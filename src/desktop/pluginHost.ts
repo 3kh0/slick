@@ -8,6 +8,42 @@ import { type PluginSettings, resolveSettings, type SettingsSchema } from '../sh
 import * as blobStore from './blobStore.js';
 import { isSlackClient, safeMode } from './bridge.js';
 import * as secretStore from './secretStore.js';
+import { createAccountNavigation } from './accountNavigation.ts';
+import { isAccountDiagnosticDetails, logAccountEvent } from './accountDiagnostics.ts';
+
+const accountNavigation = createAccountNavigation(
+  () => webContents.getAllWebContents(),
+  (listener) => {
+    const watch = (_event: Electron.Event, contents: Electron.WebContents) => listener(contents);
+    app.on('web-contents-created', watch);
+    return () => {
+      app.removeListener('web-contents-created', watch);
+    };
+  },
+  (cookieSession, allowed) => {
+    const registration = {
+      patterns: [
+        '*://slack.com/*',
+        '*://*.slack.com/*',
+        '*://slack-msgs.com/*',
+        '*://*.slack-msgs.com/*',
+        '*://slack-edge.com/*',
+        '*://*.slack-edge.com/*',
+      ],
+      handler: (details: Electron.OnBeforeRequestListenerDetails) => {
+        const contents = details.webContentsId === undefined ? null : webContents.fromId(details.webContentsId);
+        if (!contents || contents.session !== cookieSession || !allowed(contents)) return { cancel: true };
+      },
+    };
+    requestHandlers.add(registration);
+    installRequestDispatcher();
+    return () => {
+      requestHandlers.delete(registration);
+      installRequestDispatcher();
+    };
+  },
+  logAccountEvent,
+);
 
 type Registered = {
   plugin: SlickMainPlugin;
@@ -121,6 +157,10 @@ function installRequestDispatcher() {
   });
 }
 
+export function interceptAccountSignIn(sender: Electron.WebContents, url: string): boolean {
+  return accountNavigation.interceptSignIn(sender, url);
+}
+
 function requireCapability(plugin: SlickMainPlugin, capability: Capability) {
   if (plugin.capabilities?.includes(capability)) return;
   throw new Error(`[slick] ${plugin.id} used "${capability}" without declaring it`);
@@ -141,7 +181,17 @@ function createCtx(plugin: SlickMainPlugin, entry: () => Registered): MainCtx {
       listeners.add(cb);
       return () => void listeners.delete(cb);
     },
-    log: (...args) => console.log(`[slick] [${id}]`, ...args),
+    log: (...args) => {
+      if (id !== 'AccountSwitcher') {
+        console.log(`[slick] [${id}]`, ...args);
+        return;
+      }
+      try {
+        if (args.length === 2 && typeof args[0] === 'string' && isAccountDiagnosticDetails(args[1])) {
+          logAccountEvent(args[0], args[1]);
+        }
+      } catch {}
+    },
 
     emit(event, payload) {
       for (const contents of webContents.getAllWebContents()) {
@@ -265,7 +315,27 @@ function createCtx(plugin: SlickMainPlugin, entry: () => Registered): MainCtx {
       },
     },
 
+    sessions: {
+      navigate(sender, url, pending, mutate, options) {
+        need('cookies');
+        if (sender.session !== session.defaultSession) throw new Error('Account switching requires the Slack session.');
+        return accountNavigation.navigate(sender, url, pending, mutate, options);
+      },
+      onSignIn(handler) {
+        need('cookies');
+        return accountNavigation.onSignIn(handler);
+      },
+    },
+
     cookies: {
+      onChanged(listener) {
+        need('cookies');
+        const cookies = session.defaultSession.cookies;
+        const handler = (_event: Electron.Event, cookie: Electron.Cookie, _cause: string, removed: boolean) =>
+          listener(cookie, removed);
+        cookies.on('changed', handler);
+        return () => cookies.removeListener('changed', handler);
+      },
       async get(details) {
         need('cookies');
         return (await session.defaultSession.cookies.get(details))[0] ?? null;
@@ -422,6 +492,20 @@ export function updateSettings(stored: { enabled?: boolean; plugins?: Record<str
 }
 
 export function setupPluginRpc() {
+  const preloadEvents = new Set([
+    'preload.start',
+    'preload.original-ready',
+    'preload.handoff-applied',
+    'preload.failed',
+    'preload.ready',
+  ]);
+  ipcMain.on('slick:account-diagnostic', (event, name: unknown) => {
+    if (isSlackClient(event.senderFrame) && typeof name === 'string' && preloadEvents.has(name))
+      logAccountEvent(name, { webContentsId: event.sender.id });
+  });
+  ipcMain.on('slick:account-handoff', (event) => {
+    event.returnValue = isSlackClient(event.senderFrame) ? accountNavigation.takeHandoff(event.sender) : null;
+  });
   ipcMain.handle('slick:plugin-rpc', async (event, id: string, method: string, args: unknown[]) => {
     if (!isSlackClient(event.senderFrame)) throw new Error('[slick] rejected sender');
 
