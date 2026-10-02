@@ -19,6 +19,7 @@ Slick runs Slack's own `app.asar` inside its own Electron (with the handy BYOE a
 ## Features
 
 - **Kick ass plugins**: Slick has the most plugins of any Slack mod, and you can write your own in JavaScript or TypeScript.
+- **Desktop sign in with cookies**: Slick can sign you in to Slack without opening a browser if you provide it your `d` cookie! Great for sandboxed installs.
 - **Themes**: pick from a few built-in themes, or write your own CSS with Monaco.
 - **Updates**: Slick handles all the updates for itself and Slack automatically, so you don't have to worry about it.
 - **Cross-platform**: Slick works on macOS, Windows, and Linux with browsers coming soon.
@@ -27,16 +28,17 @@ Slick runs Slack's own `app.asar` inside its own Electron (with the handy BYOE a
 
 ## Compare
 
-| Feature             | **Slick**                                 | [Taut](https://github.com/jeremy46231/taut) | [Rope](https://github.com/anirudhb/rope) |
-| ------------------- | ----------------------------------------- | ------------------------------------------- | ---------------------------------------- |
-| Actively updated    | **Yes**                                   | **Yes**                                     | No                                       |
-| Theme support       | **2 Built in themes + Monaco CSS editor** | CSS editor                                  | No                                       |
-| Plugins             | **34**                                    | 24                                          | 6                                        |
-| Message Logger      | **Deletions + Edit history**              | Out of scope                                | No                                       |
-| Auto updates        | **Client and Slack update together**      | Slack version is pinned                     | Manual updating required                 |
-| Supported platforms | All desktop platforms                     | **Desktop + Browsers**                      | Browser only                             |
-| Privacy             | **Blocks all telemetry**                  | Replaces Slack's telemetry with its own     | Does not block telemetry                 |
-| Code sourcing       | **Bundled in the app**                    | Fetched from a remote server                | **Bundled in the userscript**            |
+| Feature                      | **Slick**                                 | [Taut](https://github.com/jeremy46231/taut) | [Rope](https://github.com/anirudhb/rope) |
+| ---------------------------- | ----------------------------------------- | ------------------------------------------- | ---------------------------------------- |
+| Actively updated             | **Yes**                                   | **Yes**                                     | No                                       |
+| Theme support                | **2 Built in themes + Monaco CSS editor** | CSS editor                                  | No                                       |
+| Plugins                      | **34**                                    | 24                                          | 6                                        |
+| Desktop sign in with cookies | **Yes**                                   | No                                          | N/A                                      |
+| Message Logger               | **Deletions + Edit history**              | Out of scope                                | No                                       |
+| Auto updates                 | **Client and Slack update together**      | Slack version is pinned                     | Manual updating required                 |
+| Supported platforms          | All desktop platforms                     | **Desktop + Browsers**                      | Browser only                             |
+| Privacy                      | **Blocks all telemetry**                  | Replaces Slack's telemetry with its own     | Does not block telemetry                 |
+| Code sourcing                | **Bundled in the app**                    | Fetched from a remote server                | **Bundled in the userscript**            |
 
 I encourage you to try other Slack mods, but you will find that Slick is the better choice for most!
 
