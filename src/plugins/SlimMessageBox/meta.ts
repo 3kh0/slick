@@ -54,4 +54,10 @@ export const settings = {
     description: 'Remove the broadcast-to-channel checkbox shown in thread replies.',
     default: false,
   },
+  broadcastButton: {
+    type: 'boolean',
+    label: 'Move thread broadcast to toolbar',
+    description: "Replace 'Also send to #channel' with a toolbar toggle. Turn off 'Hide' above to use it.",
+    default: false,
+  },
 } as const satisfies SettingsSchema;

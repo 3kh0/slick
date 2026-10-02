@@ -33,6 +33,12 @@ export default class Censorship extends SlickPlugin<typeof meta.settings> {
     this.patchMessageRows();
     this.patchSearch();
     this.patchActivityFeed();
+    this.api.redux.patchThunk(
+      'showNotification',
+      (original) =>
+        (args: { message?: SlackMessage }, ...rest: unknown[]) =>
+          original(args?.message ? { ...args, message: this.censor(args.message) } : args, ...rest),
+    );
     this.log(this.matcher.pattern ? 'masking configured terms in messages' : 'no terms configured');
   }
 

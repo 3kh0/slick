@@ -6,6 +6,7 @@ import { SlickPlugin, type Delta } from '$slick';
 import { cleanText, cleanUrl, compileExtraRules, type ExtraRule, type Provider } from './clean.ts';
 import { compileProviders } from './clean.ts';
 import * as meta from './meta.ts';
+import { patchClipboard, type ClipboardPrototype } from './paste.ts';
 
 export default class ClearURLs extends SlickPlugin<typeof meta.settings> {
   static readonly id = meta.id;
@@ -17,11 +18,40 @@ export default class ClearURLs extends SlickPlugin<typeof meta.settings> {
 
   private providers: Provider[] = [];
   private extra: ExtraRule[] = compileExtraRules(this.config.extraRules);
+  private clipboards = new Map<ClipboardPrototype, () => void>();
+  private pasteListeners: (() => void)[] = [];
 
   start() {
     // Registered before the rules arrive; with none it's a no-op.
     this.api.onMessageSendDelta((delta) => this.clean(delta));
+    const watchDocument = (doc: Document) => {
+      const patchEditor = (target: EventTarget | null) => {
+        const container = (target as Element | null)?.closest?.('.ql-container') as
+          | (Element & { __quill?: { getModule(name: string): unknown } })
+          | null;
+        const clipboard = container?.__quill?.getModule('clipboard');
+        const proto = clipboard && Object.getPrototypeOf(clipboard);
+        if (typeof proto?.preparePastedDelta !== 'function' || this.clipboards.has(proto)) return;
+        this.clipboards.set(
+          proto,
+          patchClipboard(proto, (url) => cleanUrl(url, this.providers, this.extra)),
+        );
+      };
+      const focus = (event: FocusEvent) => patchEditor(event.target);
+      doc.addEventListener('focusin', focus, true);
+      this.pasteListeners.push(() => doc.removeEventListener('focusin', focus, true));
+      patchEditor(doc.activeElement);
+    };
+    watchDocument(document);
+    this.api.onDocument(watchDocument);
     void this.loadRules();
+  }
+
+  stop() {
+    for (const dispose of this.pasteListeners) dispose();
+    for (const dispose of this.clipboards.values()) dispose();
+    this.pasteListeners = [];
+    this.clipboards.clear();
   }
 
   onSettingsChange() {

@@ -25,7 +25,7 @@ export const NO_BROADCAST_CSS = `
   .p-threads_footer__input_container { min-height: 0; }
 `;
 
-export const layoutCss = (hiddenButtons: number): string => `
+export const layoutCss = (hiddenButtons: number, broadcastCheckbox = true): string => `
   ${SCOPE} { container: ${CONTAINER} / inline-size; }
 
   ${ONE_LINE} .c-basic_container__body {
@@ -74,9 +74,7 @@ export const layoutCss = (hiddenButtons: number): string => `
     /* With no floor to wrap against, the toolbar always fits beside the
        message, so the checkbox stays under it. Capping it instead strands the
        send button on a row of its own. */
-    ${ONE_LINE}:has(.p-threads_footer__input_container__broadcast_controls) .c-texty_input_unstyled__container {
-      min-width: 0 !important;
-    }
+    ${broadcastCheckbox ? `${ONE_LINE}:has(.p-threads_footer__input_container__broadcast_controls) .c-texty_input_unstyled__container { min-width: 0 !important; }` : ''}
 
     /* Slack leaves this no bottom padding, having always had the buttons
        below it. */
