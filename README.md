@@ -32,7 +32,7 @@ Slick runs Slack's own `app.asar` inside its own Electron (with the handy BYOE a
 | ---------------------------- | ----------------------------------------- | ------------------------------------------- | ---------------------------------------- |
 | Actively updated             | **Yes**                                   | **Yes**                                     | No                                       |
 | Theme support                | **2 Built in themes + Monaco CSS editor** | CSS editor                                  | No                                       |
-| Plugins                      | **34**                                    | 24                                          | 6                                        |
+| Plugins                      | **36**                                    | 33                                          | 8                                        |
 | Desktop sign in with cookies | **Yes**                                   | No                                          | N/A                                      |
 | Message Logger               | **Deletions + Edit history**              | Out of scope                                | No                                       |
 | Auto updates                 | **Client and Slack update together**      | Slack version is pinned                     | Manual updating required                 |

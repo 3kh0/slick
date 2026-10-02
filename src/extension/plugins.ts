@@ -28,6 +28,7 @@ export const EXTENSION_PLUGINS = [
   'QuickJoin',
   'RestrictedChannelWarning',
   'ShowRealUser',
+  'ShowSendingBot',
   'SilentTyping',
   'SlimMessageBox',
   'StreamerMode',
