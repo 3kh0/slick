@@ -4,7 +4,7 @@
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { app, dialog, protocol } from 'electron';
+import { app, BrowserWindow, dialog, protocol } from 'electron';
 import { broadcast, setupBridge, setupUpdaterBridge } from './bridge.js';
 import { mainPlugins, pluginMeta } from './mainPlugins.generated.js';
 import {
@@ -31,6 +31,52 @@ import { loginWithCookies } from './cookieLogin.js';
 
 const cjsRequire = createRequire(import.meta.url);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+const pendingOpenUrls: string[] = [];
+let replayingOpenUrl = false;
+const replayPendingOpenUrls = () => {
+  if (replayingOpenUrl || pendingOpenUrls.length === 0) return;
+  replayingOpenUrl = true;
+  try {
+    while (pendingOpenUrls.length > 0) {
+      app.emit('open-url', { preventDefault() {} } as Electron.Event, pendingOpenUrls.shift() as string);
+    }
+  } finally {
+    replayingOpenUrl = false;
+  }
+};
+const focusExistingWindow = () => {
+  for (const window of BrowserWindow.getAllWindows()) {
+    if (window.isDestroyed()) continue;
+    if (window.isMinimized()) window.restore();
+    window.focus();
+    return;
+  }
+};
+const captureOpenUrl = (event: Electron.Event, url: string) => {
+  event?.preventDefault?.();
+  if (replayingOpenUrl) return;
+  if (app.listeners('open-url').some((listener) => listener !== captureOpenUrl && listener !== focusExistingWindow))
+    return;
+  pendingOpenUrls.push(url);
+};
+app.on('open-url', captureOpenUrl);
+const originalOn = app.on.bind(app);
+app.on = function (event, listener) {
+  const result = (originalOn as (...args: unknown[]) => unknown).call(app, event, listener);
+  if (event === 'open-url') process.nextTick(replayPendingOpenUrls);
+  return result;
+} as typeof app.on;
+app.on('second-instance', (_event, commandLine) => {
+  const url = commandLine.find((value) => typeof value === 'string' && /^slack:/i.test(value));
+  if (url) app.emit('open-url', { preventDefault() {} } as Electron.Event, url);
+  focusExistingWindow();
+});
+app.on('open-url', focusExistingWindow);
+if (!app.requestSingleInstanceLock()) {
+  app.quit();
+  app.exit(0);
+}
 
 // patch.ts spoofs process.resourcesPath to Slack's; keep ours first.
 const slickResourcesPath = process.env.SLICK_RESOURCES_PATH || process.resourcesPath;
