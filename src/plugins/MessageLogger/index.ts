@@ -35,11 +35,14 @@ type ActionsMenuProps = {
 
 type MenuProps = { children?: React.ReactNode };
 
+type ApiRequest = { method?: string; args?: { channel?: string; ts?: string } };
+type ApiThunk = (...args: unknown[]) => unknown;
+
 /** Old single-blob layout; migrated to per-entry keys on load. */
 const LEGACY_STORAGE_KEY = 'log';
 const ENTRY_PREFIX = 'entry:';
 const RECENT_CAP = 400;
-const ROW_COMPONENTS = ['MessageWrapper', 'ThreadRootGeneric'] as const;
+const ROW_COMPONENTS = ['MessageWrapper', 'ThreadRootGeneric', 'ThreadReplyGeneric'] as const;
 
 function decode(value: string): string {
   return value
@@ -116,7 +119,7 @@ export default class MessageLogger extends SlickPlugin<typeof meta.settings> {
     void this.restore().catch((error) => console.error('[slick] MessageLogger could not restore its log:', error));
 
     this.api.rtm.on('message', (event) => {
-      if (isDeleteEvent(event) || isChangeEvent(event)) return;
+      if (event.hidden || isDeleteEvent(event) || isChangeEvent(event)) return;
       this.remember(event);
     });
     this.api.rtm.on('message_deleted', (event) => this.record(event));
@@ -126,6 +129,7 @@ export default class MessageLogger extends SlickPlugin<typeof meta.settings> {
     this.api.setStyle(this.css(), 'deleted');
     this.patchRows();
     this.patchMenu();
+    this.patchReplies();
   }
 
   onSettingsChange() {
@@ -363,6 +367,35 @@ export default class MessageLogger extends SlickPlugin<typeof meta.settings> {
       out.push(entry.message);
     }
     return out;
+  }
+
+  private loggedThread(channel?: string, threadTs?: string): SlackMessage[] {
+    if (!channel || !threadTs) return [];
+    const parent = this.entries.get(this.key(channel, threadTs));
+    if (!parent?.deleted || !parent.message) return [];
+    const replies: SlackMessage[] = [];
+    for (const entry of this.entries.values()) {
+      if (!entry.deleted || !entry.message || entry.channel !== channel || entry.ts === threadTs) continue;
+      if (entry.message.thread_ts === threadTs) replies.push(entry.message);
+    }
+    return [parent.message, ...replies.toSorted((a, b) => String(a.ts).localeCompare(String(b.ts)))];
+  }
+
+  private patchReplies() {
+    this.api.redux.patchThunk('apiCall', (untypedOriginal) => {
+      const original = untypedOriginal as (request: ApiRequest, ...rest: unknown[]) => unknown;
+      return (request: ApiRequest, ...rest: unknown[]) => {
+        const thunk = original(request, ...rest);
+        if (request?.method !== 'conversations.replies' || typeof thunk !== 'function') return thunk;
+        return (...args: unknown[]) =>
+          Promise.resolve((thunk as ApiThunk)(...args)).catch((error: { name?: string }) => {
+            const messages =
+              error?.name === 'thread_not_found' ? this.loggedThread(request.args?.channel, request.args?.ts) : [];
+            if (!messages.length) throw error;
+            return { ok: true, method: request.method, messages, has_more: false, unchanged_messages: [] };
+          });
+      };
+    });
   }
 
   private entryFor(msg?: SlackMessage, channelId?: string): LogEntry | undefined {
