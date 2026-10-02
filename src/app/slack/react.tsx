@@ -405,11 +405,23 @@ export function patchComponent<P = object>(matcher: PatchMatcher<P>, replacement
 // forEachExport, not a single wait: Slack can load more than one copy of
 // React / the JSX runtime and each needs wrapping.
 
+// Slack also re-exports one runtime through distinct namespace objects. A
+// second wrapper would resolve an original-component marker twice and patch
+// it again, making the replacement recursively render itself.
+const renderWrappers = new WeakSet<object>();
+
+function wrapRender<F extends (type: any, props: any, ...rest: any[]) => any>(render: F): F {
+  if (renderWrappers.has(render)) return render;
+  const wrapped = function (this: unknown, type: any, props: any, ...rest: any[]) {
+    return render.call(this, resolveType(type, props), props, ...rest);
+  } as F;
+  renderWrappers.add(wrapped);
+  return wrapped;
+}
+
 export const reactReady: Promise<typeof import('react')> = new Promise((resolve) => {
   forEachExport(isReact, (React) => {
-    const original = React.createElement;
-    React.createElement = (type: any, props: any, ...children: any[]) =>
-      original(resolveType(type, props), props, ...children);
+    React.createElement = wrapRender(React.createElement);
     // Plugins compile JSX against Slack's own React; they never bundle one.
     global.React = React;
     resolve(React);
@@ -418,10 +430,8 @@ export const reactReady: Promise<typeof import('react')> = new Promise((resolve)
 
 export const jsxRuntimeReady: Promise<void> = new Promise((resolve) => {
   forEachExport(isJsxRuntime, (runtime) => {
-    const originalJsx = runtime.jsx;
-    const originalJsxs = runtime.jsxs;
-    runtime.jsx = (type: any, props: any, key: any) => originalJsx(resolveType(type, props), props, key);
-    runtime.jsxs = (type: any, props: any, key: any) => originalJsxs(resolveType(type, props), props, key);
+    runtime.jsx = wrapRender(runtime.jsx);
+    runtime.jsxs = wrapRender(runtime.jsxs);
     resolve();
   });
 });

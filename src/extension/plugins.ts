@@ -26,6 +26,7 @@ export const EXTENSION_PLUGINS = [
   'oneko',
   'PrivateChannelMapper',
   'QuickJoin',
+  'RestrictedChannelWarning',
   'ShowRealUser',
   'SilentTyping',
   'SlimMessageBox',

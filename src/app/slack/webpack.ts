@@ -176,33 +176,31 @@ function wrapModuleFactory(moduleId: PropertyKey, factory: ModuleFactory): Modul
 
 type PushFn = (...items: Chunk[]) => number;
 
+function wrapChunk(value: unknown): void {
+  if (!Array.isArray(value) || value.length < 2) return;
+  const chunk = value as Chunk;
+  const [, modules, runtime] = chunk;
+  if (modules && typeof modules === 'object') {
+    for (const moduleId of Object.keys(modules)) {
+      const factory = modules[moduleId];
+      if (typeof factory === 'function') modules[moduleId] = wrapModuleFactory(moduleId, factory);
+    }
+  }
+  // The chunk's runtime callback receives __webpack_require__.
+  if (typeof runtime === 'function' && !webpackRequire) {
+    chunk[2] = function slickRuntime(require: WebpackRequire) {
+      if (!webpackRequire) {
+        webpackRequire = require;
+        global.__slickWebpackRequire = require;
+      }
+      return runtime(require);
+    };
+  }
+}
+
 function wrapPush(originalPush: PushFn): PushFn {
   return function slickPush(this: any, ...chunks: Chunk[]): number {
-    for (const chunk of chunks) {
-      if (!Array.isArray(chunk) || chunk.length < 2) continue;
-
-      const [, modules, runtime] = chunk;
-
-      if (modules && typeof modules === 'object') {
-        for (const moduleId of Object.keys(modules)) {
-          const factory = modules[moduleId];
-          if (typeof factory === 'function') modules[moduleId] = wrapModuleFactory(moduleId, factory);
-        }
-      }
-
-      // The chunk's runtime callback receives __webpack_require__.
-      if (typeof runtime === 'function' && !webpackRequire) {
-        const originalRuntime = runtime;
-        chunk[2] = function slickRuntime(require: WebpackRequire) {
-          if (!webpackRequire) {
-            webpackRequire = require;
-            global.__slickWebpackRequire = require;
-          }
-          return originalRuntime(require);
-        };
-      }
-    }
-
+    for (const chunk of chunks) wrapChunk(chunk);
     return originalPush.apply(this, chunks);
   };
 }
@@ -212,7 +210,39 @@ function wrapPush(originalPush: PushFn): PushFn {
 export const CHUNK_GLOBALS = ['webpackChunkwebapp', 'rspackChunkwebapp', 'rspackChunkGantryV2'];
 
 function installHook(globalName: string) {
-  let backing: Chunk[] | null = null;
+  const wrappedPushes = new WeakMap<PushFn, PushFn>();
+  const proxies = new WeakMap<Chunk[], Chunk[]>();
+  const wrapArray = (array: Chunk[]): Chunk[] => {
+    const existing = proxies.get(array);
+    if (existing) return existing;
+    for (const chunk of array) wrapChunk(chunk);
+    const queue = new Proxy(array, {
+      get(target, key, receiver) {
+        const value = Reflect.get(target, key, receiver);
+        if (key !== 'push' || typeof value !== 'function' || value === Array.prototype.push) return value;
+        // Preserve Proxy invariants if a runtime freezes its own push property.
+        const descriptor = Object.getOwnPropertyDescriptor(target, key);
+        if (descriptor && !descriptor.configurable && 'value' in descriptor && !descriptor.writable) return value;
+        let wrapped = wrappedPushes.get(value);
+        if (!wrapped) {
+          wrapped = wrapPush(value);
+          wrappedPushes.set(value, wrapped);
+        }
+        return wrapped;
+      },
+      defineProperty(target, key, descriptor) {
+        if (typeof key === 'string' && /^(0|[1-9]\d*)$/.test(key)) {
+          // Native push writes indexed properties before the runtime attaches.
+          wrapChunk(descriptor.value);
+        }
+        return Reflect.defineProperty(target, key, descriptor);
+      },
+    });
+    proxies.set(array, queue);
+    proxies.set(queue, queue);
+    return queue;
+  };
+  let backing = wrapArray([]);
 
   Object.defineProperty(global, globalName, {
     configurable: true,
@@ -221,25 +251,9 @@ function installHook(globalName: string) {
       return backing;
     },
     set(array: Chunk[]) {
-      backing = array;
-      let wrappedPush = wrapPush(array.push.bind(array));
-
-      // Webpack reassigns `push` when the runtime installs; keep wrapping
-      // whatever it replaces ours with.
-      try {
-        Object.defineProperty(array, 'push', {
-          configurable: true,
-          enumerable: false,
-          get() {
-            return wrappedPush;
-          },
-          set(nextPush: PushFn) {
-            wrappedPush = wrapPush(nextPush);
-          },
-        });
-      } catch (error) {
-        console.error(`[slick] could not intercept ${globalName}.push; this chunk array will run unmodified:`, error);
-      }
+      if (array === backing) return;
+      if (!Array.isArray(array)) throw new TypeError(`[slick] ${globalName} must be a chunk array`);
+      backing = wrapArray(array);
     },
   });
 }
