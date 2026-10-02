@@ -11,6 +11,7 @@
 // step 1 leaves a blank window, so those paths reload via `abandon`.
 
 import { applyPendingAccountSwitch, PENDING_ACCOUNT_SWITCH_KEY } from '../app/api/accounts.ts';
+import { installCookieSignInButton } from './signInButton.ts';
 
 const { contextBridge, ipcRenderer } = require('electron');
 const accountDiagnostic = (event: string) => {
@@ -85,6 +86,9 @@ void (async () => {
     // oxlint-disable-next-line no-eval
     eval(originalPreload);
     accountDiagnostic('preload.original-ready');
+    if (!isClientPage && (location.hostname === 'slack.com' || location.hostname.endsWith('.slack.com'))) {
+      installCookieSignInButton(document, () => ipcRenderer.send('slick:open-cookie-login'));
+    }
   } catch (error) {
     return abandon('failed to evaluate Slack preload:', error);
   }

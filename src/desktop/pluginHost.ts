@@ -11,7 +11,7 @@ import * as secretStore from './secretStore.js';
 import { createAccountNavigation } from './accountNavigation.ts';
 import { isAccountDiagnosticDetails, logAccountEvent } from './accountDiagnostics.ts';
 
-const accountNavigation = createAccountNavigation(
+export const accountNavigation = createAccountNavigation(
   () => webContents.getAllWebContents(),
   (listener) => {
     const watch = (_event: Electron.Event, contents: Electron.WebContents) => listener(contents);

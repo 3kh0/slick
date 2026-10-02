@@ -15,6 +15,7 @@ import {
   updateSettings,
   windowCreated,
   interceptAccountSignIn,
+  accountNavigation,
 } from './pluginHost.js';
 import { refreshInstalledIcons } from './iconRefresh.js';
 import { readStoredSettings, watchSettings } from './settingsFile.js';
@@ -25,6 +26,8 @@ import { createSlackUpdater } from './slackUpdater.js';
 import { createUpdater } from './updater.js';
 import { prepareLinuxArm64Natives, prepareWindowsNatives } from './windowsNatives.js';
 import { downloadLinuxArm64Slack } from './linuxArm64Slack.js';
+import { createCookieLogin } from './windows/cookieLogin.js';
+import { loginWithCookies } from './cookieLogin.js';
 
 const cjsRequire = createRequire(import.meta.url);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -155,7 +158,13 @@ function startSlack(asar: string) {
 
   // patch.ts no-ops Slack's autoUpdater, so Slick updates both itself and Slack.
   const updater = createUpdater({ version, build });
-  setMenuHandlers({ checkForUpdates: () => void updater.manualCheckForUpdates() });
+  const cookieLogin = createCookieLogin(path.join(__dirname, 'cookieLoginPreload.js'), (target, value) =>
+    loginWithCookies(target, value, accountNavigation.navigate),
+  );
+  setMenuHandlers({
+    checkForUpdates: () => void updater.manualCheckForUpdates(),
+    cookieLogin: () => cookieLogin.open(),
+  });
   updater.scheduleUpdateChecks();
   slackUpdater.scheduleChecks();
 

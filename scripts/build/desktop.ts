@@ -18,6 +18,7 @@ const entries = [
   { entry: 'main.ts', out: 'main.js', format: 'esm' },
   { entry: 'preload.ts', out: 'preload.js', format: 'cjs' },
   { entry: 'windows/cssEditorPreload.ts', out: 'cssEditorPreload.js', format: 'cjs' },
+  { entry: 'windows/cookieLoginPreload.ts', out: 'cookieLoginPreload.js', format: 'cjs' },
 ] as const;
 
 // The Monaco 0.57 files a CSS editor actually loads; the full min/vs is ~25 MB.
@@ -79,6 +80,7 @@ export async function buildDesktop({ debug = false } = {}) {
       minify: !debug,
       sourcemap: debug ? 'inline' : false,
       external: ['electron'],
+      loader: { '.woff2': 'dataurl' },
       plugins: [slickSharedAlias],
       define,
     });

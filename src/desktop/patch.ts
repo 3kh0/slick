@@ -59,10 +59,16 @@ overrides.crashReporter = {
 
 let openSettings: (() => void) | null = null;
 let checkForUpdates: (() => void) | null = null;
+let cookieLogin: (() => void) | null = null;
 
-export function setMenuHandlers(handlers: { openSettings?: () => void; checkForUpdates?: () => void }) {
+export function setMenuHandlers(handlers: {
+  openSettings?: () => void;
+  checkForUpdates?: () => void;
+  cookieLogin?: () => void;
+}) {
   if (handlers.openSettings) openSettings = handlers.openSettings;
   if (handlers.checkForUpdates) checkForUpdates = handlers.checkForUpdates;
+  if (handlers.cookieLogin) cookieLogin = handlers.cookieLogin;
 }
 
 function slickMenuTemplate(): Electron.MenuItemConstructorOptions {
@@ -71,6 +77,7 @@ function slickMenuTemplate(): Electron.MenuItemConstructorOptions {
     { label: 'Slick Settings…', click: () => openSettings?.() },
   ];
   if (checkForUpdates) submenu.push({ label: 'Check for Updates…', click: () => checkForUpdates?.() });
+  submenu.push({ label: 'Sign In with Cookies…', click: () => cookieLogin?.() });
   submenu.push(
     { type: 'separator' },
     { role: 'toggleDevTools', accelerator: 'CmdOrCtrl+Alt+I' },
