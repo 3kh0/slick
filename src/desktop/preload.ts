@@ -154,6 +154,14 @@ void (async () => {
       return () => ipcRenderer.removeListener('slick:user-css-changed', handler);
     },
 
+    getUpdateStatus: () => call('getUpdateStatus'),
+    activateUpdate: () => call('activateUpdate'),
+    onUpdateStatus(cb: (status: unknown) => void) {
+      const handler = (_: unknown, status: unknown) => cb(status);
+      ipcRenderer.on('slick:update-status', handler);
+      return () => ipcRenderer.removeListener('slick:update-status', handler);
+    },
+
     openFile: (title: string, accept?: string) => call('openFile', [title, accept]),
     openCssEditor: () => call('openCssEditor'),
 

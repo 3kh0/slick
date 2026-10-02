@@ -6,6 +6,7 @@ import path from 'node:path';
 import { dialog, ipcMain, webContents } from 'electron';
 import { configDir, profileDir, settingsDir } from './paths.js';
 import { setupBlobRpc } from './pluginHost.js';
+import type { Updater } from './updater.js';
 import { appUrl } from './session.js';
 import { createCssEditor } from './windows/cssEditor.js';
 
@@ -119,6 +120,11 @@ const methods: Record<string, (args: any[]) => unknown> = {
 
   ...setupBlobRpc(),
 };
+
+export function setupUpdaterBridge(updater: Updater) {
+  methods.getUpdateStatus = () => updater.getStatus();
+  methods.activateUpdate = () => updater.activate();
+}
 
 export function setupBridge() {
   ipcMain.handle('slick:get-app-url', () => appUrl());

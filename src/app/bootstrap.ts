@@ -6,9 +6,11 @@ import type { SlickBridge } from './bridge.ts';
 import { ConfigStore } from './configStore.ts';
 import { PluginManager } from './pluginManager.ts';
 import { addSettingsTab } from './settings.tsx';
+import { installUpdateButton } from './updateButton.ts';
 import { installTheme } from './theme.ts';
 
 export async function bootstrap(bridge: SlickBridge): Promise<void> {
+  installUpdateButton(bridge);
   const config = new ConfigStore(bridge);
   await config.init();
 

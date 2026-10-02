@@ -5,9 +5,11 @@ import { execFile, spawn } from 'node:child_process';
 import fs from 'node:fs';
 import https from 'node:https';
 import path from 'node:path';
-import { app, BrowserWindow, dialog, nativeTheme, shell } from 'electron';
+import { app, BrowserWindow, dialog, shell } from 'electron';
 import { stageAppImage, swapAppImage } from './appImageUpdate.js';
 import { AttestationError, sha256File, verifyBundle } from './attestation.js';
+import { broadcast } from './bridge.js';
+import type { UpdateStatus } from '../app/updateStatus.ts';
 import { settingsDir } from './paths.js';
 
 const PLATFORM = process.platform === 'darwin' ? 'darwin' : process.platform === 'win32' ? 'win32' : 'linux';
@@ -18,12 +20,10 @@ export const RELEASES_URL = `https://github.com/${REPO}/releases`;
 
 type Asset = { name?: string; browser_download_url?: string };
 type Release = { tag_name?: string; html_url?: string; assets?: Asset[] };
-type State = { lastCheckedAt?: number; lastPromptedBuild?: number; lastPromptedAt?: number };
+type State = { lastCheckedAt?: number };
 type Progress = {
   title?: string;
-  status?: string;
   percent?: number;
-  pctText?: string;
   detail?: string;
   indeterminate?: boolean;
 };
@@ -97,45 +97,6 @@ function selfUpdateBlocker(): string {
 /** PowerShell single-quoted literal. */
 function psq(s: string): string {
   return `'${String(s).replace(/'/g, "''")}'`;
-}
-
-function progressHtml(): string {
-  const common =
-    '*{box-sizing:border-box}' +
-    'body{display:flex;flex-direction:column;justify-content:center;padding:26px 30px}' +
-    '.head{margin-bottom:18px}' +
-    '#title{font-size:15px;font-weight:600}' +
-    '#status{margin-top:3px;font-size:12px;color:var(--muted)}' +
-    '.track{position:relative;height:4px;border-radius:99px;background:var(--track);overflow:hidden}' +
-    '#bar{height:100%;width:0%;border-radius:99px;background:var(--accent);transition:width .2s ease}' +
-    '#bar.indet{position:absolute;left:0;width:35%;animation:slide 1.05s ease-in-out infinite;transition:none}' +
-    '@keyframes slide{0%{left:-35%}100%{left:100%}}' +
-    '.foot{display:flex;justify-content:space-between;gap:12px;margin-top:11px;font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums}';
-  const theme = MAC
-    ? ':root{color-scheme:light dark;--bg:#ececec;--fg:#1d1d1f;--muted:rgba(60,60,67,.6);--track:rgba(60,60,67,.13);--accent:#007aff}' +
-      '@media (prefers-color-scheme:dark){:root{--bg:#1e1e1e;--fg:#f5f5f7;--muted:rgba(235,235,245,.6);--track:rgba(235,235,245,.15);--accent:#0a84ff}}' +
-      'html,body{margin:0;height:100%;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text",sans-serif;background:var(--bg);color:var(--fg);-webkit-user-select:none;cursor:default}' +
-      '.head{-webkit-app-region:drag}' +
-      '#title{letter-spacing:-.01em}'
-    : ':root{color-scheme:light dark;--bg:#f3f3f3;--fg:#1a1a1a;--muted:#5f5f5f;--track:rgba(0,0,0,.1);--accent:#0078d4}' +
-      '@media (prefers-color-scheme:dark){:root{--bg:#202020;--fg:#fafafa;--muted:#a0a0a0;--track:rgba(255,255,255,.12);--accent:#4cc2ff}}' +
-      'html,body{margin:0;height:100%;font-family:"Segoe UI Variable Text","Segoe UI",sans-serif;background:var(--bg);color:var(--fg);user-select:none;cursor:default}';
-  return (
-    `<!doctype html><html><head><meta charset="utf-8"><style>${theme}${common}</style></head><body>` +
-    '<div class="head"><div id="title">Updating Slick</div><div id="status">Starting download…</div></div>' +
-    '<div class="track"><div id="bar"></div></div>' +
-    '<div class="foot"><span id="detail"></span><span id="pct"></span></div>' +
-    '<script>window.__update=function(p){' +
-    'var bar=document.getElementById("bar");' +
-    'if(p.indeterminate){bar.classList.add("indet");bar.style.width="";}' +
-    'else{bar.classList.remove("indet");bar.style.width=(p.percent||0)+"%";}' +
-    'document.getElementById("title").textContent=p.title||"Updating Slick";' +
-    'document.getElementById("status").textContent=p.status||"";' +
-    'document.getElementById("detail").textContent=p.detail||"";' +
-    'document.getElementById("pct").textContent=p.pctText||"";' +
-    '};</script>' +
-    '</body></html>'
-  );
 }
 
 export type UpdateResult =
@@ -436,77 +397,45 @@ export function createUpdater({ version, build }: { version: string; build: numb
     });
   }
 
-  let progressWin: BrowserWindow | null = null;
-  let progressData: Progress | null = null;
+  let status: UpdateStatus = { state: 'idle' };
+  let availableRelease: Release | null = null;
+  let pendingInstall: { stage: string; dir: string } | null = null;
+  let busy = false;
+
+  function publish(next: UpdateStatus): void {
+    status = next;
+    broadcast('slick:update-status', status);
+  }
 
   /** Slack's own windows carry the taskbar/dock progress; -1 clears it. */
   function setTaskbarProgress(fraction: number): void {
     for (const win of BrowserWindow.getAllWindows()) {
-      if (!win || win.isDestroyed() || win === progressWin) continue;
+      if (win.isDestroyed()) continue;
       try {
         win.setProgressBar(fraction);
       } catch {}
     }
   }
 
-  function flushProgress(): void {
-    if (!progressWin || progressWin.isDestroyed() || !progressData) return;
-    progressWin.webContents
-      .executeJavaScript(`window.__update && window.__update(${JSON.stringify(progressData)})`)
-      .catch(() => {});
-  }
-
   function setProgress(data: Progress): void {
-    progressData = data;
-    flushProgress();
+    publish({
+      state: 'downloading',
+      latestBuild: releaseBuild(availableRelease),
+      title: data.title,
+      detail: data.detail,
+      percent: data.indeterminate ? undefined : data.percent,
+    });
   }
 
-  function createProgressWindow(): BrowserWindow {
-    if (progressWin && !progressWin.isDestroyed()) return progressWin;
-    const opts: Electron.BrowserWindowConstructorOptions = {
-      width: 400,
-      height: 158,
-      resizable: false,
-      minimizable: false,
-      maximizable: false,
-      fullscreenable: false,
-      title: 'Updating Slick',
-      show: false,
-      webPreferences: { contextIsolation: true, nodeIntegration: false },
-    };
-    if (MAC) {
-      Object.assign(opts, {
-        titleBarStyle: 'hiddenInset',
-        backgroundColor: nativeTheme.shouldUseDarkColors ? '#1e1e1e' : '#ececec',
-      });
-    } else {
-      Object.assign(opts, {
-        autoHideMenuBar: true,
-        backgroundColor: nativeTheme.shouldUseDarkColors ? '#202020' : '#f3f3f3',
-      });
-    }
-    const win = new BrowserWindow(opts);
-    progressWin = win;
-    try {
-      if (MAC) win.setMenu(null);
-      else win.setMenuBarVisibility(false);
-    } catch {}
-    win.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(progressHtml())}`);
-    win.webContents.on('did-finish-load', flushProgress);
-    win.once('ready-to-show', () => {
-      if (!win.isDestroyed()) win.show();
-    });
-    win.on('closed', () => {
-      progressWin = null;
-    });
-    return win;
-  }
-
-  function closeProgressWindow(): void {
-    progressData = null;
-    if (progressWin && !progressWin.isDestroyed()) progressWin.close();
-    progressWin = null;
-  }
+  // Apply quietly on normal quit, or relaunch only after an explicit click.
+  let relaunch = false;
+  app.on('will-quit', (event) => {
+    if (!pendingInstall) return;
+    event.preventDefault();
+    const { stage, dir } = pendingInstall;
+    pendingInstall = null;
+    void install(stage, dir, relaunch).finally(() => app.exit(0));
+  });
 
   async function perform(release: Release): Promise<void> {
     const asset = pickAsset(release);
@@ -514,19 +443,18 @@ export function createUpdater({ version, build }: { version: string; build: numb
       await shell.openExternal(release.html_url || RELEASES_URL);
       return;
     }
-    const dir = fs.mkdtempSync(path.join(app.getPath('temp'), 'slick-update-'));
-    const archive = path.join(dir, asset.name ?? 'slick-update');
-    const status = `Slick Build ${releaseBuild(release)}`;
+    let dir = '';
     let stage: string;
-
     try {
+      dir = fs.mkdtempSync(path.join(app.getPath('temp'), 'slick-update-'));
+      const archive = path.join(dir, asset.name ?? 'slick-update');
       setTaskbarProgress(0);
-      createProgressWindow();
-      setProgress({ title: 'Downloading update', status, percent: 0, pctText: '0%', detail: 'Starting…' });
+      setProgress({ title: 'Downloading update', percent: 0, detail: 'Starting…' });
 
       let lastTime = Date.now();
       let lastReceived = 0;
       let speed = 0;
+      let lastProgressAt = 0;
       await download(asset.browser_download_url, archive, (received, total) => {
         const now = Date.now();
         const dt = (now - lastTime) / 1000;
@@ -536,6 +464,8 @@ export function createUpdater({ version, build }: { version: string; build: numb
           lastTime = now;
           lastReceived = received;
         }
+        if (now - lastProgressAt < 250 && (!total || received < total)) return;
+        lastProgressAt = now;
         const fraction = total ? received / total : 0;
         const pct = Math.round(fraction * 100);
         const rate = `${fmtBytes(speed)}/s`;
@@ -544,16 +474,12 @@ export function createUpdater({ version, build }: { version: string; build: numb
           total
             ? {
                 title: 'Downloading update',
-                status,
                 percent: pct,
-                pctText: `${pct}%`,
                 detail: `${fmtBytes(received)} / ${fmtBytes(total)}  ·  ${rate}  ·  ${fmtEta((total - received) / speed)} left`,
               }
             : {
                 title: 'Downloading update',
-                status,
                 indeterminate: true,
-                pctText: '',
                 detail: `${fmtBytes(received)} downloaded  ·  ${rate}`,
               },
         );
@@ -562,9 +488,7 @@ export function createUpdater({ version, build }: { version: string; build: numb
       setTaskbarProgress(0.9);
       setProgress({
         title: 'Verifying update',
-        status,
         indeterminate: true,
-        pctText: '',
         detail: 'Checking build provenance…',
       });
       await verifyReleaseArtifact(archive);
@@ -572,15 +496,13 @@ export function createUpdater({ version, build }: { version: string; build: numb
       setTaskbarProgress(0.95);
       if (PLATFORM === 'linux' && process.env.APPIMAGE) {
         setProgress({
-          title: 'Installing update',
-          status,
+          title: 'Preparing update',
           indeterminate: true,
-          pctText: '',
           detail: 'Staging AppImage…',
         });
         stage = stageAppImage(archive, process.env.APPIMAGE);
       } else {
-        setProgress({ title: 'Installing update', status, indeterminate: true, pctText: '', detail: 'Extracting…' });
+        setProgress({ title: 'Preparing update', indeterminate: true, detail: 'Extracting…' });
         await extract(archive, dir);
         const found = findStage(dir);
         if (!found) throw new Error('the update archive did not contain a Slick application');
@@ -588,81 +510,55 @@ export function createUpdater({ version, build }: { version: string; build: numb
       }
 
       setTaskbarProgress(1);
-      setProgress({ title: 'Update ready', status, percent: 100, pctText: '100%', detail: 'Ready to restart.' });
+      setProgress({ title: 'Update ready', percent: 100, detail: 'Ready to restart.' });
     } catch (error) {
       setTaskbarProgress(-1);
-      closeProgressWindow();
       try {
-        fs.rmSync(dir, { recursive: true, force: true });
+        if (dir) fs.rmSync(dir, { recursive: true, force: true });
       } catch {}
       const blocked = error instanceof AttestationError;
       const reason = String((error as Error)?.message ?? error);
-      const { response } = await dialog.showMessageBox({
-        type: 'error',
-        title: blocked ? 'Slick update blocked' : 'Slick update failed',
-        message: blocked ? 'Build provenance verification failed' : 'Could not download the update',
+      publish({
+        state: 'error',
+        latestBuild: releaseBuild(release),
         detail: blocked
-          ? `${reason}. The download may have been tampered with, so Slick refused to install it. You can download it manually from the release page if you want to inspect it.`
-          : `${reason}. You can download it manually instead.`,
-        buttons: ['Open Release Page', 'Later'],
-        defaultId: 0,
-        cancelId: 1,
+          ? `Build provenance verification failed: ${reason}. Slick refused to install this download.`
+          : reason,
       });
-      if (response === 0) await shell.openExternal(release.html_url || RELEASES_URL);
       return;
     }
 
+    pendingInstall = { stage, dir };
     setTaskbarProgress(-1);
-    closeProgressWindow();
-    const { response } = await dialog.showMessageBox({
-      type: 'info',
-      title: 'Slick update ready',
-      message: `Slick Build ${releaseBuild(release)} is ready to install`,
-      detail: 'Slick will restart to finish updating.',
-      buttons: ['Restart Now', 'Later'],
-      defaultId: 0,
-      cancelId: 1,
-    });
-    if (response === 0) {
-      await install(stage, dir);
+    publish({ state: 'ready', latestBuild: releaseBuild(release) });
+  }
+
+  function offer(release: Release): void {
+    availableRelease = release;
+    publish({ state: 'available', latestBuild: releaseBuild(release), detail: selfUpdateBlocker() || undefined });
+  }
+
+  async function activate(): Promise<void> {
+    if (busy) return;
+    if (pendingInstall) {
+      relaunch = true;
       app.quit();
       return;
     }
-    // "Later": install on next quit without relaunching. Hold the quit until
-    // the helper is launched, then exit(), since other will-quit listeners
-    // have already run.
-    app.once('will-quit', (event) => {
-      event.preventDefault();
-      void install(stage, dir, false).finally(() => app.exit(0));
-    });
-  }
-
-  async function promptDownload(release: Release, latestBuild: number): Promise<void> {
-    const blocker = selfUpdateBlocker();
+    if (!availableRelease) return;
+    busy = true;
     try {
-      const { response } = await dialog.showMessageBox({
-        type: 'info',
-        title: 'Slick update available',
-        message: `Slick Build ${latestBuild} is available`,
-        detail: blocker
-          ? `You are running Build ${build}. ${blocker}`
-          : `You are running Build ${build}. Download it now and Slick will install it on the next restart.`,
-        buttons: [blocker ? 'Open Release Page' : 'Download', 'Later'],
-        defaultId: 0,
-        cancelId: 1,
-      });
-      if (response === 0) await perform(release);
-    } catch {}
+      await perform(availableRelease);
+    } finally {
+      busy = false;
+    }
   }
 
   /** The background check: silent unless there is something to offer. */
   async function checkForUpdates(): Promise<void> {
-    // Stay quiet where the answer could only be "update it yourself"; the menu
-    // item still reports availability.
-    if (!build || selfUpdateBlocker()) return;
+    if (!build || busy || pendingInstall || availableRelease) return;
     const now = Date.now();
     const state = readState();
-    if (state.lastCheckedAt && now - state.lastCheckedAt < CHECK_INTERVAL_MS) return;
     writeState({ ...state, lastCheckedAt: now });
 
     let release: Release;
@@ -675,16 +571,17 @@ export function createUpdater({ version, build }: { version: string; build: numb
     const latestBuild = releaseBuild(release);
     if (latestBuild <= build) return;
 
-    const promptState = readState();
-    if (promptState.lastPromptedBuild === latestBuild && now - (promptState.lastPromptedAt ?? 0) < CHECK_INTERVAL_MS) {
-      return;
-    }
-    writeState({ ...promptState, lastPromptedBuild: latestBuild, lastPromptedAt: Date.now() });
-    await promptDownload(release, latestBuild);
+    offer(release);
   }
 
   /** The menu item: always says something, even when there is no update. */
   async function manualCheckForUpdates({ quiet = false } = {}): Promise<UpdateResult> {
+    if (busy || pendingInstall)
+      return {
+        state: 'available',
+        latestBuild: status.latestBuild ?? build,
+        message: 'An update is already downloading or ready to apply!',
+      };
     const say = (options: Electron.MessageBoxOptions) => {
       if (!quiet) dialog.showMessageBox(options).catch(() => {});
     };
@@ -729,8 +626,7 @@ export function createUpdater({ version, build }: { version: string; build: numb
       return { state: 'latest', message: `Slick is up to date. Build ${build} is the newest available.` };
     }
 
-    writeState({ ...readState(), lastPromptedBuild: latestBuild, lastPromptedAt: Date.now() });
-    void promptDownload(release, latestBuild);
+    if (!busy && !pendingInstall) offer(release);
     return { state: 'available', latestBuild, message: `Build ${latestBuild} is available.` };
   }
 
@@ -744,15 +640,20 @@ export function createUpdater({ version, build }: { version: string; build: numb
       .whenReady()
       .then(() => {
         // Delay the first check so it doesn't compete with Slack's boot.
-        const state = readState();
-        const elapsed = Date.now() - (state.lastCheckedAt ?? 0);
-        const delay = state.lastCheckedAt ? Math.max(30_000, CHECK_INTERVAL_MS - elapsed) : 30_000;
-        setTimeout(run, delay);
+        setTimeout(run, 30_000);
       })
       .catch(() => {});
   }
 
   const info = () => ({ version, build, lastCheckedAt: readState().lastCheckedAt ?? 0 });
 
-  return { RELEASES_URL, readState, info, scheduleUpdateChecks, manualCheckForUpdates };
+  return {
+    RELEASES_URL,
+    readState,
+    info,
+    scheduleUpdateChecks,
+    manualCheckForUpdates,
+    getStatus: () => status,
+    activate,
+  };
 }

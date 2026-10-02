@@ -1,5 +1,6 @@
 // The SlickBridge surface the preload exposes, typed without Electron imports.
 
+import type { UpdateStatus } from './updateStatus.ts';
 import type { BlobStore } from './api/storage.ts';
 
 export type PluginChannel = {
@@ -26,6 +27,10 @@ export interface SlickBridge {
 
   openFile(title: string, accept?: string, owner?: { plugin: string; setting: string }): Promise<string>;
   openCssEditor(): Promise<boolean>;
+
+  getUpdateStatus?(): Promise<UpdateStatus>;
+  activateUpdate?(): Promise<void>;
+  onUpdateStatus?(cb: (status: UpdateStatus) => void): () => void;
 
   blobStore(namespace: string): BlobStore;
   plugin(id: string): PluginChannel;

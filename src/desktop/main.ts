@@ -5,7 +5,7 @@ import { createRequire } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { app, dialog, protocol } from 'electron';
-import { broadcast, setupBridge } from './bridge.js';
+import { broadcast, setupBridge, setupUpdaterBridge } from './bridge.js';
 import { mainPlugins, pluginMeta } from './mainPlugins.generated.js';
 import {
   bootMainPlugins,
@@ -158,6 +158,7 @@ function startSlack(asar: string) {
 
   // patch.ts no-ops Slack's autoUpdater, so Slick updates both itself and Slack.
   const updater = createUpdater({ version, build });
+  setupUpdaterBridge(updater);
   const cookieLogin = createCookieLogin(path.join(__dirname, 'cookieLoginPreload.js'), (target, value) =>
     loginWithCookies(target, value, accountNavigation.navigate),
   );
