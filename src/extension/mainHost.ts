@@ -230,7 +230,12 @@ export function createMainHost(area: StorageArea, dnr: Dnr | undefined, plugins:
       switches: { append: unavailable('switches.append') },
       shell: { openExternal: unavailable('shell.openExternal') },
       dialog: { openFile: unavailable('dialog.openFile') },
+      sessions: {
+        navigate: unavailable('sessions.navigate'),
+        onSignIn: unavailable('sessions.onSignIn'),
+      },
       cookies: {
+        onChanged: unavailable('cookies.onChanged'),
         get: unavailable('cookies.get'),
         set: unavailable('cookies.set'),
         remove: unavailable('cookies.remove'),

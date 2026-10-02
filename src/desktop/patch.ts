@@ -101,6 +101,7 @@ export function applyPatches(
   slickPreloadPath: string,
   slickResources: string,
   onWindow?: (window: Electron.BrowserWindow) => void,
+  onSignIn?: (contents: Electron.WebContents, url: string) => boolean,
 ) {
   const slackResources = path.dirname(slackAsarPath);
   const tray = trayDir(slickResources);
@@ -192,6 +193,7 @@ export function applyPatches(
     const originalSetter = contents.setWindowOpenHandler.bind(contents);
     contents.setWindowOpenHandler = (handler: (details: Electron.HandlerDetails) => any) =>
       originalSetter((details) => {
+        if (onSignIn?.(contents, details.url)) return { action: 'deny' };
         let result: any;
         try {
           result = handler(details);

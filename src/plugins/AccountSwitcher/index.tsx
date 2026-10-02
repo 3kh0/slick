@@ -1,9 +1,10 @@
 // Adapted from Taut's AccountSwitcher (MIT, github.com/jeremy46231/taut).
 
 import { SlickPlugin, type MenuTemplateItem } from '$slick';
-import { PENDING_ACCOUNT_SWITCH_KEY, type PendingAccountSwitch } from '../../app/api/accounts.ts';
+
 import { getActiveTeam, readLocalConfig } from '../../app/slack/localConfig.ts';
 import * as meta from './meta.ts';
+import { captureCandidate } from './session.ts';
 import type { AccountSummary } from './types.ts';
 
 type MenuFromTemplateProps = { template?: MenuTemplateItem[] };
@@ -15,9 +16,8 @@ type AccountRowProps = {
 
 const SIGN_OUT_KEYS = ['sign-out', 'signout-submenu'];
 const SWITCHER_KEY = 'slick-account-switcher';
-const SLACK_URL = 'https://app.slack.com';
 
-function orgKey(account: AccountSummary): string {
+function orgKey(account: Pick<AccountSummary, 'enterpriseId' | 'teamId'>): string {
   return account.enterpriseId ?? account.teamId;
 }
 
@@ -31,10 +31,16 @@ export default class AccountSwitcher extends SlickPlugin<typeof meta.settings> {
   private accountsStore = new this.api.Store<AccountSummary[]>([]);
   private currentUserId: string | null = null;
   private currentOrgKey: string | null = null;
+  private sessionRevision = 0;
+  private wakeCapture: (() => void) | undefined;
   private SvgIcon = this.api.elements.SvgIcon;
   private AccountRow: React.FC<AccountRowProps> = () => null;
 
   start() {
+    this.api.main.on('session-changed', () => {
+      this.sessionRevision++;
+      this.wakeCapture?.();
+    });
     this.AccountRow = this.makeAccountRow();
 
     this.api.patchComponent<MenuFromTemplateProps>('MenuFromTemplate', (Original) => (props) => {
@@ -55,34 +61,56 @@ export default class AccountSwitcher extends SlickPlugin<typeof meta.settings> {
   }
 
   private async captureAndRefresh() {
-    for (let attempt = 0; attempt < 10; attempt++) {
-      if (this.api.signal.aborted) return;
+    let captured = '';
+    await this.refresh();
+    // Redirect logins can update the running client after plugin startup.
+    // Keep retrying until localConfig catches up, but do not recapture unchanged sessions.
+    while (!this.api.signal.aborted) {
+      let retryDelay = 2_000;
       try {
-        const current = await this.captureCurrent();
-        if (current) {
-          this.currentUserId = current.userId;
-          this.currentOrgKey = orgKey(current);
-          break;
+        const { localConfig, teamId } = this.activeTeam();
+        const liveUserId = this.api.members.getCurrentMemberId();
+        const team = captureCandidate(localConfig, teamId, liveUserId);
+        if (liveUserId !== this.currentUserId) {
+          this.currentUserId = liveUserId ?? null;
+          this.currentOrgKey = null;
+          if (team)
+            this.currentOrgKey = orgKey({
+              teamId: teamId!,
+              enterpriseId: typeof team.enterprise_id === 'string' ? team.enterprise_id : undefined,
+            });
+          await this.refresh();
+        }
+        const signature = team ? JSON.stringify([this.sessionRevision, teamId, team]) : '';
+        if (signature && signature !== captured) {
+          const current = await this.captureCurrent();
+          if (current && !this.api.signal.aborted) {
+            captured = signature;
+            this.currentUserId = current.userId;
+            this.currentOrgKey = orgKey(current);
+            await this.refresh();
+          }
         }
       } catch (error) {
         this.log('Account capture failed', error);
+        retryDelay = 10_000;
       }
-      await this.delay(1_000);
+      await this.delay(retryDelay);
     }
-    if (!this.api.signal.aborted) await this.refresh();
   }
 
   private delay(ms: number): Promise<void> {
+    if (this.api.signal.aborted) return Promise.resolve();
     return new Promise((resolve) => {
-      const onAbort = () => {
+      const finish = () => {
         clearTimeout(timer);
+        this.api.signal.removeEventListener('abort', finish);
+        if (this.wakeCapture === finish) this.wakeCapture = undefined;
         resolve();
       };
-      const timer = setTimeout(() => {
-        this.api.signal.removeEventListener('abort', onAbort);
-        resolve();
-      }, ms);
-      this.api.signal.addEventListener('abort', onAbort, { once: true });
+      const timer = setTimeout(finish, ms);
+      this.wakeCapture = finish;
+      this.api.signal.addEventListener('abort', finish, { once: true });
     });
   }
 
@@ -101,8 +129,9 @@ export default class AccountSwitcher extends SlickPlugin<typeof meta.settings> {
   }
 
   private async captureCurrent(): Promise<AccountSummary | null> {
-    const { teamId, team } = this.activeTeam();
-    if (!teamId || !team?.token || !team.user_id) return null;
+    const { localConfig, teamId } = this.activeTeam();
+    const team = captureCandidate(localConfig, teamId, this.api.members.getCurrentMemberId());
+    if (!teamId || !team) return null;
     return this.api.main.call<AccountSummary>('capture', teamId, team);
   }
 
@@ -132,35 +161,31 @@ export default class AccountSwitcher extends SlickPlugin<typeof meta.settings> {
 
   private async switchTo(userId: string) {
     try {
-      await this.captureCurrent();
-      const account = await this.api.main.call<PendingAccountSwitch>('switchTo', userId);
-      localStorage.setItem(PENDING_ACCOUNT_SWITCH_KEY, JSON.stringify(account));
-      location.assign(`${SLACK_URL}/client/${account.teamId}`);
+      try {
+        await this.captureCurrent();
+      } catch (error) {
+        throw new Error(
+          `Saving the current account failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          { cause: error },
+        );
+      }
+      await this.api.main.call('switchTo', userId).catch((error: unknown) => {
+        throw new Error(
+          `Verifying or restoring the target account failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          { cause: error },
+        );
+      });
     } catch (error) {
       this.log('Switch failed', error);
+      window.alert(`Could not switch accounts.\n\n${error instanceof Error ? error.message : 'Please try again.'}`);
     }
   }
 
   private async addAccount() {
     try {
       await this.captureCurrent();
-      const { localConfig, teamId, team } = this.activeTeam();
-      const domain = team?.domain;
-      await this.api.main.call('clearSession');
-
-      if (teamId && localConfig.teams?.[teamId]) {
-        delete localConfig.teams[teamId];
-        localConfig.orderedTeamIds = (localConfig.orderedTeamIds ?? []).filter((id) => id !== teamId);
-        delete localConfig.lastActiveTeamId;
-        localStorage.setItem('localConfig_v2', JSON.stringify(localConfig));
-      }
-
-      if (domain === 'hackclub') {
-        window.open('https://auth.hackclub.com', '_blank');
-        location.reload();
-      } else {
-        location.assign(domain ? `https://${domain}.slack.com` : SLACK_URL);
-      }
+      const { team } = this.activeTeam();
+      await this.api.main.call('addAccount', team?.domain);
     } catch (error) {
       this.log('Add account failed', error);
     }

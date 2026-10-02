@@ -101,11 +101,25 @@ export interface MainCtx {
     openFile(options?: Electron.OpenDialogOptions): Promise<string>;
   };
 
+  sessions: {
+    navigate(
+      sender: Electron.WebContents,
+      url: string,
+      pending: import('../desktop/accountNavigation.ts').AccountHandoff,
+      mutate: () => Promise<void>,
+      options?: Electron.LoadURLOptions,
+    ): Promise<void>;
+    onSignIn(
+      handler: (sender: Electron.WebContents, url: string, options?: Electron.LoadURLOptions) => Promise<void>,
+    ): () => void;
+  };
+
   /** requires `cookies` */
   cookies: {
     get(details: Electron.CookiesGetFilter): Promise<Electron.Cookie | null>;
     set(details: Electron.CookiesSetDetails): Promise<void>;
     remove(url: string, name: string): Promise<void>;
+    onChanged(listener: (cookie: Electron.Cookie, removed: boolean) => void): () => void;
   };
 
   secrets: {
