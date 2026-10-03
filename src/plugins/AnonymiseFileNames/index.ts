@@ -16,11 +16,19 @@ export default class AnonymiseFileNames extends SlickPlugin<typeof meta.settings
   static readonly settings = meta.settings;
   static readonly liveSettings = ['keepExtension'];
 
-  private restore: (() => void) | null = null;
+  private restores: (() => void)[] = [];
   private readonly names = new WeakMap<File, string>();
 
   start() {
-    const descriptor = Object.getOwnPropertyDescriptor(File.prototype, 'name');
+    this.patch(File.prototype);
+    this.api.onDocument((doc) => {
+      const view = doc.defaultView as (Window & typeof globalThis) | null;
+      if (view?.File) this.patch(view.File.prototype);
+    });
+  }
+
+  private patch(proto: File) {
+    const descriptor = Object.getOwnPropertyDescriptor(proto, 'name');
     if (!descriptor?.get || !descriptor.configurable) {
       this.log('File.prototype.name is not patchable in this runtime');
       return;
@@ -31,7 +39,7 @@ export default class AnonymiseFileNames extends SlickPlugin<typeof meta.settings
     const names = this.names;
     const anonymise = (real: string) => this.anonymise(real);
 
-    Object.defineProperty(File.prototype, 'name', {
+    Object.defineProperty(proto, 'name', {
       configurable: true,
       enumerable: descriptor.enumerable,
       get(this: File) {
@@ -51,8 +59,8 @@ export default class AnonymiseFileNames extends SlickPlugin<typeof meta.settings
       },
     });
 
-    this.restore = () => Object.defineProperty(File.prototype, 'name', descriptor);
-    this.log('upload file names anonymised');
+    this.restores.push(() => Object.defineProperty(proto, 'name', descriptor));
+    this.log(proto === File.prototype ? 'upload file names anonymised' : 'pop-out file names anonymised');
   }
 
   private anonymise(real: string): string {
@@ -65,8 +73,12 @@ export default class AnonymiseFileNames extends SlickPlugin<typeof meta.settings
   }
 
   stop() {
-    this.restore?.();
-    this.restore = null;
+    for (const restore of this.restores) {
+      try {
+        restore();
+      } catch {}
+    }
+    this.restores = [];
   }
 }
 

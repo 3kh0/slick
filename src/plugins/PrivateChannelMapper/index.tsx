@@ -361,7 +361,7 @@ export default class PrivateChannelMapper extends SlickPlugin<typeof meta.settin
 
   private editLocalNames() {
     const edit = (event: MouseEvent) => {
-      const target = event.target instanceof Element ? event.target.closest<HTMLElement>('[data-slick-pcm-id]') : null;
+      const target = (event.target as Element | null)?.closest?.<HTMLElement>('[data-slick-pcm-id]');
       const id = target?.dataset.slickPcmId;
       if (!id || !CHANNEL_ID.test(id)) return;
 
@@ -374,8 +374,9 @@ export default class PrivateChannelMapper extends SlickPlugin<typeof meta.settin
       void this.api.storage.set('localNames', Object.fromEntries(this.localNames));
       this.api.redux.refresh();
     };
-    document.addEventListener('dblclick', edit);
-    this.api.signal.addEventListener('abort', () => document.removeEventListener('dblclick', edit));
+    const listen = (doc: Document) => doc.addEventListener('dblclick', edit, { signal: this.api.signal });
+    listen(document);
+    this.api.onDocument(listen);
   }
 
   private legacyLocalNames(): Record<string, string> {

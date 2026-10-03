@@ -24,11 +24,19 @@ export default class Click2Load extends SlickPlugin<typeof meta.settings> {
   static readonly settings = meta.settings;
   static readonly liveSettings = ['spotify', 'soundcloud', 'other'];
 
-  private restore: (() => void) | null = null;
+  private restores: (() => void)[] = [];
   private readonly gated = new Map<HTMLIFrameElement, string>();
-  private observer: MutationObserver | null = null;
 
   start() {
+    this.install(window);
+    this.api.onDocument((doc) => {
+      const view = doc.defaultView as (Window & typeof globalThis) | null;
+      if (view) this.install(view);
+    });
+  }
+
+  private install(view: Window & typeof globalThis) {
+    const { HTMLIFrameElement, Element, MutationObserver, document } = view;
     const descriptor = Object.getOwnPropertyDescriptor(HTMLIFrameElement.prototype, 'src');
     if (!descriptor?.set || !descriptor.get || !descriptor.configurable) {
       this.log('HTMLIFrameElement.prototype.src is not patchable in this runtime');
@@ -53,11 +61,6 @@ export default class Click2Load extends SlickPlugin<typeof meta.settings> {
       setAttribute.call(this, name, value);
     };
 
-    this.restore = () => {
-      Object.defineProperty(HTMLIFrameElement.prototype, 'src', descriptor);
-      Element.prototype.setAttribute = setAttribute;
-    };
-
     const scan = (root: ParentNode) => {
       const frames: HTMLIFrameElement[] =
         root instanceof HTMLIFrameElement ? [root] : [...root.querySelectorAll<HTMLIFrameElement>('iframe[src]')];
@@ -67,13 +70,19 @@ export default class Click2Load extends SlickPlugin<typeof meta.settings> {
       }
     };
     scan(document);
-    this.observer = new MutationObserver((records) => {
+    const observer = new MutationObserver((records) => {
       for (const record of records) {
         if (record.type === 'attributes') scan(record.target as HTMLIFrameElement);
         else for (const node of record.addedNodes) if (node instanceof Element) scan(node);
       }
     });
-    this.observer.observe(document, { subtree: true, childList: true, attributes: true, attributeFilter: ['src'] });
+    observer.observe(document, { subtree: true, childList: true, attributes: true, attributeFilter: ['src'] });
+
+    this.restores.push(() => {
+      observer.disconnect();
+      Object.defineProperty(HTMLIFrameElement.prototype, 'src', descriptor);
+      Element.prototype.setAttribute = setAttribute;
+    });
 
     const onMessage = (event: MessageEvent) => {
       if (!event.data || (event.data as { slickClick2Load?: boolean }).slickClick2Load !== true) return;
@@ -82,19 +91,19 @@ export default class Click2Load extends SlickPlugin<typeof meta.settings> {
       );
       if (frame) void this.load(frame, setSrc);
     };
-    window.addEventListener('message', onMessage);
-    this.api.signal.addEventListener('abort', () => window.removeEventListener('message', onMessage));
+    view.addEventListener('message', onMessage, { signal: this.api.signal });
   }
 
   stop() {
-    this.observer?.disconnect();
-    this.observer = null;
-    this.restore?.();
-    this.restore = null;
-    const descriptor = Object.getOwnPropertyDescriptor(HTMLIFrameElement.prototype, 'src');
+    for (const restore of this.restores) {
+      try {
+        restore();
+      } catch {}
+    }
+    this.restores = [];
     for (const [frame, source] of this.gated) {
       frame.removeAttribute('srcdoc');
-      descriptor?.set?.call(frame, source);
+      frame.src = source;
     }
     this.gated.clear();
   }

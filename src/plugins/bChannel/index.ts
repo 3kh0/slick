@@ -736,8 +736,7 @@ export default class BChannel extends SlickPlugin<typeof meta.settings> {
         ? persistedId
         : `FSLICK${crypto.randomUUID().replaceAll('-', '').toUpperCase()}`;
       const file = entry?.file;
-      if (file instanceof Blob)
-        add(sourceId, (file as File).name || entry?.name, file.type, file.size, async () => file);
+      if (isBlob(file)) add(sourceId, (file as File).name || entry?.name, file.type, file.size, async () => file);
     }
 
     for (const persistedId of persisted) {
@@ -806,7 +805,7 @@ export default class BChannel extends SlickPlugin<typeof meta.settings> {
   private async uploadStagedFiles(token: string, uploads: Upload[]) {
     for (const upload of uploads) {
       const blob = await upload.loadBlob();
-      if (!(blob instanceof Blob) || blob.size !== upload.descriptor.size) {
+      if (!isBlob(blob) || blob.size !== upload.descriptor.size) {
         throw new Error('Slack returned an incomplete attachment.');
       }
       let lastFailure = `bChannel couldn't upload ${upload.name}.`;
@@ -847,4 +846,9 @@ export default class BChannel extends SlickPlugin<typeof meta.settings> {
     const now = Date.now();
     for (const [key, at] of this.readyChannels) if (now - at >= 60_000) this.readyChannels.delete(key);
   }
+}
+
+function isBlob(value: unknown): value is Blob {
+  const tag = Object.prototype.toString.call(value);
+  return tag === '[object Blob]' || tag === '[object File]';
 }

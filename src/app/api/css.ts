@@ -17,25 +17,27 @@ const extraDocuments = new Set<Document>();
 const documentListeners = new Set<(doc: Document) => void>();
 
 function liveDocuments(): Document[] {
-  return [document, ...[...extraDocuments].filter((doc) => doc.defaultView)];
+  return [document, ...[...extraDocuments].filter((doc) => doc.defaultView && !doc.defaultView.closed)];
 }
 
 export function registerDocument(doc: Document) {
   if (doc === document || extraDocuments.has(doc)) return;
   extraDocuments.add(doc);
   for (const sheet of sheets) render(sheet, doc);
-  for (const listener of documentListeners) {
-    try {
-      listener(doc);
-    } catch (error) {
-      console.error('[slick] document listener threw:', error);
-    }
+  for (const listener of documentListeners) notify(listener, doc);
+}
+
+function notify(listener: (doc: Document) => void, doc: Document) {
+  try {
+    listener(doc);
+  } catch (error) {
+    console.error('[slick] document listener threw:', error);
   }
 }
 
-/** Notified for each additional document, so plugins can set their own up. */
 export function onDocument(cb: (doc: Document) => void): () => void {
   documentListeners.add(cb);
+  for (const doc of liveDocuments()) if (doc !== document) notify(cb, doc);
   return () => void documentListeners.delete(cb);
 }
 
