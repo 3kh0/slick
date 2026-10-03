@@ -20,6 +20,7 @@ export interface SlickBridge {
   /** Optional atomic update. False means the expected text is stale; reread and retry. */
   compareAndSwapSettings?(expected: string, text: string): Promise<boolean>;
   onSettingsChange(cb: (text: string) => void): () => void;
+  onOpenSettings?(cb: () => void): () => void;
 
   readUserCss(): Promise<string>;
   writeUserCss(css: string): Promise<boolean>;

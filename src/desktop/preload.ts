@@ -146,6 +146,12 @@ void (async () => {
       return () => ipcRenderer.removeListener('slick:settings-changed', handler);
     },
 
+    onOpenSettings(cb: () => void) {
+      const handler = () => cb();
+      ipcRenderer.on('slick:open-settings', handler);
+      return () => ipcRenderer.removeListener('slick:open-settings', handler);
+    },
+
     readUserCss: () => call('readUserCss'),
     writeUserCss: (css: string) => call('writeUserCss', [css]),
     onUserCssChange(cb: (css: string) => void) {

@@ -1,6 +1,7 @@
 import type { ScheduleRule, Setting, SettingValue } from '../shared/settings.ts';
 import { coerceSetting } from '../shared/settings.ts';
 import { fileLabel } from './api/storedFiles.ts';
+import { modalReady, type ModalHandle } from './api/modal.tsx';
 import { elementsReady, type SelectOption } from './api/elements.ts';
 import { setStyle } from './api/css.ts';
 import { settingsTabs, type SettingsTab } from './api/settingsTabs.ts';
@@ -90,6 +91,30 @@ export async function addSettingsTab(manager: PluginManager, config: ConfigStore
   await reactReady;
   elements = await elementsReady;
   setStyle(PREFERENCES_CSS, 'core:preferences');
+
+  if (bridge.onOpenSettings) {
+    const { openModal } = await modalReady;
+    let settingsModal: ModalHandle | null = null;
+    bridge.onOpenSettings(() => {
+      if (settingsModal) return;
+      settingsModal = openModal({
+        title: 'Slick Settings',
+        body: (
+          <div style={{ maxHeight: '70vh', overflowY: 'auto' }}>
+            <SlickSettings manager={manager} config={config} bridge={bridge} />
+          </div>
+        ),
+        submitText: 'Close',
+        showCancelButton: false,
+        onClose: () => {
+          settingsModal = null;
+        },
+        onSubmit: () => {
+          settingsModal = null;
+        },
+      });
+    });
+  }
 
   // Adapted from Taut's MIT-licensed settings tab. Keeping Slack on its real
   // Advanced route avoids teaching its Preferences router an unknown route.

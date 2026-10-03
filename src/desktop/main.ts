@@ -28,6 +28,7 @@ import { prepareLinuxArm64Natives, prepareWindowsNatives } from './windowsNative
 import { downloadLinuxArm64Slack } from './linuxArm64Slack.js';
 import { createCookieLogin } from './windows/cookieLogin.js';
 import { loginWithCookies } from './cookieLogin.js';
+import { openSettings } from './openSettings.js';
 
 const cjsRequire = createRequire(import.meta.url);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -209,6 +210,15 @@ function startSlack(asar: string) {
     loginWithCookies(target, value, accountNavigation.navigate),
   );
   setMenuHandlers({
+    openSettings: () => {
+      if (!openSettings(BrowserWindow.getAllWindows(), BrowserWindow.getFocusedWindow())) {
+        dialog.showMessageBoxSync({
+          type: 'info',
+          title: 'Slick Settings',
+          message: 'Sign in to a Slack workspace before opening Slick settings.',
+        });
+      }
+    },
     checkForUpdates: () => void updater.manualCheckForUpdates(),
     cookieLogin: () => cookieLogin.open(),
   });
