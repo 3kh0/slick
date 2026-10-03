@@ -28,6 +28,7 @@ CLONED=0
 [ -f "$ROOT/src/desktop/main.ts" ] && CLONED=1
 
 step() { printf '\033[1;35m==>\033[0m \033[1m%s\033[0m\n' "$*"; }
+dim() { while IFS= read -r line; do printf '\033[2m    %s\033[0m\n' "$line"; done; }
 die() {
   printf '\033[1;31merror:\033[0m %s\n' "$*" >&2
   exit 1
@@ -229,9 +230,9 @@ else
   trap 'rm -rf "$TMP"' EXIT
   STAGED_APP="$TMP/Slick"
 
-  step "Building Slick v2 (this bundles Electron; give it a minute)"
-  (cd "$ROOT" && node scripts/build.ts package --arch "$BUILD_ARCH") >/dev/null ||
-    die "build failed; run 'node scripts/build.ts package --arch $BUILD_ARCH' to see why"
+  step "Building Slick v2"
+  (cd "$ROOT" && node scripts/build.ts package --dir --arch "$BUILD_ARCH") 2>&1 | dim ||
+    die "build failed (see output above)"
 
   BUILT="$ROOT/dist/release/$UNPACKED"
   [ -d "$BUILT" ] || die "electron-builder produced no app at $BUILT"

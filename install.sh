@@ -9,6 +9,7 @@ NO_LAUNCH=0
 
 step() { printf '\033[1;35m==>\033[0m \033[1m%s\033[0m\n' "$*"; }
 die()  { printf '\033[1;31merror:\033[0m %s\n' "$*" >&2; exit 1; }
+dim()  { while IFS= read -r line; do printf '\033[2m    %s\033[0m\n' "$line"; done; }
 
 # Per-OS integration differs too much to share, so each OS has its own script.
 # Dispatched before argument parsing so the target script sees every argument.
@@ -107,9 +108,9 @@ if [ -f "$ROOT/src/desktop/main.ts" ]; then
   # electron-builder names the arm64 directory mac-arm64 and the x64 one mac.
   [ "$ARCH" = "arm64" ] && OUTDIR="mac-arm64" || OUTDIR="mac"
 
-  step "Building Slick v2 (this bundles Electron; give it a minute)"
-  ( cd "$ROOT" && SLICK_SLACK_RESOURCES="$SLACK/Contents/Resources" node scripts/build.ts package --arch "$ARCH" ) >/dev/null \
-    || die "build failed; run 'node scripts/build.ts package --arch $ARCH' to see why"
+  step "Building Slick v2"
+  ( cd "$ROOT" && SLICK_SLACK_RESOURCES="$SLACK/Contents/Resources" node scripts/build.ts package --dir --arch "$ARCH" ) 2>&1 | dim \
+    || die "build failed (see output above)"
 
   BUILT="$ROOT/dist/release/$OUTDIR/Slick.app"
   [ -d "$BUILT" ] || die "electron-builder produced no app at $BUILT"

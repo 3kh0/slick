@@ -59,11 +59,14 @@ function finishMacApp(appPath: string) {
     ]);
   }
   if (SIGN_IDENTITY) return;
-  execFileSync('/usr/bin/codesign', ['--force', '--deep', '--sign', '-', '--entitlements', MAC_ENTITLEMENTS, appPath]);
-  execFileSync('/usr/bin/codesign', ['--verify', '--deep', '--strict', appPath]);
+  console.log('  • ad-hoc signing  file=' + path.relative(ROOT, appPath));
+  execFileSync('/usr/bin/codesign', ['--force', '--deep', '--sign', '-', '--entitlements', MAC_ENTITLEMENTS, appPath], {
+    stdio: 'pipe',
+  });
+  execFileSync('/usr/bin/codesign', ['--verify', '--deep', '--strict', appPath], { stdio: 'pipe' });
 }
 
-type PackageOptions = { debug?: boolean; platform?: NodeJS.Platform; arch?: string };
+type PackageOptions = { debug?: boolean; platform?: NodeJS.Platform; arch?: string; dir?: boolean };
 
 function targetArch(value?: string): Arch {
   const chosen = value ?? process.arch;
@@ -110,7 +113,12 @@ async function legacyArchive(platform: NodeJS.Platform, arch: string): Promise<s
   return artifact;
 }
 
-export async function packageDesktop({ debug = false, platform = process.platform, arch }: PackageOptions = {}) {
+export async function packageDesktop({
+  debug = false,
+  platform = process.platform,
+  arch,
+  dir = false,
+}: PackageOptions = {}) {
   await buildDesktop({ debug });
 
   const selectedArch = targetArch(arch);
@@ -127,7 +135,7 @@ export async function packageDesktop({ debug = false, platform = process.platfor
   const selectedPlatform =
     platform === 'darwin' ? Platform.MAC : platform === 'win32' ? Platform.WINDOWS : Platform.LINUX;
   const targets = selectedPlatform.createTarget(
-    platform === 'darwin' ? ['zip', 'dmg'] : platform === 'linux' ? ['dir', 'AppImage', 'deb', 'rpm'] : 'dir',
+    dir || platform === 'win32' ? 'dir' : platform === 'darwin' ? ['zip', 'dmg'] : ['dir', 'AppImage', 'deb', 'rpm'],
     selectedArch,
   );
 
@@ -228,7 +236,7 @@ export async function packageDesktop({ debug = false, platform = process.platfor
     },
   });
 
-  if (platform !== 'darwin') results.push(await legacyArchive(platform, Arch[selectedArch]));
+  if (platform !== 'darwin' && !dir) results.push(await legacyArchive(platform, Arch[selectedArch]));
   for (const artifact of results) console.log(`[build:package] ${path.relative(ROOT, artifact)}`);
   console.log(`[build:package] version ${versions.version} (build ${versions.build})`);
   return results;

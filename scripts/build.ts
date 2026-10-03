@@ -1,4 +1,4 @@
-// Build entry point. `node scripts/build.ts [app|desktop|package] [--debug] [--arch <arch>]`
+// Build entry point. `node scripts/build.ts [app|desktop|package] [--debug] [--dir] [--arch <arch>]`
 
 import { buildApp } from './build/app.ts';
 import { buildDesktop } from './build/desktop.ts';
@@ -7,6 +7,7 @@ import { buildExtension } from './build/extension.ts';
 
 const args = process.argv.slice(2);
 const debug = args.includes('--debug');
+const dir = args.includes('--dir');
 const archIndex = args.indexOf('--arch');
 const arch = archIndex < 0 ? undefined : args[archIndex + 1];
 if (archIndex >= 0 && (!arch || arch.startsWith('--'))) {
@@ -26,5 +27,5 @@ for (const target of chosen) {
     console.error(`unknown target: ${target} (try: ${Object.keys(all).join(', ')})`);
     process.exit(1);
   }
-  await fn({ debug, arch });
+  await fn({ debug, arch, dir });
 }
