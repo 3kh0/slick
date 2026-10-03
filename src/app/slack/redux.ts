@@ -216,8 +216,10 @@ export function mapEntries<T = any>(
   };
 
   const read = (target: object, key: PropertyKey): any => {
-    const descriptor = Object.getOwnPropertyDescriptor(target, key);
     const value = (target as any)[key];
+    const mapped = run(key, value);
+    if (mapped === value) return value;
+    const descriptor = Object.getOwnPropertyDescriptor(target, key);
     if (
       descriptor &&
       descriptor.configurable === false &&
@@ -225,14 +227,14 @@ export function mapEntries<T = any>(
     ) {
       return value;
     }
-    return run(key, value);
+    return mapped;
   };
 
   const hasMapped = (target: object, key: PropertyKey): boolean => {
     if (typeof key !== 'string') return Reflect.has(target, key);
+    if (run(key, (target as any)[key]) !== undefined) return true;
     const descriptor = Object.getOwnPropertyDescriptor(target, key);
-    if (descriptor && (descriptor.configurable === false || !Object.isExtensible(target))) return true;
-    return run(key, (target as any)[key]) !== undefined;
+    return !!descriptor && (descriptor.configurable === false || !Object.isExtensible(target));
   };
 
   const describe = (target: object, key: PropertyKey) => {

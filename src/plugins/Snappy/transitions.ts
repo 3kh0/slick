@@ -10,6 +10,7 @@ const OVERRIDE = 'transition-duration: .01ms !important; transition-delay: 0s !i
 /** Selectors per emitted rule. One unparseable selector voids its whole list. */
 const CHUNK = 200;
 const RESCAN_MS = 5_000;
+const FIRST_SCAN_MS = 3_000;
 
 function hasDuration(style: CSSStyleDeclaration): boolean {
   const duration = style.getPropertyValue('transition-duration');
@@ -18,12 +19,15 @@ function hasDuration(style: CSSStyleDeclaration): boolean {
   return style.getPropertyValue('transition').includes('var(');
 }
 
-function collect(rules: CSSRuleList, into: Set<string>) {
+function collect(rules: CSSRuleList, into: Set<string>, onRule?: (rule: CSSStyleRule) => void) {
   for (const rule of rules) {
-    if (rule instanceof CSSStyleRule && hasDuration(rule.style)) into.add(rule.selectorText);
+    if (rule instanceof CSSStyleRule) {
+      onRule?.(rule);
+      if (hasDuration(rule.style)) into.add(rule.selectorText);
+    }
     // @media, @supports, @layer and nested rules all carry cssRules.
     const nested = (rule as CSSGroupingRule).cssRules;
-    if (nested) collect(nested, into);
+    if (nested) collect(nested, into, onRule);
   }
 }
 
@@ -31,7 +35,10 @@ export type TransitionOverride = { stop(): void };
 
 // Each batch gets its own key, so later batches add a sheet instead of
 // re-parsing earlier ones.
-export function overrideTransitions(emit: (css: string, key: string) => void): TransitionOverride {
+export function overrideTransitions(
+  emit: (css: string, key: string) => void,
+  onRule?: (rule: CSSStyleRule) => void,
+): TransitionOverride {
   const known = new Set<string>();
   /** Rule count per sheet at its last scan; a change means Slack inserted rules. */
   const scanned = new WeakMap<CSSStyleSheet, number>();
@@ -53,7 +60,7 @@ export function overrideTransitions(emit: (css: string, key: string) => void): T
       }
       if (scanned.get(sheet) === rules.length) continue;
       scanned.set(sheet, rules.length);
-      collect(rules, found);
+      collect(rules, found, onRule);
     }
 
     const fresh = [...found].filter((selector) => !known.has(selector));
@@ -76,7 +83,7 @@ export function overrideTransitions(emit: (css: string, key: string) => void): T
     const delay = ++scans < 10 ? 1_000 : RESCAN_MS;
     timer = setTimeout(() => requestIdleCallback(loop, { timeout: delay }), delay);
   };
-  loop();
+  requestIdleCallback(loop, { timeout: FIRST_SCAN_MS });
 
   return {
     stop() {

@@ -3,6 +3,7 @@
 
 import { SlickPlugin } from '$slick';
 import * as meta from './meta.ts';
+import { selectorRewriter } from './selectors.ts';
 import { overrideTransitions } from './transitions.ts';
 
 const QUIET_MS = 150;
@@ -33,8 +34,16 @@ export default class Snappy extends SlickPlugin<typeof meta.settings> {
   private samples: [number, number][] = [];
 
   start() {
-    const transitions = overrideTransitions((css, key) => this.api.setStyle(css, key));
-    this.api.signal.addEventListener('abort', () => transitions.stop(), { once: true });
+    const selectors = this.config.optimizeSelectors ? selectorRewriter() : null;
+    const transitions = overrideTransitions((css, key) => this.api.setStyle(css, key), selectors?.visit);
+    this.api.signal.addEventListener(
+      'abort',
+      () => {
+        transitions.stop();
+        selectors?.restore();
+      },
+      { once: true },
+    );
 
     // Not live: the gate is registered in start/stop, so toggling restarts.
     if (this.config.optimizeResize) {

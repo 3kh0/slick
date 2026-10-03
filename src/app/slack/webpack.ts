@@ -13,6 +13,7 @@ const moduleRegistry = new Map<PropertyKey, Exports>();
 /** Unwrapped factories, so .toString() is the original source. */
 const moduleFactories = new Map<string, ModuleFactory>();
 const exportOwners = new WeakMap<object, string>();
+let ownersIndexedFor = 0;
 
 function isIndexable(value: any): boolean {
   return !!value && (typeof value === 'object' || typeof value === 'function');
@@ -157,7 +158,6 @@ function wrapModuleFactory(moduleId: PropertyKey, factory: ModuleFactory): Modul
     }
 
     moduleRegistry.set(moduleId, moduleExports);
-    registerExportOwner(String(moduleId), moduleExports);
     checkPendingMatchers(moduleExports);
     for (const cb of moduleLoadCallbacks) {
       try {
@@ -326,6 +326,10 @@ export function* moduleSources(): Generator<[id: string, source: string]> {
 
 export function findModuleId(value: any): string | undefined {
   if (!isIndexable(value)) return undefined;
+  if (ownersIndexedFor !== moduleRegistry.size) {
+    for (const [id, exports] of moduleRegistry) registerExportOwner(String(id), exports);
+    ownersIndexedFor = moduleRegistry.size;
+  }
   return exportOwners.get(value);
 }
 

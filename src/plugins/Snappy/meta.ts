@@ -12,6 +12,12 @@ export const settings = {
     description: "Pause Slack's layout work while a window edge is being dragged, and let it catch up once",
     default: true,
   },
+  optimizeSelectors: {
+    type: 'boolean',
+    label: 'Faster style updates',
+    description: "Rewrite Slack's slowest CSS selectors into equivalent ones Chromium can index",
+    default: true,
+  },
   ignoreGpuBlocklist: {
     type: 'boolean',
     label: 'Ignore GPU blocklist',

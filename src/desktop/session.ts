@@ -1,7 +1,7 @@
 // Serves the embedded slick.js (and the CSS editor) over slick://.
 // SLICK_APP_URL is a dev-only override for `npm run dev`.
 
-import { readFileSync } from 'node:fs';
+import { readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { session } from 'electron';
 import { editorHtml, MONACO_URL_PREFIX } from './windows/cssEditor.ts';
@@ -19,8 +19,16 @@ export function privilegedSchemes() {
   ];
 }
 
+let bundleCandidates: string[] = [];
+
 export function appUrl(): string {
-  return process.env.SLICK_APP_URL || 'slick://app/slick.js';
+  if (process.env.SLICK_APP_URL) return process.env.SLICK_APP_URL;
+  for (const bundle of bundleCandidates) {
+    try {
+      return `slick://app/slick.js?v=${Math.trunc(statSync(bundle).mtimeMs)}`;
+    } catch {}
+  }
+  return 'slick://app/slick.js';
 }
 
 /** The only file types served from the Monaco dir. */
@@ -40,6 +48,7 @@ const notFound = () => new Response('Not found', { status: 404 });
  */
 export function setupSession(dirs: string[]) {
   const candidates = dirs.map((dir) => path.join(dir, 'slick.js'));
+  bundleCandidates = candidates;
   const monacoDirs = dirs.map((dir) => path.join(dir, 'monaco'));
 
   session.defaultSession.protocol.handle(SLICK_SCHEME, (request) => {
