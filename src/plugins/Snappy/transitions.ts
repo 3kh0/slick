@@ -11,6 +11,8 @@ const OVERRIDE = 'transition-duration: .01ms !important; transition-delay: 0s !i
 const CHUNK = 200;
 const RESCAN_MS = 5_000;
 const FIRST_SCAN_MS = 3_000;
+const SETTLE_MS = 1_000;
+const WORKSPACE = '.p-client_workspace, .p-workspace__primary_view';
 
 function hasDuration(style: CSSStyleDeclaration): boolean {
   const duration = style.getPropertyValue('transition-duration');
@@ -83,7 +85,16 @@ export function overrideTransitions(
     const delay = ++scans < 10 ? 1_000 : RESCAN_MS;
     timer = setTimeout(() => requestIdleCallback(loop, { timeout: delay }), delay);
   };
-  requestIdleCallback(loop, { timeout: FIRST_SCAN_MS });
+  // Rewriting selectors rebuilds Slack's rule index; keep that out of first paint.
+  const waitForWorkspace = () => {
+    if (stopped) return;
+    if (!document.querySelector(WORKSPACE)) {
+      timer = setTimeout(waitForWorkspace, 250);
+      return;
+    }
+    timer = setTimeout(() => requestIdleCallback(loop, { timeout: FIRST_SCAN_MS }), SETTLE_MS);
+  };
+  waitForWorkspace();
 
   return {
     stop() {
