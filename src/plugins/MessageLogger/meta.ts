@@ -6,6 +6,13 @@ export const description = 'Keep deleted and edited messages visible';
 export const defaultEnabled = false;
 
 export const settings = {
+  saveImages: {
+    type: 'boolean',
+    label: 'Save image previews',
+    description:
+      'Cache accessible images while messages are visible and keep previews after deletion. Up to 3 previews per message and 128 deleted messages; large images are resized.',
+    default: true,
+  },
   retentionDays: {
     type: 'number',
     label: 'Keep history for (days)',

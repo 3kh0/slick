@@ -5,6 +5,7 @@
 import { SlickPlugin, type ComponentType, type RtmEvent, type SlackMessage } from '$slick';
 import * as meta from './meta.ts';
 import { MAX_EDIT_TEXT, MAX_EDITS_PER_MESSAGE, evictable, mergeEntry, normalize, trim } from './retention.ts';
+import { ImageArchive } from './images.ts';
 
 type StoredEdit = { oldText: string; newText: string };
 
@@ -107,6 +108,7 @@ export default class MessageLogger extends SlickPlugin<typeof meta.settings> {
   private persistTimer: ReturnType<typeof setTimeout> | null = null;
   private rowTimer: ReturnType<typeof setTimeout> | null = null;
   private seenRow = false;
+  private images: ImageArchive | null = null;
 
   private readonly EditContext = React.createContext<{ ts: string; edits: StoredEdit[]; blocks: boolean } | null>(null);
 
@@ -114,6 +116,7 @@ export default class MessageLogger extends SlickPlugin<typeof meta.settings> {
   private readonly MenuRowsContext = React.createContext<React.ReactNode[]>([]);
 
   start() {
+    this.images = new ImageArchive(this.api.storage, this.api.signal, () => this.api.redux.refresh());
     // Not awaited: reading ~1000 entry files can outlast the lifecycle timeout
     // while Slack is booting, and the listeners below must not wait on it.
     void this.restore().catch((error) => console.error('[slick] MessageLogger could not restore its log:', error));
@@ -188,6 +191,7 @@ export default class MessageLogger extends SlickPlugin<typeof meta.settings> {
     // Only once the migrated entries are written, so a crash can't lose them.
     if (hasLegacy) this.writes = this.writes.then(() => this.api.storage.delete(LEGACY_STORAGE_KEY)).then(() => {});
     this.api.redux.refresh();
+    await this.images?.restore(() => [...this.entries].filter(([, entry]) => entry.deleted).map(([key]) => key));
     const ms = Math.round(performance.now() - started);
     this.log(`logging deletes and edits (${this.entries.size} stored, loaded in ${ms}ms)`);
   }
@@ -201,6 +205,7 @@ export default class MessageLogger extends SlickPlugin<typeof meta.settings> {
     const ts = tsOf(event, event as SlackMessage);
     if (!channel || !ts) return;
     this.recent.set(this.key(channel, ts), { ...(event as SlackMessage), channel, ts });
+    this.captureImages(this.key(channel, ts), event as SlackMessage);
     while (this.recent.size > RECENT_CAP) {
       const first = this.recent.keys().next().value;
       if (first === undefined) break;
@@ -211,6 +216,18 @@ export default class MessageLogger extends SlickPlugin<typeof meta.settings> {
   private record(event: RtmEvent) {
     if (isDeleteEvent(event)) this.recordDelete(event);
     else if (isChangeEvent(event)) this.recordEdit(event);
+  }
+
+  private captureImages(key: string, message: SlackMessage) {
+    if (!this.config.saveImages || this.skipSelf(userOf(message)) || this.skipAnchor(message)) return;
+    // Slack normalizes history files to IDs; RTM messages can carry full objects.
+    const files = this.api.redux.getRawState()?.files;
+    this.images?.capture(key, {
+      ...message,
+      files: Array.isArray(message.files)
+        ? message.files.map((file) => (typeof file === 'string' ? files?.[file] : file)).filter(Boolean)
+        : message.files,
+    });
   }
 
   private previousOf(event: RtmEvent): SlackMessage | undefined {
@@ -273,6 +290,8 @@ export default class MessageLogger extends SlickPlugin<typeof meta.settings> {
       at: Date.now(),
     };
     this.entries.set(key, entry);
+    this.images?.retain(key);
+    if (original) this.captureImages(key, original);
     this.dirty.add(key);
     this.cap();
     this.persist();
@@ -292,6 +311,7 @@ export default class MessageLogger extends SlickPlugin<typeof meta.settings> {
     const original = this.original(event, channel, ts);
     const user = userOf(next ?? original ?? previous, event);
     if (this.skipSelf(user)) return;
+    if (next) this.captureImages(this.key(channel, ts), next);
 
     const oldText = messageText(previous) || messageText(original);
     const newText = messageText(next);
@@ -321,6 +341,7 @@ export default class MessageLogger extends SlickPlugin<typeof meta.settings> {
 
   private forget(key: string) {
     this.entries.delete(key);
+    this.images?.forget(key);
     this.dirty.add(key);
   }
 
@@ -427,6 +448,8 @@ export default class MessageLogger extends SlickPlugin<typeof meta.settings> {
       .slick-ml-edited-original-line { display: block; }
       .slick-ml-edited-original s { text-decoration: line-through; }
       .slick-ml-edited-marker { margin-left: 4px; font-size: .85em; opacity: .72; }
+      .slick-ml-images { display: flex; flex-wrap: wrap; gap: 8px; padding: 4px 0; }
+      .slick-ml-images img { max-width: min(360px, 100%); max-height: 300px; object-fit: contain; }
     `;
   }
 
@@ -461,6 +484,10 @@ export default class MessageLogger extends SlickPlugin<typeof meta.settings> {
     const version = this.api.redux.usePatchVersion();
     const msg = props.msg ?? props.message;
     const entry = React.useMemo(() => this.entryFor(msg, props.channelId), [msg, props.channelId, version]);
+    React.useEffect(() => {
+      const channel = (typeof msg?.channel === 'string' && msg.channel) || props.channelId;
+      if (msg?.ts && channel && !entry?.deleted) this.captureImages(this.key(channel, msg.ts), msg);
+    }, [msg, props.channelId, entry?.deleted]);
     this.seenRow = true;
     if (!entry?.deleted && !entry?.edits?.length) return React.createElement(Original, props);
 
@@ -469,7 +496,21 @@ export default class MessageLogger extends SlickPlugin<typeof meta.settings> {
       .join(' ');
 
     // Dismiss actions live in the overflow menu; inline they read as message body.
-    const row = React.createElement('div', { className: classes || undefined }, React.createElement(Original, props));
+    const images = entry.deleted ? (this.images?.get(this.key(entry.channel, entry.ts)) ?? []) : [];
+    const row = React.createElement(
+      'div',
+      { className: classes || undefined },
+      React.createElement(Original, props),
+      images.length
+        ? React.createElement(
+            'div',
+            { className: 'slick-ml-images', 'aria-label': 'Saved image previews' },
+            images.map((image, index) =>
+              React.createElement('img', { key: index, src: image.data, alt: image.name, title: image.name }),
+            ),
+          )
+        : null,
+    );
     if (!entry.edits?.length || !msg?.ts) return row;
     return React.createElement(
       this.EditContext.Provider,
