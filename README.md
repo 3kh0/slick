@@ -104,7 +104,9 @@ Slick updates itself every few hours, and checks every download against its GitH
 
 ## Themes
 
-Themes are defined in the `themes/` folder as JSON files exporting the following:
+Import a `.json` theme from **Slick Preferences → Appearance → Import theme JSON** (or Appearance in the Firefox toolbar popup). Imported themes are saved, selected immediately, and can be picked again from the theme list or removed with **Remove imported theme**. Match Slack’s native Light or Dark mode to the theme.
+
+The `themes/` folder in the source repository contains built-in themes bundled at build time. Adding files there won't load them into an installed app; use the import button instead. Theme JSON uses this format:
 
 ```jsonc
 {
@@ -118,7 +120,7 @@ Themes are defined in the `themes/` folder as JSON files exporting the following
 
 Some people like how Slack looks by default, but you can pick one from the Slick tab in Preferences. `themes/amoled.json` (true black) and `themes/catppuccin-mocha.json` ([Catppuccin](https://catppuccin.com) Mocha) are working examples.
 
-Prefer to write your own CSS instead? Slick also has a "Custom CSS" option powered by Monaco at the top of the theme list.
+Prefer to write your own CSS instead? Open the CSS editor in Slick Preferences (or the Custom CSS field in Firefox). It accepts raw CSS, which applies on top of your selected theme. JSON theme files belong in **Import theme JSON**, not the CSS editor. Choose **Custom CSS only** to use your CSS without a theme.
 
 ## Credits
 

@@ -117,3 +117,41 @@ test('failed CSS read still falls back without losing valid settings', async () 
   assert.equal(config.theme, 'catppuccin-mocha');
   assert.equal(config.getUserCss(), '');
 });
+
+test('desktop theme imports persist separately from CSS, survive restart, and remove cleanly', async () => {
+  let stored = '{"theme":"amoled","plugins":{"HumanCount":{"enabled":true}}}';
+  let succeeds = true;
+  const bridge = {
+    readSettings: async () => stored,
+    readUserCss: async () => 'body { color: red; }',
+    writeSettings: async (text: string) => {
+      if (!succeeds) return false;
+      stored = text;
+      return true;
+    },
+    onSettingsChange: () => () => {},
+    onUserCssChange: () => () => {},
+  } as unknown as SlickBridge;
+  const config = new ConfigStore(bridge);
+  await config.init();
+  const theme = { name: 'Latte', vars: { '--accent': '#8839ef' } };
+  succeeds = false;
+  assert.equal(await config.importTheme('imported:latte', theme), false);
+  assert.equal(config.theme, 'amoled');
+  assert.deepEqual(config.importedThemes, {});
+  succeeds = true;
+  let notifications = 0;
+  config.onConfigChange(() => notifications++);
+  assert.equal(await config.importTheme('imported:latte', theme), true);
+  assert.equal(notifications, 1);
+  assert.equal(config.theme, 'imported:latte');
+  assert.equal(config.getUserCss(), 'body { color: red; }');
+  assert.equal(JSON.parse(stored).plugins.HumanCount.enabled, true);
+  const restarted = new ConfigStore(bridge);
+  await restarted.init();
+  assert.deepEqual(restarted.importedThemes['imported:latte'], theme);
+  assert.equal(restarted.theme, 'imported:latte');
+  assert.equal(await restarted.removeTheme('imported:latte'), true);
+  assert.equal(restarted.theme, '');
+  assert.deepEqual(restarted.importedThemes, {});
+});

@@ -92,6 +92,18 @@
             <h2>Appearance</h2>
             <label class="field-label" for="theme">Theme</label>
             <select id="theme" class="input select"></select>
+            <div class="actions">
+              <button id="import-theme" class="button" type="button" disabled>Import theme JSON</button>
+              <button id="remove-theme" class="button" type="button" hidden disabled>Remove imported theme</button>
+              <input
+                id="theme-file"
+                type="file"
+                accept=".json,application/json"
+                aria-label="Import theme JSON"
+                hidden
+              />
+            </div>
+            <p id="theme-status" class="hint" role="status"></p>
             <label class="field-label" for="toolbar-icon">Toolbar icon</label>
             <select id="toolbar-icon" class="input select" disabled>
               <option value="auto">Match Firefox</option>
@@ -99,7 +111,9 @@
               <option value="white">White</option>
             </select>
             <label class="field-label" for="css">Custom CSS</label>
-            <p id="css-help" class="hint">Applied on top of the theme. Only paste CSS you trust.</p>
+            <p id="css-help" class="hint">
+              Raw CSS, applied on top of the theme. For JSON theme files, use Import theme JSON above.
+            </p>
             <textarea
               id="css"
               class="input"

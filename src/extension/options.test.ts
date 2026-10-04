@@ -48,6 +48,31 @@ test('CAS is bounded and rejects malformed settings or failed responses', async 
   );
 });
 
+test('theme import CAS retries preserve concurrent imports, plugins, and CSS', async () => {
+  const theme = { name: 'Latte', vars: { '--accent': '#8839ef' } };
+  let stored = '{"plugins":{"HumanCount":{"enabled":true}}}';
+  let attempts = 0;
+  const send = async ({ method, args }: Request) => {
+    if (method === 'readSettings') return { ok: true, value: stored };
+    assert.equal(method, 'compareAndSwapSettings');
+    if (++attempts === 1) {
+      stored = JSON.stringify({ ...JSON.parse(stored), importedThemes: { 'imported:other': { css: 'body{}' } } });
+      return { ok: true, value: false };
+    }
+    stored = args[1];
+    return { ok: true, value: true };
+  };
+  await updateSetting(send, { property: 'importTheme', id: 'imported:latte', value: theme });
+  assert.deepEqual(JSON.parse(stored), {
+    plugins: { HumanCount: { enabled: true } },
+    importedThemes: { 'imported:other': { css: 'body{}' }, 'imported:latte': theme },
+    theme: 'imported:latte',
+  });
+  await updateSetting(send, { property: 'removeTheme', id: 'imported:latte' });
+  assert.equal(JSON.parse(stored).theme, '');
+  assert.deepEqual(JSON.parse(stored).importedThemes, { 'imported:other': { css: 'body{}' } });
+});
+
 test('CSS remote changes never clobber drafts; failures keep dirty state', async () => {
   const draft = new CssDraft();
   draft.remote('initial');

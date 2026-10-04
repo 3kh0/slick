@@ -9,6 +9,7 @@ import type { SlickBridge } from './bridge.ts';
 import type { ConfigStore } from './configStore.ts';
 import type { PluginManager } from './pluginManager.ts';
 import { patchComponent, reactReady } from './slack/react.tsx';
+import { parseThemeJson } from '../shared/themes.ts';
 
 let elements: Awaited<typeof elementsReady>;
 let warnedUnrecognisedTabs = false;
@@ -792,10 +793,18 @@ function ScheduleControl({
 }
 
 function Appearance({ config, bridge }: { config: ConfigStore; bridge: SlickBridge }) {
+  useConfigChanges(config);
+  const picker = React.useRef<HTMLInputElement>(null);
+  const [importStatus, setImportStatus] = React.useState('');
+  const [importing, setImporting] = React.useState(false);
   const options: SelectOption[] = [
     { value: '', label: 'None' },
     ...Object.entries(__SLICK_THEMES__).map(([id, theme]) => ({ value: id, label: theme.name || id })),
-    { value: 'custom', label: 'Custom' },
+    ...Object.entries(config.importedThemes).map(([id, theme]) => ({
+      value: id,
+      label: `${theme.name || id} (imported)`,
+    })),
+    { value: 'custom', label: 'Custom CSS only' },
   ];
   const selected = options.find((option) => option.value === config.theme) ?? options[0];
 
@@ -820,10 +829,59 @@ function Appearance({ config, bridge }: { config: ConfigStore; bridge: SlickBrid
           ))}
         </select>
         <div style={{ marginTop: '6px' }}>
-          When using these themes, it is recommend to set your native Slack theme to Dark mode for the best visual
-          experience.
+          Match Slack’s native Light or Dark mode to your theme for the best visual experience.
+        </div>
+        <input
+          ref={picker}
+          type="file"
+          accept=".json,application/json"
+          aria-label="Import theme JSON"
+          hidden
+          onChange={async (event) => {
+            const file = event.currentTarget.files?.[0];
+            event.currentTarget.value = '';
+            if (!file) return;
+            setImporting(true);
+            try {
+              if (file.size > 256 * 1024) throw new Error('Theme files must be smaller than 256 KiB.');
+              const theme = parseThemeJson(await file.text(), file.name);
+              if (!(await config.importTheme(`imported:${crypto.randomUUID()}`, theme)))
+                throw new Error('Could not save the theme.');
+              setImportStatus(`Imported ${theme.name}.`);
+            } catch (error) {
+              setImportStatus(error instanceof Error ? error.message : 'Could not import the theme.');
+            } finally {
+              setImporting(false);
+            }
+          }}
+        />
+        <div style={{ marginTop: '10px', display: 'flex', gap: '8px' }}>
+          <elements.Button disabled={importing} onClick={() => picker.current?.click()}>
+            Import theme JSON
+          </elements.Button>
+          {config.importedThemes[selected.value] && (
+            <elements.Button
+              disabled={importing}
+              onClick={async () => {
+                setImportStatus(
+                  (await config.removeTheme(selected.value))
+                    ? 'Removed imported theme.'
+                    : 'Could not remove the theme.',
+                );
+              }}
+            >
+              Remove imported theme
+            </elements.Button>
+          )}
+        </div>
+        <div role="status" style={{ marginTop: '6px' }}>
+          {importStatus}
         </div>
       </div>
+      <p>
+        Custom CSS accepts raw CSS and applies on top of your selected theme. For a JSON theme file, use Import theme
+        JSON above.
+      </p>
       {bridge.loader === 'extension' ? (
         // Slack's page may not open extension tabs; the toolbar popup owns the editor.
         <div style={{ opacity: 0.85 }}>Edit custom CSS from the Slick button in the Firefox toolbar.</div>

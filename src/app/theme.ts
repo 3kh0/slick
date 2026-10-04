@@ -1,16 +1,9 @@
 import { setStyle } from './api/css.ts';
 import type { ConfigStore } from './configStore.ts';
+import type { ThemeJson } from '../shared/themes.ts';
+export type { ThemeJson } from '../shared/themes.ts';
 
 const THEME_SELECTOR = ':root,html,body,.sk-client-theme--dark,.sk-client-theme--light';
-
-export type ThemeJson = {
-  name?: string;
-  description?: string;
-  palette?: Record<string, Record<string, unknown>>;
-  sidebar?: Record<string, unknown>;
-  vars?: Record<string, unknown>;
-  css?: string | string[];
-};
 
 /** Convert the v1 theme format without changing its CSS ordering or precedence. */
 export function themeToCss(theme: ThemeJson): string {
@@ -40,7 +33,8 @@ export function themeToCss(theme: ThemeJson): string {
 export function installTheme(config: ConfigStore): () => void {
   const apply = () => {
     const selected = config.theme;
-    const theme = selected && selected !== 'custom' ? __SLICK_THEMES__[selected] : undefined;
+    const theme =
+      selected && selected !== 'custom' ? (config.importedThemes[selected] ?? __SLICK_THEMES__[selected]) : undefined;
     setStyle(theme ? themeToCss(theme) : null, 'theme');
   };
 

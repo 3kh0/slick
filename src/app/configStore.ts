@@ -3,11 +3,13 @@
 
 import { type PluginSettings, resolveSettings, type SettingsSchema } from '../shared/settings.ts';
 import type { SlickBridge } from './bridge.ts';
+import { importedThemes, isThemeJson, type ThemeJson } from '../shared/themes.ts';
 
 export type StoredConfig = {
   /** Global kill switch; false means Slick loads but does nothing. */
   enabled?: boolean;
   theme?: string;
+  importedThemes?: Record<string, ThemeJson>;
   plugins?: Record<string, Record<string, unknown>>;
 };
 
@@ -108,6 +110,26 @@ export class ConfigStore {
     return this.userCss;
   }
 
+  get importedThemes(): Record<string, ThemeJson> {
+    return importedThemes(this.stored.importedThemes);
+  }
+
+  importTheme(id: string, theme: ThemeJson) {
+    if (!id.startsWith('imported:') || !isThemeJson(theme)) return Promise.resolve(false);
+    return this.update((config) => {
+      config.importedThemes = { ...importedThemes(config.importedThemes), [id]: theme };
+      config.theme = id;
+    });
+  }
+
+  removeTheme(id: string) {
+    return this.update((config) => {
+      config.importedThemes = importedThemes(config.importedThemes);
+      delete config.importedThemes[id];
+      if (config.theme === id) config.theme = '';
+    });
+  }
+
   settingsFor(id: string): PluginSettings {
     const cached = this.resolved.get(id);
     if (cached) return cached;
@@ -167,15 +189,22 @@ export class ConfigStore {
       this.updateTail = run;
       return run;
     }
-    if (!this.storedIsValid) {
-      console.error('[slick] refusing to overwrite an unreadable settings file');
-      return false;
-    }
-    const next: StoredConfig = structuredClone(this.stored);
-    mutate(next);
-    this.stored = next;
-    this.resolved.clear();
-    return this.bridge.writeSettings(JSON.stringify(next, null, 2));
+    const run = this.updateTail
+      .then(async () => {
+        if (!this.storedIsValid) {
+          console.error('[slick] refusing to overwrite an unreadable settings file');
+          return false;
+        }
+        const next: StoredConfig = structuredClone(this.stored);
+        mutate(next);
+        const generation = this.settingsGeneration;
+        if (!(await this.bridge.writeSettings(JSON.stringify(next, null, 2)))) return false;
+        if (generation === this.settingsGeneration) this.acceptSettings(next);
+        return true;
+      })
+      .catch(() => false);
+    this.updateTail = run;
+    return run;
   }
 
   setPluginSetting(id: string, key: string, value: unknown) {

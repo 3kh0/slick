@@ -1,6 +1,7 @@
 import { extensionBrowser, MAX_TEXT, RENDERERS, record, validMethodResponse, validRequest } from './rpc.ts';
 import type { ExtensionBrowser, Method } from './rpc.ts';
 import { CSS_KEY, SETTINGS_KEY } from './storage.ts';
+import { importedThemes, isThemeJson, parseThemeJson, type ThemeJson } from '../shared/themes.ts';
 
 type OptionsBrowser = ExtensionBrowser & {
   tabs: { query(options: { active: true; currentWindow: true }): Promise<{ id?: number; url?: string }[]> };
@@ -17,6 +18,8 @@ type Send = ExtensionBrowser['runtime']['sendMessage'];
 export type Change =
   | { property: 'enabled'; value: boolean }
   | { property: 'theme'; value: string }
+  | { property: 'importTheme'; id: string; value: ThemeJson }
+  | { property: 'removeTheme'; id: string }
   | { property: 'toolbarIcon'; value: string }
   | { property: 'plugin'; id: (typeof RENDERERS)[number]; value: boolean };
 
@@ -37,7 +40,16 @@ export async function updateSetting(send: Send, change: Change): Promise<void> {
   for (let attempt = 0; attempt < 8; attempt++) {
     const previous = (await request(send, 'readSettings')) as string;
     const config = parseSettings(previous);
-    if (change.property === 'plugin') {
+    if (change.property === 'importTheme') {
+      if (!change.id.startsWith('imported:') || !isThemeJson(change.value)) throw new Error('Invalid theme');
+      config.importedThemes = { ...importedThemes(config.importedThemes), [change.id]: change.value };
+      config.theme = change.id;
+    } else if (change.property === 'removeTheme') {
+      const themes = importedThemes(config.importedThemes);
+      delete themes[change.id];
+      config.importedThemes = themes;
+      if (config.theme === change.id) config.theme = '';
+    } else if (change.property === 'plugin') {
       if (config.plugins !== undefined && !record(config.plugins)) throw new Error('Invalid plugins');
       const plugins = record(config.plugins) ? config.plugins : {};
       const prior = plugins[change.id];
@@ -136,6 +148,10 @@ export function mount(api: OptionsBrowser | undefined, data: OptionsData) {
   const settings = element<HTMLFieldSetElement>('settings');
   const paused = element('paused');
   const theme = element<HTMLSelectElement>('theme');
+  const importTheme = element<HTMLButtonElement>('import-theme');
+  const removeTheme = element<HTMLButtonElement>('remove-theme');
+  const themeFile = element<HTMLInputElement>('theme-file');
+  const themeStatus = element('theme-status');
   const toolbarIcon = element<HTMLSelectElement>('toolbar-icon');
   const css = element<HTMLTextAreaElement>('css');
   const save = element<HTMLButtonElement>('save-css');
@@ -228,9 +244,17 @@ export function mount(api: OptionsBrowser | undefined, data: OptionsData) {
     }
   });
 
-  for (const [value, label] of [['', 'None'], ...data.themes.map((t) => [t.id, t.name]), ['custom', 'Custom']]) {
-    theme.append(new Option(label, value));
+  function renderThemes(config: Record<string, unknown>) {
+    theme.replaceChildren();
+    for (const [value, label] of [
+      ['', 'None'],
+      ...data.themes.map((t) => [t.id, t.name]),
+      ...Object.entries(importedThemes(config.importedThemes)).map(([id, t]) => [id, `${t.name || id} (imported)`]),
+      ['custom', 'Custom CSS only'],
+    ])
+      theme.append(new Option(label, value));
   }
+  renderThemes({});
   element('version').textContent = `Version ${data.version}`;
   element('tab-mode-hint').hidden = popup;
 
@@ -263,6 +287,7 @@ export function mount(api: OptionsBrowser | undefined, data: OptionsData) {
     const [text, userCss] = await Promise.all([request(send, 'readSettings'), request(send, 'readUserCss')]);
     if (current !== generation) return;
     const config = parseSettings(text as string);
+    renderThemes(config);
     paused.hidden = config.enabled !== false;
     theme.value = typeof config.theme === 'string' ? config.theme : '';
     if (theme.selectedIndex < 0) theme.value = '';
@@ -276,6 +301,9 @@ export function mount(api: OptionsBrowser | undefined, data: OptionsData) {
     loaded = true;
     settings.disabled = busy;
     theme.disabled = busy;
+    importTheme.disabled = busy;
+    removeTheme.disabled = busy;
+    removeTheme.hidden = !importedThemes(config.importedThemes)[theme.value];
     toolbarIcon.disabled = busy;
     css.disabled = false;
     error.hidden = true;
@@ -286,12 +314,15 @@ export function mount(api: OptionsBrowser | undefined, data: OptionsData) {
     busy = true;
     settings.disabled = true;
     theme.disabled = true;
+    importTheme.disabled = true;
+    removeTheme.disabled = true;
     toolbarIcon.disabled = true;
     error.hidden = true;
     try {
       await updateSetting(send, selected);
       await refresh();
       toast('Saved');
+      return true;
     } catch {
       report("Couldn't save that setting. Your other settings weren't changed.");
       try {
@@ -299,10 +330,13 @@ export function mount(api: OptionsBrowser | undefined, data: OptionsData) {
       } catch {
         /* Keep the error visible. */
       }
+      return false;
     } finally {
       busy = false;
       settings.disabled = !loaded;
       theme.disabled = !loaded;
+      importTheme.disabled = !loaded;
+      removeTheme.disabled = !loaded;
       toolbarIcon.disabled = !loaded;
     }
   }
@@ -311,6 +345,27 @@ export function mount(api: OptionsBrowser | undefined, data: OptionsData) {
   theme.addEventListener('change', () => {
     applyTheme(theme.value);
     void change({ property: 'theme', value: theme.value });
+  });
+  importTheme.addEventListener('click', () => themeFile.click());
+  themeFile.addEventListener('change', async () => {
+    const file = themeFile.files?.[0];
+    themeFile.value = '';
+    if (!file) return;
+    importTheme.disabled = true;
+    try {
+      if (file.size > MAX_TEXT) throw new Error('Theme files must be smaller than 256 KiB.');
+      const value = parseThemeJson(await file.text(), file.name);
+      const saved = await change({ property: 'importTheme', id: `imported:${crypto.randomUUID()}`, value });
+      themeStatus.textContent = saved ? `Imported ${value.name}.` : 'Could not save the theme.';
+    } catch (cause) {
+      themeStatus.textContent = cause instanceof Error ? cause.message : 'Could not import the theme.';
+    } finally {
+      importTheme.disabled = !loaded || busy;
+    }
+  });
+  removeTheme.addEventListener('click', async () => {
+    const saved = await change({ property: 'removeTheme', id: theme.value });
+    themeStatus.textContent = saved ? 'Removed imported theme.' : 'Could not remove the theme.';
   });
   for (const id of RENDERERS) {
     const input = element<HTMLInputElement>(id);

@@ -18,7 +18,10 @@ export function editorHtml(): string {
   <title>Slick Custom CSS</title>
   <style>
     :root { color-scheme: light dark; font-family: system-ui, sans-serif; }
-    html, body, #editor { width: 100%; height: 100%; margin: 0; overflow: hidden; }
+    html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; }
+    body { display: flex; flex-direction: column; }
+    #help { margin: 0; padding: 10px 14px; font-size: 12px; }
+    #editor { width: 100%; flex: 1; min-height: 0; }
     body { background: #fff; }
     #status { position: fixed; right: 14px; bottom: 10px; z-index: 2; padding: 3px 8px; border-radius: 5px; background: rgba(30,30,30,.75); color: #fff; font-size: 11px; pointer-events: none; opacity: 0; transition: opacity .15s; }
     #status.visible { opacity: 1; }
@@ -26,6 +29,7 @@ export function editorHtml(): string {
   </style>
 </head>
 <body>
+  <p id="help">Write raw CSS here. To load a JSON theme file, use Import theme JSON in Slick Preferences → Appearance.</p>
   <div id="editor"></div><div id="status" role="status" aria-live="polite"></div>
   <script src="${baseUrl}/loader.js"></script>
   <script>
