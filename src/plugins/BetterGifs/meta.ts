@@ -19,12 +19,20 @@ export const settings = {
   provider: {
     type: 'select',
     label: 'GIF provider',
-    description:
-      'Tenor is byfar the best GIF provider, but Giphy is the default for Slack. You can switch to Giphy if you prefer it.',
+    description: 'Tenor is the default. Giphy is Slack’s own picker. KLIPY needs your own API key (see below).',
     default: 'tenor',
     options: [
       { value: 'tenor', label: 'Tenor Proxy' },
       { value: 'giphy', label: 'Giphy (Slack default)' },
+      { value: 'klipy', label: 'KLIPY (needs API key)' },
     ],
+  },
+  klipyApiKey: {
+    type: 'text',
+    label: 'KLIPY API key',
+    description:
+      'Free: sign in at partner.klipy.com, add a platform, create a key, paste it here. Only used when the provider is KLIPY.',
+    default: '',
+    maxLength: 128,
   },
 } as const satisfies SettingsSchema;
