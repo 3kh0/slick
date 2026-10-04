@@ -7,7 +7,10 @@ import {
   gifKey,
   normalizeTenorResponse,
   parseFavorites,
+  searchKlipy,
   searchTenor,
+  topKlipy,
+  normalizeKlipyResponse,
   toSlackPayload,
   topTenor,
   filterFavorites,
@@ -579,4 +582,93 @@ test('searchTenor caps UTF-8 body bytes, not just character count', async () => 
   }
   const body = '{"results":[]}' + ' '.repeat(2 * 1024 * 1024 - '{"results":[]}'.length);
   assert.deepEqual(await searchTenor(async () => ({ status: 200, body }), 'cat'), []);
+});
+
+const klipyItem = (slug: string) => ({
+  id: 1,
+  slug,
+  title: ' Dancing cat ',
+  type: 'gif',
+  file: {
+    md: {
+      gif: {
+        url: `https://static.klipy.com/${slug}/md.gif`,
+        width: 300,
+        height: 200,
+        size: 4000,
+      },
+    },
+    sm: {
+      gif: {
+        url: `https://static.klipy.com/${slug}/sm.gif`,
+        width: 150,
+        height: 100,
+        size: 900,
+      },
+    },
+  },
+});
+const klipyBody = (items: unknown[]) => JSON.stringify({ result: true, data: { data: items, has_next: false } });
+
+test('normalizeKlipyResponse maps md/sm gifs and skips ads and bad items', () => {
+  const gifs = normalizeKlipyResponse({
+    result: true,
+    data: {
+      data: [klipyItem('dancing-cat'), { type: 'ad', content: '<div/>', width: 1, height: 1 }, { slug: 'x' }],
+    },
+  });
+  assert.deepEqual(gifs, [
+    {
+      provider: 'klipy',
+      id: 'dancing-cat',
+      name: 'Dancing cat',
+      url: 'https://static.klipy.com/dancing-cat/md.gif',
+      previewUrl: 'https://static.klipy.com/dancing-cat/sm.gif',
+      animationUrl: 'https://static.klipy.com/dancing-cat/sm.gif',
+      width: 300,
+      height: 200,
+      bytes: 4000,
+      previewBytes: 900,
+      pageUrl: 'https://klipy.com/gifs/dancing-cat',
+    },
+  ]);
+  assert.deepEqual(normalizeKlipyResponse({ data: {} }), []);
+});
+
+test('klipy favorites round-trip and reject foreign hosts', () => {
+  const [gif] = normalizeKlipyResponse(JSON.parse(klipyBody([klipyItem('a-b')])));
+  assert.deepEqual(parseFavorites({ version: 1, gifs: [gif] }), [gif]);
+  assert.deepEqual(
+    parseFavorites({
+      version: 1,
+      gifs: [{ ...gif, url: 'https://evil.example/x.gif' }],
+    }),
+    [],
+  );
+  assert.equal(gifKey(gif!), 'klipy:a-b');
+});
+
+test('searchKlipy and topKlipy build keyed urls and surface errors without leaking the key', async () => {
+  const seen: string[] = [];
+  const fetcher = async (url: string) => {
+    seen.push(url);
+    return { status: 200, body: klipyBody([klipyItem('s')]) };
+  };
+  assert.equal((await searchKlipy(fetcher, ' secretkey123 ', '  cat   dance ')).length, 1);
+  assert.equal((await topKlipy(fetcher, 'secretkey123')).length, 1);
+  const search = new URL(seen[0]!);
+  assert.equal(search.pathname, '/api/v1/secretkey123/gifs/search');
+  assert.equal(search.searchParams.get('q'), 'cat dance');
+  assert.equal(search.searchParams.get('per_page'), '50');
+  assert.equal(new URL(seen[1]!).pathname, '/api/v1/secretkey123/gifs/trending');
+  await assert.rejects(topKlipy(fetcher, ''), /API key/);
+  await assert.rejects(searchKlipy(fetcher, 'bad key!', 'x'), /API key/);
+  await assert.rejects(
+    searchKlipy(async () => ({ status: 200, body: '{"result":false}' }), 'secretkey123', 'x'),
+    (error: Error) => /rejected/.test(error.message) && !error.message.includes('secretkey123'),
+  );
+  await assert.rejects(
+    searchKlipy(async () => ({ status: 500, body: '' }), 'secretkey123', 'x'),
+    (error: Error) => /HTTP 500/.test(error.message) && !error.message.includes('secretkey123'),
+  );
 });

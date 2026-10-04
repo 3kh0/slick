@@ -1,5 +1,5 @@
 export type Gif = {
-  provider: 'tenor' | 'giphy';
+  provider: 'tenor' | 'giphy' | 'klipy';
   id: string;
   name: string;
   url: string;
@@ -23,10 +23,12 @@ const CONTROL = /[\u0000-\u001f\u007f-\u009f]/;
 const MEDIA_HOSTS = {
   tenor: /^media(?:[0-9]+)?\.tenor\.com$/,
   giphy: /^(?:media(?:[0-9]+)?|i)\.giphy\.com$/,
+  klipy: /^(?:[a-z0-9-]+\.)?klipy\.com$/,
 };
 const PAGE_HOSTS = {
   tenor: /^(?:www\.)?tenor\.com$/,
   giphy: /^(?:www\.)?giphy\.com$/,
+  klipy: /^(?:www\.)?klipy\.com$/,
 };
 
 type RecordValue = Record<string, unknown>;
@@ -65,7 +67,7 @@ function validUrl(value: unknown, hosts: RegExp): value is string {
 
 function validateGif(value: unknown): Gif | null {
   const item = record(value);
-  if (!item || (item.provider !== 'tenor' && item.provider !== 'giphy')) return null;
+  if (!item || (item.provider !== 'tenor' && item.provider !== 'giphy' && item.provider !== 'klipy')) return null;
   const provider = item.provider;
   if (
     typeof item.id !== 'string' ||
@@ -122,6 +124,43 @@ export function normalizeTenorResponse(value: unknown): Gif[] {
       height: item.height ?? dims[1] ?? original?.height,
       pageUrl: item.url,
       bytes: original?.size,
+      previewBytes: preview?.size,
+    });
+    if (gif) gifs.push(gif);
+  }
+  return gifs;
+}
+
+function klipyFile(value: unknown): RecordValue | null {
+  const sizes = record(value);
+  if (!sizes) return null;
+  return record(sizes.gif);
+}
+
+/** KLIPY returns `{ result, data: { data: [...] } }`; each item lists gif/webp/mp4 files per size (hd, md, sm, xs). */
+export function normalizeKlipyResponse(value: unknown): Gif[] {
+  const items = record(record(value)?.data)?.data;
+  if (!Array.isArray(items)) return [];
+  const gifs: Gif[] = [];
+  for (const entry of items) {
+    const item = record(entry);
+    // Ads (type "ad") and non-GIF entries have no slug or file sizes and are skipped.
+    if (!item || item.type === 'ad') continue;
+    const file = record(item.file);
+    const main = klipyFile(file?.md) ?? klipyFile(file?.hd) ?? klipyFile(file?.sm);
+    const preview = klipyFile(file?.sm) ?? klipyFile(file?.xs) ?? main;
+    const slug = item.slug;
+    const gif = validateGif({
+      provider: 'klipy',
+      id: slug,
+      name: item.title === undefined || item.title === '' ? 'GIF' : item.title,
+      url: main?.url,
+      previewUrl: preview?.url,
+      animationUrl: preview?.url,
+      width: main?.width,
+      height: main?.height,
+      pageUrl: typeof slug === 'string' ? `https://klipy.com/gifs/${slug}` : undefined,
+      bytes: main?.size,
       previewBytes: preview?.size,
     });
     if (gif) gifs.push(gif);
@@ -234,7 +273,12 @@ export class Favorites {
         throw new Error(`Favorites limit reached (${MAX_FAVORITES}).`);
       }
       const next = exists ? this.gifs.filter((item) => gifKey(item) !== key) : [...this.gifs, validated];
-      if (!(await this.storage.set('favorites', { version: 1, gifs: next.map((item) => ({ ...item })) }))) {
+      if (
+        !(await this.storage.set('favorites', {
+          version: 1,
+          gifs: next.map((item) => ({ ...item })),
+        }))
+      ) {
         throw new Error('Could not save favorites.');
       }
       this.gifs = next;
@@ -256,13 +300,38 @@ export async function searchTenor(
   // https://github.com/3kh0/tenor-proxy
   url.searchParams.set('q', normalized);
   url.searchParams.set('limit', '50');
-  return fetchTenor(fetcher, url, 'GIF search');
+  return fetchGifs(fetcher, url, 'GIF search', 'tenor');
 }
 
 export function topTenor(
   fetcher: (url: string, init?: RequestInit) => Promise<{ status: number; body: string }>,
 ): Promise<Gif[]> {
-  return fetchTenor(fetcher, new URL('https://tenor-proxy.vercel.app/api/top?limit=50'), 'Top GIF');
+  return fetchGifs(fetcher, new URL('https://tenor-proxy.vercel.app/api/top?limit=50'), 'Top GIF', 'tenor');
+}
+
+type Fetcher = (url: string, init?: RequestInit) => Promise<{ status: number; body: string }>;
+
+const KLIPY_KEY = /^[A-Za-z0-9_-]{8,128}$/;
+
+function klipyUrl(apiKey: string, endpoint: 'search' | 'trending', params: Record<string, string>): URL {
+  const key = typeof apiKey === 'string' ? apiKey.trim() : '';
+  if (!KLIPY_KEY.test(key)) throw new Error('Add your KLIPY API key in the Better GIFs settings.');
+  const url = new URL(`https://api.klipy.com/api/v1/${key}/gifs/${endpoint}`);
+  for (const [name, value] of Object.entries(params)) url.searchParams.set(name, value);
+  url.searchParams.set('per_page', '50');
+  url.searchParams.set('customer_id', 'slick');
+  return url;
+}
+
+export async function searchKlipy(fetcher: Fetcher, apiKey: string, query: string): Promise<Gif[]> {
+  if (typeof query !== 'string' || CONTROL.test(query)) throw new Error('Invalid GIF search query.');
+  const normalized = query.trim().replace(/\s+/g, ' ');
+  if (!normalized || normalized.length > 100) throw new Error('GIF search query must be 1–100 characters.');
+  return fetchGifs(fetcher, klipyUrl(apiKey, 'search', { q: normalized }), 'GIF search', 'klipy');
+}
+
+export async function topKlipy(fetcher: Fetcher, apiKey: string): Promise<Gif[]> {
+  return fetchGifs(fetcher, klipyUrl(apiKey, 'trending', {}), 'Top GIF', 'klipy');
 }
 
 export function filterFavorites(gifs: Gif[], query: string): Gif[] {
@@ -273,10 +342,11 @@ export function filterFavorites(gifs: Gif[], query: string): Gif[] {
   });
 }
 
-async function fetchTenor(
+async function fetchGifs(
   fetcher: (url: string, init?: RequestInit) => Promise<{ status: number; body: string }>,
   url: URL,
   label: string,
+  provider: 'tenor' | 'klipy',
 ): Promise<Gif[]> {
   let response: { status: number; body: string };
   try {
@@ -297,6 +367,12 @@ async function fetchTenor(
     value = JSON.parse(response.body);
   } catch {
     throw new Error(`${label} returned invalid JSON.`);
+  }
+  if (provider === 'klipy') {
+    const body = record(value);
+    if (body?.result === false) throw new Error(`${label} was rejected. Check your KLIPY API key.`);
+    if (!Array.isArray(record(body?.data)?.data)) throw new Error(`${label} returned an invalid response.`);
+    return normalizeKlipyResponse(value);
   }
   if (!Array.isArray(record(value)?.results)) throw new Error(`${label} returned an invalid response.`);
   return normalizeTenorResponse(value);
