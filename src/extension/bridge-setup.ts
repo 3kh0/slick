@@ -54,7 +54,7 @@ export function installBridge(target: Window & typeof globalThis) {
   target.addEventListener('pagehide', (event) => {
     if (!event.persisted) client.disconnect();
   });
-  const denied = () => Promise.reject(new Error('Unavailable in Firefox MVP'));
+  const denied = () => Promise.reject(new Error('Unavailable in the browser extension MVP'));
   const bridge: SlickBridge = {
     loader: 'extension',
     loaderVersion: 'mvp',
