@@ -1,0 +1,46 @@
+{
+  "manifest_version": 3,
+  "name": "Slick for Slack",
+  "version": "0.0.0",
+  "description": "Customize the Slack web client with bundled plugins, themes and custom CSS.",
+  "homepage_url": "https://github.com/3kh0/slick",
+  "permissions": ["storage", "scripting", "declarativeNetRequest"],
+  "host_permissions": ["https://app.slack.com/*"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://app.slack.com/client", "https://app.slack.com/client/*"],
+      "js": ["content.js"],
+      "run_at": "document_start"
+    },
+    {
+      "matches": ["https://app.slack.com/client", "https://app.slack.com/client/*"],
+      "js": ["page.js"],
+      "world": "MAIN",
+      "run_at": "document_start"
+    }
+  ],
+  "action": {
+    "default_title": "Slick settings",
+    "default_popup": "options.html?popup",
+    "default_icon": {
+      "16": "icons/16.png",
+      "32": "icons/32.png"
+    }
+  },
+  "options_ui": {
+    "page": "options.html",
+    "open_in_tab": true
+  },
+  "icons": {
+    "16": "icons/16.png",
+    "32": "icons/32.png",
+    "128": "icons/128.png"
+  },
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'none'"
+  },
+  "minimum_chrome_version": "111"
+}
