@@ -672,3 +672,22 @@ test('searchKlipy and topKlipy build keyed urls and surface errors without leaki
     (error: Error) => /HTTP 500/.test(error.message) && !error.message.includes('secretkey123'),
   );
 });
+
+test('klipy key failures point at the API key, other HTTP errors stay generic', async () => {
+  // Body captured from the live API: a wrong key is HTTP 404 with { result: false, errors }.
+  const rejected = '{"result":false,"errors":{"message":["The provided API key is invalid."]}}';
+  for (const status of [401, 403, 404]) {
+    await assert.rejects(
+      searchKlipy(async () => ({ status, body: rejected }), 'secretkey123', 'x'),
+      /Check your KLIPY API key/,
+    );
+  }
+  await assert.rejects(
+    topKlipy(async () => ({ status: 404, body: rejected }), 'secretkey123'),
+    /Check your KLIPY API key/,
+  );
+  await assert.rejects(
+    searchKlipy(async () => ({ status: 429, body: rejected }), 'secretkey123', 'x'),
+    (error: Error) => /HTTP 429/.test(error.message) && !/API key/.test(error.message),
+  );
+});

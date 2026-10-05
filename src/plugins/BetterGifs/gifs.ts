@@ -312,6 +312,7 @@ export function topTenor(
 type Fetcher = (url: string, init?: RequestInit) => Promise<{ status: number; body: string }>;
 
 const KLIPY_KEY = /^[A-Za-z0-9_-]{8,128}$/;
+const KLIPY_BAD_KEY_STATUSES = new Set([401, 403, 404]);
 
 function klipyUrl(apiKey: string, endpoint: 'search' | 'trending', params: Record<string, string>): URL {
   const key = typeof apiKey === 'string' ? apiKey.trim() : '';
@@ -355,6 +356,9 @@ async function fetchGifs(
     throw new Error(`${label} network request failed.`);
   }
   if (!response || !Number.isInteger(response.status) || response.status < 200 || response.status >= 300) {
+    if (provider === 'klipy' && KLIPY_BAD_KEY_STATUSES.has(response?.status)) {
+      throw new Error(`${label} was rejected. Check your KLIPY API key.`);
+    }
     const status = Number.isInteger(response?.status) ? ` (HTTP ${response.status})` : '';
     throw new Error(`${label} request failed${status}.`);
   }
