@@ -1,6 +1,7 @@
 // Real Firefox smoke test. Requires geckodriver on PATH; never uses a user's profile.
 // node scripts/firefox-smoke.ts [--firefox /path/to/firefox]
 // Optional authenticated check: --profile /source/profile --slack-url https://app.slack.com/client/...
+// Add --ports-only to finish after authenticated Snappy/HaikuWarning checks.
 // Only Slack cookies/site storage are copied to an owner-only temporary profile, deleted on exit.
 import assert from 'node:assert/strict';
 import { spawn, execFileSync } from 'node:child_process';
@@ -9,6 +10,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { EXTENSION_PLUGINS } from '../src/extension/plugins.ts';
+import { browserPluginCheck } from './lib/browser-plugin-check.ts';
 
 const args = process.argv.slice(2);
 const arg = (name: string) => {
@@ -31,7 +33,9 @@ await chmod(profile, 0o700);
 const endpoint = process.env.GECKODRIVER_URL ?? 'http://127.0.0.1:4447';
 const driver = process.env.GECKODRIVER_URL
   ? null
-  : spawn('geckodriver', ['--port', '4447', '--log', 'fatal', '--allow-system-access'], { stdio: 'ignore' });
+  : spawn('geckodriver', ['--port', '4447', '--websocket-port', '0', '--log', 'fatal', '--allow-system-access'], {
+      stdio: 'ignore',
+    });
 let driverError: Error | undefined;
 driver?.on('error', (error) => {
   driverError = error;
@@ -498,7 +502,15 @@ db.commit(); db.execute('PRAGMA wal_checkpoint(TRUNCATE)'); db.execute('VACUUM')
     );
     assert.equal(state.theme, true);
     assert.equal(state.css, '2');
+    const portChecks = await asyncExecute(
+      `const done = arguments[arguments.length - 1];
+       ${browserPluginCheck}.then(done, error => done({error: error.message}));`,
+    );
+    assert.deepEqual(portChecks, { spellcheck: true, haiku: true, actualMessagesSent: 0 });
+    console.log('Ported plugin checks:', portChecks);
     console.log(`PASS: authenticated Slack, theme/custom CSS and all ${EXTENSION_PLUGINS.length} plugins running.`);
+  }
+  if (liveUrl && !args.includes('--ports-only')) {
     // ClearURLs' renderer got its rule set from the background half (page → background → GitHub).
     await until(
       async () => slickLog.some((line) => /providers loaded/.test(line)),
@@ -572,9 +584,9 @@ db.commit(); db.execute('PRAGMA wal_checkpoint(TRUNCATE)'); db.execute('VACUUM')
     );
     const streamer = () =>
       execute(`return {
-        on: document.documentElement.classList.contains('slick-streamer-mode'),
-        blurred: [...document.querySelectorAll('body *')].filter((e) => getComputedStyle(e).filter.includes('blur')).length,
-      }`);
+      on: document.documentElement.classList.contains('slick-streamer-mode'),
+      blurred: [...document.querySelectorAll('body *')].filter((e) => getComputedStyle(e).filter.includes('blur')).length,
+    }`);
     assert.deepEqual(await streamer(), { on: false, blurred: 0 });
     await click('css selector', '.slick-streamer-mode__button');
     const manual = await until(
@@ -586,14 +598,14 @@ db.commit(); db.execute('PRAGMA wal_checkpoint(TRUNCATE)'); db.execute('VACUUM')
     await click('css selector', '.slick-streamer-mode__button');
     await until(streamer, (redaction: any) => !redaction.on && redaction.blurred === 0, 'StreamerMode toggle off', 10);
     await execute(`const button = document.createElement('button');
-      button.id = 'slick-smoke-share';
-      button.textContent = 'share';
-      button.style.cssText = 'position:fixed;top:0;left:0;z-index:2147483647';
-      button.onclick = () => navigator.mediaDevices.getDisplayMedia({ video: true }).then(
-        (stream) => { window.__slickShare = stream; },
-        (error) => { window.__slickShare = String(error); },
-      );
-      document.body.append(button);`);
+    button.id = 'slick-smoke-share';
+    button.textContent = 'share';
+    button.style.cssText = 'position:fixed;top:0;left:0;z-index:2147483647';
+    button.onclick = () => navigator.mediaDevices.getDisplayMedia({ video: true }).then(
+      (stream) => { window.__slickShare = stream; },
+      (error) => { window.__slickShare = String(error); },
+    );
+    document.body.append(button);`);
     await click('css selector', '#slick-smoke-share');
     const shared = await until(
       () =>
@@ -659,12 +671,12 @@ db.commit(); db.execute('PRAGMA wal_checkpoint(TRUNCATE)'); db.execute('VACUUM')
         'prefs state:',
         JSON.stringify(
           await execute(`return {
-        dialog: !!document.querySelector('.p-prefs_dialog__modal'),
-        dialogs: [...document.querySelectorAll('[role="dialog"], .ReactModal__Content')].map((d) => String(d.className).slice(0, 120)),
-        anyTabs: [...document.querySelectorAll('[role="tab"]')].map((t) => t.id).slice(0, 30),
-        tabs: [...document.querySelectorAll('.p-prefs_dialog__modal [role="tab"]')].map((t) => [t.id, t.getAttribute('aria-label'), t.textContent.trim().slice(0, 30)]),
-        active: document.activeElement?.tagName,
-      }`),
+      dialog: !!document.querySelector('.p-prefs_dialog__modal'),
+      dialogs: [...document.querySelectorAll('[role="dialog"], .ReactModal__Content')].map((d) => String(d.className).slice(0, 120)),
+      anyTabs: [...document.querySelectorAll('[role="tab"]')].map((t) => t.id).slice(0, 30),
+      tabs: [...document.querySelectorAll('.p-prefs_dialog__modal [role="tab"]')].map((t) => [t.id, t.getAttribute('aria-label'), t.textContent.trim().slice(0, 30)]),
+      active: document.activeElement?.tagName,
+    }`),
         ),
       );
       console.error(`Slick console:\n${slickLog.join('\n')}`);

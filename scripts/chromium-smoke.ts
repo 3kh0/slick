@@ -1,5 +1,6 @@
 // Real MV3 smoke test in a disposable profile; never reads the user's browser data.
 // node scripts/chromium-smoke.ts [--browser /path/to/chromium] [--keep-open]
+// --ports-only skips store artwork generation and checks the live ports with --slack-url.
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
@@ -8,6 +9,7 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { setTimeout as delay } from 'node:timers/promises';
 import { EXTENSION_PLUGINS } from '../src/extension/plugins.ts';
+import { browserPluginCheck } from './lib/browser-plugin-check.ts';
 
 const args = process.argv.slice(2);
 const binary = args.includes('--browser')
@@ -195,7 +197,8 @@ try {
     );
   const prior = await rpc('readSettings');
   assert.equal(prior.ok, true);
-  assert.equal(Object.keys(JSON.parse(prior.value).plugins).length, EXTENSION_PLUGINS.length);
+  // Existing development profiles can predate newly bundled plugins.
+  if (!connectedProfile) assert.equal(Object.keys(JSON.parse(prior.value).plugins).length, EXTENSION_PLUGINS.length);
   const config = {
     theme: 'catppuccin-mocha',
     plugins: Object.fromEntries(EXTENSION_PLUGINS.map((id) => [id, { enabled: true }])),
@@ -291,39 +294,41 @@ try {
   await until(rules, (v) => v.every((r: any) => !r.condition.excludedTabIds?.length), 'resume blocking');
   assert.deepEqual(errors, []);
   // Store artwork uses only extension UI and the existing project mark.
-  const storeDir = path.resolve('dist/extension/store');
-  await mkdir(storeDir, { recursive: true });
-  await cdp(
-    'Emulation.setDeviceMetricsOverride',
-    { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false },
-    ui,
-  );
-  await evaluate(ui, "document.querySelector('#tab-plugins').click()");
-  await delay(300);
-  const screenshot = await cdp('Page.captureScreenshot', { format: 'png' }, ui);
-  await writeFile(path.join(storeDir, 'settings-1280x800.png'), Buffer.from(screenshot.data, 'base64'));
-  const promoTarget = (
-    await cdp('Target.createTarget', { url: pathToFileURL(path.resolve('packaging/chromium/promo.html')).href })
-  ).targetId;
-  const promo = await attach(promoTarget);
-  await cdp(
-    'Emulation.setDeviceMetricsOverride',
-    { width: 440, height: 280, deviceScaleFactor: 1, mobile: false },
-    promo,
-  );
-  await until(
-    () =>
-      evaluate(
-        promo,
-        'document.images.length === 1 && document.images[0].complete && document.images[0].naturalWidth > 0',
-      ),
-    Boolean,
-    'promo artwork',
-  );
-  const promoImage = await cdp('Page.captureScreenshot', { format: 'png' }, promo);
-  await writeFile(path.join(storeDir, 'promo-440x280.png'), Buffer.from(promoImage.data, 'base64'));
-  await cdp('Target.closeTarget', { targetId: promoTarget });
-  console.log('PASS: store screenshot and promotional artwork rendered locally');
+  if (!args.includes('--ports-only')) {
+    const storeDir = path.resolve('dist/extension/store');
+    await mkdir(storeDir, { recursive: true });
+    await cdp(
+      'Emulation.setDeviceMetricsOverride',
+      { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false },
+      ui,
+    );
+    await evaluate(ui, "document.querySelector('#tab-plugins').click()");
+    await delay(300);
+    const screenshot = await cdp('Page.captureScreenshot', { format: 'png' }, ui);
+    await writeFile(path.join(storeDir, 'settings-1280x800.png'), Buffer.from(screenshot.data, 'base64'));
+    const promoTarget = (
+      await cdp('Target.createTarget', { url: pathToFileURL(path.resolve('packaging/chromium/promo.html')).href })
+    ).targetId;
+    const promo = await attach(promoTarget);
+    await cdp(
+      'Emulation.setDeviceMetricsOverride',
+      { width: 440, height: 280, deviceScaleFactor: 1, mobile: false },
+      promo,
+    );
+    await until(
+      () =>
+        evaluate(
+          promo,
+          'document.images.length === 1 && document.images[0].complete && document.images[0].naturalWidth > 0',
+        ),
+      Boolean,
+      'promo artwork',
+    );
+    const promoImage = await cdp('Page.captureScreenshot', { format: 'png' }, promo);
+    await writeFile(path.join(storeDir, 'promo-440x280.png'), Buffer.from(promoImage.data, 'base64'));
+    await cdp('Target.closeTarget', { targetId: promoTarget });
+    console.log('PASS: store screenshot and promotional artwork rendered locally');
+  }
   if (args.includes('--test-reload')) {
     // Developer mode keeps an unpacked extension enabled after runtime.reload.
     const settingsTarget = (await cdp('Target.createTarget', { url: 'chrome://extensions/' })).targetId;
@@ -386,6 +391,7 @@ try {
     );
     assert.equal(state.theme, true);
     assert.equal(state.css, '2');
+    console.log('Ported plugin checks:', await evaluate(session, browserPluginCheck));
     authenticatedSlack = true;
     console.log(`PASS: authenticated Slack, themes/custom CSS and all ${EXTENSION_PLUGINS.length} plugins running`);
   }

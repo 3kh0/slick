@@ -135,6 +135,7 @@ export type ExtensionBrowser = {
   };
   storage: {
     local: StorageArea;
+    session?: StorageArea;
     onChanged: { addListener(cb: (changes: Record<string, { newValue?: unknown }>, area: string) => void): void };
   };
   tabs: {
@@ -145,7 +146,32 @@ export type ExtensionBrowser = {
   action?: { setIcon(details: { path: string | null }): Promise<void> };
 };
 export function extensionBrowser(): ExtensionBrowser | undefined {
-  return (globalThis as typeof globalThis & { browser?: ExtensionBrowser }).browser;
+  const globals = globalThis as typeof globalThis & { browser?: ExtensionBrowser; chrome?: ExtensionBrowser };
+  if (globals.browser) return globals.browser;
+  const chrome = globals.chrome;
+  if (!chrome?.runtime?.id) return undefined;
+  // Older Chromium needs a literal true and sendResponse for async replies.
+  return {
+    ...chrome,
+    runtime: {
+      id: chrome.runtime.id,
+      getURL: (path) => chrome.runtime.getURL(path),
+      sendMessage: (message) => chrome.runtime.sendMessage(message),
+      onMessage: {
+        addListener(listener) {
+          const event = chrome.runtime.onMessage as unknown as {
+            addListener(cb: (message: unknown, sender: Sender, reply: (response: Response) => void) => true): void;
+          };
+          event.addListener((message, sender, reply) => {
+            Promise.resolve()
+              .then(() => listener(message, sender))
+              .then(reply, () => reply({ ok: false, error: 'Extension request failed' }));
+            return true;
+          });
+        },
+      },
+    },
+  };
 }
 
 export function createClient(send: (message: unknown) => void, timeout = 10000) {

@@ -84,7 +84,7 @@
               <p id="no-results" class="row hint" hidden></p>
             </fieldset>
             <p class="hint">
-              Due to some limitations with the extension APIs, some plugins aren't available in Firefox.
+              Due to some limitations with the extension APIs, some plugins aren't available in the browser extension.
             </p>
           </section>
 
@@ -106,7 +106,7 @@
             <p id="theme-status" class="hint" role="status"></p>
             <label class="field-label" for="toolbar-icon">Toolbar icon</label>
             <select id="toolbar-icon" class="input select" disabled>
-              <option value="auto">Match Firefox</option>
+              <option value="auto">Browser default</option>
               <option value="black">Black</option>
               <option value="white">White</option>
             </select>
@@ -163,10 +163,22 @@
             <h2>About</h2>
             <div class="row setting">
               <div>
-                <div class="setting__name">Slick for Firefox</div>
+                <div class="setting__name">Slick for Slack</div>
                 <div id="version" class="hint"></div>
               </div>
             </div>
+            <p class="hint">
+              Settings and plugin records stay in this browser. Enabled logging plugins can save Slack messages and
+              activity locally. HCA Status sends user IDs to Hack Club Auth; Private Channel Mapper sends channel
+              identifiers to Flaron when external lookups are enabled. ClearURLs downloads tracking rules from GitHub.
+              <a href="https://github.com/3kh0/slick#browser-extension-privacy-policy" target="_blank" rel="noopener"
+                >Privacy policy</a
+              >
+            </p>
+            <p class="hint">
+              Permissions: storage saves your preferences; scripting runs Slack recovery controls; request rules block
+              Slack telemetry and gated embeds. Page access is limited to app.slack.com.
+            </p>
             <p class="hint">
               <a href="https://github.com/3kh0/slick" target="_blank" rel="noopener">Open source on GitHub</a> (drop a
               star if you like it!)<br />

@@ -270,7 +270,7 @@ export function mount(api: OptionsBrowser | undefined, data: OptionsData) {
     error.hidden = false;
   };
   if (!api) {
-    report('Open this page from the Slick button in the Firefox toolbar.');
+    report('Open this page from the Slick button in the browser toolbar.');
     return;
   }
   const send: Send = (message) => api.runtime.sendMessage(message);

@@ -48,7 +48,7 @@ export async function buildApp({
     minify: !debug,
     plugins: [rendererRegistryPlugin({ targetLoader, pluginNames }), slickSharedAlias],
     // Inline assets to preserve offline use without additional requests.
-    loader: { '.gif': 'dataurl', '.png': 'dataurl', '.svg': 'dataurl', '.woff2': 'dataurl' },
+    loader: { '.gif': 'dataurl', '.png': 'dataurl', '.svg': 'dataurl', '.woff2': 'dataurl', '.txt': 'text' },
     sourcemap: debug ? 'inline' : false,
     define: {
       __SLICK_VERSION__: JSON.stringify(versions.version),

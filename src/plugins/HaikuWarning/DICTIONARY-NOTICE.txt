@@ -1,0 +1,14 @@
+HaikuWarning bundles the unmodified syllable counts used by Hack Club's
+Orpheus bot, pinned to commit aece7f5fcc873b8e71ecccfa5216849fafd959e1:
+https://github.com/hackclub/orpheus-bot/blob/aece7f5fcc873b8e71ecccfa5216849fafd959e1/app/lib/haiku_check/syllable_counts.txt
+
+SHA-256: f8f04665147e96cb87d272e464f508b543b80031dfa3b373ccfbdfe2779a3ca6
+
+These pronunciation-derived syllable counts correspond to the Carnegie
+Mellon Pronouncing Dictionary (CMUdict). CMUdict is maintained by the
+Speech Group, School of Computer Science, Carnegie Mellon University.
+Its copyright notice and redistribution terms accompany this file in
+CMUDICT-LICENSE.txt.
+
+The data is compiled into the page bundle for offline use. No message
+text is sent to a dictionary service and no runtime download is needed.

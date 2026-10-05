@@ -92,11 +92,48 @@ On Windows and Linux your sign-in and settings are kept unless you add `-Purge` 
 
 Clone the repo and run `./install.sh` (macOS), `./install-linux.sh` (Linux) or `powershell -ExecutionPolicy Bypass -File install.ps1` (Windows). They build Slick from your checkout instead of downloading a release. Plugins live in `src/plugins/<Name>/`, one folder each.
 
-### Firefox Extension (experimental)
+### Browser extensions (experimental)
 
-Slick can also run in the Slack web client as a Firefox extension. Download `slick-firefox-*.xpi` from the [latest release](https://github.com/3kh0/slick/releases/latest) and open it in Firefox.
+Slick runs in the Slack web client through Manifest V3 extensions for Firefox and Chromium browsers, including Helium. Both builds share the same 33 bundled plugins, themes, custom CSS, imported theme JSON and recovery controls. Snappy includes animation, selector, resize and composer spellcheck controls; its GPU and crash reporter controls remain desktop-only. HaikuWarning checks messages offline using its bundled Orpheus dictionary. AccountSwitcher and other desktop-only plugins remain excluded. Plugins start disabled and can be enabled individually using the Slick toolbar button or Slack preferences.
 
-The extension includes themes, custom CSS and page-side plugins only. Plugins that need the desktop app or network access (AccountSwitcher, CustomFonts, CustomSounds and the like) are not in the Firefox build. Settings, custom CSS and recovery controls live behind the Slick toolbar button. **Bypass Slick** reloads the current tab without Slick if Slack ever breaks. Slack's Content Security Policy stays on; nothing is removed or loaded remotely.
+For Firefox, download `slick-firefox-*.xpi` from the [latest release](https://github.com/3kh0/slick/releases/latest). For Helium/Chromium, build locally, open `chrome://extensions`, enable **Developer mode**, choose **Load unpacked**, and select `dist/extension/chromium`:
+
+```bash
+npm install
+npm run extension:build
+```
+
+The build also produces `dist/extension/slick-chromium.zip` for Chrome Web Store submission. The extension is not yet listed in the store. **Bypass Slick** reloads the current Slack tab without Slick; **Safe mode** disables plugins. Slack's Content Security Policy stays enabled. All executable extension code, fonts and images are packaged locally; certain opt-in plugins fetch data from external services.
+
+Run the local Helium MVP checks with `npm run extension:smoke:chromium`. Run `npm run extension:dev:helium -- --slack-url https://hackclub.slack.com` for a visible, disposable profile and live Slack startup checks after signing in. The harness also creates a 1280×800 settings screenshot and 440×280 promotional image in `dist/extension/store`. It checks early injection, CSP, the settings/CSS bridge, IndexedDB, options, request blocking, worker restart, bypass and safe mode. It reports live plugin startup separately from fixture checks. Use `--connect-profile /path/to/disposable/profile --extension-id <id>` to reuse a signed-in test session. Pass `--browser /path/to/chromium` to test another Chromium binary. Disposable profiles left open for preview should be removed after closing the browser; the script prints their path.
+
+### Extension work plan and Chrome Web Store submission
+
+1. **Shared MVP:** keep one plugin allowlist and page bundle; use Firefox event pages and a Chromium service worker, with browser-specific manifests and toolbar icons. Preserve settings, CSS and plugin storage across suspension.
+2. **Local validation:** run extension tests, TypeScript, lint, `npm run extension:validate`, Firefox manifest validation and real Helium checks. Verify all 33 plugins start in authenticated Hack Club Slack; separately exercise individual plugin interactions before broader release.
+3. **Packaging:** build reproducible Firefox XPI and Chromium ZIP artifacts in CI and attach both to releases. Bundle executable code locally and limit page access to `app.slack.com`.
+4. **Store submission:** publish the extension privacy policy below at a public URL, register the developer account, upload the ZIP, supply screenshots/store artwork, complete permission and data-use disclosures, provide reviewers Slack test access/instructions, then submit for review. Store approval is separate from a working MV3 package.
+
+Suggested store name: **Slick for Slack**. Single purpose: customize the Slack web client with opt-in plugins, themes and custom CSS. Suggested description: “Customize Slack with bundled plugins, themes and custom CSS. Enable plugins individually, import theme JSON, and recover using bypass or safe mode. Works with Slack in your browser; no desktop Slack installation required. Unofficial, open-source software, unaffiliated with Slack or Salesforce.”
+
+| Permission                | Reason                                                                                                                      |
+| ------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| `storage`                 | Save settings, CSS, plugin preferences and session recovery exemptions locally. Plugin logs and picked files use IndexedDB. |
+| `scripting`               | Run the packaged recovery function in the active Slack client tab.                                                          |
+| `declarativeNetRequest`   | Block telemetry and gated embeds for Slack-initiated requests.                                                              |
+| `https://app.slack.com/*` | Run the packaged Slack client scripts and recovery controls.                                                                |
+
+The privacy form must describe locally handled website content, personal communications and identifying information when the corresponding plugins are enabled. Do not claim that no user data is handled just because storage is local. External JSON rule sets are data, not downloaded executable code. See the official [MV3 policies](https://developer.chrome.com/docs/webstore/program-policies/mv3-requirements), [user-data requirements](https://developer.chrome.com/docs/webstore/program-policies/user-data-faq) and [store image requirements](https://developer.chrome.com/docs/webstore/images).
+
+### Browser extension privacy policy
+
+Slick uses data only to provide the plugins, themes and settings you choose. Slick does not run an analytics service, sell data, use data for advertising, or send Slack messages to the Slick developers. Its use of user data follows the Chrome Web Store User Data Policy, including the Limited Use requirements.
+
+The extension reads the Slack client to customize its interface. Depending on enabled plugins, it processes messages, profile information, user/channel identifiers and activity. MessageLogger keeps bounded local message deletion/edit history; LastSeen keeps local activity records. Settings, CSS, imported themes and plugin records stay in the browser profile. CustomFonts and CustomSounds store files you select locally. Disabling a plugin stops its activity but does not automatically erase its saved data. Plugin controls can clear history where provided; uninstalling the extension removes its extension storage. Local records are not encrypted by Slick; access depends on your browser and operating system protections.
+
+Optional external services: ClearURLs downloads JSON tracking-parameter rules from `raw.githubusercontent.com`; HCA Status sends Slack user IDs to `auth.hackclub.com` and reads verification/age-category results; Private Channel Mapper sends channel IDs or exact channel names to `flaron.halceon.dev` when its external-lookup settings are enabled. These services receive ordinary request metadata such as your IP address and follow their own privacy practices. These lookups use HTTPS. Slack continues to handle your normal Slack traffic under its own policies. CSS you enter can also request resources you reference in it.
+
+For privacy questions, use the project's [support/issues page](https://github.com/3kh0/slick/issues); do not include private Slack messages, credentials or local browser-profile data in public reports.
 
 ## Updates
 

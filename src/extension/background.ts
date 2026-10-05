@@ -7,10 +7,10 @@ import { indexedDbBackend, type BlobBackend } from './blobs.ts';
 export const TOOLBAR_ICONS = { black: 'icons/black.svg', white: 'icons/white.svg' } as const;
 
 /** The chosen toolbar mark, or null to follow the Firefox theme (manifest theme_icons). */
-export function toolbarIconPath(settings: unknown): string | null {
+export function toolbarIconPath(settings: unknown, chromium = false): string | null {
   try {
     const choice: unknown = JSON.parse(String(settings)).toolbarIcon;
-    return choice === 'black' || choice === 'white' ? TOOLBAR_ICONS[choice] : null;
+    return choice === 'black' || choice === 'white' ? (chromium ? `icons/${choice}.png` : TOOLBAR_ICONS[choice]) : null;
   } catch {
     return null;
   }
@@ -20,7 +20,11 @@ function ownedUi(sender: Sender, extensionRoot: string): boolean {
   try {
     const url = new URL(sender.url ?? '');
     const root = new URL(extensionRoot);
-    return root.protocol === 'moz-extension:' && url.protocol === root.protocol && url.host === root.host;
+    return (
+      ['moz-extension:', 'chrome-extension:'].includes(root.protocol) &&
+      url.protocol === root.protocol &&
+      url.host === root.host
+    );
   } catch {
     return false;
   }
@@ -30,8 +34,7 @@ export function allowedSender(sender: Sender, id: string, extensionRoot: string)
   if (sender.id !== id || !sender.url || (sender.frameId !== undefined && sender.frameId !== 0)) return false;
   try {
     const url = new URL(sender.url);
-    const root = new URL(extensionRoot);
-    if (url.protocol === root.protocol && url.host === root.host && root.protocol === 'moz-extension:') return true;
+    if (ownedUi(sender, extensionRoot)) return true;
     return (
       sender.frameId === 0 &&
       sender.tab?.id !== undefined &&
@@ -54,14 +57,43 @@ const parse = (text: unknown) => {
 export function createBackground(api: ExtensionBrowser, plugins: BackgroundPlugin[] = [], blobs?: BlobBackend) {
   const storage = createStorage(api.storage.local, blobs ?? indexedDbBackend());
   const host = createMainHost(api.storage.local, api.declarativeNetRequest, plugins);
+  const exemptionsKey = 'slick:extension:exempt-tabs';
+  const exemptions = new Set<number>();
   // Settings arrive before any rules, so a suspended page's rules are replaced, not doubled.
   const hostReady = host
     .reset()
+    .then(async () => {
+      const stored = (await api.storage.session?.get(exemptionsKey))?.[exemptionsKey];
+      if (Array.isArray(stored))
+        for (const tabId of stored) {
+          if (Number.isInteger(tabId) && tabId >= 0) {
+            exemptions.add(tabId);
+            await host.setExempt(tabId, true);
+          }
+        }
+    })
     .then(() => storage.dispatch({ method: 'readSettings', args: [] }))
     .then((r) => (r.ok ? host.update(parse(r.value)) : undefined));
-  api.tabs.onRemoved?.addListener((tabId) => host.setExempt(tabId, false));
+  let modesReady: Promise<unknown> = hostReady;
+  const setMode = (tabId: number, exempt: boolean) => {
+    const next = modesReady.then(async () => {
+      if (exempt) exemptions.add(tabId);
+      else exemptions.delete(tabId);
+      await api.storage.session?.set({ [exemptionsKey]: [...exemptions] });
+      await host.setExempt(tabId, exempt);
+    });
+    modesReady = next.catch(() => {});
+    return next;
+  };
+  api.tabs.onRemoved?.addListener((tabId) => {
+    void setMode(tabId, false);
+  });
   // setIcon({ path: null }) restores the manifest icon, theme_icons included.
-  const applyIcon = (settings: unknown) => api.action?.setIcon({ path: toolbarIconPath(settings) }).catch(() => {});
+  const chromium = api.runtime.getURL('').startsWith('chrome-extension:');
+  const applyIcon = (settings: unknown) =>
+    api.action
+      ?.setIcon({ path: toolbarIconPath(settings, chromium) ?? (chromium ? 'icons/32.png' : null) })
+      .catch(() => {});
   void storage.dispatch({ method: 'readSettings', args: [] }).then((r) => {
     if (r.ok) void applyIcon(r.value);
   });
@@ -87,7 +119,7 @@ export function createBackground(api: ExtensionBrowser, plugins: BackgroundPlugi
     if (message.method === 'tabMode') {
       const tabId = sender.tab?.id;
       if (tabId === undefined || ownedUi(sender, api.runtime.getURL(''))) return { ok: false, error: 'Request denied' };
-      host.setExempt(tabId, message.args[0] !== 'normal');
+      await setMode(tabId, message.args[0] !== 'normal');
       return { ok: true, value: true };
     }
     if (message.method === 'plugin.call') {

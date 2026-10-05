@@ -39,3 +39,6 @@ export const settings = {
     default: false,
   },
 } as const satisfies SettingsSchema;
+
+// A page extension cannot change the browser process or Slack's Crashpad.
+export const { ignoreGpuBlocklist: _gpu, disableCrashReporter: _crash, ...browserSettings } = settings;

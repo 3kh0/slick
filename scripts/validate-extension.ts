@@ -19,6 +19,8 @@ const archives = await Promise.all(
       'options.html',
       'options.css',
       'options.js',
+      'licenses/HaikuWarning/DICTIONARY-NOTICE.txt',
+      'licenses/HaikuWarning/CMUDICT-LICENSE.txt',
       ...Object.values(manifest.icons),
     ]) {
       assert.ok(typeof file === 'string' && entries[file]?.length, `${name}: missing ${String(file)}`);

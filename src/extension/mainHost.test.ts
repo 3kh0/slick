@@ -94,7 +94,7 @@ test('undeclared capabilities and desktop-only ctx APIs fail loudly', async () =
     assert.equal(host.running('A'), false);
     assert.equal(host.running('B'), false);
     assert.match(String(errors.flat().join(' ')), /without declaring it/);
-    assert.match(String(errors.flat().join(' ')), /unavailable in Firefox/);
+    assert.match(String(errors.flat().join(' ')), /unavailable in the browser extension/);
   } finally {
     console.error = original;
   }
