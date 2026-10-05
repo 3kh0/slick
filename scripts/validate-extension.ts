@@ -11,6 +11,8 @@ const archives = await Promise.all(
     assert.match(manifest.version, /^\d+\.\d+\.\d+$/);
     assert.deepEqual(manifest.permissions, ['storage', 'scripting', 'declarativeNetRequest']);
     assert.deepEqual(manifest.host_permissions, ['https://app.slack.com/*']);
+    assert.deepEqual(manifest.optional_permissions, ['cookies', 'browsingData']);
+    assert.deepEqual(manifest.optional_host_permissions, ['https://*.slack.com/*']);
     assert.equal(manifest.content_security_policy.extension_pages, "script-src 'self'; object-src 'none'");
     const scripts = manifest.content_scripts.flatMap((entry: { js: string[] }) => entry.js);
     for (const file of [
@@ -19,6 +21,10 @@ const archives = await Promise.all(
       'options.html',
       'options.css',
       'options.js',
+      'accounts.html',
+      'accounts-ui.js',
+      'accounts-paused.html',
+      'accounts.css',
       'licenses/HaikuWarning/DICTIONARY-NOTICE.txt',
       'licenses/HaikuWarning/CMUDICT-LICENSE.txt',
       ...Object.values(manifest.icons),

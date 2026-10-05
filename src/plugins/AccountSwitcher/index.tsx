@@ -11,6 +11,7 @@ type MenuFromTemplateProps = { template?: MenuTemplateItem[] };
 type AccountRowProps = {
   userId: string;
   isCurrent: boolean;
+  savedLabel?: string;
   onRemove: (userId: string) => void;
 };
 
@@ -57,7 +58,21 @@ export default class AccountSwitcher extends SlickPlugin<typeof meta.settings> {
       return <Original {...props} />;
     });
 
-    void this.captureAndRefresh();
+    void (this.api.loader === 'extension' ? this.refreshBrowserAccounts() : this.captureAndRefresh());
+  }
+
+  private async refreshBrowserAccounts() {
+    // Only summaries cross the page bridge. Saving and switching sessions require
+    // a click in the extension's account manager, never a forgeable page request.
+    while (!this.api.signal.aborted) {
+      this.currentUserId = this.api.members.getCurrentMemberId() ?? null;
+      const { teamId, team } = this.activeTeam();
+      this.currentOrgKey = teamId
+        ? orgKey({ teamId, enterpriseId: typeof team?.enterprise_id === 'string' ? team.enterprise_id : undefined })
+        : null;
+      await this.refresh();
+      await this.delay(2_000);
+    }
   }
 
   private async captureAndRefresh() {
@@ -161,6 +176,10 @@ export default class AccountSwitcher extends SlickPlugin<typeof meta.settings> {
 
   private async switchTo(userId: string) {
     try {
+      if (this.api.loader === 'extension') {
+        await this.api.main.call('open', userId);
+        return;
+      }
       try {
         await this.captureCurrent();
       } catch (error) {
@@ -183,6 +202,10 @@ export default class AccountSwitcher extends SlickPlugin<typeof meta.settings> {
 
   private async addAccount() {
     try {
+      if (this.api.loader === 'extension') {
+        await this.api.main.call('open');
+        return;
+      }
       await this.captureCurrent();
       const { team } = this.activeTeam();
       await this.api.main.call('addAccount', team?.domain);
@@ -193,14 +216,15 @@ export default class AccountSwitcher extends SlickPlugin<typeof meta.settings> {
 
   private makeAccountRow(): React.FC<AccountRowProps> {
     const { members } = this.api;
+    const canRemove = this.api.loader !== 'extension';
     const SvgIcon = this.SvgIcon;
 
-    return function AccountRow({ userId, isCurrent, onRemove }) {
+    return function AccountRow({ userId, isCurrent, onRemove, savedLabel }) {
       const [removed, setRemoved] = React.useState(false);
       const [removeHovered, setRemoveHovered] = React.useState(false);
       const member = members.useMember(userId);
       const profile = member?.profile;
-      const name = profile?.display_name || profile?.real_name || member?.real_name;
+      const name = profile?.display_name || profile?.real_name || member?.real_name || savedLabel;
       const avatar = profile?.image_48;
 
       if (removed) return null;
@@ -262,7 +286,7 @@ export default class AccountSwitcher extends SlickPlugin<typeof meta.settings> {
               }}
             />
           )}
-          {!isCurrent && (
+          {!isCurrent && canRemove && (
             <button
               type="button"
               aria-label="Remove account"
@@ -310,6 +334,7 @@ export default class AccountSwitcher extends SlickPlugin<typeof meta.settings> {
           <AccountRow
             userId={account.userId}
             isCurrent={isCurrent}
+            savedLabel={account.label}
             onRemove={(userId) => void this.removeAccount(userId)}
           />
         ),

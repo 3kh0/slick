@@ -97,6 +97,14 @@ export function installBridge(target: Window & typeof globalThis) {
     // Privileged halves run in the background (extension/mainHost.ts); events aren't bridged.
     plugin: (id) => ({
       call: async <T>(method: string, ...args: unknown[]) => {
+        if (id === 'AccountSwitcher') {
+          if (method === 'list' && args.length === 0) return JSON.parse(await client.call<string>('account.list')) as T;
+          if (method === 'open' && (args.length === 0 || (args.length === 1 && typeof args[0] === 'string'))) {
+            return (await client.call('account.open', ...(args as string[]))) as T;
+          }
+          return denied();
+        }
+
         if (!(BACKGROUND_PLUGINS as readonly string[]).includes(id)) return denied();
         return JSON.parse(await client.call<string>('plugin.call', id, method, JSON.stringify(args))) as T;
       },

@@ -3,8 +3,15 @@ export const browserPluginCheck = `(async () => {
   const manager = window.__slickPluginManager;
   const snappy = manager.plugins.get('Snappy');
   const haiku = manager.plugins.get('HaikuWarning');
+  const accounts = manager.plugins.get('AccountSwitcher');
   const check = (value, message) => { if (!value) throw new Error(message); };
   check(snappy.running && haiku.running, 'ported plugins not running');
+  check(accounts.running, 'AccountSwitcher not running');
+  const accountMenu = accounts.instance.buildSwitcherItem([]);
+  check(accountMenu.template.some(item => item.key === 'slick-account-switcher__add'), 'account manager menu missing');
+  let captureDenied = false;
+  try { await accounts.instance.api.main.call('capture'); } catch { captureDenied = true; }
+  check(captureDenied, 'page can request privileged account capture');
   // Plugin startup can finish before Slack mounts its Redux Provider.
   for (let i = 0; i < 100 && !haiku.instance.api.redux.getStore(); i++) {
     await new Promise(resolve => setTimeout(resolve, 200));
@@ -63,5 +70,6 @@ export const browserPluginCheck = `(async () => {
   await held(); prompt.onCancel(); check(sends === 0, 'cancel sent a message');
   await held(); prompt.onSubmit(); check(sends === 1 && clears === 1, 'approved send did not run exactly once');
   instance.stop(); abort.abort();
-  return { spellcheck: true, haiku: true, actualMessagesSent: 0 };
+  await accounts.instance.addAccount(); // Opens trusted UI after checks; inactive Slack tabs throttle timers.
+  return { spellcheck: true, haiku: true, accounts: true, actualMessagesSent: 0 };
 })()`;

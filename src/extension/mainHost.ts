@@ -77,7 +77,8 @@ function createRules(dnr: Dnr | undefined) {
     if (!dnr) return queue;
     queue = queue
       .then(async () => {
-        const existing = (await dnr.getSessionRules()).map((rule) => rule.id);
+        // block out any ids north of this
+        const existing = (await dnr.getSessionRules()).filter((rule) => rule.id < 1_000_000).map((rule) => rule.id);
         const excludedTabIds = exempt.size ? [...exempt] : undefined;
         const addRules = [...rules].map(([id, rule]) => ({
           id,

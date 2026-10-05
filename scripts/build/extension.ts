@@ -98,6 +98,7 @@ export async function buildExtension({
     ['background', 'background-entry.ts'],
     ['content', 'content.ts'],
     ['options', 'options-entry.ts'],
+    ['accounts-ui', 'accounts-ui.ts'],
   ] as const) {
     const result = await build({
       entryPoints: [path.join(source, entry)],
@@ -112,7 +113,8 @@ export async function buildExtension({
     });
     entries[`${name}.js`] = result.outputFiles[0].contents;
   }
-  for (const name of ['options.html', 'options.css']) entries[name] = await readFile(path.join(source, name));
+  for (const name of ['options.html', 'options.css', 'accounts.html', 'accounts-paused.html', 'accounts.css'])
+    entries[name] = await readFile(path.join(source, name));
   const lato = path.join(ROOT, 'node_modules/@fontsource/lato');
   for (const weight of [400, 700, 900]) {
     entries[`fonts/lato-${weight}.woff2`] = await readFile(path.join(lato, `files/lato-latin-${weight}-normal.woff2`));

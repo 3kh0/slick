@@ -506,7 +506,7 @@ db.commit(); db.execute('PRAGMA wal_checkpoint(TRUNCATE)'); db.execute('VACUUM')
       `const done = arguments[arguments.length - 1];
        ${browserPluginCheck}.then(done, error => done({error: error.message}));`,
     );
-    assert.deepEqual(portChecks, { spellcheck: true, haiku: true, actualMessagesSent: 0 });
+    assert.deepEqual(portChecks, { spellcheck: true, haiku: true, accounts: true, actualMessagesSent: 0 });
     console.log('Ported plugin checks:', portChecks);
     console.log(`PASS: authenticated Slack, theme/custom CSS and all ${EXTENSION_PLUGINS.length} plugins running.`);
   }
