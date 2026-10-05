@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Slick accounts</title>
+    <link rel="stylesheet" href="options.css" />
+    <link rel="stylesheet" href="accounts.css" />
+    <script type="module" src="accounts-ui.js"></script>
+  </head>
+  <body>
+    <main class="account-manager">
+      <a href="options.html">Slick settings</a>
+      <h1>Switch Slack accounts</h1>
+      <p>Saved accounts stay encrypted in this browser profile and are not synced.</p>
+      <p>
+        Switching pauses all Slack tabs and clears cached Slack data, including unsent drafts. Slack tabs reopen with
+        the selected account. Private windows and Firefox containers keep separate sessions.
+      </p>
+      <p id="account-status" role="status" aria-live="polite">Loading accounts…</p>
+      <button id="account-enable" class="button" type="button" hidden>Allow Slack session access</button>
+      <button id="account-recover" class="button" type="button" hidden>Recover interrupted switch</button>
+      <fieldset id="account-actions" disabled>
+        <legend>Current session</legend>
+        <label for="account-source">Slack tab to save</label>
+        <select id="account-source" class="input select"></select>
+        <label for="account-label">Account name (optional)</label>
+        <input
+          id="account-label"
+          class="input"
+          type="text"
+          maxlength="80"
+          placeholder="Personal, work, test account…"
+        />
+        <div class="actions">
+          <button id="account-save" class="button" type="button">Save current account</button>
+          <button id="account-add" class="button" type="button">Save and sign in to another account</button>
+        </div>
+      </fieldset>
+      <h2>Saved accounts</h2>
+      <ul id="account-list" class="account-list"></ul>
+      <p>
+        After signing into another account, reopen this manager and save it. Removing a saved account only deletes its
+        saved credentials; it does not sign you out.
+      </p>
+      <button id="account-refresh" class="button" type="button">Refresh</button>
+    </main>
+  </body>
+</html>

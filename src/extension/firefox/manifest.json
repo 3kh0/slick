@@ -19,6 +19,8 @@
   },
   "permissions": ["storage", "scripting", "declarativeNetRequest"],
   "host_permissions": ["https://app.slack.com/*"],
+  "optional_permissions": ["cookies", "browsingData"],
+  "optional_host_permissions": ["https://*.slack.com/*"],
   "background": {
     "scripts": ["background.js"]
   },
