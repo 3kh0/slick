@@ -43,8 +43,8 @@ async function optionsData(): Promise<Plugin> {
   };
 }
 
-function backgroundPlugins(): Plugin {
-  const lines = BACKGROUND_PLUGINS.flatMap((id, i) => {
+export function backgroundPlugins(names: readonly string[] = BACKGROUND_PLUGINS): Plugin {
+  const lines = names.flatMap((id, i) => {
     const dir = path.join(PLUGINS, id);
     const half = existsSync(path.join(dir, 'browser.ts')) ? 'browser.ts' : 'main.ts';
     return [
@@ -55,7 +55,7 @@ function backgroundPlugins(): Plugin {
   const contents = [
     ...lines,
     'export default [',
-    ...BACKGROUND_PLUGINS.map(
+    ...names.map(
       (_, i) => `  { plugin: h${i}, schema: m${i}.settings ?? {}, defaultEnabled: m${i}.defaultEnabled === true },`,
     ),
     '];',

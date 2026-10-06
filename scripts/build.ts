@@ -1,5 +1,6 @@
 // Build entry point. `node scripts/build.ts [app|desktop|package] [--debug] [--dir] [--arch <arch>]`
 
+import { buildUserscript } from './build/userscript.ts';
 import { buildApp } from './build/app.ts';
 import { buildDesktop } from './build/desktop.ts';
 import { packageDesktop } from './build/package.ts';
@@ -20,6 +21,7 @@ const targets = args.filter((arg, index) => !arg.startsWith('--') && index !== a
 
 const all = {
   app: buildApp,
+  userscript: buildUserscript,
   desktop: buildDesktop,
   package: packageDesktop,
   firefox: buildExtension,

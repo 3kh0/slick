@@ -22,6 +22,7 @@ jobs:
           - typecheck
           - 'test:app'
           - 'test:extension'
+          - 'test:userscript'
     steps:
       - uses: actions/checkout@v7
       - uses: oven-sh/setup-bun@v2
@@ -54,7 +55,7 @@ jobs:
       - run: bun install --frozen-lockfile
         env:
           ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
-      - run: bun run build -- firefox chromium
+      - run: bun run build -- firefox chromium userscript
       - run: bun run extension:lint
       - run: bun run extension:validate
       - uses: actions/upload-artifact@v7
@@ -63,6 +64,8 @@ jobs:
           path: |
             dist/extension/slick-firefox.xpi
             dist/extension/slick-chromium.zip
+            dist/userscript/slick.user.js
+            dist/userscript/slick.meta.js
 
   package:
     name: package (${{ matrix.os }}, ${{ matrix.arch }})
