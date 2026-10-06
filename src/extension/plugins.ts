@@ -1,8 +1,8 @@
-// Plugins bundled into the Firefox build. Renderer halves need no api.fetch and
+// Plugins bundled into both Firefox and Chromium builds. Renderer halves need no api.fetch and
 // fit their blob quota (see LARGE_STORAGE_PLUGINS); privileged halves run in the
-// background (see BACKGROUND_PLUGINS). Each was checked to start cleanly against the live Slack
-// web client (scripts/firefox-smoke.ts).
+// background (see BACKGROUND_PLUGINS).
 export const EXTENSION_PLUGINS = [
+  'AccountSwitcher',
   'AdminBackend',
   'AnonymiseFileNames',
   'bChannel',
@@ -15,6 +15,7 @@ export const EXTENSION_PLUGINS = [
   'CustomSlackbot',
   'CustomSounds',
   'Experiments',
+  'HaikuWarning',
   'HcaStatus',
   'HumanCount',
   'LastSeen',
@@ -29,8 +30,10 @@ export const EXTENSION_PLUGINS = [
   'RestrictedChannelWarning',
   'ShowRealUser',
   'ShowSendingBot',
+  'ShutUpSlackbot',
   'SilentTyping',
   'SlimMessageBox',
+  'Snappy',
   'StreamerMode',
   'UserPronouns',
   'WhoReacted',

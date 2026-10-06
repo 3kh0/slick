@@ -1,4 +1,4 @@
-// Firefox-only, fully embedded MVP. The XPI is unsigned; release signing is separate.
+// Shared, fully embedded MV3 build. Firefox signing and store submission are separate.
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { build, type Plugin } from 'esbuild';
@@ -72,9 +72,12 @@ function backgroundPlugins(): Plugin {
   };
 }
 
-export async function buildExtension({ debug = false } = {}) {
+export async function buildExtension({
+  debug = false,
+  browser = 'firefox',
+}: { debug?: boolean; browser?: 'firefox' | 'chromium' } = {}) {
   const source = path.join(ROOT, 'src/extension');
-  const out = path.join(ROOT, 'dist/extension/firefox');
+  const out = path.join(ROOT, `dist/extension/${browser}`);
   await mkdir(out, { recursive: true });
   await buildApp({
     debug,
@@ -82,7 +85,7 @@ export async function buildExtension({ debug = false } = {}) {
     entryPoint: 'src/extension/page.ts',
     outFile: path.join(out, 'page.js'),
   });
-  const manifest = JSON.parse(await readFile(path.join(source, 'firefox/manifest.json'), 'utf8'));
+  const manifest = JSON.parse(await readFile(path.join(source, `${browser}/manifest.json`), 'utf8'));
   // Keep the manifest numeric even for local builds whose app version has a git suffix.
   manifest.version = `2.0.${versions.build}`;
   const entries: Record<string, Uint8Array> = {
@@ -95,6 +98,7 @@ export async function buildExtension({ debug = false } = {}) {
     ['background', 'background-entry.ts'],
     ['content', 'content.ts'],
     ['options', 'options-entry.ts'],
+    ['accounts-ui', 'accounts-ui.ts'],
   ] as const) {
     const result = await build({
       entryPoints: [path.join(source, entry)],
@@ -103,22 +107,30 @@ export async function buildExtension({ debug = false } = {}) {
       write: false,
       platform: 'browser',
       format: 'iife',
-      target: 'firefox140',
+      target: browser === 'firefox' ? 'firefox140' : 'chrome111',
       minify: !debug,
       sourcemap: debug ? 'inline' : false,
     });
     entries[`${name}.js`] = result.outputFiles[0].contents;
   }
-  for (const name of ['options.html', 'options.css']) entries[name] = await readFile(path.join(source, name));
+  for (const name of ['options.html', 'options.css', 'accounts.html', 'accounts-paused.html', 'accounts.css'])
+    entries[name] = await readFile(path.join(source, name));
   const lato = path.join(ROOT, 'node_modules/@fontsource/lato');
   for (const weight of [400, 700, 900]) {
     entries[`fonts/lato-${weight}.woff2`] = await readFile(path.join(lato, `files/lato-latin-${weight}-normal.woff2`));
   }
   entries['fonts/LICENSE-Lato.txt'] = await readFile(path.join(lato, 'LICENSE'));
+  for (const notice of ['DICTIONARY-NOTICE.txt', 'CMUDICT-LICENSE.txt']) {
+    entries[`licenses/HaikuWarning/${notice}`] = await readFile(path.join(ROOT, 'src/plugins/HaikuWarning', notice));
+  }
   // Toolbar marks: the app's one-colour SVG, recoloured for light and dark toolbars.
   const mark = await readFile(path.join(ROOT, 'assets/desktop.svg'), 'utf8');
   entries['icons/black.svg'] = Buffer.from(mark);
   entries['icons/white.svg'] = Buffer.from(mark.replaceAll('fill="#000"', 'fill="#fff"'));
+  if (browser === 'chromium')
+    for (const color of ['black', 'white']) {
+      entries[`icons/${color}.png`] = await readFile(path.join(ROOT, `assets/extension/${color}.png`));
+    }
   for (const size of [16, 32, 128]) {
     entries[`icons/${size}.png`] = await readFile(path.join(ROOT, `assets/desktop-linux/${size}.png`));
   }
@@ -130,6 +142,7 @@ export async function buildExtension({ debug = false } = {}) {
   const archive = Object.fromEntries(
     Object.entries(entries).map(([name, bytes]) => [name, [bytes, { mtime: new Date('2000-01-01T00:00:00Z') }]]),
   ) as Parameters<typeof zipSync>[0];
-  await writeFile(path.join(out, '../slick-firefox.xpi'), zipSync(archive));
-  console.log('[build:firefox] dist/extension/firefox + slick-firefox.xpi (unsigned)');
+  const artifact = browser === 'firefox' ? 'slick-firefox.xpi' : 'slick-chromium.zip';
+  await writeFile(path.join(out, '..', artifact), zipSync(archive));
+  console.log(`[build:${browser}] dist/extension/${browser} + ${artifact}`);
 }

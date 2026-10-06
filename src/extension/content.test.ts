@@ -55,3 +55,41 @@ test('isolated relay rejects foreign source/origin, malformed messages and runti
   receive(event);
   assert.equal(calls.length, 2);
 });
+
+test('invalidated Chromium context handles synchronous throws on startup, requests and bfcache restore', async () => {
+  const listeners = new Map<string, (event: any) => void>();
+  const posts: unknown[] = [];
+  let calls = 0;
+  const target = {
+    location: { origin: 'https://app.slack.com', pathname: '/client/T' },
+    sessionStorage: { getItem: () => null },
+    addEventListener: (name: string, cb: (event: any) => void) => listeners.set(name, cb),
+    postMessage: (message: unknown) => posts.push(message),
+  } as unknown as Window;
+  Object.defineProperty(target, 'top', { value: target });
+  const api = {
+    runtime: {
+      sendMessage() {
+        calls++;
+        throw new Error('Extension context invalidated.');
+      },
+    },
+    storage: { onChanged: { addListener() {} } },
+  } as unknown as ExtensionBrowser;
+  assert.doesNotThrow(() => installRelay(api, target));
+  const data = { channel: CHANNEL, kind: 'request', id: 'stale-context', method: 'readSettings', args: [] };
+  assert.doesNotThrow(() => listeners.get('message')!({ source: target, origin: target.location.origin, data }));
+  await Promise.resolve();
+  assert.deepEqual(posts, [
+    {
+      channel: CHANNEL,
+      kind: 'response',
+      id: 'stale-context',
+      response: { ok: false, error: 'Extension disconnected' },
+    },
+  ]);
+  assert.doesNotThrow(() => listeners.get('pageshow')!({ persisted: true }));
+  await Promise.resolve();
+  assert.equal(calls, 4);
+  assert.equal(posts.length, 1);
+});

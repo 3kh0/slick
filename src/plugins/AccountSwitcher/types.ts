@@ -5,6 +5,7 @@ export type AccountSummary = {
   teamId: string;
   enterpriseId?: string;
   updatedAt: number;
+  label?: string;
 };
 
 export type SessionCookie = Pick<

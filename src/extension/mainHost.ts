@@ -77,7 +77,8 @@ function createRules(dnr: Dnr | undefined) {
     if (!dnr) return queue;
     queue = queue
       .then(async () => {
-        const existing = (await dnr.getSessionRules()).map((rule) => rule.id);
+        // block out any ids north of this
+        const existing = (await dnr.getSessionRules()).filter((rule) => rule.id < 1_000_000).map((rule) => rule.id);
         const excludedTabIds = exempt.size ? [...exempt] : undefined;
         const addRules = [...rules].map(([id, rule]) => ({
           id,
@@ -104,10 +105,10 @@ function createRules(dnr: Dnr | undefined) {
     },
     /** Safe-mode and bypassed tabs load Slack without Slick's request rules. */
     setExempt(tabId: number, isExempt: boolean) {
-      if (isExempt === exempt.has(tabId)) return;
+      if (isExempt === exempt.has(tabId)) return queue;
       if (isExempt) exempt.add(tabId);
       else exempt.delete(tabId);
-      void sync();
+      return sync();
     },
     /** Rules from a previous (suspended) instance of the event page. */
     reset: sync,
@@ -164,7 +165,7 @@ export function createMainHost(area: StorageArea, dnr: Dnr | undefined, plugins:
         throw new Error(`[slick] ${plugin.id} used "${capability}" without declaring it`);
     };
     const unavailable = (name: string) => () => {
-      throw new Error(`[slick] ${plugin.id}: ctx.${name} is unavailable in Firefox; add a browser.ts`);
+      throw new Error(`[slick] ${plugin.id}: ctx.${name} is unavailable in the browser extension; add a browser.ts`);
     };
     const entry = {
       ...definition,

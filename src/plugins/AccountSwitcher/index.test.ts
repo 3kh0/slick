@@ -13,6 +13,31 @@ const { default: AccountSwitcher } = await import(
   `data:text/javascript;base64,${Buffer.from(bundle.outputFiles[0]!.text).toString('base64')}`
 );
 
+test('browser menu routes switching and adding to trusted UI without capturing credentials', async () => {
+  const calls: unknown[][] = [];
+  const plugin = new AccountSwitcher(
+    {
+      loader: 'extension',
+      Store: class {
+        set() {}
+      },
+      elements: {},
+      main: {
+        call: async (...args: unknown[]) => {
+          calls.push(args);
+        },
+      },
+    },
+    {},
+  );
+  plugin.captureCurrent = async () => {
+    throw new Error('Browser must not capture through the page');
+  };
+  await plugin.switchTo('U123456');
+  await plugin.addAccount();
+  assert.deepEqual(calls, [['open', 'U123456'], ['open']]);
+});
+
 test('switch errors distinguish current-account capture from target-account rejection', async (t) => {
   const alerts: string[] = [];
   const previous = Object.getOwnPropertyDescriptor(globalThis, 'window');

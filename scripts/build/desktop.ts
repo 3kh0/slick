@@ -89,6 +89,11 @@ export async function buildDesktop({ debug = false } = {}) {
 
   // Served over slick://; session.ts resolves them relative to this dir in dev.
   await copyFile(SLICK_JS, path.join(DIST_DESKTOP, 'slick.js'));
+  const haikuLicenses = path.join(DIST_DESKTOP, 'licenses/HaikuWarning');
+  await mkdir(haikuLicenses, { recursive: true });
+  for (const notice of ['DICTIONARY-NOTICE.txt', 'CMUDICT-LICENSE.txt']) {
+    await copyFile(path.join(ROOT, 'src/plugins/HaikuWarning', notice), path.join(haikuLicenses, notice));
+  }
 
   const monacoStage = path.join(DIST_DESKTOP, 'monaco', 'vs');
   await rm(path.dirname(monacoStage), { recursive: true, force: true });

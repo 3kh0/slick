@@ -19,3 +19,8 @@ declare module '*.gif' {
   const url: string;
   export default url;
 }
+
+declare module '*.txt' {
+  const text: string;
+  export default text;
+}

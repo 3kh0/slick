@@ -1,6 +1,6 @@
 import { CHANNEL, MAX_PENDING, extensionBrowser, record, validId, validRequest, validResponse } from './rpc.ts';
 import { CSS_KEY, DEFAULT_SETTINGS, SETTINGS_KEY } from './storage.ts';
-import type { ExtensionBrowser } from './rpc.ts';
+import type { ExtensionBrowser, Request } from './rpc.ts';
 
 export function installRelay(api: ExtensionBrowser, window: Window) {
   const location = window.location;
@@ -24,7 +24,14 @@ export function installRelay(api: ExtensionBrowser, window: Window) {
     if (window.sessionStorage.getItem('slick:firefox:safe-mode') === '1') mode = 'safe';
   } catch {}
   if (bypassed()) mode = 'bypass';
-  void api.runtime.sendMessage({ method: 'tabMode', args: [mode] }).catch(() => {});
+  const send = (message: Request): Promise<unknown> => {
+    try {
+      return api.runtime.sendMessage(message);
+    } catch {
+      return Promise.reject(new Error('Extension disconnected'));
+    }
+  };
+  void send({ method: 'tabMode', args: [mode] }).catch(() => {});
   if (mode === 'bypass') return;
   let closed = false;
   const generations = { settings: 0, css: 0 };
@@ -59,9 +66,7 @@ export function installRelay(api: ExtensionBrowser, window: Window) {
         response: validResponse(response) ? response : { ok: false, error: 'Invalid extension response' },
       });
     }
-    api.runtime
-      .sendMessage({ method: m.method, args: m.args })
-      .then(finish, () => finish({ ok: false, error: 'Extension disconnected' }));
+    send({ method: m.method, args: m.args }).then(finish, () => finish({ ok: false, error: 'Extension disconnected' }));
   });
   api.storage.onChanged.addListener((changes, area) => {
     if (area !== 'local') return;
@@ -87,7 +92,7 @@ export function installRelay(api: ExtensionBrowser, window: Window) {
       ['css', 'readUserCss'],
     ] as const) {
       const generation = ++generations[name];
-      void api.runtime.sendMessage({ method, args: [] }).then(
+      void send({ method, args: [] }).then(
         (response) => {
           if (
             generation !== generations[name] ||

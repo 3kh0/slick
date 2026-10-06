@@ -27,6 +27,21 @@ function memoryArea() {
 
 const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
 
+test('plugin rule resets preserve the AccountSwitcher session barrier', async () => {
+  const { dnr, rules } = fakeDnr();
+  await dnr.updateSessionRules({
+    addRules: [
+      { id: 1_000_000, priority: 1_000_000, action: { type: 'block' }, condition: { initiatorDomains: ['slack.com'] } },
+    ],
+    removeRuleIds: [],
+  });
+  const host = createMainHost(memoryArea(), dnr, []);
+  await host.reset();
+  await host.update({ plugins: {} });
+  assert.equal(rules().length, 1);
+  assert.equal(rules()[0].id, 1_000_000);
+});
+
 test('match patterns become domain-anchored filters; anything fancier is refused', () => {
   assert.equal(patternToFilter('*://slackb.com/*'), '||slackb.com/');
   assert.equal(patternToFilter('*://*.slack.com/beacon/*'), '||slack.com/beacon/');
@@ -94,7 +109,7 @@ test('undeclared capabilities and desktop-only ctx APIs fail loudly', async () =
     assert.equal(host.running('A'), false);
     assert.equal(host.running('B'), false);
     assert.match(String(errors.flat().join(' ')), /without declaring it/);
-    assert.match(String(errors.flat().join(' ')), /unavailable in Firefox/);
+    assert.match(String(errors.flat().join(' ')), /unavailable in the browser extension/);
   } finally {
     console.error = original;
   }

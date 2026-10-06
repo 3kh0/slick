@@ -114,3 +114,32 @@ test('toolbar icon follows settings; unknown or missing choices fall back to the
   onChanged({ [SETTINGS_KEY]: { newValue: '{"toolbarIcon":"black"}' } }, 'sync');
   assert.deepEqual(icons, ['icons/white.svg', null]);
 });
+
+test('Chromium owned UI accepts only this extension origin', async () => {
+  const root = 'chrome-extension://abcdefghijklmnop/';
+  const sender = { id: 'slick@test', url: root + 'options.html' };
+  assert.equal(allowedSender(sender, 'slick@test', root), true);
+  for (const url of [
+    'chrome-extension://other/options.html',
+    'moz-extension://abcdefghijklmnop/options.html',
+    'https://abcdefghijklmnop/options.html',
+  ]) {
+    assert.equal(allowedSender({ ...sender, url }, 'slick@test', root), false);
+  }
+  const opened: string[] = [];
+  const api = {
+    runtime: { id: 'slick@test', getURL: (p: string) => root + p },
+    storage: { local: { get: async () => ({}), set: async () => {} }, onChanged: { addListener() {} } },
+    tabs: {
+      create: async ({ url }: { url: string }) => {
+        opened.push(url);
+      },
+    },
+  } as unknown as ExtensionBrowser;
+  assert.deepEqual(await createBackground(api)({ method: 'openCssEditor', args: [] }, sender), {
+    ok: true,
+    value: true,
+  });
+  assert.deepEqual(opened, [root + 'options.html']);
+  assert.equal(toolbarIconPath('{"toolbarIcon":"white"}', true), 'icons/white.png');
+});

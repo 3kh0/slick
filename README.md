@@ -92,11 +92,11 @@ On Windows and Linux your sign-in and settings are kept unless you add `-Purge` 
 
 Clone the repo and run `./install.sh` (macOS), `./install-linux.sh` (Linux) or `powershell -ExecutionPolicy Bypass -File install.ps1` (Windows). They build Slick from your checkout instead of downloading a release. Plugins live in `src/plugins/<Name>/`, one folder each.
 
-### Firefox Extension (experimental)
+### Browser extensions (experimental)
 
-Slick can also run in the Slack web client as a Firefox extension. Download `slick-firefox-*.xpi` from the [latest release](https://github.com/3kh0/slick/releases/latest) and open it in Firefox.
+Slick runs in the Slack web client through Manifest V3 extensions for Firefox and Chromium browsers. Both builds share the same 35 bundled plugins, themes, custom CSS, imported theme JSON and recovery controls. Some plugins have had their behavior modified to work in the web client, and only a few are disabled. The extension is not yet listed in the Chrome Web Store or Firefox Add-ons, so you must install it manually.
 
-The extension includes themes, custom CSS and page-side plugins only. Plugins that need the desktop app or network access (AccountSwitcher, CustomFonts, CustomSounds and the like) are not in the Firefox build. Settings, custom CSS and recovery controls live behind the Slick toolbar button. **Bypass Slick** reloads the current tab without Slick if Slack ever breaks. Slack's Content Security Policy stays on; nothing is removed or loaded remotely.
+For Firefox, download `slick-firefox-*.xpi` from the [latest release](https://github.com/3kh0/slick/releases/latest).
 
 ## Updates
 
@@ -133,4 +133,18 @@ Prefer to write your own CSS instead? Open the CSS editor in Slick Preferences (
 
 ## Legal
 
+### Licensing
+
 This is under the GNU General Public License v3.0. See the [LICENSE](LICENSE) file for the legal mumbo jumbo. In short: just don't be a dick. If you're not sure what that means, see [choosealicense.com/licenses/gpl-3.0](https://choosealicense.com/licenses/gpl-3.0/). This code is provided to you for free, use at your own risk. I am not responsible for any harms due to the code here. Don't sue me.
+
+### Privacy
+
+Slick uses data only to provide the plugins, themes and settings you choose. Slick does not run an analytics service, sell data, use data for advertising, or send Slack messages to the Slick developers.
+
+The extension reads the Slack client to customize its interface. Depending on enabled plugins, it processes messages, profile information, user/channel identifiers and activity. MessageLogger keeps bounded local message deletion/edit history; LastSeen keeps local activity records. Settings, CSS, imported themes and plugin records stay in the browser profile. CustomFonts and CustomSounds store files you select locally. Disabling a plugin stops its activity but does not automatically erase its saved data. Plugin controls can clear history where provided; uninstalling the extension removes its extension storage. Plugin logs and ordinary preferences are not encrypted by Slick; access depends on your browser and operating system protections. AccountSwitcher stores session cookies and workspace tokens in a separate extension-private IndexedDB vault encrypted with AES-GCM and a non-extractable key. The key stays in the same browser profile; this is not password or operating-system keychain protection. Credentials are not synced, exported or exposed to the Slack-page bridge.
+
+AccountSwitcher requests optional `cookies`, `browsingData` and `https://*.slack.com/*` access only when you enable session access in its account manager. It verifies sessions with Slack’s `auth.test` endpoint and never sends credentials to Slick servers. A switch pauses normal Slack tabs, replaces the profile’s Slack session cookies and clears cached client data, including unsent drafts. Saved accounts can be removed in the manager; disabling the plugin does not delete them. Private windows and Firefox containers are not switched.
+
+Optional external services: ClearURLs downloads JSON tracking-parameter rules from `raw.githubusercontent.com`; HCA Status sends Slack user IDs to `auth.hackclub.com` and reads verification/age-category results; Private Channel Mapper sends channel IDs or exact channel names to `flaron.halceon.dev` when its external-lookup settings are enabled. These services receive ordinary request metadata such as your IP address and follow their own privacy practices. Slack continues to handle your normal Slack traffic under its own policies. CSS you enter can also request resources you reference in it.
+
+For privacy questions, use the project's [issues page](https://github.com/3kh0/slick/issues); do not include private Slack messages, credentials or local browser-profile data in public reports.

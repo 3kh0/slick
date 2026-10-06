@@ -44,7 +44,7 @@ jobs:
       - run: bun run build
 
   extension:
-    name: firefox extension
+    name: browser extensions
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -54,12 +54,15 @@ jobs:
       - run: bun install --frozen-lockfile
         env:
           ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
-      - run: bun run build -- firefox
+      - run: bun run build -- firefox chromium
       - run: bun run extension:lint
+      - run: bun run extension:validate
       - uses: actions/upload-artifact@v7
         with:
-          name: slick-firefox-unsigned
-          path: dist/extension/slick-firefox.xpi
+          name: slick-browser-extensions
+          path: |
+            dist/extension/slick-firefox.xpi
+            dist/extension/slick-chromium.zip
 
   package:
     name: package (${{ matrix.os }}, ${{ matrix.arch }})

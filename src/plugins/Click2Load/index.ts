@@ -25,7 +25,9 @@ export default class Click2Load extends SlickPlugin<typeof meta.settings> {
   static readonly liveSettings = ['spotify', 'soundcloud', 'other'];
 
   private restores: (() => void)[] = [];
-  private readonly gated = new Map<HTMLIFrameElement, string>();
+  private readonly gated = new Map<HTMLIFrameElement, { source: string; dispose: () => void }>();
+  private allowed = new WeakMap<HTMLIFrameElement, string>();
+  private readonly loading = new WeakSet<HTMLIFrameElement>();
 
   start() {
     this.install(window);
@@ -46,7 +48,7 @@ export default class Click2Load extends SlickPlugin<typeof meta.settings> {
     const setSrc = descriptor.set;
     const setAttribute = Element.prototype.setAttribute;
     // The setter's `this` is the frame, so capture `gate` in the closure.
-    const gate = (frame: HTMLIFrameElement, value: string) => this.gate(frame, value);
+    const gate = (frame: HTMLIFrameElement, value: string) => this.gate(frame, value, setSrc);
 
     Object.defineProperty(HTMLIFrameElement.prototype, 'src', {
       ...descriptor,
@@ -66,7 +68,7 @@ export default class Click2Load extends SlickPlugin<typeof meta.settings> {
         root instanceof HTMLIFrameElement ? [root] : [...root.querySelectorAll<HTMLIFrameElement>('iframe[src]')];
       for (const frame of frames) {
         const source = frame.getAttribute('src');
-        if (source && this.gate(frame, source)) setAttribute.call(frame, 'src', 'about:blank');
+        if (source && this.gate(frame, source, setSrc)) setAttribute.call(frame, 'src', 'about:blank');
       }
     };
     scan(document);
@@ -83,15 +85,6 @@ export default class Click2Load extends SlickPlugin<typeof meta.settings> {
       Object.defineProperty(HTMLIFrameElement.prototype, 'src', descriptor);
       Element.prototype.setAttribute = setAttribute;
     });
-
-    const onMessage = (event: MessageEvent) => {
-      if (!event.data || (event.data as { slickClick2Load?: boolean }).slickClick2Load !== true) return;
-      const frame = [...document.querySelectorAll('iframe')].find(
-        (candidate) => candidate.contentWindow === event.source,
-      );
-      if (frame) void this.load(frame, setSrc);
-    };
-    view.addEventListener('message', onMessage, { signal: this.api.signal });
   }
 
   stop() {
@@ -101,15 +94,23 @@ export default class Click2Load extends SlickPlugin<typeof meta.settings> {
       } catch {}
     }
     this.restores = [];
-    for (const [frame, source] of this.gated) {
+    for (const [frame, { source, dispose }] of this.gated) {
+      dispose();
       frame.removeAttribute('srcdoc');
       frame.src = source;
     }
     this.gated.clear();
+    this.allowed = new WeakMap();
   }
 
   /** True if gated; the caller must not set the source. */
-  private gate(frame: HTMLIFrameElement, value: string): boolean {
+  private gate(
+    frame: HTMLIFrameElement,
+    value: string,
+    setSrc: (this: HTMLIFrameElement, value: string) => void,
+  ): boolean {
+    const source = String(value);
+    if (this.allowed.get(frame) === source) return false;
     let provider;
     try {
       // Slack usually sets src before inserting the frame, so a detached frame
@@ -121,14 +122,41 @@ export default class Click2Load extends SlickPlugin<typeof meta.settings> {
     }
     if (!provider || this.config[provider.key] === true) return false;
 
-    this.gated.set(frame, String(value));
-    frame.srcdoc = placeholder(String(value), provider.label);
+    if (this.gated.get(frame)?.source === source) return true;
+    this.gated.get(frame)?.dispose();
+
+    // srcdoc inherits Slack's CSP, which blocks inline scripts. Register the
+    // handler from Slick instead; Slack's embed sandbox allows same-origin DOM access.
+    let removeClick = () => {};
+    const bind = () => {
+      removeClick();
+      const button = frame.contentDocument?.querySelector('button');
+      if (!button || !frame.hasAttribute('srcdoc')) return;
+      // The transparent frame must use Slack's foreground, not the browser's
+      // CanvasText (which can be black while Slack uses a dark theme).
+      const doc = frame.ownerDocument;
+      frame.contentDocument!.body.style.color = doc.defaultView!.getComputedStyle(doc.body).color;
+      const onClick = () => void this.load(frame, setSrc);
+      button.addEventListener('click', onClick);
+      removeClick = () => button.removeEventListener('click', onClick);
+    };
+    frame.addEventListener('load', bind);
+    this.gated.set(frame, {
+      source,
+      dispose: () => {
+        frame.removeEventListener('load', bind);
+        removeClick();
+      },
+    });
+    frame.srcdoc = placeholder(source, provider.label);
     return true;
   }
 
   private async load(frame: HTMLIFrameElement, setSrc: (this: HTMLIFrameElement, value: string) => void) {
-    const source = this.gated.get(frame);
-    if (!source) return;
+    const entry = this.gated.get(frame);
+    if (!entry || this.loading.has(frame)) return;
+    const { source } = entry;
+    this.loading.add(frame);
 
     try {
       // Main blocks these requests, so it must be told before navigating.
@@ -136,8 +164,14 @@ export default class Click2Load extends SlickPlugin<typeof meta.settings> {
     } catch (error) {
       this.log('could not allow the embed', error);
       return;
+    } finally {
+      this.loading.delete(frame);
     }
 
+    // A stop or a new source may have superseded the click while main replied.
+    if (this.api.signal.aborted || this.gated.get(frame) !== entry) return;
+    entry.dispose();
+    this.allowed.set(frame, source);
     this.gated.delete(frame);
     frame.removeAttribute('srcdoc');
     setSrc.call(frame, source);

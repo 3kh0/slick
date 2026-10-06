@@ -9,7 +9,8 @@ export const settings = {
   flaron: {
     type: 'boolean',
     label: 'Use external private channel DB (Flaron)',
-    description: 'If enabled, the plugin will show known private channel names if no local name is found.',
+    description:
+      'If enabled, sends channel IDs to flaron.halceon.dev to find known private channel names when no local name is found.',
     default: false,
   },
   mentions: {

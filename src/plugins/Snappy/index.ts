@@ -2,9 +2,13 @@
 // Chromium switches are session/process-level and live in main.ts.
 
 import { SlickPlugin } from '$slick';
+import { getBridge } from '../../app/bridge.ts';
 import * as meta from './meta.ts';
 import { selectorRewriter } from './selectors.ts';
 import { overrideTransitions } from './transitions.ts';
+import { composerSpellcheck } from './spellcheck.ts';
+
+const browserLoader = getBridge()?.loader === 'extension';
 
 const QUIET_MS = 150;
 
@@ -25,15 +29,21 @@ export default class Snappy extends SlickPlugin<typeof meta.settings> {
   static readonly pluginName = meta.pluginName;
   static readonly description = meta.description;
   static readonly defaultEnabled = meta.defaultEnabled;
-  static readonly settings = meta.settings;
+  static readonly settings = browserLoader ? meta.browserSettings : meta.settings;
   static readonly liveSettings = ['disableSpellcheck'];
   // Chromium switches are read once at process start, so these cannot apply live.
-  static readonly relaunchSettings = ['ignoreGpuBlocklist', 'disableCrashReporter'];
+  static readonly relaunchSettings = browserLoader ? [] : ['ignoreGpuBlocklist', 'disableCrashReporter'];
 
   /** [window width, Slack's basis], most recent last. */
   private samples: [number, number][] = [];
+  private spellcheck: ReturnType<typeof composerSpellcheck> | null = null;
 
   start() {
+    if (this.api.loader === 'extension') {
+      this.spellcheck = composerSpellcheck(document);
+      this.spellcheck.update(this.config.disableSpellcheck === true);
+      this.api.signal.addEventListener('abort', () => this.spellcheck?.dispose(), { once: true });
+    }
     const selectors = this.config.optimizeSelectors ? selectorRewriter() : null;
     const transitions = overrideTransitions((css, key) => this.api.setStyle(css, key), selectors?.visit);
     this.api.signal.addEventListener(
@@ -61,8 +71,14 @@ export default class Snappy extends SlickPlugin<typeof meta.settings> {
   }
 
   stop() {
+    this.spellcheck?.dispose();
+    this.spellcheck = null;
     document.documentElement.classList.remove(RESIZING);
     document.documentElement.style.removeProperty(LEFT_BASIS);
+  }
+
+  onSettingsChange() {
+    this.spellcheck?.update(this.config.disableSpellcheck === true);
   }
 
   // Slack sizes the top nav's left container from JS, so gating resize work

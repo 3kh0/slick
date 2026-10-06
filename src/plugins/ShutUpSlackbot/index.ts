@@ -1,9 +1,9 @@
-// Mark Slackbot's slash-command registration DMs as read (main.ts silences the
-// notification). Watches the RTM stream, so it works whether or not the
-// channel is on screen.
+// Mark Slackbot's slash-command registration DMs as read. Desktop main.ts
+// filters native notifications; browsers veto Slack's notification thunk before
+// it plays audio or creates an OS notification. RTM works off-screen too.
 
 import { SlickPlugin, type RtmEvent } from '$slick';
-import { decodeMrkdwn, isSlackbot, isSlashCommandNotice } from './detect.ts';
+import { isSlackbotNotice } from './detect.ts';
 import * as meta from './meta.ts';
 
 const MAX_REMEMBERED = 300;
@@ -18,6 +18,14 @@ export default class ShutUpSlackbot extends SlickPlugin<typeof meta.settings> {
   private marked = new Set<string>();
 
   start() {
+    if (this.api.loader !== 'electron') {
+      this.api.redux.patchThunk('showNotification', (original) => (...args: unknown[]) => {
+        const options = args[0] as { message?: unknown } | undefined;
+        if (!isSlackbotNotice(options?.message)) return original(...args);
+        // Slack expects a dispatchable async thunk even when nothing is shown.
+        return () => Promise.resolve();
+      });
+    }
     this.api.rtm.on('message', (event) => this.consider(event));
   }
 
@@ -25,8 +33,7 @@ export default class ShutUpSlackbot extends SlickPlugin<typeof meta.settings> {
     const channel = event.channel;
     const ts = event.ts;
     if (typeof channel !== 'string' || typeof ts !== 'string') return;
-    if (!isSlackbot(event.user, (event as { username?: string }).username)) return;
-    if (!isSlashCommandNotice(decodeMrkdwn(event.text))) return;
+    if (!isSlackbotNotice(event) || this.api.signal.aborted) return;
 
     void this.markRead(channel, ts);
   }
