@@ -54,7 +54,7 @@ function findMac(): string {
   return hasAsar(resources) ? resources : '';
 }
 
-export function macSlackElectronMajor(resources: string): number {
+function macSlackElectronVersion(resources: string): string {
   const plist = path.join(
     path.dirname(resources),
     'Frameworks',
@@ -63,28 +63,50 @@ export function macSlackElectronMajor(resources: string): number {
     'Info.plist',
   );
   try {
-    const raw = execFileSync('/usr/bin/plutil', ['-extract', 'CFBundleVersion', 'raw', '-o', '-', plist], {
+    return execFileSync('/usr/bin/plutil', ['-extract', 'CFBundleVersion', 'raw', '-o', '-', plist], {
       encoding: 'utf8',
-    });
-    return Number.parseInt(raw.trim(), 10) || 0;
+    }).trim();
   } catch {
-    return 0;
+    return '';
   }
 }
 
 /**
- * Slack's Electron major, or 0. macOS: the framework's Info.plist; elsewhere
+ * Slack's Electron version, or ''. macOS: the framework's Info.plist; elsewhere
  * electron-builder's `version` file one level above `resources`.
  */
-export function slackElectronMajor(asar: string): number {
-  const resources = path.dirname(asar);
-  if (process.platform === 'darwin') return macSlackElectronMajor(resources);
+function electronVersionAt(resources: string): string {
+  if (process.platform === 'darwin') return macSlackElectronVersion(resources);
   try {
-    const raw = fs.readFileSync(path.join(path.dirname(resources), 'version'), 'utf8');
-    return Number.parseInt(raw.trim().replace(/^v/, ''), 10) || 0;
+    return fs
+      .readFileSync(path.join(path.dirname(resources), 'version'), 'utf8')
+      .trim()
+      .replace(/^v/, '');
   } catch {
-    return 0;
+    return '';
   }
+}
+
+export const slackElectronVersion = (asar: string) => electronVersionAt(path.dirname(asar));
+
+export function slackVersion(asar: string): string {
+  try {
+    return JSON.parse(fs.readFileSync(path.join(asar, 'package.json'), 'utf8')).version || '';
+  } catch {
+    return /(?:app-|Slack_)(\d+\.\d+\.\d+)/.exec(asar)?.[1] || '';
+  }
+}
+
+export type SlackInstallKind = 'override' | 'pinned' | 'store' | 'standalone' | 'snap' | '';
+
+export function slackInstallKind(asar: string): SlackInstallKind {
+  if (process.env.SLICK_SLACK_RESOURCES) return 'override';
+  const pinned = pinnedSlackApp();
+  if (pinned && asar.startsWith(pinned)) return 'pinned';
+  if (/[\\/]WindowsApps[\\/]/i.test(asar)) return 'store';
+  if (asar.startsWith('/snap/')) return 'snap';
+  if (process.platform === 'win32' && /[\\/]slack[\\/]app-\d/i.test(asar)) return 'standalone';
+  return '';
 }
 
 /** COFF machine word -> arch, so an arm64 Slick does not adopt an x64 Slack. */
@@ -107,7 +129,10 @@ function peArch(file: string): string {
 
 function regQuery(args: string[]): string {
   try {
-    return execFileSync('reg', args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+    return execFileSync('reg', args, {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    });
   } catch {
     return '';
   }
@@ -167,12 +192,31 @@ function findWindows(): string {
   const candidates = [...findWindowsStandalone(), ...findWindowsMsix()];
   if (!candidates.length) return '';
 
-  // Windows won't load a native module of another arch into our process.
-  const matched = candidates.find((resources) => {
-    const exe = path.join(path.dirname(resources), 'slack.exe');
-    return fs.existsSync(exe) && peArch(exe) === process.arch;
+  return pickSlackResources(candidates, {
+    arch: (resources) => peArch(path.join(path.dirname(resources), 'slack.exe')),
+    electronMajor: (resources) => Number.parseInt(electronVersionAt(resources), 10) || 0,
   });
-  return matched || candidates[0];
+}
+
+/**
+ * Windows won't load a native module of another arch into our process, and
+ * Slack's natives only load under a matching Electron major, so with several
+ * installs (an old Squirrel dir beside a Store copy) take the one that runs.
+ */
+export function pickSlackResources(
+  candidates: string[],
+  probe: {
+    arch: (resources: string) => string;
+    electronMajor: (resources: string) => number;
+  },
+  ours = {
+    arch: process.arch as string,
+    electronMajor: Number.parseInt(process.versions.electron, 10) || 0,
+  },
+): string {
+  const sameArch = candidates.filter((resources) => probe.arch(resources) === ours.arch);
+  const pool = sameArch.length ? sameArch : candidates;
+  return pool.find((resources) => probe.electronMajor(resources) === ours.electronMajor) || pool[0] || '';
 }
 
 function findLinux(): string {

@@ -2,9 +2,10 @@
 // (patch.ts) -> require Slack's asar.
 
 import { createRequire } from 'node:module';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { app, BrowserWindow, dialog, protocol } from 'electron';
+import { app, BrowserWindow, clipboard, dialog, protocol, shell } from 'electron';
 import { broadcast, setupBridge, setupUpdaterBridge } from './bridge.js';
 import { mainPlugins, pluginMeta } from './mainPlugins.generated.js';
 import {
@@ -20,10 +21,10 @@ import {
 import { refreshInstalledIcons } from './iconRefresh.js';
 import { readStoredSettings, watchSettings } from './settingsFile.js';
 import { applyPatches, setMenuHandlers } from './patch.js';
-import { findSlackAsar, macSlackApp, slackElectronMajor } from './slackFinder.js';
+import { findSlackAsar, macSlackApp, slackElectronVersion, slackInstallKind, slackVersion } from './slackFinder.js';
 import { privilegedSchemes, setupSession } from './session.js';
 import { createSlackUpdater } from './slackUpdater.js';
-import { createUpdater } from './updater.js';
+import { createUpdater, RELEASES_URL } from './updater.js';
 import { prepareLinuxArm64Natives, prepareWindowsNatives } from './windowsNatives.js';
 import { downloadLinuxArm64Slack } from './linuxArm64Slack.js';
 import { createCookieLogin } from './windows/cookieLogin.js';
@@ -134,13 +135,35 @@ if (!slackAsar && process.platform === 'linux' && process.arch === 'arm64' && !p
 }
 
 /** Slack's native modules only load under a matching Electron major. */
-function electronMajorMismatch(asar: string): { ours: number; theirs: number } | null {
+function electronMajorMismatch(slackElectron: string): { ours: number; theirs: number } | null {
   if (process.env.SLICK_SKIP_PREFLIGHT === '1') return null;
 
-  const ours = Number.parseInt(process.versions.electron.split('.')[0], 10) || 0;
-  const theirs = slackElectronMajor(asar);
+  const ours = Number.parseInt(process.versions.electron, 10) || 0;
+  const theirs = Number.parseInt(slackElectron, 10) || 0;
   if (!ours || !theirs || ours === theirs) return null;
   return { ours, theirs };
+}
+
+function slackDiagnostics(asar: string, slackElectron = slackElectronVersion(asar)): string {
+  const kind = {
+    override: 'SLICK_SLACK_RESOURCES',
+    pinned: 'pinned path',
+    store: 'Microsoft Store',
+    standalone: 'standalone',
+    snap: 'snap',
+    '': '',
+  }[slackInstallKind(asar)];
+  return [
+    `Slick ${version} (build ${build}), Electron ${process.versions.electron}`,
+    `Slack ${slackVersion(asar) || 'unknown'}, Electron ${slackElectron || 'unknown'}${kind ? ` (${kind})` : ''}`,
+    `${process.platform} ${process.arch} ${os.release()}`,
+    asar,
+  ].join('\n');
+}
+
+function slackDownloadUrl(asar: string): string {
+  if (slackInstallKind(asar) === 'store') return 'ms-windows-store://downloadsandupdates';
+  return `https://slack.com/downloads/${process.platform === 'darwin' ? 'mac' : process.platform === 'win32' ? 'windows' : 'linux'}`;
 }
 
 /**
@@ -148,35 +171,53 @@ function electronMajorMismatch(asar: string): { ours: number; theirs: number } |
  * the native module loader first. The dialog only works after app-ready, so ask
  * then, and relaunch with the preflight off to go ahead.
  */
-function askLaunchAnyway(mismatch: { ours: number; theirs: number }) {
-  const detail =
-    `Slick is on Electron ${mismatch.ours}, the installed Slack is on ${mismatch.theirs}. ` +
-    'Running them together usually fails. Update Slick, or launch anyway to try.';
-  console.error(`[slick] ${detail}`);
+function askLaunchAnyway(asar: string, slackElectron: string, mismatch: { ours: number; theirs: number }) {
+  const slackIsOlder = mismatch.theirs < mismatch.ours;
+  const advice = slackIsOlder
+    ? slackInstallKind(asar) === 'store'
+      ? 'Update Slack in the Microsoft Store, then open Slick again.'
+      : 'Update Slack to the latest version, then open Slick again.'
+    : 'Update Slick, then open it again.';
+  const diagnostics = slackDiagnostics(asar, slackElectron);
+  const summary = `Slick is on Electron ${mismatch.ours}, the installed Slack is on ${mismatch.theirs}.`;
+  console.error(`[slick] ${summary}\n${diagnostics}`);
   app.whenReady().then(() => {
-    const choice = dialog.showMessageBoxSync({
-      type: 'warning',
-      title: 'Slick',
-      message: 'Slick and Slack expect different Electron versions',
-      detail,
-      buttons: ['Quit', 'Launch Anyway'],
-      defaultId: 0,
-      cancelId: 0,
-    });
-    if (choice === 1) {
-      process.env.SLICK_SKIP_PREFLIGHT = '1';
-      app.relaunch();
-      app.exit(0);
-    } else {
+    const buttons = ['Quit', slackIsOlder ? 'Update Slack' : 'Update Slick', 'Launch Anyway', 'Copy Details'];
+    for (;;) {
+      const choice = dialog.showMessageBoxSync({
+        type: 'warning',
+        title: 'Slick',
+        message: 'Slick and Slack expect different Electron versions',
+        detail: `${summary} Running them together usually fails. ${advice}\n\n${diagnostics}`,
+        buttons,
+        defaultId: 1,
+        cancelId: 0,
+      });
+      if (choice === 3) {
+        clipboard.writeText(`${summary}\n${diagnostics}`);
+        continue;
+      }
+      if (choice === 2) {
+        process.env.SLICK_SKIP_PREFLIGHT = '1';
+        app.relaunch();
+        app.exit(0);
+        return;
+      }
+      if (choice === 1) {
+        void shell.openExternal(slackIsOlder ? slackDownloadUrl(asar) : RELEASES_URL).finally(() => app.exit(0));
+        return;
+      }
       app.exit(1);
+      return;
     }
   });
 }
 
 function startSlack(asar: string) {
-  const mismatch = electronMajorMismatch(asar);
+  const slackElectron = slackElectronVersion(asar);
+  const mismatch = electronMajorMismatch(slackElectron);
   if (mismatch) {
-    askLaunchAnyway(mismatch);
+    askLaunchAnyway(asar, slackElectron, mismatch);
     return;
   }
 
@@ -238,7 +279,9 @@ function startSlack(asar: string) {
   process.on('uncaughtException', (error) => console.error('[slick] uncaught exception:', error));
   process.on('unhandledRejection', (reason) => console.error('[slick] unhandled rejection:', reason));
 
-  console.log(`[slick] ${version} loading Slack from ${asar}`);
+  console.log(
+    `[slick] ${version} (Electron ${process.versions.electron}) loading Slack ${slackVersion(asar) || '?'} (Electron ${slackElectron || '?'}) from ${asar}`,
+  );
 
   try {
     cjsRequire(asar);
@@ -249,7 +292,7 @@ function startSlack(asar: string) {
         type: 'error',
         title: 'Slick',
         message: 'Failed to load Slack',
-        detail: String(error),
+        detail: `${String(error)}\n\n${slackDiagnostics(asar, slackElectron)}`,
         buttons: ['Quit'],
       });
       app.exit(1);
