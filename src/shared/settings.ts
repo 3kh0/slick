@@ -1,6 +1,7 @@
 // Typed settings schema: drives plugin config, ctx.settings, Preferences and the
 // extension options form. Coercion is central, so a hostile config can never
 // reach a plugin as the wrong type.
+import { record } from './objects.ts';
 
 export type SettingType = 'boolean' | 'number' | 'text' | 'select' | 'color' | 'file' | 'names' | 'schedule';
 
@@ -59,11 +60,11 @@ const USER_ID = /^[UW][A-Z0-9]{6,}$/;
 const TIME = /^([01]\d|2[0-3]):[0-5]\d$/;
 
 function coerceNames(value: unknown, fallback: Record<string, string>): Record<string, string> {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return fallback;
+  if (!record(value)) return fallback;
 
   const names: Record<string, string> = {};
   let count = 0;
-  for (const [id, name] of Object.entries(value as Record<string, unknown>)) {
+  for (const [id, name] of Object.entries(value)) {
     if (count >= MAX_NAMES) break;
     if (!USER_ID.test(id)) continue;
     if (typeof name !== 'string' || !name || name.length > 100) continue;

@@ -8,6 +8,7 @@
 import type { Capability, MainCtx, SlickMainPlugin } from '../shared/main.ts';
 import { resolveSettings, type PluginSettings, type SettingsSchema } from '../shared/settings.ts';
 import { record, type StorageArea } from './rpc.ts';
+import { serialQueue } from '../shared/queue.ts';
 
 export const SLACK_INITIATORS = ['app.slack.com'];
 export const MAIN_STORAGE_PREFIX = 'slick:firefox:main:';
@@ -117,22 +118,19 @@ function createRules(dnr: Dnr | undefined) {
 
 function createStorage(area: StorageArea, id: string): MainCtx['storage'] {
   const key = MAIN_STORAGE_PREFIX + id;
-  let tail: Promise<unknown> = Promise.resolve();
+  const enqueue = serialQueue();
   const load = async (): Promise<Record<string, string>> => {
     const stored = (await area.get(key))[key];
     return Object.assign(Object.create(null), record(stored) ? stored : {});
   };
-  const mutate = (change: (blobs: Record<string, string>) => void) => {
-    const run = tail.then(async () => {
+  const mutate = (change: (blobs: Record<string, string>) => void) =>
+    enqueue(async () => {
       const blobs = await load();
       change(blobs);
       if (JSON.stringify(blobs).length > MAIN_STORAGE_MAX) throw new Error(`${id} storage quota exceeded`);
       await area.set({ [key]: blobs });
       return true;
     });
-    tail = run.catch(() => {});
-    return run;
-  };
   return {
     list: async () => Object.keys(await load()),
     readAll: async (prefix = '') =>

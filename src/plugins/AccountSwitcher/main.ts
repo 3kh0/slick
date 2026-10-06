@@ -1,6 +1,8 @@
 import type { MainCtx, SlickMainPlugin } from '$slick';
 import type { LocalConfigTeam } from '../../app/slack/localConfig.ts';
 import type { AccountSummary, SessionCookie, StoredAccount } from './types.ts';
+import { serialQueue } from '../../shared/queue.ts';
+import { record } from '../../shared/objects.ts';
 
 const SLACK_URL = 'https://app.slack.com';
 const COOKIE_DOMAIN = '.slack.com';
@@ -9,7 +11,7 @@ const SESSION_COOKIES = ['d', 'd-s', 'uc'];
 const ID = /^[A-Z][A-Z0-9]{5,}$/;
 
 function object(value: unknown): Record<string, unknown> | null {
-  return value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
+  return record(value) ? value : null;
 }
 
 function validTeam(value: unknown): LocalConfigTeam | null {
@@ -32,16 +34,14 @@ async function save(ctx: MainCtx, accounts: Record<string, StoredAccount>): Prom
   if (!(await ctx.secrets.write(SECRET_KEY, JSON.stringify(accounts)))) throw new Error('could not save accounts');
 }
 
-let queue: Promise<unknown> = Promise.resolve();
+const enqueue = serialQueue();
 function update<T>(ctx: MainCtx, change: (accounts: Record<string, StoredAccount>) => T): Promise<T> {
-  const run = queue.then(async () => {
+  return enqueue(async () => {
     const accounts = await load(ctx);
     const result = change(accounts);
     await save(ctx, accounts);
     return result;
   });
-  queue = run.catch(() => {});
-  return run;
 }
 
 function summary(account: StoredAccount): AccountSummary {

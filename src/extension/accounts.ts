@@ -2,6 +2,7 @@ import type { LocalConfigTeam } from '../app/slack/localConfig.ts';
 import type { AccountSummary } from '../plugins/AccountSwitcher/types.ts';
 import type { ExtensionBrowser } from './rpc.ts';
 import { encryptedAccountVault, type AccountVault } from './accountVault.ts';
+import { serialQueue } from '../shared/queue.ts';
 
 export const ACCOUNT_PERMISSIONS = {
   permissions: ['cookies', 'browsingData'],
@@ -122,8 +123,9 @@ export async function writeAccountContext(config: string | null): Promise<void> 
   // Firefox cannot scope browsingData cacheStorage deletion by hostname.
   for (const name of await caches.keys()) await caches.delete(name);
 }
+const isNormal = (tab: AccountTab) => !tab.incognito && (!tab.cookieStoreId || tab.cookieStoreId === 'firefox-default');
 function normalTab(tab: AccountTab) {
-  if (tab.incognito || (tab.cookieStoreId && tab.cookieStoreId !== 'firefox-default'))
+  if (!isNormal(tab))
     throw new AccountError(
       'Account switching supports normal browser tabs. Private windows and Firefox containers keep separate sessions.',
     );
@@ -150,10 +152,10 @@ export function createAccountService(
   vault: AccountVault<AccountState> = encryptedAccountVault(() => ({ accounts: [] })),
   fetcher: typeof fetch = fetch,
 ) {
-  let queue: Promise<unknown> = Promise.resolve();
+  const enqueue = serialQueue();
   let busy = false;
-  const serial = <T>(work: () => Promise<T>): Promise<T> => {
-    const task = queue.then(async () => {
+  const serial = <T>(work: () => Promise<T>): Promise<T> =>
+    enqueue(async () => {
       busy = true;
       try {
         return await work();
@@ -161,9 +163,6 @@ export function createAccountService(
         busy = false;
       }
     });
-    queue = task.catch(() => {});
-    return task;
-  };
   const permissions = () => api.permissions?.contains(ACCOUNT_PERMISSIONS) ?? Promise.resolve(false);
   async function requirePermissions() {
     if (!(await permissions()))
@@ -172,10 +171,7 @@ export function createAccountService(
   async function clients() {
     const tabs = await api.tabs.query({});
     return tabs.filter(
-      (tab) =>
-        !tab.incognito &&
-        (!tab.cookieStoreId || tab.cookieStoreId === 'firefox-default') &&
-        (tab.url === paused() || /^https:\/\/(?:[^/]+\.)?slack\.com\//.test(tab.url ?? '')),
+      (tab) => isNormal(tab) && (tab.url === paused() || /^https:\/\/(?:[^/]+\.)?slack\.com\//.test(tab.url ?? '')),
     );
   }
   async function cookies() {
@@ -456,7 +452,7 @@ export function createAccountService(
       busy,
       recovery: !!(await vault.read()).journal,
       tabs: (await api.tabs.query({ url: ['https://app.slack.com/client*'] }))
-        .filter((t) => !t.incognito && (!t.cookieStoreId || t.cookieStoreId === 'firefox-default'))
+        .filter(isNormal)
         .map((t) => ({ id: t.id })),
       accounts: (await vault.read()).accounts.map(publicSummary),
     }),

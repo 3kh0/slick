@@ -1,3 +1,5 @@
+import { record } from './objects.ts';
+
 export type ThemeJson = {
   name?: string;
   description?: string;
@@ -6,10 +8,6 @@ export type ThemeJson = {
   vars?: Record<string, unknown>;
   css?: string | string[];
 };
-
-function record(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === 'object' && !Array.isArray(value);
-}
 
 function variables(value: unknown): boolean {
   return record(value) && Object.values(value).every((entry) => typeof entry === 'string' || typeof entry === 'number');

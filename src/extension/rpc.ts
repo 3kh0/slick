@@ -1,6 +1,8 @@
 // Public page traffic is not secret or authenticated. Keep this surface unprivileged.
 import type { Dnr } from './mainHost.ts';
 import { BACKGROUND_PLUGINS, EXTENSION_PLUGINS, LARGE_STORAGE_PLUGINS } from './plugins.ts';
+import { record } from '../shared/objects.ts';
+export { record } from '../shared/objects.ts';
 
 export const CHANNEL = 'slick:firefox:v1';
 export const RENDERERS = EXTENSION_PLUGINS;
@@ -40,10 +42,9 @@ export type Request = { method: Method; args: string[] };
 export type Response =
   | { ok: true; value: string | boolean | null | string[] | Record<string, string> }
   | { ok: false; error: string };
-export function record(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === 'object' && !Array.isArray(value);
-}
 const text = (v: unknown, max = MAX_TEXT): v is string => typeof v === 'string' && v.length <= max;
+const accountId = (v: unknown): v is string => typeof v === 'string' && /^[A-Z][A-Z0-9]{5,63}$/.test(v);
+const tabId = (v: unknown): v is string => typeof v === 'string' && /^\d{1,10}$/.test(v);
 // PluginManager namespaces blob stores as `plugin:<id>`.
 export function namespace(v: unknown): v is string {
   return typeof v === 'string' && v.startsWith('plugin:') && (RENDERERS as readonly string[]).includes(v.slice(7));
@@ -69,26 +70,15 @@ export function validRequest(v: unknown): v is Request {
     case 'account.recover':
       return a.length === 0;
     case 'account.open':
-      return a.length === 0 || (a.length === 1 && typeof a[0] === 'string' && /^[A-Z][A-Z0-9]{5,63}$/.test(a[0]));
+      return a.length === 0 || (a.length === 1 && accountId(a[0]));
     case 'account.capture':
-      return (
-        (a.length === 1 || a.length === 2) &&
-        typeof a[0] === 'string' &&
-        /^\d{1,10}$/.test(a[0]) &&
-        (a.length === 1 || text(a[1], 80))
-      );
+      return (a.length === 1 || a.length === 2) && tabId(a[0]) && (a.length === 1 || text(a[1], 80));
     case 'account.add':
-      return a.length === 1 && typeof a[0] === 'string' && /^\d{1,10}$/.test(a[0]);
+      return a.length === 1 && tabId(a[0]);
     case 'account.forget':
-      return a.length === 1 && typeof a[0] === 'string' && /^[A-Z][A-Z0-9]{5,63}$/.test(a[0]);
+      return a.length === 1 && accountId(a[0]);
     case 'account.switch':
-      return (
-        a.length === 2 &&
-        typeof a[0] === 'string' &&
-        /^[A-Z][A-Z0-9]{5,63}$/.test(a[0]) &&
-        typeof a[1] === 'string' &&
-        /^(?:\d{1,10})?$/.test(a[1])
-      );
+      return a.length === 2 && accountId(a[0]) && (a[1] === '' || tabId(a[1]));
     case 'writeSettings':
     case 'writeUserCss':
       return a.length === 1 && text(a[0]);
