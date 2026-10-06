@@ -121,3 +121,89 @@ test('RTM deletes preserve cached previews, render them after restart and remove
   await drain();
   assert.equal(values.size, 0);
 });
+
+test('edit exclusions match sender IDs across message payloads and leave deletes intact', async (t) => {
+  const previousReact = Object.getOwnPropertyDescriptor(globalThis, 'React');
+  Object.defineProperty(globalThis, 'React', {
+    configurable: true,
+    value: { createContext: () => ({}) },
+  });
+  t.after(() => {
+    if (previousReact) Object.defineProperty(globalThis, 'React', previousReact);
+    else Reflect.deleteProperty(globalThis, 'React');
+  });
+  const values = new Map<string, any>();
+  const cached = new Map<string, any>();
+  const config = {
+    saveImages: false,
+    retentionDays: 30,
+    ignoreSelf: false,
+    ignoreAnchors: 'off',
+    ignoreEditsFrom: ' , A08GT3TM7A4, UIGNORED, BIGNORED, ',
+  };
+  const plugin = new MessageLogger(
+    {
+      storage: {
+        async set(key: string, value: unknown) {
+          values.set(key, value);
+          return true;
+        },
+        async delete(key: string) {
+          return values.delete(key);
+        },
+      },
+      messages: { getRawMessage: (_channel: string, ts: string) => cached.get(ts) },
+      redux: { getRawState: () => ({}), refresh() {} },
+    },
+    config,
+  );
+  t.after(() => plugin.stop());
+  function edit(ts: string, before = {}, after = {}, event = {}) {
+    plugin.record({
+      type: 'message',
+      subtype: 'message_changed',
+      channel: 'C',
+      previous_message: { ts, text: 'before', ...before },
+      message: { ts, text: 'after', ...after },
+      ...event,
+    });
+  }
+
+  edit('app', {}, { app_id: 'A08GT3TM7A4' });
+  edit('user', {}, { user: 'UIGNORED' });
+  edit('bot', {}, { bot_id: 'BIGNORED' });
+  edit('profile-app', {}, { bot_profile: { app_id: 'A08GT3TM7A4' } });
+  edit('profile-user', {}, { bot_profile: { user_id: 'UIGNORED' } });
+  edit('profile-bot', {}, { bot_profile: { id: 'BIGNORED' } });
+  edit('previous', { app_id: 'A08GT3TM7A4' }, { user: 'UOTHER' });
+  cached.set('cached', { app_id: 'A08GT3TM7A4' });
+  edit('cached', {}, {}, { previous_message: undefined });
+  edit('event', {}, {}, { user: 'UIGNORED' });
+  plugin.flush();
+  await drain();
+  assert.equal(values.size, 0);
+
+  edit('allowed', {}, { user: 'UOTHER', app_id: 'A08GT3TM7A4OTHER' });
+  plugin.flush();
+  await drain();
+  assert.deepEqual(values.get('entry:C:allowed').edits, [{ oldText: 'before', newText: 'after' }]);
+
+  config.ignoreEditsFrom = '';
+  edit('app', {}, { app_id: 'A08GT3TM7A4' });
+  plugin.flush();
+  await drain();
+  assert.equal(values.get('entry:C:app').edits.length, 1);
+  config.ignoreEditsFrom = 'A08GT3TM7A4';
+  edit('app', { text: 'after' }, { text: 'again', app_id: 'A08GT3TM7A4' });
+  plugin.record({
+    type: 'message',
+    subtype: 'message_deleted',
+    channel: 'C',
+    deleted_ts: 'app',
+    previous_message: { ts: 'app', text: 'again', app_id: 'A08GT3TM7A4' },
+  });
+  plugin.flush();
+  await drain();
+  assert.equal(values.get('entry:C:app').edits.length, 1);
+  assert.equal(values.get('entry:C:app').deleted, true);
+});
