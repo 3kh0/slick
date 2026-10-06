@@ -28,11 +28,7 @@ const escapeHtml = (value: string): string =>
     (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char] as string,
   );
 
-/**
- * A `srcdoc` placeholder: null-origin, so it can't see the page. It reports a
- * click via postMessage so the page can get main's permission before the real
- * request is made.
- */
+// Script-free srcdoc; the plugin binds the button from the parent on load.
 export function placeholder(source: string, label: string): string {
   const destination = escapeHtml(source);
   const provider = escapeHtml(label);
@@ -50,10 +46,10 @@ export function placeholder(source: string, label: string): string {
     height: 100%;
     min-height: 72px;
     padding: 18px;
-    border: 1px solid color-mix(in srgb, CanvasText 25%, transparent);
+    border: 1px solid color-mix(in srgb, currentColor 25%, transparent);
     border-radius: 16px;
     background: transparent;
-    color: CanvasText;
+    color: inherit;
     font: inherit;
     text-align: center;
     cursor: pointer;
@@ -71,10 +67,5 @@ export function placeholder(source: string, label: string): string {
 <button type="button" aria-label="Click to load ${provider}">
   <span class="label">Click to load ${provider}</span>
   <span class="url">${destination}</span>
-</button>
-<script>
-  document.querySelector('button').addEventListener('click', function () {
-    parent.postMessage({ slickClick2Load: true }, '*');
-  });
-</script>`;
+</button>`;
 }

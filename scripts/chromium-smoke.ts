@@ -2,6 +2,8 @@
 // node scripts/chromium-smoke.ts [--browser /path/to/chromium] [--keep-open]
 // --ports-only skips store artwork generation and checks the live ports with --slack-url.
 import assert from 'node:assert/strict';
+import { build } from 'esbuild';
+import { click2LoadCheck } from './lib/click2load-check.ts';
 import { spawn } from 'node:child_process';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -181,6 +183,24 @@ try {
     { early: true, evalBlocked: true, captured: true },
   );
   console.log('PASS: MAIN document_start, webpack interception and intact Slack CSP');
+  const click2LoadBundle = await build({
+    entryPoints: ['src/plugins/Click2Load/index.ts'],
+    bundle: true,
+    write: false,
+    format: 'iife',
+    globalName: 'SlickClick2LoadFixture',
+    footer: { js: 'globalThis.SlickClick2LoadFixture = SlickClick2LoadFixture;' },
+  });
+  await evaluate(session, click2LoadBundle.outputFiles[0]!.text);
+  assert.deepEqual(await evaluate(session, click2LoadCheck), {
+    click: true,
+    waitsForPermission: true,
+    staysLoaded: true,
+    retry: true,
+    cleanup: true,
+  });
+  console.log('PASS: Click2Load clicks under Slack CSP, permission timing, repeat scanning and cleanup');
+
   const rpc = (method: string, rpcArgs: string[] = []) =>
     evaluate(
       session,
