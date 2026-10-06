@@ -6,6 +6,7 @@ const LIVE = ['bold', 'italic', 'strike', 'code', 'links'] as const;
 type DeltaConstructor = new (ops?: unknown[]) => Delta;
 
 export default class NotShitMarkdown extends SlickPlugin<typeof meta.settings> {
+  static readonly requiredAPIs = ['onMessageSendDelta'] as const;
   static readonly id = meta.id;
   static readonly pluginName = meta.pluginName;
   static readonly description = meta.description;

@@ -44,6 +44,7 @@ function withoutMcpFooter(msg: SlackMessage): SlackMessage {
 }
 
 export default class ShowSendingBot extends SlickPlugin<typeof meta.settings> {
+  static readonly requiredAPIs = ['elements', 'members', 'messages', 'redux'] as const;
   static readonly id = meta.id;
   static readonly pluginName = meta.pluginName;
   static readonly description = meta.description;

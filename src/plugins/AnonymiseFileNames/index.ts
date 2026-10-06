@@ -9,6 +9,7 @@ const ALPHABET = 'abcdefghijklmnopqrstuvwxyz0123456789';
 const NAME_LENGTH = 7;
 
 export default class AnonymiseFileNames extends SlickPlugin<typeof meta.settings> {
+  static readonly requiredAPIs = [] as const;
   static readonly id = meta.id;
   static readonly pluginName = meta.pluginName;
   static readonly description = meta.description;

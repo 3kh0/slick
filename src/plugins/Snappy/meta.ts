@@ -6,6 +6,12 @@ export const description = 'Make Slack feel more responsive by disabling animati
 export const defaultEnabled = true;
 
 export const settings = {
+  optimizeDuplicateStyles: {
+    type: 'boolean',
+    label: 'Reduce duplicate stylesheets (experimental)',
+    description: 'Skip identical copies of Slack styles to reduce rendering work',
+    default: false,
+  },
   optimizeResize: {
     type: 'boolean',
     label: 'Smooth window resizing',

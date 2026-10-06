@@ -19,6 +19,7 @@ const FLUSH_MS = 15_000;
 const STORAGE_KEY = 'observed';
 
 export default class LastSeen extends SlickPlugin<typeof meta.settings> {
+  static readonly requiredAPIs = ['redux', 'rtm'] as const;
   static readonly id = meta.id;
   static readonly pluginName = meta.pluginName;
   static readonly description = meta.description;

@@ -28,6 +28,7 @@ const canJoin = (channel: SlackChannel | undefined): channel is SlackChannel =>
   !!channel && channel.is_channel === true && !channel.is_private && !channel.is_member && !channel.is_archived;
 
 export default class QuickJoin extends SlickPlugin<typeof meta.settings> {
+  static readonly requiredAPIs = ['channels', 'elements', 'redux'] as const;
   static readonly id = meta.id;
   static readonly pluginName = meta.pluginName;
   static readonly description = meta.description;

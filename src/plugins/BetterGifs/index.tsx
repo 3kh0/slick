@@ -32,6 +32,7 @@ function providerOf(value: unknown): 'tenor' | 'giphy' | 'klipy' {
 }
 
 export default class BetterGifs extends SlickPlugin<typeof meta.settings> {
+  static readonly requiredAPIs = ['elements'] as const;
   static readonly id = meta.id;
   static readonly pluginName = meta.pluginName;
   static readonly description = meta.description;

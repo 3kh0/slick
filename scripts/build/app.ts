@@ -2,7 +2,7 @@
 
 import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { build } from 'esbuild';
+import { build, type Plugin } from 'esbuild';
 import type { ThemeJson } from '../../src/app/theme.ts';
 import { APP, ROOT, SLICK_JS, THEMES } from '../lib/paths.ts';
 import { rendererRegistryPlugin, slickSharedAlias, type RendererRegistryOptions } from '../lib/plugin.ts';
@@ -22,6 +22,7 @@ export async function bundleThemes(): Promise<Record<string, ThemeJson>> {
 
 export type BuildAppOptions = RendererRegistryOptions & {
   debug?: boolean;
+  extraPlugins?: Plugin[];
   /** Paths are resolved relative to the repository root. */
   entryPoint?: string;
   outFile?: string;
@@ -29,6 +30,7 @@ export type BuildAppOptions = RendererRegistryOptions & {
 
 export async function buildApp({
   debug = false,
+  extraPlugins = [],
   entryPoint = `${APP}/main.ts`,
   outFile = SLICK_JS,
   targetLoader = 'electron',
@@ -46,7 +48,7 @@ export async function buildApp({
     format: 'iife',
     target: 'es2022',
     minify: !debug,
-    plugins: [rendererRegistryPlugin({ targetLoader, pluginNames }), slickSharedAlias],
+    plugins: [rendererRegistryPlugin({ targetLoader, pluginNames }), slickSharedAlias, ...extraPlugins],
     // Inline assets to preserve offline use without additional requests.
     loader: { '.gif': 'dataurl', '.png': 'dataurl', '.svg': 'dataurl', '.woff2': 'dataurl', '.txt': 'text' },
     sourcemap: debug ? 'inline' : false,
@@ -56,6 +58,7 @@ export async function buildApp({
       __SLICK_THEMES__: JSON.stringify(themes),
       // Page bundle: reaching for Node globals is a bug, so fail loudly.
       process: 'undefined',
+      ...(targetLoader === 'userscript' ? { globalThis: 'unsafeWindow', window: 'unsafeWindow' } : {}),
     },
   });
 

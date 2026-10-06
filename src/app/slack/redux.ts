@@ -74,6 +74,8 @@ export function getStore(): SlackStore | null {
     const value = fiber.memoizedProps?.value;
     const store = value?.store ?? value;
     if (store && typeof store.getState === 'function' && typeof store.subscribe === 'function') {
+      // Userscripts can discover a Provider whose store predates injection.
+      wrapGetState(store);
       cachedStore = store;
       return store;
     }

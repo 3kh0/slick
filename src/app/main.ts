@@ -38,7 +38,7 @@ const preconditions: Precondition[] = [
   {
     name: 'before-slack',
     detail: 'Slack loaded before Slick: injected too late to patch anything',
-    ok: () => CHUNK_GLOBALS.every((name) => !(globalThis as any)[name]),
+    ok: () => getBridge()?.loader === 'userscript' || CHUNK_GLOBALS.every((name) => !(globalThis as any)[name]),
   },
 ];
 
@@ -67,7 +67,7 @@ function main() {
   // Must be synchronous: the next <script> is Slack's bundle.
   try {
     applyPendingAccountSwitch();
-    installWebpackHooks();
+    installWebpackHooks({ allowExisting: bridge.loader === 'userscript' });
     exposeWebpackDebug();
     exposeReactDebug();
     exposeReduxDebug();
@@ -81,7 +81,9 @@ function main() {
     return;
   }
 
-  console.log(`[slick] ${version} running before Slack — preconditions passed`);
+  console.log(
+    `[slick] ${version} ${bridge.loader === 'userscript' ? 'userscript hooks installed' : 'running before Slack — preconditions passed'}`,
+  );
 
   void patchingReady.then(async () => {
     await reduxReady;

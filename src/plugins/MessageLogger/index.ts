@@ -95,6 +95,7 @@ function asInjected(previous: SlackMessage, channel: string, ts: string): SlackM
 }
 
 export default class MessageLogger extends SlickPlugin<typeof meta.settings> {
+  static readonly requiredAPIs = ['messages', 'react', 'redux', 'rtm'] as const;
   static readonly id = meta.id;
   static readonly pluginName = meta.pluginName;
   static readonly description = meta.description;

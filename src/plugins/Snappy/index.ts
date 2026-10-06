@@ -7,8 +7,10 @@ import * as meta from './meta.ts';
 import { selectorRewriter } from './selectors.ts';
 import { overrideTransitions } from './transitions.ts';
 import { composerSpellcheck } from './spellcheck.ts';
+import { suppressDuplicateStyles } from './duplicateStyles.ts';
 
-const browserLoader = getBridge()?.loader === 'extension';
+const loader = getBridge()?.loader;
+const browserLoader = loader === 'extension' || loader === 'userscript';
 
 const QUIET_MS = 150;
 
@@ -25,6 +27,7 @@ const TOP_NAV_CSS = `
 `;
 
 export default class Snappy extends SlickPlugin<typeof meta.settings> {
+  static readonly requiredAPIs = [] as const;
   static readonly id = meta.id;
   static readonly pluginName = meta.pluginName;
   static readonly description = meta.description;
@@ -39,13 +42,17 @@ export default class Snappy extends SlickPlugin<typeof meta.settings> {
   private spellcheck: ReturnType<typeof composerSpellcheck> | null = null;
 
   start() {
-    if (this.api.loader === 'extension') {
+    if (this.config.optimizeDuplicateStyles) {
+      const duplicates = suppressDuplicateStyles();
+      this.api.signal.addEventListener('abort', () => duplicates.stop(), { once: true });
+    }
+    if (this.api.loader === 'extension' || this.api.loader === 'userscript') {
       this.spellcheck = composerSpellcheck(document);
       this.spellcheck.update(this.config.disableSpellcheck === true);
       this.api.signal.addEventListener('abort', () => this.spellcheck?.dispose(), { once: true });
     }
-    const selectors = this.config.optimizeSelectors ? selectorRewriter() : null;
-    const transitions = overrideTransitions((css, key) => this.api.setStyle(css, key), selectors?.visit);
+    const selectors = this.config.optimizeSelectors ? selectorRewriter() : undefined;
+    const transitions = overrideTransitions((css, key) => this.api.setStyle(css, key), selectors);
     this.api.signal.addEventListener(
       'abort',
       () => {

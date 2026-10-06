@@ -8,6 +8,16 @@ declare module 'slick:background-plugins' {
   export default plugins;
 }
 
+declare module 'slick:monaco-workers' {
+  export const cssWorker: string;
+  export const editorWorker: string;
+}
+
+declare module 'slick:monaco-source' {
+  export const inlineSource: string;
+  export const expectedHash: string;
+}
+
 declare module 'slick:options-data' {
   export const plugins: { id: string; name: string; description: string }[];
   export const themes: { id: string; name: string; background: string | null; accent: string | null }[];

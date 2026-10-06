@@ -50,6 +50,7 @@ function objectRecord(value: unknown): Record<string, unknown> | undefined {
  * PrivateChannel plugin by Jeremy Stanley.
  */
 export default class PrivateChannelMapper extends SlickPlugin<typeof meta.settings> {
+  static readonly requiredAPIs = ['channels', 'elements', 'redux'] as const;
   static readonly id = meta.id;
   static readonly pluginName = meta.pluginName;
   static readonly description = meta.description;

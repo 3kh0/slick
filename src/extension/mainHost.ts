@@ -151,7 +151,15 @@ type Entry = BackgroundPlugin & {
   queue: Promise<void>;
 };
 
-export function createMainHost(area: StorageArea, dnr: Dnr | undefined, plugins: BackgroundPlugin[]) {
+export function createMainHost(
+  area: StorageArea,
+  dnr: Dnr | undefined,
+  plugins: BackgroundPlugin[],
+  fetcher: BrowserNet['fetch'] = async (url, init) => {
+    const response = await fetch(url, init);
+    return { status: response.status, body: await response.text() };
+  },
+) {
   const rules = createRules(dnr);
   const entries = new Map<string, Entry>();
   let globallyEnabled = true;
@@ -213,8 +221,7 @@ export function createMainHost(area: StorageArea, dnr: Dnr | undefined, plugins:
         },
         async fetch(url, init) {
           need('net');
-          const response = await fetch(url, init);
-          return { status: response.status, body: await response.text() };
+          return fetcher(url, init);
         },
       },
     };

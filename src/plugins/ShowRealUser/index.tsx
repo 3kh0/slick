@@ -19,6 +19,7 @@ const REPAINT_DEBOUNCE_MS = 100;
 type SearchResult = { messages?: RelayedMessage[] };
 
 export default class ShowRealUser extends SlickPlugin<typeof meta.settings> {
+  static readonly requiredAPIs = ['members', 'messages', 'redux'] as const;
   static readonly id = meta.id;
   static readonly pluginName = meta.pluginName;
   static readonly description = meta.description;

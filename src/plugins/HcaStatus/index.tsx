@@ -15,6 +15,7 @@ const CLASS: Record<string, string> = {
 };
 
 export default class HcaStatus extends SlickPlugin<typeof meta.settings> {
+  static readonly requiredAPIs = [] as const;
   static readonly id = meta.id;
   static readonly pluginName = meta.pluginName;
   static readonly description = meta.description;

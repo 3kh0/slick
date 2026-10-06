@@ -3,7 +3,7 @@
 // before Slack, so a hang or throw could block boot: lifecycle calls are
 // time-boxed and every failure is contained.
 
-import { SlickPlugin, type SlickPluginConstructor } from '../shared/Plugin.ts';
+import { SlickPlugin, type SlickPluginConstructor, type PluginAPIName } from '../shared/Plugin.ts';
 import { changedKeys, type PluginSettings } from '../shared/settings.ts';
 import { type BlobStore, Cache, ScopedStorage } from './api/storage.ts';
 import { readStoredFile } from './api/storedFiles.ts';
@@ -23,20 +23,33 @@ import {
   waitForComponent,
   waitForRenderedComponent,
 } from './slack/react.tsx';
-import { blocksReady } from './slack/blocks.ts';
-import { channelsReady } from './slack/channels.ts';
-import { filesReady } from './slack/files.ts';
-import { membersReady } from './slack/members.ts';
-import { messagesReady } from './slack/messages.ts';
 import { reduxReady } from './slack/redux.ts';
 import { rtmReady } from './slack/rtm.ts';
 import { findModuleId, getByProps, getExport, getValueSource, moduleSources, waitForExport } from './slack/webpack.ts';
-import { elementsReady } from './api/elements.ts';
-import { menuReady } from './api/menu.tsx';
-import { modalReady } from './api/modal.tsx';
-import { setupMessageSendDelta } from './api/messageSend.tsx';
 import { userAPI } from './api/userAPI.ts';
 import { addSettingsTab, type SettingsTab } from './api/settingsTabs.ts';
+
+import { createAPILoader } from './apiLoader.ts';
+
+const loadAPIs = createAPILoader({
+  redux: () => reduxReady,
+  rtm: () => rtmReady,
+  messages: (): Promise<import('./slack/messages.ts').MessagesAPI> =>
+    import('./slack/messages.ts').then((m) => m.messagesReady),
+  members: (): Promise<import('./slack/members.ts').MembersAPI> =>
+    import('./slack/members.ts').then((m) => m.membersReady),
+  channels: (): Promise<import('./slack/channels.ts').ChannelsAPI> =>
+    import('./slack/channels.ts').then((m) => m.channelsReady),
+  blocks: (): Promise<import('./slack/blocks.ts').BlocksAPI> => import('./slack/blocks.ts').then((m) => m.blocksReady),
+  files: (): Promise<import('./slack/files.ts').FilesAPI> => import('./slack/files.ts').then((m) => m.filesReady),
+  elements: (): Promise<import('./api/elements.ts').ElementsAPI> =>
+    import('./api/elements.ts').then((m) => m.elementsReady),
+  menu: (): Promise<import('./api/menu.tsx').MenuAPI> => import('./api/menu.tsx').then((m) => m.menuReady),
+  modal: (): Promise<import('./api/modal.tsx').ModalAPI> => import('./api/modal.tsx').then((m) => m.modalReady),
+  react: () => reactReady,
+  onMessageSendDelta: (): Promise<ReturnType<typeof import('./api/messageSend.tsx').setupMessageSendDelta>> =>
+    import('./api/messageSend.tsx').then((m) => m.setupMessageSendDelta(patchComponent)),
+});
 
 const PLUGIN_ID = /^[A-Za-z0-9_.-]{1,100}$/;
 const LIFECYCLE_TIMEOUT_MS = 5_000;
@@ -100,8 +113,9 @@ function createScope(): PluginScope {
   };
 }
 
-async function createBaseAPI(bridge: SlickBridge) {
+async function createBaseAPI(bridge: SlickBridge, required: readonly PluginAPIName[]) {
   await patchingReady;
+  const integrations = await loadAPIs(required);
   return {
     getExport,
     getByProps,
@@ -116,21 +130,44 @@ async function createBaseAPI(bridge: SlickBridge) {
     moduleSources,
     getFiberFromNode,
     patchComponent,
-    redux: await reduxReady,
-    rtm: await rtmReady,
-    messages: await messagesReady,
-    members: await membersReady,
-    channels: await channelsReady,
-    blocks: await blocksReady,
-    files: await filesReady,
-    // Patched once here so plugin transforms compose on Slack's three composers.
-    onMessageSendDelta: setupMessageSendDelta(patchComponent),
-    elements: await elementsReady,
-    menu: await menuReady,
-    modal: await modalReady,
+    get redux() {
+      return integrations.redux;
+    },
+    get rtm() {
+      return integrations.rtm;
+    },
+    get messages() {
+      return integrations.messages;
+    },
+    get members() {
+      return integrations.members;
+    },
+    get channels() {
+      return integrations.channels;
+    },
+    get blocks() {
+      return integrations.blocks;
+    },
+    get files() {
+      return integrations.files;
+    },
+    get elements() {
+      return integrations.elements;
+    },
+    get menu() {
+      return integrations.menu;
+    },
+    get modal() {
+      return integrations.modal;
+    },
+    get onMessageSendDelta() {
+      return integrations.onMessageSendDelta;
+    },
     /** A reactive value a plugin's components can read with `.use()`. */
     Store,
-    react: await reactReady,
+    get react() {
+      return integrations.react;
+    },
     fetch: bridge.fetch.bind(bridge),
     loader: bridge.loader,
     userAPI,
@@ -156,28 +193,79 @@ function createScopedAPI(
       scope.track(fn(...args));
 
   const storage = new ScopedStorage(blob);
+  let redux: BaseAPI['redux'] | undefined;
+  let rtm: BaseAPI['rtm'] | undefined;
+  let messages: BaseAPI['messages'] | undefined;
+  let onMessageSendDelta: BaseAPI['onMessageSendDelta'] | undefined;
 
   return {
-    ...base,
+    getExport: base.getExport,
+    getByProps: base.getByProps,
+    waitForExport: base.waitForExport,
+    getComponent: base.getComponent,
+    waitForComponent: base.waitForComponent,
+    getRenderedComponent: base.getRenderedComponent,
+    waitForRenderedComponent: base.waitForRenderedComponent,
+    getComponentSource: base.getComponentSource,
+    getValueSource: base.getValueSource,
+    findModuleId: base.findModuleId,
+    moduleSources: base.moduleSources,
+    getFiberFromNode: base.getFiberFromNode,
+    Store: base.Store,
+    fetch: base.fetch,
+    loader: base.loader,
+    userAPI: base.userAPI,
+    get members() {
+      return base.members;
+    },
+    get channels() {
+      return base.channels;
+    },
+    get blocks() {
+      return base.blocks;
+    },
+    get files() {
+      return base.files;
+    },
+    get elements() {
+      return base.elements;
+    },
+    get menu() {
+      return base.menu;
+    },
+    get modal() {
+      return base.modal;
+    },
+    get react() {
+      return base.react;
+    },
     id,
     signal: scope.signal,
 
     patchComponent: tracked(base.patchComponent) as typeof base.patchComponent,
 
-    redux: {
-      ...base.redux,
-      patchState: tracked(base.redux.patchState),
-      patchSlice: tracked(base.redux.patchSlice) as typeof base.redux.patchSlice,
-      patchThunk: tracked(base.redux.patchThunk) as typeof base.redux.patchThunk,
+    get redux() {
+      return (redux ??= {
+        ...base.redux,
+        patchState: tracked(base.redux.patchState),
+        patchSlice: tracked(base.redux.patchSlice) as typeof base.redux.patchSlice,
+        patchThunk: tracked(base.redux.patchThunk) as typeof base.redux.patchThunk,
+      });
     },
 
-    rtm: { ...base.rtm, on: tracked(base.rtm.on) },
-    messages: {
-      ...base.messages,
-      injectMessages: tracked(base.messages.injectMessages),
+    get rtm() {
+      return (rtm ??= { ...base.rtm, on: tracked(base.rtm.on) });
+    },
+    get messages() {
+      return (messages ??= {
+        ...base.messages,
+        injectMessages: tracked(base.messages.injectMessages),
+      });
     },
 
-    onMessageSendDelta: tracked(base.onMessageSendDelta),
+    get onMessageSendDelta() {
+      return (onMessageSendDelta ??= tracked(base.onMessageSendDelta));
+    },
 
     /** Notified for each of Slack's pop-out documents (slack/childWindows.ts). */
     onDocument: tracked(base.onDocument),
@@ -225,7 +313,6 @@ type Entry = {
 
 export class PluginManager {
   readonly plugins = new Map<string, Entry>();
-  private baseAPI: Promise<BaseAPI>;
   private queues = new Map<string, Promise<unknown>>();
   private statusListeners = new Set<() => void>();
 
@@ -233,7 +320,6 @@ export class PluginManager {
     private bridge: SlickBridge,
     private config: ConfigStore,
   ) {
-    this.baseAPI = createBaseAPI(bridge);
     this.config.onConfigChange(() => void this.reconcile());
   }
 
@@ -356,7 +442,14 @@ export class PluginManager {
     entry.running = false;
     this.notifyStatus();
 
-    const base = await this.baseAPI;
+    let base: BaseAPI;
+    try {
+      base = await withTimeout(id, 'API discovery', createBaseAPI(this.bridge, entry.PluginClass.requiredAPIs));
+    } catch (error) {
+      entry.startError = error instanceof Error ? error.message : String(error);
+      this.notifyStatus();
+      return;
+    }
     const scope = createScope();
     const api = createScopedAPI(
       base,

@@ -22,7 +22,7 @@ Slick runs Slack's own `app.asar` inside its own Electron (with the handy BYOE a
 - **Desktop sign in with cookies**: Slick can sign you in to Slack without opening a browser if you provide it your `d` cookie! Great for sandboxed installs.
 - **Themes**: pick from a few built-in themes, or write your own CSS with Monaco.
 - **Updates**: Slick handles all the updates for itself and Slack automatically, so you don't have to worry about it.
-- **Cross-platform**: Slick works on macOS, Windows, and Linux with browsers coming soon.
+- **Cross-platform**: Slick works on macOS, Windows, and Linux and browsers through extensions or Violentmonkey.
 - **Open source**: Slick is free and open source under the GPLv3 license. You can inspect the code, contribute, or fork it to your heart's content.
 - **Fully private**: Slick does not collect any of its own and disables Slack's spyware.
 
@@ -91,6 +91,10 @@ On Windows and Linux your sign-in and settings are kept unless you add `-Purge` 
 ### Build from source
 
 Clone the repo and run `./install.sh` (macOS), `./install-linux.sh` (Linux) or `powershell -ExecutionPolicy Bypass -File install.ps1` (Windows). They build Slick from your checkout instead of downloading a release. Plugins live in `src/plugins/<Name>/`, one folder each.
+
+### Userscript (experimental)
+
+Slick itself can run as a [Violentmonkey](https://violentmonkey.github.io/) userscript in the Slack web client. Install Violentmonkey (or any other userscript manager), then install `slick.user.js` from the [latest release](https://github.com/3kh0/slick/releases/latest). Reload Slack to make it take effect.
 
 ### Browser extensions (experimental)
 

@@ -11,6 +11,7 @@ type ReactionProps = { users?: string[] };
 const NO_REACTORS: string[] = [];
 
 export default class WhoReacted extends SlickPlugin<typeof meta.settings> {
+  static readonly requiredAPIs = ['members'] as const;
   static readonly id = meta.id;
   static readonly pluginName = meta.pluginName;
   static readonly description = meta.description;
