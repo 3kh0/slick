@@ -37,6 +37,12 @@ export const settings = {
     description: 'Skip edits and deletes for messages sent by you',
     default: false,
   },
+  ignoreEditsFrom: {
+    type: 'text',
+    label: 'Ignore edits from',
+    description: 'Comma-separated app, user, or bot IDs (e.g. A08GT3TM7A4)',
+    default: '',
+  },
   ignoreAnchors: {
     type: 'select',
     label: 'Ignore anchors',

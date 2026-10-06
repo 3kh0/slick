@@ -99,7 +99,7 @@ export default class MessageLogger extends SlickPlugin<typeof meta.settings> {
   static readonly description = meta.description;
   static readonly defaultEnabled = meta.defaultEnabled;
   static readonly settings = meta.settings;
-  static readonly liveSettings = ['deletedStyle', 'retentionDays'];
+  static readonly liveSettings = ['deletedStyle', 'retentionDays', 'ignoreEditsFrom'];
 
   private readonly entries = new Map<string, LogEntry>();
   private readonly recent = new Map<string, SlackMessage>();
@@ -265,6 +265,26 @@ export default class MessageLogger extends SlickPlugin<typeof meta.settings> {
     }
   }
 
+  private skipEditsFrom(...messages: (SlackMessage | undefined)[]): boolean {
+    const ignored = new Set(
+      (this.config.ignoreEditsFrom ?? '')
+        .split(',')
+        .map((id: string) => id.trim())
+        .filter(Boolean),
+    );
+    if (!ignored.size) return false;
+    return messages.some((msg) =>
+      [
+        msg?.user,
+        msg?.app_id,
+        msg?.bot_id,
+        msg?.bot_profile?.app_id,
+        msg?.bot_profile?.user_id,
+        msg?.bot_profile?.id,
+      ].some((id) => !!id && ignored.has(id)),
+    );
+  }
+
   private recordDelete(event: RtmEvent) {
     const previous = this.previousOf(event);
     const channel = channelOf(event, previous);
@@ -311,6 +331,7 @@ export default class MessageLogger extends SlickPlugin<typeof meta.settings> {
     const original = this.original(event, channel, ts);
     const user = userOf(next ?? original ?? previous, event);
     if (this.skipSelf(user)) return;
+    if (this.skipEditsFrom(next, previous, original, event as SlackMessage)) return;
     if (next) this.captureImages(this.key(channel, ts), next);
 
     const oldText = messageText(previous) || messageText(original);
