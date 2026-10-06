@@ -48,3 +48,10 @@ export function isSlackbot(userId: unknown, name?: unknown): boolean {
   if (typeof userId === 'string' && SLACKBOT_IDS.has(userId)) return true;
   return /^slackbot$/i.test(String(name ?? '').trim());
 }
+
+/** Match the original message before Slack formats or hides notification text. */
+export function isSlackbotNotice(message: unknown): boolean {
+  if (!message || typeof message !== 'object') return false;
+  const event = message as { user?: unknown; username?: unknown; text?: unknown };
+  return isSlackbot(event.user, event.username) && isSlashCommandNotice(decodeMrkdwn(event.text));
+}

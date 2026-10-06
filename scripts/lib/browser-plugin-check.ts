@@ -70,6 +70,34 @@ export const browserPluginCheck = `(async () => {
   await held(); prompt.onCancel(); check(sends === 0, 'cancel sent a message');
   await held(); prompt.onSubmit(); check(sends === 1 && clears === 1, 'approved send did not run exactly once');
   instance.stop(); abort.abort();
+  const slackbot = manager.plugins.get('ShutUpSlackbot');
+  check(slackbot?.running, 'ShutUpSlackbot not running');
+  const notificationCreator = slackbot.instance.api.redux.getThunkCreator('showNotification');
+  check(typeof notificationCreator === 'function', 'Slack notification thunk missing');
+  const notice = { user: 'USLACKBOT', text: 'A new slash command /deploy was added to this workspace', channel: 'DSLICKTEST', ts: '1234.5678' };
+  // Dispatch only the vetoed fixture: it cannot create a notification or mark real messages read.
+  const vetoed = notificationCreator({message: notice, modelObject: {id: 'DSLICKTEST'}});
+  check(typeof vetoed === 'function', 'suppressed notification not dispatchable');
+  await vetoed(() => { throw new Error('suppressed notification dispatched work'); }, () => ({}));
+  let notificationWrap, onMessage, readMarks = 0, ordinaryNotifications = 0;
+  const slackbotAbort = new AbortController();
+  const testSlackbot = new slackbot.PluginClass({
+    ...slackbot.instance.api, signal: slackbotAbort.signal,
+    redux: {patchThunk: (name, wrap) => { check(name === 'showNotification', 'wrong notification hook'); notificationWrap = wrap; }},
+    rtm: {on: (type, listener) => { check(type === 'message', 'wrong RTM hook'); onMessage = listener; }},
+    userAPI: async (method, args) => { check(method === 'conversations.mark' && args.channel === notice.channel && args.ts === notice.ts, 'unexpected read mark'); readMarks++; },
+  }, {});
+  testSlackbot.start();
+  const filtered = notificationWrap(() => { ordinaryNotifications++; return () => Promise.resolve(); });
+  await filtered({message: notice})();
+  check(ordinaryNotifications === 0, 'registration notice reached notification code');
+  await filtered({message: {...notice, user: 'UHUMAN'}})();
+  await filtered({message: {...notice, text: 'A new member joined'}})();
+  check(ordinaryNotifications === 2, 'unrelated notifications suppressed');
+  onMessage(notice); onMessage(notice);
+  await Promise.resolve();
+  check(readMarks === 1, 'read marks not deduplicated');
+  testSlackbot.stop(); slackbotAbort.abort();
   await accounts.instance.addAccount(); // Opens trusted UI after checks; inactive Slack tabs throttle timers.
-  return { spellcheck: true, haiku: true, accounts: true, actualMessagesSent: 0 };
+  return { spellcheck: true, haiku: true, accounts: true, slackbot: true, actualMessagesSent: 0 };
 })()`;

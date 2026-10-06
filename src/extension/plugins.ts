@@ -31,6 +31,7 @@ export const EXTENSION_PLUGINS = [
   'RestrictedChannelWarning',
   'ShowRealUser',
   'ShowSendingBot',
+  'ShutUpSlackbot',
   'SilentTyping',
   'SlimMessageBox',
   'Snappy',
