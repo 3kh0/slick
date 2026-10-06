@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { build, type Plugin } from 'esbuild';
@@ -7,7 +8,8 @@ import { USERSCRIPT_MAIN_PLUGINS } from '../../src/userscript/plugins.ts';
 import { buildApp } from './app.ts';
 import { backgroundPlugins } from './extension.ts';
 
-export function userscriptMetadata() {
+export function userscriptMetadata(resourceUrl?: string, offline = false) {
+  const name = offline ? 'slick-offline' : 'slick';
   return `// ==UserScript==
 // @name Slick for Slack
 // @namespace https://github.com/3kh0/slick
@@ -15,8 +17,8 @@ export function userscriptMetadata() {
 // @description Customize Slack with Slick plugins, themes and custom CSS.
 // @homepageURL https://slickclient.net
 // @supportURL https://github.com/3kh0/slick/issues
-// @downloadURL https://github.com/3kh0/slick/releases/latest/download/slick.user.js
-// @updateURL https://github.com/3kh0/slick/releases/latest/download/slick.meta.js
+// @downloadURL https://github.com/3kh0/slick/releases/latest/download/${name}.user.js
+// @updateURL https://github.com/3kh0/slick/releases/latest/download/${name}.meta.js
 // @match https://app.slack.com/client
 // @match https://app.slack.com/client/*
 // @run-at document-start
@@ -31,7 +33,8 @@ export function userscriptMetadata() {
 // @grant GM_addValueChangeListener
 // @grant GM_removeValueChangeListener
 // @grant GM_xmlhttpRequest
-// @grant GM_registerMenuCommand
+// @grant GM_getResourceText
+${resourceUrl ? `// @resource slickMonaco ${resourceUrl}\n` : ''}// @grant GM_registerMenuCommand
 // ==/UserScript==
 `;
 }
@@ -76,26 +79,36 @@ export async function buildUserscript({ debug = false } = {}) {
     minify: true,
     plugins: [monacoAssets],
   });
-  const monacoSource: Plugin = {
-    name: 'userscript-lazy-monaco',
-    setup(builder) {
-      builder.onResolve({ filter: /^slick:monaco-source$/ }, () => ({ path: 'editor', namespace: 'monaco-source' }));
-      builder.onLoad({ filter: /.*/, namespace: 'monaco-source' }, () => ({
-        contents: `export default ${JSON.stringify(editor.outputFiles[0]!.text)};`,
-        loader: 'js',
-      }));
-    },
-  };
-  await buildApp({
-    debug,
-    targetLoader: 'userscript',
-    entryPoint: 'src/userscript/entry.ts',
-    outFile: output,
-    extraPlugins: [backgroundPlugins(USERSCRIPT_MAIN_PLUGINS), monacoSource],
-  });
-  const metadata = userscriptMetadata();
-  await writeFile(output, metadata + (await readFile(output, 'utf8')));
-  await writeFile(path.join(ROOT, 'dist/userscript/slick.meta.js'), metadata);
-  console.log('[build:userscript] dist/userscript/slick.user.js + slick.meta.js');
+  const source = editor.outputFiles[0]!.text;
+  const hash = createHash('sha256').update(source).digest('hex');
+  const assetName = `slick-monaco-${hash.slice(0, 16)}.js`;
+  const resourceBase =
+    process.env.SLICK_USERSCRIPT_RESOURCE_BASE || `https://github.com/3kh0/slick/releases/download/v${versions.build}`;
+  for (const offline of [false, true]) {
+    const monacoSource: Plugin = {
+      name: 'userscript-lazy-monaco',
+      setup(builder) {
+        builder.onResolve({ filter: /^slick:monaco-source$/ }, () => ({ path: 'editor', namespace: 'monaco-source' }));
+        builder.onLoad({ filter: /.*/, namespace: 'monaco-source' }, () => ({
+          contents: `export const inlineSource=${JSON.stringify(offline ? source : '')};export const expectedHash=${JSON.stringify(hash)};`,
+          loader: 'js',
+        }));
+      },
+    };
+    const name = offline ? 'slick-offline' : 'slick';
+    const filename = path.join(ROOT, `dist/userscript/${name}.user.js`);
+    await buildApp({
+      debug,
+      targetLoader: 'userscript',
+      entryPoint: 'src/userscript/entry.ts',
+      outFile: filename,
+      extraPlugins: [backgroundPlugins(USERSCRIPT_MAIN_PLUGINS), monacoSource],
+    });
+    const metadata = userscriptMetadata(offline ? undefined : `${resourceBase}/${assetName}`, offline);
+    await writeFile(filename, metadata + (await readFile(filename, 'utf8')));
+    await writeFile(path.join(ROOT, `dist/userscript/${name}.meta.js`), metadata);
+  }
+  await writeFile(path.join(ROOT, 'dist/userscript', assetName), source);
+  console.log('[build:userscript] userscript, cached editor resource, and standalone offline variant');
   return output;
 }

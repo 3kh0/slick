@@ -9,6 +9,7 @@ import * as meta from './meta.ts';
 const MAX_REMEMBERED = 300;
 
 export default class ShutUpSlackbot extends SlickPlugin<typeof meta.settings> {
+  static readonly requiredAPIs = ['redux', 'rtm'] as const;
   static readonly id = meta.id;
   static readonly pluginName = meta.pluginName;
   static readonly description = meta.description;

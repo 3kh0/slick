@@ -51,6 +51,7 @@ function peaks(channel: Float32Array, count: number): number[] {
 }
 
 export default class CustomNameRecording extends SlickPlugin<typeof meta.settings> {
+  static readonly requiredAPIs = ['elements', 'files'] as const;
   static readonly id = meta.id;
   static readonly pluginName = meta.pluginName;
   static readonly description = meta.description;

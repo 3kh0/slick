@@ -35,6 +35,7 @@ const isTimestamp = (child: React.ReactNode) => isHeaderChild(child, 'clickable'
 const isSender = (child: React.ReactNode) => isHeaderChild(child, 'isInteractive');
 
 export default class UserPronouns extends SlickPlugin<typeof meta.settings> {
+  static readonly requiredAPIs = ['members'] as const;
   static readonly id = meta.id;
   static readonly pluginName = meta.pluginName;
   static readonly description = meta.description;

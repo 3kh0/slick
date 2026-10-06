@@ -10,6 +10,7 @@ const CUSTOM_RESPONSE = '.c-message_kit__background--labels--custom_response';
 const cssString = (value: unknown): string => JSON.stringify(String(value));
 
 export default class CustomSlackbot extends SlickPlugin<typeof meta.settings> {
+  static readonly requiredAPIs = [] as const;
   static readonly id = meta.id;
   static readonly pluginName = meta.pluginName;
   static readonly description = meta.description;

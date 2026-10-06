@@ -14,8 +14,8 @@ declare module 'slick:monaco-workers' {
 }
 
 declare module 'slick:monaco-source' {
-  const source: string;
-  export default source;
+  export const inlineSource: string;
+  export const expectedHash: string;
 }
 
 declare module 'slick:options-data' {

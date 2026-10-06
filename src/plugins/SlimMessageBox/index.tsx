@@ -25,6 +25,7 @@ const BUTTON_PROPS: Record<string, string[]> = {
 };
 
 export default class SlimMessageBox extends SlickPlugin<typeof meta.settings> {
+  static readonly requiredAPIs = ['elements'] as const;
   static readonly id = meta.id;
   static readonly pluginName = meta.pluginName;
   static readonly description = meta.description;

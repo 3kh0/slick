@@ -3,6 +3,22 @@
 import type { SlickAPI } from '../app/pluginManager.ts';
 import type { PluginSettings, SettingsSchema } from './settings.ts';
 
+export const PLUGIN_APIS = [
+  'redux',
+  'rtm',
+  'messages',
+  'members',
+  'channels',
+  'blocks',
+  'files',
+  'elements',
+  'menu',
+  'modal',
+  'react',
+  'onMessageSendDelta',
+] as const;
+export type PluginAPIName = (typeof PLUGIN_APIS)[number];
+
 export type { SlickAPI } from '../app/pluginManager.ts';
 export type { SlackActivityItem, SlackAttachment, SlackBot, SlackMessage } from '../app/slack/messages.ts';
 export type { MapEntry, SlackStore } from '../app/slack/redux.ts';
@@ -27,6 +43,8 @@ export abstract class SlickPlugin<Schema extends SettingsSchema = SettingsSchema
   static readonly defaultEnabled: boolean = false;
   /** Typed schema; drives Preferences and the extension options page. */
   static readonly settings: SettingsSchema = {};
+  /** Legacy plugins get all APIs. First-party plugins declare only their needs. */
+  static readonly requiredAPIs: readonly PluginAPIName[] = PLUGIN_APIS;
 
   /**
    * Settings applied without restarting the plugin (others restart it). A live
@@ -70,6 +88,7 @@ export interface SlickPluginConstructor {
   readonly settings: SettingsSchema;
   readonly liveSettings: readonly string[];
   readonly relaunchSettings: readonly string[];
+  readonly requiredAPIs: readonly PluginAPIName[];
 }
 
 export default SlickPlugin;

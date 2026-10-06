@@ -38,6 +38,7 @@ const MUTED: React.CSSProperties = { fontSize: '13px', opacity: 0.7 };
 const ACCENT = 'rgb(var(--sk_highlight, 18, 100, 163))';
 
 export default class Experiments extends SlickPlugin<typeof meta.settings> {
+  static readonly requiredAPIs = ['elements', 'redux'] as const;
   static readonly id = meta.id;
   static readonly pluginName = meta.pluginName;
   static readonly description = meta.description;

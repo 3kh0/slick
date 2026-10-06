@@ -15,6 +15,7 @@ type SearchProps = {
 const LIVE = ['terms', 'style', 'replacement', 'keepFirstLetter', 'keepLastLetter'] as const;
 
 export default class Censorship extends SlickPlugin<typeof meta.settings> {
+  static readonly requiredAPIs = ['react', 'redux'] as const;
   static readonly id = meta.id;
   static readonly pluginName = meta.pluginName;
   static readonly description = meta.description;

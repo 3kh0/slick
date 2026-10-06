@@ -22,6 +22,7 @@ type State = {
 };
 
 export default class OfficeHours extends SlickPlugin<typeof meta.settings> {
+  static readonly requiredAPIs = ['members'] as const;
   static readonly id = meta.id;
   static readonly pluginName = meta.pluginName;
   static readonly description = meta.description;

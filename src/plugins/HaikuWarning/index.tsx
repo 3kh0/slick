@@ -18,6 +18,7 @@ const MAX_LENGTH = 300;
 // The pinned Orpheus dictionary is bundled offline; see DICTIONARY-NOTICE.txt.
 
 export default class HaikuWarning extends SlickPlugin<typeof meta.settings> {
+  static readonly requiredAPIs = ['blocks', 'elements', 'modal'] as const;
   static readonly id = meta.id;
   static readonly pluginName = meta.pluginName;
   static readonly description = meta.description;

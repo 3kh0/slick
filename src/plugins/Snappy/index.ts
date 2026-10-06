@@ -7,6 +7,7 @@ import * as meta from './meta.ts';
 import { selectorRewriter } from './selectors.ts';
 import { overrideTransitions } from './transitions.ts';
 import { composerSpellcheck } from './spellcheck.ts';
+import { suppressDuplicateStyles } from './duplicateStyles.ts';
 
 const loader = getBridge()?.loader;
 const browserLoader = loader === 'extension' || loader === 'userscript';
@@ -26,6 +27,7 @@ const TOP_NAV_CSS = `
 `;
 
 export default class Snappy extends SlickPlugin<typeof meta.settings> {
+  static readonly requiredAPIs = [] as const;
   static readonly id = meta.id;
   static readonly pluginName = meta.pluginName;
   static readonly description = meta.description;
@@ -40,6 +42,10 @@ export default class Snappy extends SlickPlugin<typeof meta.settings> {
   private spellcheck: ReturnType<typeof composerSpellcheck> | null = null;
 
   start() {
+    if (this.config.optimizeDuplicateStyles) {
+      const duplicates = suppressDuplicateStyles();
+      this.api.signal.addEventListener('abort', () => duplicates.stop(), { once: true });
+    }
     if (this.api.loader === 'extension' || this.api.loader === 'userscript') {
       this.spellcheck = composerSpellcheck(document);
       this.spellcheck.update(this.config.disableSpellcheck === true);

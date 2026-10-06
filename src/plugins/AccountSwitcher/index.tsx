@@ -23,6 +23,7 @@ function orgKey(account: Pick<AccountSummary, 'enterpriseId' | 'teamId'>): strin
 }
 
 export default class AccountSwitcher extends SlickPlugin<typeof meta.settings> {
+  static readonly requiredAPIs = ['elements', 'members'] as const;
   static readonly id = meta.id;
   static readonly pluginName = meta.pluginName;
   static readonly description = meta.description;

@@ -1,7 +1,10 @@
 import type { SlickBridge } from '../app/bridge.ts';
 import { serialQueue } from '../shared/queue.ts';
 
-export function cssEditor(bridge: Pick<SlickBridge, 'readUserCss' | 'writeUserCss' | 'onUserCssChange'>) {
+export function cssEditor(
+  bridge: Pick<SlickBridge, 'readUserCss' | 'writeUserCss' | 'onUserCssChange'>,
+  readResource: () => string | undefined,
+) {
   let active: Window | null = null;
   return async () => {
     if (active && !active.closed) {
@@ -32,7 +35,7 @@ export function cssEditor(bridge: Pick<SlickBridge, 'readUserCss' | 'writeUserCs
       const value = await bridge.readUserCss();
       if (view.closed) return false;
       const { loadMonaco } = await import('./monacoLoader.ts');
-      const { createEditor } = await loadMonaco(view);
+      const { createEditor } = await loadMonaco(view, readResource);
       if (view.closed) return false;
       const { editor, saveKey } = createEditor(view, value);
       const enqueue = serialQueue();
@@ -84,7 +87,8 @@ export function cssEditor(bridge: Pick<SlickBridge, 'readUserCss' | 'writeUserCs
       return true;
     } catch (error) {
       console.error('[slick] CSS editor failed to load:', error);
-      status.textContent = 'Could not load Monaco. Close this window and try again.';
+      status.textContent =
+        'Could not load the editor resource. Reinstall Slick, or install the offline userscript, then reload Slack.';
       return false;
     }
   };

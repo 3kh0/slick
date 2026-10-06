@@ -9,6 +9,7 @@ import { customSoundUrl, isNotificationSound } from './sounds.ts';
 import * as meta from './meta.ts';
 
 export default class CustomSounds extends SlickPlugin<typeof meta.settings> {
+  static readonly requiredAPIs = [] as const;
   static readonly id = meta.id;
   static readonly pluginName = meta.pluginName;
   static readonly description = meta.description;

@@ -12,6 +12,7 @@ function memoryGm() {
   let nextId = 0;
   let request: Parameters<GMApi['request']>[0] | undefined;
   const gm: GMApi = {
+    resourceText: () => undefined,
     get: (key, fallback) => (values.has(key) ? values.get(key) : fallback) as typeof fallback,
     async set(key, value) {
       const old = values.get(key);

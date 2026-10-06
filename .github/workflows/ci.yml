@@ -64,8 +64,7 @@ jobs:
           path: |
             dist/extension/slick-firefox.xpi
             dist/extension/slick-chromium.zip
-            dist/userscript/slick.user.js
-            dist/userscript/slick.meta.js
+            dist/userscript/*.js
 
   package:
     name: package (${{ matrix.os }}, ${{ matrix.arch }})

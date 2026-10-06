@@ -1,8 +1,11 @@
-import source from 'slick:monaco-source';
+import { inlineSource, expectedHash } from 'slick:monaco-source';
 import type * as Monaco from './monaco.ts';
+import { verifyEditorResource } from './editorResource.ts';
 
 // An IIFE cannot code-split import(). Keep the offline editor as text so V8 parses and initializes Monaco only when the Preferences button is clicked. Slack permits blob scripts, but disallows eval. Run in the editor window so its DOM, workers and Monaco globals also disappear when that window closes.
-export async function loadMonaco(view: Window): Promise<typeof Monaco> {
+export async function loadMonaco(view: Window, readResource: () => string | undefined): Promise<typeof Monaco> {
+  const source = await verifyEditorResource(inlineSource || readResource(), expectedHash);
+  if (view.closed) throw new Error('Editor window closed');
   const script = view.document.createElement('script');
   const url = URL.createObjectURL(new Blob([source], { type: 'text/javascript' }));
   script.src = url;

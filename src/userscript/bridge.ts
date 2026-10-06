@@ -99,7 +99,7 @@ export function createUserscriptBridge(gm: GMApi, plugins: BackgroundPlugin[] = 
       on: () => () => {},
     }),
   };
-  bridge.openCssEditor = cssEditor(bridge);
+  bridge.openCssEditor = cssEditor(bridge, () => gm.resourceText('slickMonaco'));
   return bridge;
 }
 

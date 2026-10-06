@@ -6,6 +6,7 @@ export type GMApi = {
   watch(key: string, callback: (key: string, oldValue: unknown, value: unknown, remote: boolean) => void): number;
   unwatch(id: number): void;
   menu(label: string, callback: () => void): void;
+  resourceText(name: string): string | undefined;
   request(options: {
     url: string;
     method: string;
@@ -25,6 +26,7 @@ declare const GM_addValueChangeListener: GMApi['watch'];
 declare const GM_removeValueChangeListener: GMApi['unwatch'];
 declare const GM_xmlhttpRequest: GMApi['request'];
 declare const GM_registerMenuCommand: (label: string, callback: () => void) => unknown;
+declare const GM_getResourceText: GMApi['resourceText'];
 declare const GM: { setValue: GMApi['set']; deleteValue: GMApi['delete'] };
 
 export function violentmonkeyApi(): GMApi {
@@ -39,5 +41,6 @@ export function violentmonkeyApi(): GMApi {
       GM_registerMenuCommand(label, callback);
     },
     request: GM_xmlhttpRequest,
+    resourceText: GM_getResourceText,
   };
 }

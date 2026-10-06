@@ -14,6 +14,7 @@ const ITEM_KEY = 'slick-nicknames__set';
 const INPUT_ID = 'slick-nicknames__input';
 
 export default class Nicknames extends SlickPlugin<typeof meta.settings> {
+  static readonly requiredAPIs = ['elements', 'members', 'modal', 'redux'] as const;
   static readonly id = meta.id;
   static readonly pluginName = meta.pluginName;
   static readonly description = meta.description;

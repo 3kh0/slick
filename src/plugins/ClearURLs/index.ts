@@ -9,6 +9,7 @@ import * as meta from './meta.ts';
 import { patchClipboard, type ClipboardPrototype } from './paste.ts';
 
 export default class ClearURLs extends SlickPlugin<typeof meta.settings> {
+  static readonly requiredAPIs = ['onMessageSendDelta'] as const;
   static readonly id = meta.id;
   static readonly pluginName = meta.pluginName;
   static readonly description = meta.description;

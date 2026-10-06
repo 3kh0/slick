@@ -17,6 +17,7 @@ const MESSAGE_FRAME = [
 ].join(',');
 
 export default class Click2Load extends SlickPlugin<typeof meta.settings> {
+  static readonly requiredAPIs = [] as const;
   static readonly id = meta.id;
   static readonly pluginName = meta.pluginName;
   static readonly description = meta.description;

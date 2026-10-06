@@ -14,6 +14,7 @@ type OverflowMenuProps = { memberId?: string };
 const KEY_PREFIX = 'slick-admin-backend__';
 
 export default class AdminBackend extends SlickPlugin<typeof meta.settings> {
+  static readonly requiredAPIs = [] as const;
   static readonly id = meta.id;
   static readonly pluginName = meta.pluginName;
   static readonly description = meta.description;

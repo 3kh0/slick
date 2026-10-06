@@ -18,6 +18,7 @@ function threadOf(row: Element): string {
 }
 
 export default class StreamerMode extends SlickPlugin<typeof meta.settings> {
+  static readonly requiredAPIs = ['channels', 'elements'] as const;
   static readonly id = meta.id;
   static readonly pluginName = meta.pluginName;
   static readonly description = meta.description;
