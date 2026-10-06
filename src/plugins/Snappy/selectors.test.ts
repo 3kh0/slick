@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { rewriteSelectorList } from './selectors.ts';
+import { rewriteSelectorList, selectorRewriter } from './selectors.ts';
 
 test('splits a rightmost :is() of classes into an indexable list', () => {
   assert.equal(
@@ -40,4 +40,30 @@ test('ignores commas inside attribute values and nested parens', () => {
     rewriteSelectorList('[data-x="a,b"] :is(.a, .b), .y:not(.p, .q)'),
     '[data-x="a,b"] .a, [data-x="a,b"] .b, .y:not(.p, .q)',
   );
+});
+
+test('queues rewrites until flushed, skips rules changed meanwhile, and restores', () => {
+  const rule = (selectorText: string) => ({ selectorText }) as CSSStyleRule;
+  const a = rule(':is(.a, .b)');
+  const b = rule(':is(.c, .d)');
+  const plain = rule('.plain');
+  const rewriter = selectorRewriter();
+  assert.equal(rewriter.visit(a), '.a, .b');
+  assert.equal(rewriter.visit(b), '.c, .d');
+  assert.equal(rewriter.visit(plain), '.plain');
+  assert.equal(a.selectorText, ':is(.a, .b)', 'visiting does not mutate the sheet');
+  b.selectorText = '.slack-changed';
+  rewriter.flush();
+  assert.equal(a.selectorText, '.a, .b');
+  assert.equal(b.selectorText, '.slack-changed');
+  assert.equal(rewriter.visit(a), '.a, .b', 'a rewritten rule is not queued again');
+  rewriter.restore();
+  assert.equal(a.selectorText, ':is(.a, .b)');
+  assert.equal(b.selectorText, '.slack-changed');
+
+  const pending = rule(':is(.e, .f)');
+  rewriter.visit(pending);
+  rewriter.restore();
+  rewriter.flush();
+  assert.equal(pending.selectorText, ':is(.e, .f)', 'restore discards queued rewrites');
 });

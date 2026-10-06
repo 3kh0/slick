@@ -35,11 +35,13 @@ function* collect(rules: CSSRuleList): Generator<CSSStyleRule> {
 
 export type TransitionOverride = { stop(): void };
 
+export type RuleRewriter = { visit(rule: CSSStyleRule): string; flush(): void };
+
 // Each batch gets its own key, so later batches add a sheet instead of
 // re-parsing earlier ones.
 export function overrideTransitions(
   emit: (css: string, key: string) => void,
-  onRule?: (rule: CSSStyleRule) => void,
+  rewriter?: RuleRewriter,
 ): TransitionOverride {
   const known = new Set<string>();
   /** Rule count per sheet at its last scan; a change means Slack inserted rules. */
@@ -65,12 +67,13 @@ export function overrideTransitions(
       if (scanned.get(sheet) === rules.length) continue;
       const count = rules.length;
       for (const rule of collect(rules)) {
-        onRule?.(rule);
-        if (hasDuration(rule.style)) found.add(rule.selectorText);
+        const selector = rewriter?.visit(rule);
+        if (hasDuration(rule.style)) found.add(selector ?? rule.selectorText);
         yield;
       }
       scanned.set(sheet, count);
     }
+    rewriter?.flush();
 
     const fresh = [...found].filter((selector) => !known.has(selector));
     if (!fresh.length) return;

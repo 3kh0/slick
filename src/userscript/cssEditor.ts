@@ -70,10 +70,12 @@ export function cssEditor(
         incoming = false;
       });
       view.addEventListener('beforeunload', () => void save(), { once: true });
-      window.addEventListener('pagehide', () => view.close(), { once: true });
+      const opener = new AbortController();
+      window.addEventListener('pagehide', () => view.close(), { once: true, signal: opener.signal });
       view.addEventListener(
         'pagehide',
         () => {
+          opener.abort();
           clearTimeout(timer);
           unwatch();
           changes.dispose();

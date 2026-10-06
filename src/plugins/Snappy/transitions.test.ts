@@ -56,19 +56,30 @@ function fixture(t: TestContext) {
     idle.delete(id);
     cb({ didTimeout: true, timeRemaining: () => 50 });
   };
-  return { idle, timers, runTimer, runIdle, visit: () => (now += 1) };
+  const flushes: number[] = [];
+  const rewriter = {
+    visit: (rule: { selectorText: string }) => {
+      now += 1;
+      return rule.selectorText.replace('.item-', '.fast-');
+    },
+    flush: () => flushes.push(now),
+  };
+  return { idle, timers, runTimer, runIdle, rewriter, flushes, tick: () => (now += 1) };
 }
 
 test('yields even after an idle timeout, walks nested rules, and skips Slick styles', (t) => {
   const f = fixture(t);
   const emitted: string[] = [];
-  const scan = overrideTransitions((css) => emitted.push(css), f.visit);
+  const scan = overrideTransitions((css) => emitted.push(css), f.rewriter);
   f.runTimer();
   f.runIdle();
   assert.equal(emitted.length, 0, 'one idle callback cannot finish the whole sheet');
+  assert.equal(f.flushes.length, 0, 'rewrites wait for the whole scan');
   for (let i = 0; i < 10 && !emitted.length; i++) f.runIdle();
   assert.equal(emitted.length, 1);
-  assert.ok(emitted[0].includes('.item-19'));
+  assert.equal(f.flushes.length, 1);
+  assert.ok(emitted[0].includes('.fast-19'), 'overrides use the rewritten selector');
+  assert.ok(!emitted[0].includes('.item-'));
   assert.ok(!emitted[0].includes('.slick-owned'));
   f.runTimer();
   f.runIdle();
@@ -80,13 +91,14 @@ test('yields even after an idle timeout, walks nested rules, and skips Slick sty
 test('stopping a partial scan cancels pending idle work before teardown restores selectors', (t) => {
   const f = fixture(t);
   let visits = 0;
-  const scan = overrideTransitions(
-    () => assert.fail('unfinished scan emitted CSS'),
-    () => {
+  const scan = overrideTransitions(() => assert.fail('unfinished scan emitted CSS'), {
+    visit: (rule) => {
       visits++;
-      f.visit();
+      f.tick();
+      return rule.selectorText;
     },
-  );
+    flush: () => assert.fail('unfinished scan applied rewrites'),
+  });
   f.runTimer();
   f.runIdle();
   assert.ok(visits > 0 && visits < 20);

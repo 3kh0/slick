@@ -84,22 +84,34 @@ export function rewriteSelectorList(text: string): string | null {
 }
 
 export type SelectorRewriter = {
-  visit(rule: CSSStyleRule): void;
+  visit(rule: CSSStyleRule): string;
+  flush(): void;
   restore(): void;
 };
 
+// Every CSSOM mutation rebuilds the sheet's rule index on the next frame; apply a scan's rewrites at once.
 export function selectorRewriter(): SelectorRewriter {
   const originals = new Map<CSSStyleRule, string>();
+  let pending: [CSSStyleRule, string, string][] = [];
   return {
     visit(rule) {
-      if (originals.has(rule)) return;
       const before = rule.selectorText;
+      if (originals.has(rule)) return before;
       const next = rewriteSelectorList(before);
-      if (!next) return;
-      rule.selectorText = next;
-      if (rule.selectorText !== before) originals.set(rule, before);
+      if (!next) return before;
+      pending.push([rule, before, next]);
+      return next;
+    },
+    flush() {
+      for (const [rule, before, next] of pending) {
+        if (originals.has(rule) || rule.selectorText !== before) continue;
+        rule.selectorText = next;
+        if (rule.selectorText !== before) originals.set(rule, before);
+      }
+      pending = [];
     },
     restore() {
+      pending = [];
       for (const [rule, text] of originals) rule.selectorText = text;
       originals.clear();
     },

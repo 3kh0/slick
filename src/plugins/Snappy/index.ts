@@ -51,8 +51,8 @@ export default class Snappy extends SlickPlugin<typeof meta.settings> {
       this.spellcheck.update(this.config.disableSpellcheck === true);
       this.api.signal.addEventListener('abort', () => this.spellcheck?.dispose(), { once: true });
     }
-    const selectors = this.config.optimizeSelectors ? selectorRewriter() : null;
-    const transitions = overrideTransitions((css, key) => this.api.setStyle(css, key), selectors?.visit);
+    const selectors = this.config.optimizeSelectors ? selectorRewriter() : undefined;
+    const transitions = overrideTransitions((css, key) => this.api.setStyle(css, key), selectors);
     this.api.signal.addEventListener(
       'abort',
       () => {
