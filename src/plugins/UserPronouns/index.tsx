@@ -81,7 +81,7 @@ export default class UserPronouns extends SlickPlugin<typeof meta.settings> {
     `);
 
     // Channels: one component is handed both the sender and the timestamp.
-    this.api.patchComponent<BroadcastPreambleProps>('BroadcastPreamble', (Original) => (props) => {
+    this.api.patchComponent<BroadcastPreambleProps>('BaseBroadcastPreamble', (Original) => (props) => {
       if (!isPerson(props.msg)) return <Original {...props} />;
 
       const children = React.Children.toArray(props.children);
