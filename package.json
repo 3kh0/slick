@@ -22,7 +22,7 @@
     "extension:validate": "node scripts/validate-extension.ts"
   },
   "dependencies": {
-    "tar-stream": "^3.2.1",
+    "tar-stream": "^3.2.2",
     "xz-decompress": "^0.2.3"
   },
   "devDependencies": {
