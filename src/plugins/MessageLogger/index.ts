@@ -49,6 +49,7 @@ function decode(value: string): string {
   return value
     .replace(/<([^>|]+)\|([^>]+)>/g, '$2')
     .replace(/<([^>]+)>/g, '$1')
+    .replace(/&(amp|lt|gt);/g, (_, entity: string) => ({ amp: '&', lt: '<', gt: '>' })[entity]!)
     .trim();
 }
 
