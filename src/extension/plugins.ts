@@ -1,7 +1,6 @@
 // Plugins bundled into both Firefox and Chromium builds. Renderer halves need no api.fetch and
 // fit their blob quota (see LARGE_STORAGE_PLUGINS); privileged halves run in the
-// background (see BACKGROUND_PLUGINS). Each was checked to start cleanly against the live Slack
-// web client (scripts/firefox-smoke.ts).
+// background (see BACKGROUND_PLUGINS).
 export const EXTENSION_PLUGINS = [
   'AccountSwitcher',
   'AdminBackend',

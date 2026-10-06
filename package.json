@@ -19,9 +19,6 @@
     "extension:dev": "web-ext run --source-dir dist/extension/firefox --start-url https://app.slack.com/client",
     "typecheck": "node scripts/generate-main-plugins.ts && tsc --noEmit",
     "extension:build": "node scripts/build.ts firefox chromium",
-    "extension:smoke:chromium": "node scripts/chromium-smoke.ts",
-    "extension:smoke:accounts": "node scripts/account-smoke.ts",
-    "extension:dev:helium": "node scripts/chromium-smoke.ts --keep-open",
     "extension:validate": "node scripts/validate-extension.ts"
   },
   "dependencies": {

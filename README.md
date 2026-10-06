@@ -105,12 +105,10 @@ npm run extension:build
 
 The build also produces `dist/extension/slick-chromium.zip` for Chrome Web Store submission. The extension is not yet listed in the store. **Bypass Slick** reloads the current Slack tab without Slick; **Safe mode** disables plugins. Slack's Content Security Policy stays enabled. All executable extension code, fonts and images are packaged locally; certain opt-in plugins fetch data from external services.
 
-Run the local Helium MVP checks with `npm run extension:smoke:chromium`. Run `npm run extension:dev:helium -- --slack-url https://hackclub.slack.com` for a visible, disposable profile and live Slack startup checks after signing in. The harness also creates a 1280×800 settings screenshot and 440×280 promotional image in `dist/extension/store`. It checks early injection, CSP, the settings/CSS bridge, IndexedDB, options, request blocking, worker restart, bypass and safe mode. It reports live plugin startup separately from fixture checks. Use `--connect-profile /path/to/disposable/profile --extension-id <id>` to reuse a signed-in test session. Pass `--browser /path/to/chromium` to test another Chromium binary. Disposable profiles left open for preview should be removed after closing the browser; the script prints their path.
-
 ### Extension work plan and Chrome Web Store submission
 
 1. **Shared MVP:** keep one plugin allowlist and page bundle; use Firefox event pages and a Chromium service worker, with browser-specific manifests and toolbar icons. Preserve settings, CSS and plugin storage across suspension.
-2. **Local validation:** run extension tests, TypeScript, lint, `npm run extension:validate`, Firefox manifest validation and real Helium checks. Verify all 34 plugins start in authenticated Hack Club Slack; separately exercise individual plugin interactions before broader release.
+2. **Local validation:** run extension tests, TypeScript, lint, `npm run extension:validate`, Firefox manifest validation and real Helium checks. Verify all 35 plugins start in authenticated Hack Club Slack; separately exercise individual plugin interactions before broader release.
 3. **Packaging:** build reproducible Firefox XPI and Chromium ZIP artifacts in CI and attach both to releases. Bundle executable code locally and limit page access to `app.slack.com`.
 4. **Store submission:** publish the extension privacy policy below at a public URL, register the developer account, upload the ZIP, supply screenshots/store artwork, complete permission and data-use disclosures, provide reviewers Slack test access/instructions, then submit for review. Store approval is separate from a working MV3 package.
 

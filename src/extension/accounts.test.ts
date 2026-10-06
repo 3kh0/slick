@@ -248,6 +248,46 @@ test('worker recovery restores an uncommitted session before lifting the barrier
   assert.equal(f.state().journal, undefined);
 });
 
+for (const firefox of [false, true]) {
+  test(`worker recovery journals new Slack tabs before pausing them (${firefox ? 'Firefox' : 'Chromium'})`, async () => {
+    const f = fixture(firefox);
+    const originalRoute = 'https://app.slack.com/client/T111111/C555555';
+    f.setState({
+      ...f.state(),
+      journal: {
+        tabs: [{ id: 1, url: 'https://app.slack.com/client/T111111' }],
+        cookies: [cookie('cookie-a')],
+        config: configA,
+      },
+    });
+    f.tabs.get(1)!.url = f.api.runtime.getURL('accounts-paused.html');
+    f.tabs.set(5, { id: 5, url: originalRoute, status: 'complete' });
+    const update = f.api.tabs.update;
+    let interrupted = false;
+    f.api.tabs.update = async (id, value) => {
+      if (id === 5 && !interrupted) {
+        assert.deepEqual(
+          f.state().journal?.tabs.find((tab) => tab.id === 5),
+          { id: 5, url: originalRoute },
+        );
+        await update(id, value);
+        interrupted = true;
+        throw new Error('Worker interrupted after pausing a new tab');
+      }
+      return update(id, value);
+    };
+    await assert.rejects(f.service.recover(), /Worker interrupted/);
+    await createAccountService(f.api, f.vault, f.fetcher).recover();
+    assert.equal(f.tabs.get(1)?.url, 'https://app.slack.com/client/T111111');
+    assert.equal(f.tabs.get(2)?.url, 'https://app.slack.com/client/T111111/C111111');
+    assert.equal(f.tabs.get(5)?.url, originalRoute);
+    assert.equal(f.tabs.get(3)?.url, 'https://unrelated.example/');
+    assert.equal(f.tabs.get(4)?.url, 'https://app.slack.com/client/T222222');
+    assert.equal(f.state().journal, undefined);
+    assert.equal(f.rules.has(ACCOUNT_BARRIER_ID), false);
+  });
+}
+
 test('adding an account saves the current session then opens a clean sign-in while other tabs stay paused', async () => {
   const f = fixture(true);
   await f.service.add('1');

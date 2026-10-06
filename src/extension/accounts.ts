@@ -362,7 +362,14 @@ export function createAccountService(
     await barrier(true);
     if (!journal.committed) {
       // Also pause any Slack clients the user opened after the worker stopped.
-      for (const tab of await clients()) if (tab.id !== undefined) await loadTab(tab.id, paused());
+      const tabs = await clients();
+      for (const tab of tabs) {
+        if (tab.id === undefined || journal.tabs.some((saved) => saved.id === tab.id)) continue;
+        journal.tabs.push({ id: tab.id, url: tab.url === paused() ? SLACK + '/client' : tab.url! });
+      }
+      // Persist new routes before unloading tabs, so another interruption can resume them too.
+      await vault.write(state);
+      for (const tab of tabs) if (tab.id !== undefined) await loadTab(tab.id, paused());
       await clearClient();
       await installCookies(journal.cookies);
       await stage(journal.config, state);
