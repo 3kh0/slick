@@ -52,6 +52,7 @@ let sequence = 0;
 const pending = new Map<number, { resolve(value: any): void; reject(error: Error): void }>();
 let send: (method: string, params?: any, session?: string) => Promise<any>;
 let evaluate: (target: string, expression: string) => Promise<any>;
+let evaluateFunction: (target: string, declaration: string, value: unknown) => Promise<any>;
 let navigate: (target: string, url: string) => Promise<void>;
 let createTab: (url: string) => Promise<string>;
 let restartWorker: () => Promise<void>;
@@ -59,6 +60,30 @@ let manager = '';
 let extensionRoot = '';
 let webdriverSession = '';
 const endpoint = 'http://127.0.0.1:4448';
+
+function bidiValue(value: any): any {
+  switch (value.type) {
+    case 'undefined':
+      return undefined;
+    case 'null':
+      return null;
+    case 'array':
+      return value.value.map(bidiValue);
+    case 'object':
+      return Object.fromEntries(
+        value.value.map(([key, entry]: [any, any]) => [
+          typeof key === 'string' ? key : bidiValue(key),
+          bidiValue(entry),
+        ]),
+      );
+    case 'string':
+    case 'boolean':
+    case 'number':
+      return value.value;
+    default:
+      throw new Error('Unexpected BiDi fixture result: ' + value.type);
+  }
+}
 
 async function until<T>(work: () => Promise<T>, check: (value: T) => boolean, label: string) {
   for (let i = 0; i < 120; i++) {
@@ -230,12 +255,23 @@ try {
     evaluate = async (target, expression) => {
       const result = await send('script.evaluate', {
         target: { context: target },
-        expression: `(async()=>JSON.stringify(await (${expression})))()`,
+        expression,
         awaitPromise: true,
         resultOwnership: 'none',
       });
       if (result.type === 'exception') throw new Error('Firefox script: ' + result.exceptionDetails.text);
-      return JSON.parse(result.result.value ?? 'null');
+      return bidiValue(result.result);
+    };
+    evaluateFunction = async (target, declaration, value) => {
+      const result = await send('script.callFunction', {
+        target: { context: target },
+        functionDeclaration: declaration,
+        arguments: [{ type: 'string', value: JSON.stringify(value) }],
+        awaitPromise: true,
+        resultOwnership: 'none',
+      });
+      if (result.type === 'exception') throw new Error('Firefox script: ' + result.exceptionDetails.text);
+      return bidiValue(result.result);
     };
     restartWorker = async () => {
       /* Firefox's persistent MV3 background is covered by a fresh UI load. */ await navigate(
@@ -359,6 +395,29 @@ try {
         throw new Error(result.exceptionDetails.exception?.description ?? result.exceptionDetails.text);
       return result.result.value;
     };
+    evaluateFunction = async (target, declaration, value) => {
+      const session = sessions.get(target);
+      const global = await send('Runtime.evaluate', { expression: 'globalThis' }, session);
+      const objectId = global.result.objectId;
+      try {
+        const result = await send(
+          'Runtime.callFunctionOn',
+          {
+            objectId,
+            functionDeclaration: declaration,
+            arguments: [{ value: JSON.stringify(value) }],
+            awaitPromise: true,
+            returnByValue: true,
+          },
+          session,
+        );
+        if (result.exceptionDetails)
+          throw new Error(result.exceptionDetails.exception?.description ?? result.exceptionDetails.text);
+        return result.result.value;
+      } finally {
+        await send('Runtime.releaseObject', { objectId }, session);
+      }
+    };
     navigate = async (target, _url) => {
       await send('Page.navigate', { url: _url }, sessions.get(target));
     };
@@ -389,18 +448,36 @@ try {
     Boolean,
     'account UI',
   );
-  const apiExpression = '(globalThis.browser??chrome)';
   const call = (method: string, args: string[] = []) =>
-    evaluate(manager, `${apiExpression}.runtime.sendMessage(${JSON.stringify({ method, args })})`);
+    evaluateFunction(manager, `(payload) => (globalThis.browser??chrome).runtime.sendMessage(JSON.parse(payload))`, {
+      method,
+      args,
+    });
   assert.equal(
     (await call('writeSettings', [JSON.stringify({ plugins: { AccountSwitcher: { enabled: true } } })])).ok,
     true,
   );
   const setCookie = (value: string) =>
-    evaluate(
+    evaluateFunction(
       manager,
-      `${apiExpression}.cookies.set({url:'https://app.slack.com',name:'d',value:${JSON.stringify(value)},domain:'.slack.com',path:'/',secure:true,httpOnly:true,sameSite:'lax'}).then(()=>true)`,
+      `(payload) => (globalThis.browser??chrome).cookies.set({url:'https://app.slack.com',name:'d',value:JSON.parse(payload),domain:'.slack.com',path:'/',secure:true,httpOnly:true,sameSite:'lax'}).then(()=>true)`,
+      value,
     );
+  // Quotes/backslashes must round-trip as protocol data, never become script source.
+  const punctuation = `fixture'"\\\\);throw new Error('injected');//`;
+  const cookieProbe = "fixture'`$()-a";
+  await setCookie(cookieProbe);
+  assert.equal(
+    await evaluate(
+      manager,
+      `(globalThis.browser??chrome).cookies.get({url:'https://app.slack.com',name:'d'}).then(c=>c.value)`,
+    ),
+    cookieProbe,
+  );
+  const settingsProbe = JSON.stringify({ fixtureText: punctuation });
+  assert.equal((await call('writeSettings', [settingsProbe])).ok, true);
+  assert.equal((await call('readSettings')).value, settingsProbe);
+  await call('writeSettings', [JSON.stringify({ plugins: { AccountSwitcher: { enabled: true } } })]);
   await setCookie('cookie-a');
   const first = await createTab('https://app.slack.com/client/T111111');
   const second = await createTab('https://app.slack.com/client/T111111/C111111');
@@ -442,7 +519,10 @@ try {
   console.log('PASS: two Slack tabs unload, session cookies change and target config applies before page boot');
   rejectBeta = true;
   if (firefox)
-    await evaluate(manager, `${apiExpression}.storage.local.set({'slick:accountTestRejectBeta':true}).then(()=>true)`);
+    await evaluate(
+      manager,
+      `(globalThis.browser??chrome).storage.local.set({'slick:accountTestRejectBeta':true}).then(()=>true)`,
+    );
   const rejected = await call('account.switch', ['U222222', '']);
   assert.equal(rejected.ok, false);
   for (const target of [first, second])
