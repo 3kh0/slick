@@ -5,6 +5,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { Plugin } from 'esbuild';
+import { USERSCRIPT_PLUGINS } from '../../src/userscript/plugins.ts';
 import { EXTENSION_PLUGINS } from '../../src/extension/plugins.ts';
 import { PLUGINS, SHARED } from './paths.ts';
 
@@ -40,7 +41,7 @@ const slickSharedAlias: Plugin = {
 };
 
 export type RendererRegistryOptions = {
-  targetLoader?: 'electron' | 'extension';
+  targetLoader?: 'electron' | 'extension' | 'userscript';
   /** Explicit selection overrides the target default. Unknown names fail the build. */
   pluginNames?: readonly string[];
 };
@@ -52,7 +53,9 @@ export function rendererRegistryModule({
   pluginNames,
 }: RendererRegistryOptions = {}): string {
   const all = discoverPlugins();
-  const names = pluginNames ?? (targetLoader === 'extension' ? EXTENSION_PLUGINS : undefined);
+  const names =
+    pluginNames ??
+    (targetLoader === 'extension' ? EXTENSION_PLUGINS : targetLoader === 'userscript' ? USERSCRIPT_PLUGINS : undefined);
   if (names) {
     const available = new Set(all.map((entry) => entry.name));
     for (const name of names) {

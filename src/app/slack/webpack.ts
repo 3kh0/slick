@@ -136,6 +136,32 @@ export function patchExportFunction(
   });
 }
 
+/** Discover initialized modules without evaluating any factory again. */
+function registerModule(moduleId: PropertyKey, module: WebpackModule): void {
+  let moduleExports = module.exports;
+  for (const patcher of moduleExportsPatchers) {
+    try {
+      const replaced = patcher(moduleExports, String(moduleId));
+      if (replaced !== undefined && replaced !== moduleExports) {
+        module.exports = replaced;
+        moduleExports = replaced;
+      }
+    } catch (error) {
+      console.error('[slick] module exports patcher threw:', error);
+    }
+  }
+
+  moduleRegistry.set(moduleId, moduleExports);
+  checkPendingMatchers(moduleExports);
+  for (const cb of moduleLoadCallbacks) {
+    try {
+      cb(moduleExports);
+    } catch (error) {
+      console.error('[slick] module load callback threw:', error);
+    }
+  }
+}
+
 function wrapModuleFactory(moduleId: PropertyKey, factory: ModuleFactory): ModuleFactory {
   if ((factory as any).__slickWrapped) return factory;
 
@@ -144,28 +170,7 @@ function wrapModuleFactory(moduleId: PropertyKey, factory: ModuleFactory): Modul
   const wrapped = function slickModuleFactory(module: WebpackModule, exports: Exports, require: WebpackRequire): any {
     const result = factory.call(exports, module, exports, require);
 
-    let moduleExports = module.exports;
-    for (const patcher of moduleExportsPatchers) {
-      try {
-        const replaced = patcher(moduleExports, String(moduleId));
-        if (replaced !== undefined && replaced !== moduleExports) {
-          module.exports = replaced;
-          moduleExports = replaced;
-        }
-      } catch (error) {
-        console.error('[slick] module exports patcher threw:', error);
-      }
-    }
-
-    moduleRegistry.set(moduleId, moduleExports);
-    checkPendingMatchers(moduleExports);
-    for (const cb of moduleLoadCallbacks) {
-      try {
-        cb(moduleExports);
-      } catch (error) {
-        console.error('[slick] module load callback threw:', error);
-      }
-    }
+    registerModule(moduleId, module);
 
     return result;
   };
@@ -209,7 +214,8 @@ function wrapPush(originalPush: PushFn): PushFn {
 // globals are hooked because which one is live depends on the build being served.
 export const CHUNK_GLOBALS = ['webpackChunkwebapp', 'rspackChunkwebapp', 'rspackChunkGantryV2'];
 
-function installHook(globalName: string) {
+function installHook(globalName: string, allowExisting: boolean) {
+  const existingQueue = allowExisting && Array.isArray(global[globalName]) ? (global[globalName] as Chunk[]) : [];
   const wrappedPushes = new WeakMap<PushFn, PushFn>();
   const proxies = new WeakMap<Chunk[], Chunk[]>();
   const wrapArray = (array: Chunk[]): Chunk[] => {
@@ -242,7 +248,7 @@ function installHook(globalName: string) {
     proxies.set(queue, queue);
     return queue;
   };
-  let backing = wrapArray([]);
+  let backing = wrapArray(existingQueue);
 
   Object.defineProperty(global, globalName, {
     configurable: true,
@@ -258,7 +264,7 @@ function installHook(globalName: string) {
   });
 }
 
-export function installWebpackHooks() {
+export function installWebpackHooks({ allowExisting = false } = {}) {
   const descriptors = new Map(CHUNK_GLOBALS.map((name) => [name, Object.getOwnPropertyDescriptor(global, name)]));
   for (const [name, descriptor] of descriptors) {
     if (descriptor && !descriptor.configurable) throw new Error(`[slick] ${name} cannot be intercepted`);
@@ -267,8 +273,29 @@ export function installWebpackHooks() {
   const installed: string[] = [];
   try {
     for (const name of CHUNK_GLOBALS) {
-      installHook(name);
+      installHook(name, allowExisting);
       installed.push(name);
+      const queue = global[name] as Chunk[];
+      // Violentmonkey may arrive after the shell runtime. An empty chunk only
+      // captures its require function; existing modules are never re-executed.
+      if (allowExisting && queue.push !== Array.prototype.push) {
+        queue.push([
+          [`slick-userscript-capture:${name}`],
+          {},
+          (require) => {
+            if (!webpackRequire) {
+              webpackRequire = require;
+              global.__slickWebpackRequire = require;
+            }
+            for (const [id, factory] of Object.entries(require.m ?? {})) {
+              if (typeof factory === 'function') require.m[id] = wrapModuleFactory(id, factory);
+            }
+            for (const [id, module] of Object.entries(require.c ?? {}) as [string, WebpackModule][]) {
+              if (module && 'exports' in module) registerModule(id, module);
+            }
+          },
+        ]);
+      }
     }
   } catch (error) {
     for (const name of installed) {

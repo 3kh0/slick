@@ -20,7 +20,9 @@
     "typecheck": "node scripts/generate-main-plugins.ts && tsc --noEmit",
     "extension:build": "node scripts/build.ts firefox chromium",
     "extension:validate": "node scripts/validate-extension.ts",
-    "test": "npm run test:app && npm run test:extension"
+    "test": "npm run test:app && npm run test:extension && npm run test:userscript",
+    "userscript:build": "node scripts/build.ts userscript",
+    "test:userscript": "node --experimental-strip-types --test \"src/userscript/**/*.test.ts\""
   },
   "dependencies": {
     "tar-stream": "^3.2.2",

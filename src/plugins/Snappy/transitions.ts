@@ -13,6 +13,7 @@ const RESCAN_MS = 5_000;
 const FIRST_SCAN_MS = 3_000;
 const SETTLE_MS = 1_000;
 const WORKSPACE = '.p-client_workspace, .p-workspace__primary_view';
+const SLICE_MS = 4;
 
 function hasDuration(style: CSSStyleDeclaration): boolean {
   const duration = style.getPropertyValue('transition-duration');
@@ -21,15 +22,14 @@ function hasDuration(style: CSSStyleDeclaration): boolean {
   return style.getPropertyValue('transition').includes('var(');
 }
 
-function collect(rules: CSSRuleList, into: Set<string>, onRule?: (rule: CSSStyleRule) => void) {
+function* collect(rules: CSSRuleList): Generator<CSSStyleRule> {
   for (const rule of rules) {
     if (rule instanceof CSSStyleRule) {
-      onRule?.(rule);
-      if (hasDuration(rule.style)) into.add(rule.selectorText);
+      yield rule;
     }
     // @media, @supports, @layer and nested rules all carry cssRules.
     const nested = (rule as CSSGroupingRule).cssRules;
-    if (nested) collect(nested, into, onRule);
+    if (nested) yield* collect(nested);
   }
 }
 
@@ -47,9 +47,11 @@ export function overrideTransitions(
   let batch = 0;
   let scans = 0;
   let timer: ReturnType<typeof setTimeout> | undefined;
+  let idle: number | undefined;
+  let work: Generator<void> | undefined;
   let stopped = false;
 
-  const scan = () => {
+  const scan = function* (): Generator<void> {
     const found = new Set<string>();
     for (const sheet of document.styleSheets) {
       const owner = sheet.ownerNode as HTMLElement | null;
@@ -61,8 +63,13 @@ export function overrideTransitions(
         continue; // cross-origin without CORS
       }
       if (scanned.get(sheet) === rules.length) continue;
-      scanned.set(sheet, rules.length);
-      collect(rules, found, onRule);
+      const count = rules.length;
+      for (const rule of collect(rules)) {
+        onRule?.(rule);
+        if (hasDuration(rule.style)) found.add(rule.selectorText);
+        yield;
+      }
+      scanned.set(sheet, count);
     }
 
     const fresh = [...found].filter((selector) => !known.has(selector));
@@ -74,16 +81,33 @@ export function overrideTransitions(
     emit(css.join('\n'), `transitions:${batch++}`);
   };
 
-  const loop = () => {
+  const scheduleIdle = () => {
+    idle = requestIdleCallback(loop, { timeout: SETTLE_MS });
+  };
+  const loop = (deadline: IdleDeadline) => {
+    idle = undefined;
     if (stopped) return;
+    work ??= scan();
+    let done = false;
+    const start = performance.now();
     try {
-      scan();
+      // A timeout can fire while Slack is busy. Still cap our own work instead
+      // of turning one idle callback into a scan of 80,000+ rules.
+      do {
+        done = work.next().done === true;
+      } while (!done && performance.now() - start < SLICE_MS && deadline.timeRemaining() > 1);
     } catch (error) {
       console.error('[slick] [Snappy] transition scan failed:', error);
+      done = true;
     }
+    if (!done) {
+      scheduleIdle();
+      return;
+    }
+    work = undefined;
     // Fast while Slack loads its stylesheets, then rarely; idle time only.
     const delay = ++scans < 10 ? 1_000 : RESCAN_MS;
-    timer = setTimeout(() => requestIdleCallback(loop, { timeout: delay }), delay);
+    timer = setTimeout(scheduleIdle, delay);
   };
   // Rewriting selectors rebuilds Slack's rule index; keep that out of first paint.
   const waitForWorkspace = () => {
@@ -92,7 +116,9 @@ export function overrideTransitions(
       timer = setTimeout(waitForWorkspace, 250);
       return;
     }
-    timer = setTimeout(() => requestIdleCallback(loop, { timeout: FIRST_SCAN_MS }), SETTLE_MS);
+    timer = setTimeout(() => {
+      idle = requestIdleCallback(loop, { timeout: FIRST_SCAN_MS });
+    }, SETTLE_MS);
   };
   waitForWorkspace();
 
@@ -100,6 +126,8 @@ export function overrideTransitions(
     stop() {
       stopped = true;
       clearTimeout(timer);
+      if (idle !== undefined) cancelIdleCallback(idle);
+      work = undefined;
     },
   };
 }

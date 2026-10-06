@@ -8,7 +8,8 @@ import { selectorRewriter } from './selectors.ts';
 import { overrideTransitions } from './transitions.ts';
 import { composerSpellcheck } from './spellcheck.ts';
 
-const browserLoader = getBridge()?.loader === 'extension';
+const loader = getBridge()?.loader;
+const browserLoader = loader === 'extension' || loader === 'userscript';
 
 const QUIET_MS = 150;
 
@@ -39,7 +40,7 @@ export default class Snappy extends SlickPlugin<typeof meta.settings> {
   private spellcheck: ReturnType<typeof composerSpellcheck> | null = null;
 
   start() {
-    if (this.api.loader === 'extension') {
+    if (this.api.loader === 'extension' || this.api.loader === 'userscript') {
       this.spellcheck = composerSpellcheck(document);
       this.spellcheck.update(this.config.disableSpellcheck === true);
       this.api.signal.addEventListener('abort', () => this.spellcheck?.dispose(), { once: true });
