@@ -94,50 +94,9 @@ Clone the repo and run `./install.sh` (macOS), `./install-linux.sh` (Linux) or `
 
 ### Browser extensions (experimental)
 
-Slick runs in the Slack web client through Manifest V3 extensions for Firefox and Chromium browsers, including Helium. Both builds share the same 35 bundled plugins, themes, custom CSS, imported theme JSON and recovery controls. Snappy includes animation, selector, resize and composer spellcheck controls; its GPU and crash reporter controls remain desktop-only. HaikuWarning checks messages offline using its bundled Orpheus dictionary. AccountSwitcher uses a separate extension account manager to save and restore browser sessions. ShutUpSlackbot marks Slackbot slash-command registration notices as read and suppresses their web notifications and sounds while the Slack client is open. BetterGifs and QuietSpotify remain excluded. Plugins start disabled and can be enabled individually using the Slick toolbar button or Slack preferences.
+Slick runs in the Slack web client through Manifest V3 extensions for Firefox and Chromium browsers. Both builds share the same 35 bundled plugins, themes, custom CSS, imported theme JSON and recovery controls. Some plugins have had their behavior modified to work in the web client, and only a few are disabled. The extension is not yet listed in the Chrome Web Store or Firefox Add-ons, so you must install it manually.
 
-For Firefox, download `slick-firefox-*.xpi` from the [latest release](https://github.com/3kh0/slick/releases/latest). For Helium/Chromium, build locally, open `chrome://extensions`, enable **Developer mode**, choose **Load unpacked**, and select `dist/extension/chromium`:
-
-```bash
-npm install
-npm run extension:build
-```
-
-The build also produces `dist/extension/slick-chromium.zip` for Chrome Web Store submission. The extension is not yet listed in the store. **Bypass Slick** reloads the current Slack tab without Slick; **Safe mode** disables plugins. Slack's Content Security Policy stays enabled. All executable extension code, fonts and images are packaged locally; certain opt-in plugins fetch data from external services.
-
-### Extension work plan and Chrome Web Store submission
-
-1. **Shared MVP:** keep one plugin allowlist and page bundle; use Firefox event pages and a Chromium service worker, with browser-specific manifests and toolbar icons. Preserve settings, CSS and plugin storage across suspension.
-2. **Local validation:** run extension tests, TypeScript, lint, `npm run extension:validate`, Firefox manifest validation and real Helium checks. Verify all 35 plugins start in authenticated Hack Club Slack; separately exercise individual plugin interactions before broader release.
-3. **Packaging:** build reproducible Firefox XPI and Chromium ZIP artifacts in CI and attach both to releases. Bundle executable code locally and limit page access to `app.slack.com`.
-4. **Store submission:** publish the extension privacy policy below at a public URL, register the developer account, upload the ZIP, supply screenshots/store artwork, complete permission and data-use disclosures, provide reviewers Slack test access/instructions, then submit for review. Store approval is separate from a working MV3 package.
-
-Suggested store name: **Slick for Slack**. Single purpose: customize the Slack web client with opt-in plugins, themes and custom CSS. Suggested description: “Customize Slack with bundled plugins, themes and custom CSS. Enable plugins individually, import theme JSON, and recover using bypass or safe mode. Works with Slack in your browser; no desktop Slack installation required. Unofficial, open-source software, unaffiliated with Slack or Salesforce.”
-
-| Permission                | Reason                                                                                                                      |
-| ------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| `storage`                 | Save settings, CSS, plugin preferences and session recovery exemptions locally. Plugin logs and picked files use IndexedDB. |
-| `scripting`               | Run packaged recovery and account handoff functions in Slack tabs.                                                          |
-| `declarativeNetRequest`   | Block telemetry and gated embeds for Slack-initiated requests.                                                              |
-| `https://app.slack.com/*` | Run the packaged Slack client scripts and recovery controls.                                                                |
-
-AccountSwitcher additionally requests optional `cookies` (save/restore Slack session cookies), `browsingData` (clear stale Slack client data during a switch) and `https://*.slack.com/*` (access Slack session cookies and verify sessions with workspace `auth.test`). These are requested from its account manager rather than at installation.
-
-The privacy form must describe locally handled website content, personal communications, identifying information and authentication information when the corresponding plugins are enabled. Do not claim that no user data is handled just because storage is local. External JSON rule sets are data, not downloaded executable code. See the official [MV3 policies](https://developer.chrome.com/docs/webstore/program-policies/mv3-requirements), [user-data requirements](https://developer.chrome.com/docs/webstore/program-policies/user-data-faq) and [store image requirements](https://developer.chrome.com/docs/webstore/images).
-
-AccountSwitcher requires a user click in its extension account manager to save or switch a session. Grant its optional Slack session permissions there, choose the current Slack tab and save it (an optional name helps distinguish accounts). **Save and sign in to another account** preserves the current account, then starts a fresh web sign-in. Return to the manager after sign-in and save the new account. Selecting an account from Slack’s profile menu opens this manager; it never switches cookies directly from the page. Switching affects normal Slack tabs throughout the browser profile and clears unsent drafts and cached Slack data. Interrupted changes have an encrypted recovery record; use **Recover interrupted switch** if the manager reports one.
-
-### Browser extension privacy policy
-
-Slick uses data only to provide the plugins, themes and settings you choose. Slick does not run an analytics service, sell data, use data for advertising, or send Slack messages to the Slick developers. Its use of user data follows the Chrome Web Store User Data Policy, including the Limited Use requirements.
-
-The extension reads the Slack client to customize its interface. Depending on enabled plugins, it processes messages, profile information, user/channel identifiers and activity. MessageLogger keeps bounded local message deletion/edit history; LastSeen keeps local activity records. Settings, CSS, imported themes and plugin records stay in the browser profile. CustomFonts and CustomSounds store files you select locally. Disabling a plugin stops its activity but does not automatically erase its saved data. Plugin controls can clear history where provided; uninstalling the extension removes its extension storage. Plugin logs and ordinary preferences are not encrypted by Slick; access depends on your browser and operating system protections. AccountSwitcher stores session cookies and workspace tokens in a separate extension-private IndexedDB vault encrypted with AES-GCM and a non-extractable key. The key stays in the same browser profile; this is not password or operating-system keychain protection. Credentials are not synced, exported or exposed to the Slack-page bridge.
-
-AccountSwitcher requests optional `cookies`, `browsingData` and `https://*.slack.com/*` access only when you enable session access in its account manager. It verifies sessions with Slack’s `auth.test` endpoint and never sends credentials to Slick servers. A switch pauses normal Slack tabs, replaces the profile’s Slack session cookies and clears cached client data, including unsent drafts. Saved accounts can be removed in the manager; disabling the plugin does not delete them. Private windows and Firefox containers are not switched.
-
-Optional external services: ClearURLs downloads JSON tracking-parameter rules from `raw.githubusercontent.com`; HCA Status sends Slack user IDs to `auth.hackclub.com` and reads verification/age-category results; Private Channel Mapper sends channel IDs or exact channel names to `flaron.halceon.dev` when its external-lookup settings are enabled. These services receive ordinary request metadata such as your IP address and follow their own privacy practices. These lookups use HTTPS. Slack continues to handle your normal Slack traffic under its own policies. CSS you enter can also request resources you reference in it.
-
-For privacy questions, use the project's [support/issues page](https://github.com/3kh0/slick/issues); do not include private Slack messages, credentials or local browser-profile data in public reports.
+For Firefox, download `slick-firefox-*.xpi` from the [latest release](https://github.com/3kh0/slick/releases/latest).
 
 ## Updates
 
@@ -174,4 +133,18 @@ Prefer to write your own CSS instead? Open the CSS editor in Slick Preferences (
 
 ## Legal
 
+### Licensing
+
 This is under the GNU General Public License v3.0. See the [LICENSE](LICENSE) file for the legal mumbo jumbo. In short: just don't be a dick. If you're not sure what that means, see [choosealicense.com/licenses/gpl-3.0](https://choosealicense.com/licenses/gpl-3.0/). This code is provided to you for free, use at your own risk. I am not responsible for any harms due to the code here. Don't sue me.
+
+### Privacy
+
+Slick uses data only to provide the plugins, themes and settings you choose. Slick does not run an analytics service, sell data, use data for advertising, or send Slack messages to the Slick developers.
+
+The extension reads the Slack client to customize its interface. Depending on enabled plugins, it processes messages, profile information, user/channel identifiers and activity. MessageLogger keeps bounded local message deletion/edit history; LastSeen keeps local activity records. Settings, CSS, imported themes and plugin records stay in the browser profile. CustomFonts and CustomSounds store files you select locally. Disabling a plugin stops its activity but does not automatically erase its saved data. Plugin controls can clear history where provided; uninstalling the extension removes its extension storage. Plugin logs and ordinary preferences are not encrypted by Slick; access depends on your browser and operating system protections. AccountSwitcher stores session cookies and workspace tokens in a separate extension-private IndexedDB vault encrypted with AES-GCM and a non-extractable key. The key stays in the same browser profile; this is not password or operating-system keychain protection. Credentials are not synced, exported or exposed to the Slack-page bridge.
+
+AccountSwitcher requests optional `cookies`, `browsingData` and `https://*.slack.com/*` access only when you enable session access in its account manager. It verifies sessions with Slack’s `auth.test` endpoint and never sends credentials to Slick servers. A switch pauses normal Slack tabs, replaces the profile’s Slack session cookies and clears cached client data, including unsent drafts. Saved accounts can be removed in the manager; disabling the plugin does not delete them. Private windows and Firefox containers are not switched.
+
+Optional external services: ClearURLs downloads JSON tracking-parameter rules from `raw.githubusercontent.com`; HCA Status sends Slack user IDs to `auth.hackclub.com` and reads verification/age-category results; Private Channel Mapper sends channel IDs or exact channel names to `flaron.halceon.dev` when its external-lookup settings are enabled. These services receive ordinary request metadata such as your IP address and follow their own privacy practices. Slack continues to handle your normal Slack traffic under its own policies. CSS you enter can also request resources you reference in it.
+
+For privacy questions, use the project's [issues page](https://github.com/3kh0/slick/issues); do not include private Slack messages, credentials or local browser-profile data in public reports.
