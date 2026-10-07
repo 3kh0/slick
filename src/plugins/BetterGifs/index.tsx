@@ -19,6 +19,9 @@ export type PickerProps = {
   emojiSearchQuery?: string;
 };
 
+type FocusSearchProps = { input: React.RefObject<HTMLInputElement | null> };
+type FocusTransitionListener = (key: string, listener: () => void) => void;
+
 export function isGifPicker(component: unknown): boolean {
   if (typeof component !== 'function' || component.length !== 1) return false;
   const source = Function.prototype.toString.call(component);
@@ -160,8 +163,9 @@ export default class BetterGifs extends SlickPlugin<typeof meta.settings> {
 
   private readonly Picker = ({
     original: Original,
+    focusSearch: FocusSearch,
     ...props
-  }: PickerProps & { original: React.ComponentType<any> }) => {
+  }: PickerProps & { original: React.ComponentType<any>; focusSearch: React.ComponentType<FocusSearchProps> }) => {
     const provider = this.provider.use();
     const favorites = this.gifs.use();
     const favoriteError = this.error.use();
@@ -295,6 +299,7 @@ export default class BetterGifs extends SlickPlugin<typeof meta.settings> {
           <Original {...props} />
         ) : (
           <>
+            <FocusSearch input={input} />
             <header className="p-gif_picker__header">
               <input
                 ref={input}
@@ -439,9 +444,20 @@ export default class BetterGifs extends SlickPlugin<typeof meta.settings> {
     void this.favorites.load().catch(() => {
       if (!this.api.signal.aborted) this.error.set('Could not load favorites. Try reopening the picker.');
     });
-    this.api.patchComponent<PickerProps>({ filter: isGifPicker }, (Original) => (props) => (
-      <this.Picker {...props} original={Original as React.ComponentType<any>} />
-    ));
+    this.api.patchComponent<PickerProps>({ filter: isGifPicker }, (Original) => {
+      // Resolve when Slack first renders the picker, after its lazy chunk has loaded.
+      // /gif requests this focus transition after the composer finishes opening it.
+      const useFocusTransitionListener = this.api.getExport<FocusTransitionListener>(
+        (value) => typeof value === 'function' && value.name === 'useFocusTransitionListener',
+      );
+      const FocusSearch = ({ input }: FocusSearchProps) => {
+        useFocusTransitionListener?.('gif-picker-input', () => input.current?.focus());
+        return null;
+      };
+      return (props) => (
+        <this.Picker {...props} original={Original as React.ComponentType<any>} focusSearch={FocusSearch} />
+      );
+    });
     this.api.patchComponent<Record<string, unknown>>('GifListItem', (Original) => (props) => {
       const gif = fromGiphyProps(props);
       return gif ? (

@@ -71,6 +71,7 @@ function hookRenderer(t: TestContext) {
   const frames = new Map<string, Frame>();
   const fragment = Symbol('Fragment');
   let active: Frame | undefined;
+  let focused: string | undefined;
   let jobs: (() => void)[] = [];
   function slot() {
     assert.ok(active, 'Hooks must run inside a component');
@@ -142,6 +143,9 @@ function hookRenderer(t: TestContext) {
         }
         return visit(output, `${path}/output`);
       }
+      if (value.type === 'input' && value.props.ref) {
+        value.props.ref.current = { focus: () => (focused = value.props['aria-label']) };
+      }
       return { ...value, props: { ...value.props, children: visit(value.props.children, `${path}/children`) } };
     }
     const tree = visit(element, 'root');
@@ -159,7 +163,7 @@ function hookRenderer(t: TestContext) {
     if (previous) Object.defineProperty(globalThis, 'React', previous);
     else Reflect.deleteProperty(globalThis, 'React');
   });
-  return { render };
+  return { render, focused: () => focused, blur: () => (focused = undefined) };
 }
 
 function nodes(tree: any): Element[] {
@@ -188,6 +192,7 @@ function fixture(
   t: TestContext,
   initial: unknown = { version: 1, gifs: [] },
   preferences = { provider: 'tenor', defaultView: 'search' },
+  focusHookAvailable = true,
 ) {
   const renderer = hookRenderer(t);
   const controller = new AbortController();
@@ -195,6 +200,13 @@ function fixture(
   const writes: { key: string; value: unknown }[] = [];
   const fetches: string[] = [];
   const settingWrites: [string, string][] = [];
+  const focusListeners = new Map<string, () => void>();
+  function useFocusTransitionListener(key: string, listener: () => void) {
+    (globalThis as any).React.useEffect(() => {
+      focusListeners.set(key, listener);
+      return () => focusListeners.delete(key);
+    }, [key, listener]);
+  }
   let saved = initial;
   let write: (value: unknown) => Promise<boolean> = async () => true;
   let fetch: (url: string) => Promise<{ status: number; body: string }> = async () =>
@@ -233,6 +245,9 @@ function fixture(
         return fetch(url);
       },
       elements: { SvgIcon: 'slack-svg-icon' },
+      getExport(filter: (value: unknown) => boolean) {
+        return focusHookAvailable && filter(useFocusTransitionListener) ? useFocusTransitionListener : undefined;
+      },
       setStyle() {},
       patchComponent(matcher: any, replace: (original: any) => (props: any) => Element) {
         patches.push({ matcher, replace });
@@ -270,6 +285,9 @@ function fixture(
     settingWrites,
     controller,
     render: renderer.render,
+    focused: renderer.focused,
+    blur: renderer.blur,
+    focusListeners,
     fetchWith(implementation: typeof fetch) {
       fetch = implementation;
     },
@@ -361,6 +379,36 @@ test('missing selection or close callbacks gracefully render Original with uncha
     assert.deepEqual(received, props);
     assert.deepEqual(f.fetches, []);
   }
+});
+
+for (const provider of ['tenor', 'klipy', 'giphy']) {
+  for (const defaultView of ['search', 'favorites']) {
+    test(`${provider} ${defaultView} handles the delayed /gif focus transition only for the custom picker`, (t) => {
+      const f = fixture(t, undefined, { provider, defaultView });
+      const element = f.picker(() => ({ type: 'native-picker', props: {} }), callbacks());
+      const tree = f.render(element);
+      f.blur(); // Opening the picker can restore composer focus before Slack's delayed transition.
+      if (provider === 'giphy' && defaultView === 'search') {
+        assert.equal(f.focusListeners.size, 0, 'Native Giphy owns its focus listener');
+        return;
+      }
+      assert.equal(f.focusListeners.size, 1);
+      f.focusListeners.get('gif-picker-input')!();
+      const input = find(tree, (node) => node.type === 'input');
+      assert.equal(f.focused(), input.props['aria-label']);
+      input.props.onChange({ target: { value: 'cats' } });
+      assert.equal(find(f.render(element), (node) => node.type === 'input').props.value, 'cats');
+      f.render(null);
+      assert.equal(f.focusListeners.size, 0, 'Closing the picker removes its focus listener');
+    });
+  }
+}
+
+test('custom picker retains mount focus when Slack focus hook is unavailable', (t) => {
+  const f = fixture(t, undefined, undefined, false);
+  f.render(f.picker(() => assert.fail('Custom picker should still render'), callbacks()));
+  assert.equal(f.focused(), 'Search GIFs on Tenor');
+  assert.equal(f.focusListeners.size, 0);
 });
 
 test('Tenor selection uses validated search results, closes before updating the draft, and never sends', async (t) => {
