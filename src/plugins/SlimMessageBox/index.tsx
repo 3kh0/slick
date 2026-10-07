@@ -1,5 +1,5 @@
-// Slim down the composer. Buttons are turned off via TextyButtons' own props,
-// not aria-label CSS, which would break in any non-English locale.
+// Slim down the composer using TextyButtons' own props. The emoji trigger
+// stays mounted because it also hosts the native /gif picker.
 
 import { SlickPlugin } from '$slick';
 import { COMPACT_CSS, layoutCss, NO_BROADCAST_CSS } from './layout.ts';
@@ -17,7 +17,7 @@ type Broadcast = { active: boolean; channelType?: string; set(active: boolean): 
 
 const BUTTON_PROPS: Record<string, string[]> = {
   hideFormatting: ['enableComposerButton'],
-  hideEmoji: ['enableEmojiButton'],
+  hideEmoji: [],
   hideMention: ['enableMentionButton'],
   hideVideo: ['enableStoryButton'],
   hideAudio: ['enableAudioButton'],
@@ -37,6 +37,18 @@ export default class SlimMessageBox extends SlickPlugin<typeof meta.settings> {
     const off = Object.fromEntries(hidden.flatMap((option) => BUTTON_PROPS[option].map((prop) => [prop, false])));
 
     this.api.setStyle(COMPACT_CSS, 'compact');
+    if (this.config.hideEmoji) {
+      this.api.setStyle(
+        `
+        .c-texty_buttons [data-qa="emoji_toolbar_button"] {
+          position: absolute !important;
+          visibility: hidden !important;
+          pointer-events: none !important;
+        }
+      `,
+        'emoji-trigger',
+      );
+    }
 
     // Slack ships minButtonsForOverflow: 5 against a group of 2, so the
     // overflow menu it has for narrow composers never opens and the buttons

@@ -120,3 +120,37 @@ test('hide broadcast takes precedence and the new toggle is opt-in', () => {
     assert.equal(names.includes('InputContainer'), config.hideBroadcast === true);
   }
 });
+
+test('hiding emoji preserves the native GIF picker host and hides only its trigger', (t) => {
+  const previous = Object.getOwnPropertyDescriptor(globalThis, 'React');
+  Object.defineProperty(globalThis, 'React', {
+    configurable: true,
+    value: {
+      createElement: (type: unknown, props: unknown) => ({ type, props }),
+    },
+  });
+  t.after(() => {
+    if (previous) Object.defineProperty(globalThis, 'React', previous);
+    else Reflect.deleteProperty(globalThis, 'React');
+  });
+  let toolbar: (props: any) => any;
+  const styles: string[] = [];
+  const plugin = new SlimMessageBox(
+    {
+      setStyle: (css: string) => styles.push(css),
+      patchComponent: (_name: string, wrap: (original: any) => any) => {
+        toolbar = wrap('Original');
+      },
+    },
+    { hideEmoji: true, hideMention: true, discordLayout: false },
+  );
+  plugin.start();
+  const props = { enableEmojiButton: true, enableGifPicker: true, onGifSelected: () => {}, enableMentionButton: true };
+  const result = toolbar!(props);
+  assert.equal(result.props.enableEmojiButton, true);
+  assert.equal(result.props.enableGifPicker, true);
+  assert.equal(result.props.onGifSelected, props.onGifSelected);
+  assert.equal(result.props.enableMentionButton, false);
+  assert.equal(toolbar!({ enableEmojiButton: false }).props.enableEmojiButton, false);
+  assert.ok(styles.some((css) => css.includes('emoji_toolbar_button') && css.includes('visibility: hidden')));
+});
