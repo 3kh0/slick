@@ -184,3 +184,17 @@ test('small authenticated image responses are saved as image bytes rather than r
   t.mock.method(globalThis, 'fetch', async () => new Response('hello', { headers: { 'content-type': 'image/png' } }));
   assert.equal(await downloadImage('https://files.slack.com/image.png', new AbortController().signal), data);
 });
+
+test('archives retain file identity when a preceding image download fails', async () => {
+  const f = fixture(async (url) => (url.endsWith('missing.png') ? null : data));
+  f.archive.capture('C:1', {
+    files: [
+      { id: 'MISSING', mimetype: 'image/png', thumb_480: 'https://files.slack.com/missing.png' },
+      { ...message.files[0], id: 'CAT' },
+    ],
+  });
+  await drain();
+  f.archive.retain('C:1');
+  await drain();
+  assert.deepEqual(f.values.get('images:C:1'), [{ name: 'Cat', data, fileId: 'CAT' }]);
+});

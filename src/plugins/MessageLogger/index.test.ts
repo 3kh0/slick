@@ -17,9 +17,11 @@ async function drain() {
   for (let i = 0; i < 40; i++) await Promise.resolve();
 }
 
-test('RTM deletes preserve cached previews, render them after restart and remove them when accepted', async (t) => {
+test('RTM deletes restore previews in the file slot after restart and remove them when accepted', async (t) => {
   const previous = Object.getOwnPropertyDescriptor(globalThis, 'React');
+  let contextImages: any[] = [];
   const React = {
+    useContext: () => contextImages,
     createContext: () => ({ Provider: 'provider' }),
     createElement: (type: unknown, props: unknown, ...children: unknown[]) => ({ type, props, children }),
     useMemo: (fn: () => unknown) => fn(),
@@ -64,7 +66,9 @@ test('RTM deletes preserve cached previews, render them after restart and remove
         usePatchVersion: () => 0,
         getRawState: () => ({
           bootData: { user_id: 'ME' },
-          files: { F1: { title: 'Cat', mimetype: 'image/png', thumb_480: 'https://files.slack.com/cat.png' } },
+          files: {
+            F1: { id: 'F1', title: 'Cat', mimetype: 'image/png', thumb_480: 'https://files.slack.com/cat.png' },
+          },
         }),
       },
     };
@@ -113,9 +117,30 @@ test('RTM deletes preserve cached previews, render them after restart and remove
   const restarted = start();
   await drain();
   const row = restarted.patches.get('MessageWrapper')(() => null)({ msg: message });
-  const preview = row.children[1].children[0][0];
+  // The row contains only Slack's original body; no extra image below it.
+  assert.equal(row.children[0].children.length, 1);
+  contextImages = row.props.value;
+  const Original = () => null;
+  const renderFile = restarted.patches.get('MessageFile')(Original);
+  const slot = renderFile({ file: { id: 'F1', mode: 'tombstone' }, className: 'c-file_gallery__message_file' });
+  assert.match(slot.props.className, /c-file_gallery__message_file slick-ml-image/);
+  assert.equal(slot.props.tabIndex, 0);
+  const preview = slot.children[0];
   assert.equal(preview.type, 'img');
   assert.equal(preview.props.src, data);
+  assert.equal(renderFile({ file: { id: 'PDF' } }).type, Original);
+  const renderFiles = restarted.patches.get('MessageFiles')(Original);
+  assert.equal(renderFiles({ msg: message }).children[1], null);
+  const fallback = renderFiles({ msg: { ...message, files: undefined } }).children[1];
+  assert.equal(fallback.props.className, 'slick-ml-images');
+  // Existing archives without IDs still replace their sole file card.
+  restarted.plugin.images.archived.set('C:1', [{ name: 'Cat', data }]);
+  contextImages = restarted.patches.get('MessageWrapper')(Original)({ msg: message }).props.value;
+  assert.equal(renderFile({ file: { id: 'F1' } }).children[0].props.src, data);
+  const objectRow = restarted.patches.get('MessageWrapper')(Original)({
+    msg: { ...message, files: [{ id: 'F1', mimetype: 'image/png' }] },
+  });
+  assert.deepEqual(objectRow.children[0].children[0].props.msg.files, ['F1']);
   restarted.plugin.acceptDelete(restarted.plugin.entries.get('C:1'));
   restarted.plugin.flush();
   await drain();

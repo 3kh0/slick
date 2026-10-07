@@ -5,7 +5,7 @@
 import { SlickPlugin, type ComponentType, type RtmEvent, type SlackMessage } from '$slick';
 import * as meta from './meta.ts';
 import { MAX_EDIT_TEXT, MAX_EDITS_PER_MESSAGE, evictable, mergeEntry, normalize, trim } from './retention.ts';
-import { ImageArchive } from './images.ts';
+import { ImageArchive, type SavedImage } from './images.ts';
 
 type StoredEdit = { oldText: string; newText: string };
 
@@ -113,6 +113,8 @@ export default class MessageLogger extends SlickPlugin<typeof meta.settings> {
   private images: ImageArchive | null = null;
 
   private readonly EditContext = React.createContext<{ ts: string; edits: StoredEdit[]; blocks: boolean } | null>(null);
+
+  private readonly ImageContext = React.createContext<SavedImage[]>([]);
 
   /** `MessageActionsMenu` knows the message; the generic `Menu` that renders rows does not. */
   private readonly MenuRowsContext = React.createContext<React.ReactNode[]>([]);
@@ -472,11 +474,58 @@ export default class MessageLogger extends SlickPlugin<typeof meta.settings> {
       .slick-ml-edited-original s { text-decoration: line-through; }
       .slick-ml-edited-marker { margin-left: 4px; font-size: .85em; opacity: .72; }
       .slick-ml-images { display: flex; flex-wrap: wrap; gap: 8px; padding: 4px 0; }
-      .slick-ml-images img { max-width: min(360px, 100%); max-height: 300px; object-fit: contain; }
+      .slick-ml-image { display: block; max-width: 100%; width: fit-content; }
+      .slick-ml-image img { display: block; max-width: min(360px, 100%); max-height: 300px; object-fit: contain; filter: grayscale(1); }
+      .slick-ml-image:hover img, .slick-ml-image:focus img { filter: grayscale(0); }
     `;
   }
 
+  private savedImage(image: SavedImage, className?: string) {
+    const React = this.api.react;
+    return React.createElement(
+      'div',
+      {
+        className: [className, 'slick-ml-image'].filter(Boolean).join(' '),
+        tabIndex: 0,
+        'aria-label': `${image.name} (saved deleted image)`,
+      },
+      React.createElement('img', { src: image.data, alt: image.name, title: image.name }),
+    );
+  }
+
   private patchRows() {
+    // Replace the deleted-file card inside Slack's gallery, rather than adding
+    // a second preview outside the message body (and its avatar gutter).
+    this.api.patchComponent<{ file?: { id?: string }; className?: string }>('MessageFile', (Original) => (props) => {
+      const React = this.api.react;
+      const images = React.useContext(this.ImageContext);
+      const image = images.find((saved) => saved.fileId && saved.fileId === props.file?.id);
+      return image ? this.savedImage(image, props.className) : React.createElement(Original, props);
+    });
+    this.api.patchComponent<{ msg?: SlackMessage }>('MessageFiles', (Original) => (props) => {
+      const React = this.api.react;
+      const images = React.useContext(this.ImageContext);
+      const ids = new Set(
+        (Array.isArray(props.msg?.files) ? props.msg.files : []).map((file: any) =>
+          typeof file === 'string' ? file : file?.id,
+        ),
+      );
+      const extra = images.filter((image) => !image.fileId || !ids.has(image.fileId));
+      return React.createElement(
+        React.Fragment,
+        null,
+        React.createElement(Original, props),
+        extra.length
+          ? React.createElement(
+              'div',
+              { className: 'slick-ml-images', 'aria-label': 'Saved image previews' },
+              extra.map((image, index) =>
+                React.createElement(React.Fragment, { key: image.fileId ?? index }, this.savedImage(image)),
+              ),
+            )
+          : null,
+      );
+    });
     for (const name of ROW_COMPONENTS) {
       this.api.patchComponent<RowProps>(name, (Original) => (props) => this.renderRow(Original, props));
     }
@@ -520,19 +569,33 @@ export default class MessageLogger extends SlickPlugin<typeof meta.settings> {
 
     // Dismiss actions live in the overflow menu; inline they read as message body.
     const images = entry.deleted ? (this.images?.get(this.key(entry.channel, entry.ts)) ?? []) : [];
+    // Older archives predate file IDs. Match them to the stored file order
+    // when every file has a preview; leave known non-images alone.
+    const files = Array.isArray(msg?.files)
+      ? msg.files
+      : Array.isArray(entry.message?.files)
+        ? entry.message.files
+        : [];
+    const mapped = images.map((image, index) => {
+      if (image.fileId || files.length !== images.length) return image;
+      const file = files[index];
+      const fileId = typeof file === 'string' ? file : file?.id;
+      const info = typeof file === 'string' ? this.api.redux.getRawState()?.files?.[file] : file;
+      if (typeof info?.mimetype === 'string' && !/^image\/(png|jpeg|gif|webp)$/i.test(info.mimetype)) return image;
+      return typeof fileId === 'string' ? { ...image, fileId } : image;
+    });
+    // Archived RTM payloads contain file objects; Slack's row expects IDs.
+    // Passing the objects through makes the gallery look up '[object Object]'.
+    const restored =
+      entry.deleted && msg && files.length
+        ? { ...msg, files: files.map((file) => (typeof file === 'string' ? file : file?.id)).filter(Boolean) }
+        : msg;
+    const rowProps =
+      restored !== msg ? { ...props, ...(props.msg ? { msg: restored } : { message: restored }) } : props;
     const row = React.createElement(
-      'div',
-      { className: classes || undefined },
-      React.createElement(Original, props),
-      images.length
-        ? React.createElement(
-            'div',
-            { className: 'slick-ml-images', 'aria-label': 'Saved image previews' },
-            images.map((image, index) =>
-              React.createElement('img', { key: index, src: image.data, alt: image.name, title: image.name }),
-            ),
-          )
-        : null,
+      this.ImageContext.Provider,
+      { value: mapped },
+      React.createElement('div', { className: classes || undefined }, React.createElement(Original, rowProps)),
     );
     if (!entry.edits?.length || !msg?.ts) return row;
     return React.createElement(

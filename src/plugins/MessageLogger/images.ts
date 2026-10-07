@@ -1,7 +1,7 @@
 import type { SlackMessage } from '$slick';
 
-export type SavedImage = { name: string; data: string };
-type ImageSource = { name: string; urls: string[] };
+export type SavedImage = { name: string; data: string; fileId?: string };
+type ImageSource = { name: string; urls: string[]; fileId?: string };
 type Store = {
   entries<T>(prefix: string): Promise<Map<string, T>>;
   set(key: string, value: unknown): Promise<boolean>;
@@ -37,6 +37,7 @@ export function imageSources(message: SlackMessage): ImageSource[] {
   for (const file of Array.isArray(message.files) ? message.files : []) {
     if (!file || typeof file !== 'object' || typeof file.mimetype !== 'string' || !RASTER.test(file.mimetype)) continue;
     sources.push({
+      ...(typeof file.id === 'string' ? { fileId: file.id } : {}),
       name: String(file.title || file.name || 'Deleted image').slice(0, 200),
       urls: urls([file.thumb_720, file.thumb_480, file.thumb_360, file.url_private, file.url_private_download]),
     });
@@ -126,6 +127,7 @@ function validImages(value: unknown): value is SavedImage[] {
     value.length <= MAX_IMAGES &&
     value.every(
       (image) =>
+        (image?.fileId === undefined || (typeof image.fileId === 'string' && image.fileId.length <= 200)) &&
         typeof image?.name === 'string' &&
         image.name.length <= 200 &&
         typeof image.data === 'string' &&
@@ -196,7 +198,7 @@ export class ImageArchive {
           try {
             const data = await this.download(url, this.signal);
             if (!data) continue;
-            images.push({ name: source.name, data });
+            images.push({ name: source.name, data, ...(source.fileId ? { fileId: source.fileId } : {}) });
             break;
           } catch {
             // Deleted, inaccessible or offline images must not interrupt logging.
