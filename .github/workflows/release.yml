@@ -251,6 +251,9 @@ jobs:
       - name: Update the cask version and checksums
         run: node scripts/ci/update-homebrew.cjs "$BUILD" homebrew-tap/Casks/slick.rb "$RUNNER_TEMP/homebrew-assets"
       - name: Validate the cask
+        env:
+          # --online queries GitHub; unauthenticated calls share the runner IP's 60/hour limit.
+          HOMEBREW_GITHUB_API_TOKEN: ${{ github.token }}
         run: |
           brew tap 3kh0/tap "file://$GITHUB_WORKSPACE/homebrew-tap"
           # The local clone above must include the uncommitted cask update.
