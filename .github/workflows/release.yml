@@ -206,6 +206,71 @@ jobs:
             dist/slick-*.rpm
           generate_release_notes: true
 
+  homebrew:
+    needs: [validate-tag, release]
+    runs-on: macos-26
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    concurrency:
+      group: homebrew-tap-update
+      cancel-in-progress: false
+    env:
+      BUILD: ${{ needs.validate-tag.outputs.build }}
+      HOMEBREW_NO_AUTO_UPDATE: '1'
+      HOMEBREW_NO_INSTALL_CLEANUP: '1'
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Check deploy key configuration
+        env:
+          TAP_KEY: ${{ secrets.HOMEBREW_TAP_DEPLOY_KEY }}
+        run: |
+          if [[ -z "$TAP_KEY" ]]; then
+            echo "HOMEBREW_TAP_DEPLOY_KEY is required to update the tap" >&2
+            exit 1
+          fi
+      - name: Check out the tap
+        uses: actions/checkout@v7
+        with:
+          repository: 3kh0/homebrew-tap
+          ref: main
+          path: homebrew-tap
+          ssh-key: ${{ secrets.HOMEBREW_TAP_DEPLOY_KEY }}
+      - name: Test cask updater
+        run: node --test scripts/ci/update-homebrew.test.cjs
+      - name: Download both Mac release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download "v$BUILD" --repo "$GITHUB_REPOSITORY" \
+            --pattern "Slick-2.0.$BUILD-mac-arm64.zip" \
+            --pattern "Slick-2.0.$BUILD-mac-x64.zip" \
+            --dir "$RUNNER_TEMP/homebrew-assets"
+      - name: Update the cask version and checksums
+        run: node scripts/ci/update-homebrew.cjs "$BUILD" homebrew-tap/Casks/slick.rb "$RUNNER_TEMP/homebrew-assets"
+      - name: Validate the cask
+        run: |
+          brew tap 3kh0/tap "file://$GITHUB_WORKSPACE/homebrew-tap"
+          # The local clone above must include the uncommitted cask update.
+          cp homebrew-tap/Casks/slick.rb "$(brew --repository 3kh0/tap)/Casks/slick.rb"
+          brew style --cask 3kh0/tap/slick
+          brew audit --cask --strict --online --arch=all 3kh0/tap/slick
+      - name: Push the tap update as GitHub Actions
+        working-directory: homebrew-tap
+        run: |
+          git diff --check
+          if git diff --quiet -- Casks/slick.rb; then
+            echo "No tap update needed"
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add Casks/slick.rb
+          git commit -m "Update Slick to 2.0.$BUILD"
+          git push origin HEAD:main
+
   firefox:
     needs: [validate-tag, release]
     runs-on: ubuntu-latest
