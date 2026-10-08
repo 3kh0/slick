@@ -44,63 +44,95 @@ I encourage you to try other Slack mods, but you will find that Slick is the bet
 
 ## Installation
 
-Slick runs Slack's own code. Install the official Slack app first on macOS, Windows, and x86_64 Linux; on arm64 Linux Slick downloads a pinned copy on first launch. Then:
+Slick is widly available on platforms all shapes and sizes. Just scroll down to your platform and follow the instructions.
 
-**macOS** (the [official Slack](https://slack.com/downloads/mac) at `/Applications/Slack.app`, not the App Store version):
+### Web
+
+- **Firefox:** open `slick-firefox-*.xpi` from the [latest release](https://github.com/3kh0/slick/releases/latest) with Firefox and approve the install.
+- **Chrome / Chromium:** download and extract [`slick-chromium.zip`](https://github.com/3kh0/slick/releases/latest/download/slick-chromium.zip). Open `chrome://extensions`, enable **Developer mode**, click **Load unpacked** and select the extracted folder.
+- **Userscript:** install [Violentmonkey](https://violentmonkey.github.io/) or any other userscript manager, then open [`slick.user.js`](https://github.com/3kh0/slick/releases/latest/download/slick.user.js) and install it.
+
+Reload Slack in your browser after installing for the changes to take effect.
+
+### macOS
+
+With [Homebrew](https://brew.sh/) (macOS 13+, Apple Silicon or Intel):
+
+```bash
+brew install --cask 3kh0/tap/slick
+```
+
+If you already have Slack installed or do not want to use Homebrew, you can also install Slick via this one-liner:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/3kh0/slick/main/install.sh | bash
 ```
 
-Got Slack running somewhere else? Add `-s -- --slack-app "/path/to/Slack.app"` after `bash`. You can also grab the `.dmg` or `.zip` from the [releases page](https://github.com/3kh0/slick/releases/latest): `mac-arm64` for Apple Silicon, `mac-x64` for Intel.
+For Slack elsewhere, add `-s -- --slack-app "/path/to/Slack.app"` after `bash`. You can also download the `.dmg` from the [latest release](https://github.com/3kh0/slick/releases/latest) and drag Slick to Applications. From the files, pick `mac-arm64` for Apple Silicon and `mac-x64` for Intel based Macs.
 
-**Windows** (the standalone and Microsoft Store versions of Slack both work), in PowerShell:
+If you are not using the homebrew tap, you'll also need [Slack from slack.com](https://slack.com/downloads/mac) in `/Applications/Slack.app`. **The App Store version won't work!!**
+
+### Windows
+
+Install [Slack](https://slack.com/downloads/windows) first (the Microsoft Store version works too), then paste this into PowerShell:
 
 ```powershell
 irm "https://raw.githubusercontent.com/3kh0/slick/main/install.ps1" | iex
 ```
 
-Slick is built for x64. ARM PCs run x64 Slack through emulation, so it works there, just a little slower.
+The installer picks the build that matches your Slack install and sets everything up for you nicely.
 
-**Linux** (x86_64 or arm64): grab the AppImage, `.deb` or `.rpm` from the [releases page](https://github.com/3kh0/slick/releases/latest), run `nix run github:3kh0/slick`, install the Flatpak, or use the installer below. Whatever floats your penguin loving boat.
+### Linux
+
+On x86_64, install [Slack](https://slack.com/downloads/linux) first. The ARM64 AppImage and Flatpak download their own Slack bundle on first launch.
+
+**Fedora** (x86_64), using [COPR](https://copr.fedorainfracloud.org/coprs/echolive/slick/):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/3kh0/slick/main/install-linux.sh | bash
+sudo dnf copr enable echolive/slick
+sudo dnf install slick
 ```
 
-On arm64, the AppImage downloads a pinned Slack Linux bundle on first launch, then loads arm64 native addons. This approach is based on [Taut](https://github.com/jeremy46231/taut) (MIT); see [its license notice](./packaging/linux/TAUT-LICENSE.txt). Nix and AUR remain x64-only: arm64 needs separate Slack resources, native addons and platform-specific packaging/pins for each. The arm64 Flatpak downloads the pinned Slack bundle on first launch; the x64 Flatpak still requires installed Slack.
-
-The Flatpak uses a signed Slick repo, so it can update normally via `flatpak update`:
+**Flatpak** (x86_64 or ARM64):
 
 ```bash
 flatpak install --user https://3kh0.github.io/slick/dev.slick.Slick.flatpakref
 ```
 
-Launch with `flatpak run dev.slick.Slick` if your desktop menu has not refreshed for some reason. If the browser sign in points elsewhere, run `xdg-mime default dev.slick.Slick.desktop x-scheme-handler/slack` so it takes the slack handler.
+Open Slick from your app menu, or run `flatpak run dev.slick.Slick`.
 
-To remove the Flatpak, run `flatpak uninstall --user dev.slick.Slick` (use `--system` instead if installed system-wide)
+**Nix** (x86_64 only):
 
-### Uninstalling
+```bash
+nix run github:3kh0/slick
+```
 
-- **Windows:** `& ([scriptblock]::Create((irm https://raw.githubusercontent.com/3kh0/slick/main/install.ps1))) -Uninstall`
-- **Linux:** `curl -fsSL https://raw.githubusercontent.com/3kh0/slick/main/install-linux.sh | bash -s -- --uninstall`
-- **macOS:** Drag the Slick app to the Trash or run `./scripts/uninstall.sh` from a clone.
+**Other distros:** grab an AppImage, `.deb` or `.rpm` from the [latest release](https://github.com/3kh0/slick/releases/latest). For an AppImage, make it executable in its file properties and open it.
 
-On Windows and Linux your sign-in and settings are kept unless you add `-Purge` / `--purge`. To hand `slack://` links back to the official app without uninstalling, pass `-RestoreHandler` / `--restore-handler` to the installer.
+<details>
+<summary>Other installers, uninstalling and building from source</summary>
 
-### Build from source
+**Linux installer** (x86_64, with Slack installed):
 
-Clone the repo and run `./install.sh` (macOS), `./install-linux.sh` (Linux) or `powershell -ExecutionPolicy Bypass -File install.ps1` (Windows). They build Slick from your checkout instead of downloading a release. Plugins live in `src/plugins/<Name>/`, one folder each.
+```bash
+curl -fsSL https://raw.githubusercontent.com/3kh0/slick/main/install-linux.sh | bash
+```
 
-### Userscript (experimental)
+**Uninstall:** use your package manager (`brew uninstall --cask slick`, `sudo dnf remove slick`, or `flatpak uninstall --user dev.slick.Slick`). For manual macOS installs, drag Slick to the Trash. For the Windows and Linux scripts:
 
-Slick itself can run as a [Violentmonkey](https://violentmonkey.github.io/) userscript in the Slack web client. Install Violentmonkey (or any other userscript manager), then install `slick.user.js` from the [latest release](https://github.com/3kh0/slick/releases/latest). Reload Slack to make it take effect.
+```powershell
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/3kh0/slick/main/install.ps1))) -Uninstall
+```
 
-### Browser extensions (experimental)
+```bash
+curl -fsSL https://raw.githubusercontent.com/3kh0/slick/main/install-linux.sh | bash -s -- --uninstall
+```
 
-Slick runs in the Slack web client through Manifest V3 extensions for Firefox and Chromium browsers. Both builds share the same 35 bundled plugins, themes, custom CSS, imported theme JSON and recovery controls. Some plugins have had their behavior modified to work in the web client, and only a few are disabled. The extension is not yet listed in the Chrome Web Store or Firefox Add-ons, so you must install it manually.
+The Windows and Linux scripts keep your sign-in and settings unless you add `-Purge` / `--purge`. To return `slack://` links to Slack, use `-RestoreHandler` / `--restore-handler`. For Flatpak, use `xdg-mime default dev.slick.Slick.desktop x-scheme-handler/slack` if browser sign-in opens the wrong app.
 
-For Firefox, download `slick-firefox-*.xpi` from the [latest release](https://github.com/3kh0/slick/releases/latest).
+**Build from source:** clone this repo and run `./install.sh` (macOS), `./install-linux.sh` (Linux), or `powershell -ExecutionPolicy Bypass -File install.ps1` (Windows). Plugins live in `src/plugins/<Name>/`.
+
+</details>
 
 ## Updates
 
