@@ -315,6 +315,16 @@ export function findHaiku(input: string, lookup: SyllableLookup): [string, strin
   return line === 3 ? [lines[0].join(' '), lines[1].join(' '), lines[2].join(' ')] : null;
 }
 
+export function compactDictionary(dictionary: string): string {
+  return dictionary
+    .split('\n')
+    .filter((line) => {
+      const separator = line.lastIndexOf(' ');
+      return separator > 0 && estimateSyllables(line.slice(0, separator)) !== Number(line.slice(separator + 1));
+    })
+    .join('\n');
+}
+
 /** Looks up one word without allocating a 134k-entry Map. Input must be sorted. */
 export function dictionaryLookup(dictionary: string, word: string): number | undefined {
   let low = 0;

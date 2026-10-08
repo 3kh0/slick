@@ -4,6 +4,7 @@ import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { build, type Plugin } from 'esbuild';
 import type { ThemeJson } from '../../src/app/theme.ts';
+import { compactDictionary } from '../../src/plugins/HaikuWarning/haiku.ts';
 import { APP, ROOT, SLICK_JS, THEMES } from '../lib/paths.ts';
 import { rendererRegistryPlugin, slickSharedAlias, type RendererRegistryOptions } from '../lib/plugin.ts';
 import { versions } from '../lib/versions.ts';
@@ -19,6 +20,16 @@ export async function bundleThemes(): Promise<Record<string, ThemeJson>> {
   console.log(`[build:themes] ${files.length} themes bundled`);
   return themes;
 }
+
+const haikuDictionary: Plugin = {
+  name: 'haiku-dictionary',
+  setup(builder) {
+    builder.onLoad({ filter: /[\\/]HaikuWarning[\\/]syllable_counts\.txt$/ }, async (args) => ({
+      contents: compactDictionary(await readFile(args.path, 'utf8')),
+      loader: 'text',
+    }));
+  },
+};
 
 export type BuildAppOptions = RendererRegistryOptions & {
   debug?: boolean;
@@ -48,7 +59,12 @@ export async function buildApp({
     format: 'iife',
     target: 'es2022',
     minify: !debug,
-    plugins: [rendererRegistryPlugin({ targetLoader, pluginNames }), slickSharedAlias, ...extraPlugins],
+    plugins: [
+      rendererRegistryPlugin({ targetLoader, pluginNames }),
+      slickSharedAlias,
+      haikuDictionary,
+      ...extraPlugins,
+    ],
     // Inline assets to preserve offline use without additional requests.
     loader: { '.gif': 'dataurl', '.png': 'dataurl', '.svg': 'dataurl', '.woff2': 'dataurl', '.txt': 'text' },
     sourcemap: debug ? 'inline' : false,

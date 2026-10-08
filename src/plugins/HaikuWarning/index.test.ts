@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { test } from 'node:test';
 import { build } from 'esbuild';
-import { dictionaryLookup } from './haiku.ts';
+import { compactDictionary, dictionaryLookup, estimateSyllables } from './haiku.ts';
 
 const dictionary = await readFile(new URL('./syllable_counts.txt', import.meta.url), 'utf8');
 const bundle = await build({
@@ -25,6 +25,15 @@ test('offline dictionary matches the pinned Orpheus data', () => {
   );
   assert.equal(dictionaryLookup(dictionary, 'silence'), 2);
   assert.equal(dictionaryLookup(dictionary, 'again'), 2);
+});
+
+test('compacted dictionary gives every word the same count', () => {
+  const compact = compactDictionary(dictionary);
+  assert.ok(compact.length < dictionary.length / 5);
+  for (const line of dictionary.trimEnd().split('\n')) {
+    const word = line.slice(0, line.lastIndexOf(' '));
+    assert.equal(dictionaryLookup(compact, word) ?? estimateSyllables(word), dictionaryLookup(dictionary, word), word);
+  }
 });
 
 test('offline warning holds a haiku, permits editing and sends only after approval', async () => {
