@@ -6,6 +6,11 @@ export type AccountSummary = {
   enterpriseId?: string;
   updatedAt: number;
   label?: string;
+  /** Credential-free memberships belonging to this saved login. */
+  workspaces?: Record<
+    string,
+    { userId: string; enterpriseId?: string; name?: string; domain?: string; iconUrl?: string }
+  >;
 };
 
 export type SessionCookie = Pick<
@@ -17,4 +22,5 @@ export type StoredAccount = AccountSummary & {
   team: LocalConfigTeam;
   xoxd: string;
   sessionCookies?: SessionCookie[];
+  workspaceConfig?: import('../../app/api/accounts.ts').WorkspaceConfig;
 };

@@ -12,7 +12,7 @@ function fixture() {
     net: {
       fetch: async (url: string, init?: RequestInit) => {
         requests.push({ url, init });
-        return { status: 200, body: JSON.stringify({ ok: true, user_id: 'U123456' }) };
+        return { status: 200, body: JSON.stringify({ ok: true, user_id: 'U123456', team_id: 'T123456' }) };
       },
     },
     sessions: {
@@ -388,4 +388,248 @@ test('adding an account clears every Slack session cookie without forgetting sav
   await call('addAccount');
   assert.deepEqual(removed, ['d', 'd-s', 'uc']);
   assert.equal(((await call('list')) as unknown[]).length, 1);
+});
+
+test('saved summaries label cross-workspace accounts without exposing credentials', async () => {
+  const { call } = fixture();
+  await call('capture', teamId, { ...team, name: 'Hack Club' });
+  const [account] = (await call('list')) as Record<string, unknown>[];
+  assert.equal(account!.label, 'Hack Club · U123456');
+  assert.equal(account!.token, undefined);
+  assert.equal(account!.xoxd, undefined);
+  assert.equal(account!.team, undefined);
+});
+
+const secondTeamId = 'T654321';
+const secondTeam = { user_id: 'U654321', token: 'second-token', url: team.url };
+const workspaceSet = {
+  teams: { [teamId]: team, [secondTeamId]: secondTeam },
+  orderedTeamIds: [secondTeamId, teamId],
+  lastActiveTeamId: teamId,
+};
+function workspaceFixture() {
+  const f = fixture();
+  f.ctx.net.fetch = async (url, init) => {
+    f.requests.push({ url, init });
+    const second = String(init?.body) === 'token=second-token';
+    return {
+      status: 200,
+      body: JSON.stringify({
+        ok: true,
+        user_id: second ? secondTeam.user_id : team.user_id,
+        team_id: second ? secondTeamId : teamId,
+      }),
+    };
+  };
+  return f;
+}
+
+test('one login preserves multiple workspace member IDs, ordering and target workspace on restore', async () => {
+  const { ctx, call, requests, writes } = workspaceFixture();
+  await call('capture', teamId, team, workspaceSet);
+  const initial = (await call('list')) as { userId: string; workspaces: Record<string, { userId: string }> }[];
+  assert.equal(initial.length, 1);
+  assert.equal(initial[0]!.workspaces[secondTeamId]!.userId, secondTeam.user_id);
+  const saved = (await call('capture', secondTeamId, secondTeam, {
+    ...workspaceSet,
+    lastActiveTeamId: secondTeamId,
+  })) as { userId: string };
+  assert.equal(saved.userId, team.user_id); // stable saved login ID, not a duplicate for another workspace
+  assert.equal(((await call('list')) as unknown[]).length, 1);
+  let restored: unknown;
+  ctx.sessions.navigate = async (_sender, url, pending, mutate) => {
+    assert.equal(url, `https://app.slack.com/client/${teamId}`);
+    restored = pending;
+    await mutate();
+  };
+  await call('switchTo', saved.userId, teamId);
+  assert.deepEqual(restored, { userId: saved.userId, teamId, team, workspaceConfig: workspaceSet });
+  assert.ok(requests.every(({ init }) => new Headers(init?.headers).get('Cookie') === 'd=saved-session'));
+  assert.equal(writes.length, 1);
+  assert.equal(JSON.stringify(initial).includes('second-token'), false);
+});
+
+test('another account in the same workspace cannot inherit the first login’s other workspaces', async () => {
+  const { ctx, call } = workspaceFixture();
+  await call('capture', teamId, team, workspaceSet);
+  ctx.cookies.get = async () => ({ value: 'different-login' }) as Electron.Cookie;
+  ctx.net.fetch = async () => ({
+    status: 200,
+    body: JSON.stringify({ ok: true, user_id: 'U999999', team_id: teamId }),
+  });
+  const other = { ...team, user_id: 'U999999', token: 'other-login-token' };
+  const singleton = { teams: { [teamId]: other }, orderedTeamIds: [teamId], lastActiveTeamId: teamId };
+  await call('capture', teamId, other, singleton);
+  assert.equal(((await call('list')) as unknown[]).length, 2);
+  const handoff = (await call('switchTo', other.user_id, teamId)) as { workspaceConfig: unknown };
+  assert.deepEqual(handoff.workspaceConfig, singleton);
+  await assert.rejects(() => call('switchTo', other.user_id, secondTeamId), /does not belong/);
+});
+
+test('wrong identity, wrong workspace and missing workspace proof cannot replace a saved workspace set', async () => {
+  const { ctx, call, writes } = workspaceFixture();
+  await call('capture', teamId, team, workspaceSet);
+  const saved = await call('list');
+  for (const result of [
+    { ok: true, user_id: secondTeam.user_id, team_id: 'TWRONG00' },
+    { ok: true, user_id: 'UWRONG00', team_id: secondTeamId },
+    { ok: true, user_id: secondTeam.user_id },
+    { ok: false, error: 'token_revoked' },
+  ]) {
+    ctx.net.fetch = async (_url, init) => ({
+      status: 200,
+      body: JSON.stringify(
+        String(init?.body) === 'token=second-token' ? result : { ok: true, user_id: team.user_id, team_id: teamId },
+      ),
+    });
+    await assert.rejects(() => call('capture', teamId, team, workspaceSet), /does not match|token_revoked/);
+    await assert.rejects(() => call('switchTo', team.user_id), /does not match|token_revoked/);
+    assert.deepEqual(await call('list'), saved);
+    assert.deepEqual(writes, []);
+  }
+});
+
+test('companion fallback rechecks the entire workspace set with the saved d cookie', async () => {
+  const { ctx, call } = workspaceFixture();
+  ctx.cookies.get = async ({ name }) =>
+    ({ name, value: name === 'd' ? 'saved-session' : `saved-${name}` }) as Electron.Cookie;
+  const probes: [string, string | null][] = [];
+  ctx.net.fetch = async (_url, init) => {
+    const token = String(init?.body);
+    const cookie = new Headers(init?.headers).get('Cookie');
+    probes.push([token, cookie]);
+    const second = token === 'token=second-token';
+    return {
+      status: 200,
+      body: JSON.stringify(
+        second && cookie !== 'd=saved-session'
+          ? { ok: false, error: 'invalid_auth' }
+          : { ok: true, user_id: second ? secondTeam.user_id : team.user_id, team_id: second ? secondTeamId : teamId },
+      ),
+    };
+  };
+  await call('capture', teamId, team, workspaceSet);
+  assert.deepEqual(probes, [
+    ['token=saved-token', 'd=saved-session; d-s=saved-d-s; uc=saved-uc'],
+    ['token=second-token', 'd=saved-session; d-s=saved-d-s; uc=saved-uc'],
+    ['token=saved-token', 'd=saved-session'],
+    ['token=second-token', 'd=saved-session'],
+  ]);
+});
+
+test('configuration changes during verification leave the saved set untouched', async () => {
+  const { ctx, call } = workspaceFixture();
+  await call('capture', teamId, team, workspaceSet);
+  const saved = await call('list');
+  const sender = {
+    executeJavaScript: async () => ({ ...workspaceSet, orderedTeamIds: [teamId, secondTeamId] }),
+  } as unknown as Electron.WebContents;
+  await assert.rejects(
+    async () => plugin.rpc!.capture!(ctx, [teamId, team, workspaceSet], sender),
+    /workspace list changed/,
+  );
+  assert.deepEqual(await call('list'), saved);
+});
+
+test('native hidden-window sign-in saves the outgoing client’s full workspace set', async () => {
+  const { ctx, call } = workspaceFixture();
+  let signIn!: Parameters<MainCtx['sessions']['onSignIn']>[0];
+  ctx.cookies.onChanged = () => () => {};
+  ctx.sessions.onSignIn = (handler) => {
+    signIn = handler;
+    return () => {};
+  };
+  const client = {
+    getURL: () => `https://app.slack.com/client/${teamId}`,
+    executeJavaScript: async () => workspaceSet,
+  } as unknown as Electron.WebContents;
+  ctx.sessions.clients = () => [client];
+  const hidden = { getURL: () => '' } as unknown as Electron.WebContents;
+  ctx.sessions.navigate = async (sender, _url, _pending, mutate) => {
+    assert.equal(sender, hidden);
+    assert.equal(((await call('list')) as unknown[]).length, 1);
+    await mutate();
+  };
+  await plugin.ready!(ctx);
+  await signIn(hidden, 'https://slack.com/api/auth.loginMagic?code=private');
+  const accounts = (await call('list')) as { workspaces: object }[];
+  assert.deepEqual(Object.keys(accounts[0]!.workspaces), [teamId, secondTeamId]);
+});
+
+test('legacy single-workspace records remain switchable without copying the live workspace list', async () => {
+  const { call } = fixture();
+  await call('capture', teamId, team);
+  const handoff = (await call('switchTo', team.user_id)) as { workspaceConfig?: unknown };
+  assert.equal(handoff.workspaceConfig, undefined);
+});
+
+test('Enterprise Grid alias and concrete workspace are validated without conflating their IDs', async () => {
+  const { ctx, call } = fixture();
+  const enterpriseId = 'E123456';
+  const root = { ...team, id: enterpriseId };
+  const config = {
+    teams: { [enterpriseId]: root, [teamId]: team },
+    orderedTeamIds: [enterpriseId],
+    lastActiveTeamId: enterpriseId,
+  };
+  ctx.net.fetch = async () => ({
+    status: 200,
+    body: JSON.stringify({ ok: true, user_id: team.user_id, team_id: teamId }),
+  });
+  await call('capture', enterpriseId, root, config);
+  const handoff = (await call('switchTo', team.user_id, teamId)) as { workspaceConfig: { orderedTeamIds: string[] } };
+  assert.deepEqual(handoff.workspaceConfig.orderedTeamIds, [enterpriseId, teamId]);
+});
+
+test('capturing a legacy singleton cannot discard another saved workspace in the same cookie session', async () => {
+  const { call } = workspaceFixture();
+  await call('capture', teamId, team);
+  await call('capture', secondTeamId, secondTeam);
+  assert.equal(((await call('list')) as unknown[]).length, 1);
+  await call('capture', teamId, team, {
+    teams: { [teamId]: team },
+    orderedTeamIds: [teamId],
+    lastActiveTeamId: teamId,
+  });
+  const handoff = (await call('switchTo', team.user_id)) as { workspaceConfig: { teams: object } };
+  assert.deepEqual(Object.keys(handoff.workspaceConfig.teams), [teamId, secondTeamId]);
+});
+
+test('cookie rotation from a secondary workspace keeps one login without borrowing the old cookie', async () => {
+  const { ctx, call, requests } = workspaceFixture();
+  await call('capture', teamId, team, workspaceSet);
+  ctx.cookies.get = async () => ({ value: 'rotated-session' }) as Electron.Cookie;
+  requests.length = 0;
+  const saved = (await call('capture', secondTeamId, secondTeam, workspaceSet)) as { userId: string };
+  assert.equal(saved.userId, team.user_id);
+  assert.equal(((await call('list')) as unknown[]).length, 1);
+  assert.ok(requests.every(({ init }) => new Headers(init?.headers).get('Cookie') === 'd=rotated-session'));
+});
+
+test('unverified enterprise-only captures leave legacy credentials saved', async () => {
+  const { ctx, call } = fixture();
+  const enterpriseId = 'E123456';
+  await call('capture', enterpriseId, team);
+  const previous = await call('list');
+  const onlyEnterprise = {
+    teams: { [enterpriseId]: team },
+    orderedTeamIds: [enterpriseId],
+    lastActiveTeamId: enterpriseId,
+  };
+  await assert.rejects(() => call('capture', enterpriseId, team, onlyEnterprise), /does not match this workspace/);
+  assert.deepEqual(await call('list'), previous);
+  ctx.net.fetch = async () => ({
+    status: 200,
+    body: JSON.stringify({ ok: true, user_id: team.user_id, team_id: teamId, enterprise_id: enterpriseId }),
+  });
+  await call('capture', enterpriseId, team, onlyEnterprise);
+});
+
+test('workspace summaries include safe saved icons without sending the workspace tokens', async () => {
+  const { call } = fixture();
+  const image = 'https://avatars.slack-edge.com/workspace-icon.png';
+  await call('capture', teamId, { ...team, icon: { image_68: image } });
+  const accounts = (await call('list')) as { workspaces: Record<string, { iconUrl: string }> }[];
+  assert.equal(accounts[0]!.workspaces[teamId]!.iconUrl, image);
+  assert.equal(JSON.stringify(accounts).includes(team.token), false);
 });
