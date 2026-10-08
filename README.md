@@ -36,7 +36,7 @@ Slick runs Slack's own `app.asar` inside its own Electron (with the handy BYOE a
 | Desktop sign in with cookies | **Yes**                                   | No                                          | N/A                                      |
 | Message Logger               | **Deletions + Edit history**              | Out of scope                                | No                                       |
 | Auto updates                 | **Client and Slack update together**      | Slack version is pinned                     | Manual updating required                 |
-| Supported platforms          | All desktop platforms                     | **Desktop + Browsers**                      | Browser only                             |
+| Supported platforms          | **Desktop + Browsers**                    | **Desktop + Browsers**                      | Browser only                             |
 | Privacy                      | **Blocks all telemetry**                  | Replaces Slack's telemetry with its own     | Does not block telemetry                 |
 | Code sourcing                | **Bundled in the app**                    | Fetched from a remote server                | **Bundled in the userscript**            |
 
