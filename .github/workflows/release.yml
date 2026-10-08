@@ -255,6 +255,48 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
 
+  copr:
+    needs: [validate-tag, release]
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    env:
+      BUILD: ${{ needs.validate-tag.outputs.build }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y curl rpm pipx
+          pipx install copr-cli
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - name: Set up rpmbuild tree
+        run: mkdir -p ~/rpmbuild/{BUILD,BUILDROOT,RPMS,SOURCES,SPECS,SRPMS}
+      - name: Prepare release sources
+        run: |
+          version="2.0.$BUILD"
+          sed -i "s/^%global slick_version .*/%global slick_version $version/" packaging/copr/slick.spec
+          tarball_url="https://github.com/3kh0/slick/releases/download/v${BUILD}/Slick-${version}-linux-x64.tar.gz"
+          curl --fail --location --retry 5 --retry-delay 10 --retry-all-errors \
+            "$tarball_url" -o "$HOME/rpmbuild/SOURCES/Slick-${version}-linux-x64.tar.gz"
+      - name: Copy sources and build SRPM
+        run: |
+          cp packaging/copr/slick.spec ~/rpmbuild/SPECS/
+          cp packaging/copr/slick.desktop ~/rpmbuild/SOURCES/
+          cp packaging/flatpak/dev.slick.Slick.metainfo.xml ~/rpmbuild/SOURCES/slick.metainfo.xml
+          rpmbuild -bs ~/rpmbuild/SPECS/slick.spec
+      - name: Submit to COPR
+        run: |
+          mkdir -p ~/.config
+          cat > ~/.config/copr <<EOF
+          [copr-cli]
+          login = ${{ secrets.COPR_LOGIN }}
+          username = echolive
+          token = ${{ secrets.COPR_API_TOKEN }}
+          copr_url = https://copr.fedorainfracloud.org
+          EOF
+          srpm=$(find ~/rpmbuild/SRPMS -name '*.src.rpm' -print -quit)
+          copr-cli build echolive/slick "$srpm"
+
   chromium:
     needs: [validate-tag, release]
     runs-on: ubuntu-latest
