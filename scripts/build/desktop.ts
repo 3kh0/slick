@@ -22,13 +22,12 @@ const entries = [
 ] as const;
 
 // The Monaco 0.57 files a CSS editor actually loads; the full min/vs is ~25 MB.
+// editor.main requires every *.worker-* stub, but only fetches the css and
+// editor workers behind them, so the 8 MB ts/html/json workers are left out.
 const MONACO_CSS_FILES = [
   'assets/css.worker-BpD9FCKP.js',
   'assets/editor.worker-_vAIFJDs.js',
   'assets/editorWebWorkerMain-DEgFqX2K.js',
-  'assets/html.worker-CLuInTTy.js',
-  'assets/json.worker-Csf_TLih.js',
-  'assets/ts.worker-g3pjEjl4.js',
   'basic-languages/monaco.contribution.js',
   'css-CaeNmE3S.js',
   'css.worker-BInK4lsP.js',

@@ -8,7 +8,7 @@
 
 import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
-import { copyFile, cp, mkdir, rename, rm } from 'node:fs/promises';
+import { cp, mkdir, rename, rm, symlink } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import { Arch, archFromString, build as electronBuild, Platform } from 'electron-builder';
@@ -93,8 +93,9 @@ async function legacyArchive(platform: NodeJS.Platform, arch: string): Promise<s
 
   if (platform === 'linux') {
     // Older installs' launcher and updater exec Slick/electron after replacing
-    // the app; keep that entry point so they can migrate.
-    await copyFile(path.join(app, 'slick'), path.join(app, 'electron'));
+    // the app; keep that entry point so they can migrate. A copy doubles the
+    // tarball; every consumer extracts with tar and moves with mv or cp -a.
+    await symlink('slick', path.join(app, 'electron'));
   }
 
   const suffix = platform === 'win32' ? `win32-${arch}.zip` : `linux-${arch}.tar.gz`;
@@ -111,6 +112,14 @@ async function legacyArchive(platform: NodeJS.Platform, arch: string): Promise<s
   }
   await rm(stage, { recursive: true, force: true });
   return artifact;
+}
+
+async function recompressDmg(dmg: string) {
+  const converted = dmg.replace(/\.dmg$/, '.ulmo.dmg');
+  await rm(converted, { force: true });
+  execFileSync('/usr/bin/hdiutil', ['convert', dmg, '-format', 'ULMO', '-o', converted, '-quiet']);
+  await rename(converted, dmg);
+  await rm(`${dmg}.blockmap`, { force: true });
 }
 
 export async function packageDesktop({
@@ -139,7 +148,7 @@ export async function packageDesktop({
     selectedArch,
   );
 
-  const results = await electronBuild({
+  let results = await electronBuild({
     targets,
     config: {
       appId: 'dev.slick.byoe.handoff',
@@ -155,8 +164,7 @@ export async function packageDesktop({
       toolsets: platform === 'linux' ? { appimage: '1.0.3' } : undefined,
 
       directories: { app: DIST_DESKTOP, output: OUTPUT, buildResources: ASSETS },
-      // The staged app is already bundled; nothing else belongs in the asar.
-      files: ['**/*'],
+      files: ['**/*', '!slick.js', '!monaco{,/**}', '!node_modules{,/**}'],
       asar: true,
 
       extraResources: [
@@ -236,6 +244,8 @@ export async function packageDesktop({
     },
   });
 
+  for (const artifact of results) if (artifact.endsWith('.dmg')) await recompressDmg(artifact);
+  results = results.filter((artifact) => !artifact.endsWith('.dmg.blockmap'));
   if (platform !== 'darwin' && !dir) results.push(await legacyArchive(platform, Arch[selectedArch]));
   for (const artifact of results) console.log(`[build:package] ${path.relative(ROOT, artifact)}`);
   console.log(`[build:package] version ${versions.version} (build ${versions.build})`);
