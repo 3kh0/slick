@@ -80,7 +80,12 @@ function userOf(msg?: SlackMessage, event?: RtmEvent): string {
 
 function isDeleteEvent(event: RtmEvent): boolean {
   const message = event.message as SlackMessage | undefined;
-  return event.type === 'message_deleted' || event.subtype === 'message_deleted' || message?.subtype === 'tombstone';
+  return (
+    event.type === 'message_deleted' ||
+    event.subtype === 'message_deleted' ||
+    message?.subtype === 'tombstone' ||
+    message?.subtype === 'thread_hidden'
+  );
 }
 
 function isChangeEvent(event: RtmEvent): boolean {
@@ -89,7 +94,8 @@ function isChangeEvent(event: RtmEvent): boolean {
 
 function asInjected(previous: SlackMessage, channel: string, ts: string): SlackMessage {
   const message: SlackMessage = { ...previous, channel, ts };
-  if (message.subtype === 'tombstone' || message.subtype === 'message_deleted') delete message.subtype;
+  if (message.subtype === 'tombstone' || message.subtype === 'message_deleted' || message.subtype === 'thread_hidden')
+    delete message.subtype;
   delete message.hidden;
   return trim(message);
 }
@@ -291,8 +297,9 @@ export default class MessageLogger extends SlickPlugin<typeof meta.settings> {
 
   private recordDelete(event: RtmEvent) {
     const previous = this.previousOf(event);
-    const channel = channelOf(event, previous);
-    const ts = tsOf(event, previous);
+    const next = event.message as SlackMessage | undefined;
+    const channel = channelOf(event, next ?? previous);
+    const ts = tsOf(event, next ?? previous);
     if (!channel || !ts) return;
     const original = this.original(event, channel, ts);
     const user = userOf(original ?? previous, event);

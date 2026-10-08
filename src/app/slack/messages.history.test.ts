@@ -60,3 +60,24 @@ test('withTimestamps: returns the original slices when nothing is missing', () =
   const next = withTimestamps({ slices }, ['1.000001']);
   assert.equal(next, slices);
 });
+
+test('withTimestamps: removes hidden reply timestamps already present in channel history', () => {
+  const messages: HistoryMessage[] = [
+    { ts: '1', thread_ts: '1' },
+    { ts: '2', thread_ts: '1' },
+    { ts: '3', thread_ts: '1', subtype: 'thread_broadcast' },
+    { ts: '4', thread_ts: '9' },
+  ];
+  const history = { slices: [{ timestamps: ['1', '2', '3', '4', '5'] }] };
+  const select = (thread: string | undefined) =>
+    withTimestamps(
+      history,
+      messages.filter((msg) => inHistory(msg, thread)).map((msg) => msg.ts!),
+      messages.filter((msg) => !inHistory(msg, thread)).map((msg) => msg.ts!),
+    );
+  assert.deepEqual(select(undefined)[0].timestamps, ['1', '3', '5']);
+  assert.deepEqual(select('1')[0].timestamps, ['1', '2', '3', '5']);
+  assert.deepEqual(history.slices[0].timestamps, ['1', '2', '3', '4', '5']);
+  assert.deepEqual(withTimestamps(history, [], ['2', '4'])[0].timestamps, ['1', '3', '5']);
+  assert.equal(withTimestamps(history, [], ['absent']), history.slices);
+});

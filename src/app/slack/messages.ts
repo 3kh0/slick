@@ -188,9 +188,10 @@ export function injectMessages(getMessages: () => Iterable<SlackMessage>): () =>
       return entry;
     }
     const thread = historyKeyThread(key);
-    const added = [...injected.values()].filter((msg) => inHistory(msg, thread)).map((msg) => msg.ts as string);
-    if (!added.length) return entry;
-    const next = withTimestamps(entry, added);
+    const added: string[] = [];
+    const excluded: string[] = [];
+    for (const msg of injected.values()) (inHistory(msg, thread) ? added : excluded).push(msg.ts as string);
+    const next = withTimestamps(entry, added, excluded);
     diagnoseHistory(entry, added, next);
     return next === entry.slices ? entry : { ...entry, slices: next };
   });

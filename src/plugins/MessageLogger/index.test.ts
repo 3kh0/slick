@@ -232,3 +232,97 @@ test('edit exclusions match sender IDs across message payloads and leave deletes
   assert.equal(values.get('entry:C:app').edits.length, 1);
   assert.equal(values.get('entry:C:app').deleted, true);
 });
+
+test('admin-hidden threads restore parent and replies as deletions, not edits', async (t) => {
+  const previousReact = Object.getOwnPropertyDescriptor(globalThis, 'React');
+  Object.defineProperty(globalThis, 'React', { configurable: true, value: { createContext: () => ({}) } });
+  t.after(() => {
+    if (previousReact) Object.defineProperty(globalThis, 'React', previousReact);
+    else Reflect.deleteProperty(globalThis, 'React');
+  });
+  const values = new Map<string, any>();
+  const config = {
+    saveImages: false,
+    retentionDays: 30,
+    ignoreSelf: false,
+    ignoreAnchors: 'off',
+    ignoreEditsFrom: 'UREVOKEDU',
+  };
+  const plugin = new MessageLogger(
+    {
+      storage: {
+        async set(key: string, value: unknown) {
+          values.set(key, value);
+          return true;
+        },
+        async delete(key: string) {
+          return values.delete(key);
+        },
+      },
+      messages: { getRawMessage() {} },
+      redux: { getRawState: () => ({ bootData: { user_id: 'ME' } }), refresh() {} },
+    },
+    config,
+  );
+  t.after(() => plugin.stop());
+  const originals = [
+    { channel: 'C', ts: '1', user: 'U', text: 'parent', reply_count: 1 },
+    { channel: 'C', ts: '2', user: 'U', text: 'reply', thread_ts: '1' },
+  ];
+  for (const original of originals) {
+    plugin.remember(original);
+    const event = {
+      type: 'message',
+      subtype: 'message_changed',
+      channel: 'C',
+      previous_message: original,
+      message: {
+        ts: original.ts,
+        user: 'UREVOKEDU',
+        subtype: 'thread_hidden',
+        text: 'This thread has been removed by an admin.',
+      },
+    };
+    plugin.record(event);
+    plugin.record(event);
+  }
+  plugin.flush();
+  await drain();
+  for (const original of originals) {
+    const entry = values.get(`entry:C:${original.ts}`);
+    assert.equal(entry.deleted, true);
+    assert.equal(entry.user, 'U');
+    assert.equal(entry.edits, undefined);
+    assert.deepEqual(entry.message, original);
+  }
+  assert.deepEqual(plugin.injectable(), originals);
+  assert.deepEqual(plugin.loggedThread('C', '1'), originals);
+
+  // Detection uses Slack's subtype, not localized notice text or the revoked user alone.
+  plugin.record({
+    type: 'message',
+    subtype: 'message_changed',
+    channel: 'C',
+    previous_message: { ts: '3', user: 'U', text: 'before' },
+    message: { ts: '3', user: 'U', text: 'This thread has been removed by an admin.' },
+  });
+  assert.equal(plugin.entries.get('C:3').deleted, undefined);
+  config.ignoreSelf = true;
+  plugin.record({
+    type: 'message',
+    subtype: 'message_changed',
+    channel: 'C',
+    previous_message: { ts: '4', user: 'ME', text: 'own message' },
+    message: { ts: '4', user: 'UREVOKEDU', subtype: 'thread_hidden', text: 'removed' },
+  });
+  assert.equal(plugin.entries.has('C:4'), false);
+  // Without previous_message, the recent RTM cache still supplies the original.
+  plugin.remember({ channel: 'C', ts: '5', user: 'U', text: 'cached reply', thread_ts: '1' });
+  plugin.record({
+    type: 'message',
+    subtype: 'message_changed',
+    channel: 'C',
+    message: { ts: '5', user: 'UREVOKEDU', subtype: 'thread_hidden', text: 'removed' },
+  });
+  assert.equal(plugin.entries.get('C:5').message.text, 'cached reply');
+});

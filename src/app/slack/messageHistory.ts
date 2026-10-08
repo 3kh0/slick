@@ -41,17 +41,18 @@ export function sliceCovers(history: ChannelHistory, slice: HistorySlice, positi
   );
 }
 
-export function withTimestamps(history: ChannelHistory, added: string[]): HistorySlice[] {
+export function withTimestamps(history: ChannelHistory, added: string[], excluded: string[] = []): HistorySlice[] {
   const slices = history.slices ?? [];
   let changed = false;
   const next = slices.map((slice, position) => {
     const { timestamps } = slice;
     if (!Array.isArray(timestamps)) return slice;
-    const missing = added.filter((ts) => sliceCovers(history, slice, position, ts) && !timestamps.includes(ts));
-    if (!missing.length) return slice;
+    const kept = timestamps.filter((ts) => !excluded.includes(ts));
+    const missing = added.filter((ts) => sliceCovers(history, slice, position, ts) && !kept.includes(ts));
+    if (!missing.length && kept.length === timestamps.length) return slice;
     changed = true;
     // Slack timestamps are fixed-width, so they sort as plain strings.
-    return { ...slice, timestamps: [...timestamps, ...missing].toSorted() };
+    return { ...slice, timestamps: [...kept, ...missing].toSorted() };
   });
   return changed ? next : slices;
 }
