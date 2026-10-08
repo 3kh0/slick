@@ -316,6 +316,18 @@ function createCtx(plugin: SlickMainPlugin, entry: () => Registered): MainCtx {
     },
 
     sessions: {
+      clients(sender) {
+        need('cookies');
+        if (sender.session !== session.defaultSession) throw new Error('Account switching requires the Slack session.');
+        return webContents
+          .getAllWebContents()
+          .filter(
+            (contents) =>
+              !contents.isDestroyed() &&
+              contents.session === sender.session &&
+              /^https:\/\/app\.slack\.com\/client(?:\/|$)/.test(contents.getURL()),
+          );
+      },
       navigate(sender, url, pending, mutate, options) {
         need('cookies');
         if (sender.session !== session.defaultSession) throw new Error('Account switching requires the Slack session.');

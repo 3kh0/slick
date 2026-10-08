@@ -102,6 +102,8 @@ export interface MainCtx {
   };
 
   sessions: {
+    /** Live Slack clients sharing the sender's cookie jar (including native auth senders). */
+    clients?(sender: Electron.WebContents): Electron.WebContents[];
     navigate(
       sender: Electron.WebContents,
       url: string,
