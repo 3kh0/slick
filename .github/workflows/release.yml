@@ -8,6 +8,10 @@ permissions:
   contents: read
   issues: write
 
+env:
+  # Packaging downloads target Electron archives; no job launches node_modules/electron.
+  ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+
 jobs:
   validate-tag:
     runs-on: ubuntu-latest
@@ -109,6 +113,7 @@ jobs:
             dist/release/Slick-*.dmg
           if-no-files-found: error
           retention-days: 1
+          compression-level: 0
 
   build-win:
     needs: [validate-tag, electron-compatible]
@@ -124,6 +129,13 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: oven-sh/setup-bun@v2
+      - name: Cache Windows dependency downloads
+        uses: actions/cache@v6
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('bun.lock') }}
+          restore-keys: |
+            bun-${{ runner.os }}-${{ runner.arch }}-
       - run: bun install --frozen-lockfile
       - name: Build release artifact
         run: bun run build -- package --arch "${{ matrix.arch }}"
@@ -140,6 +152,7 @@ jobs:
           path: dist/release/Slick-*-win32-*.zip
           if-no-files-found: error
           retention-days: 1
+          compression-level: 0
 
   build-linux:
     needs: [validate-tag, electron-compatible]
@@ -181,6 +194,7 @@ jobs:
             dist/release/slick-*.rpm
           if-no-files-found: error
           retention-days: 1
+          compression-level: 0
 
   release:
     needs: [validate-tag, build-mac, build-win, build-linux]
@@ -191,6 +205,7 @@ jobs:
       - name: Download artifacts
         uses: actions/download-artifact@v8
         with:
+          pattern: slick-*
           path: dist
           merge-multiple: true
       - name: Create release
@@ -275,11 +290,12 @@ jobs:
           git push origin HEAD:main
 
   firefox:
-    needs: [validate-tag, release]
+    # AMO signing can take several minutes; overlap it with desktop packaging.
+    needs: [validate-tag, electron-compatible]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
-      contents: write
+      contents: read
       id-token: write
       attestations: write
     env:
@@ -318,6 +334,28 @@ jobs:
         uses: actions/attest@v4.2.2
         with:
           subject-path: dist/release/slick-firefox-*.xpi
+      - name: Upload signed extension
+        uses: actions/upload-artifact@v7
+        with:
+          name: firefox-signed
+          path: |
+            dist/release/slick-firefox-*.xpi
+            dist/release/slick-firefox-*-source.zip
+            dist/release/updates.json
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 0
+
+  firefox-publish:
+    needs: [release, firefox]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: firefox-signed
+          path: dist/release
       - name: Attach to release
         run: gh release upload "$GITHUB_REF_NAME" dist/release/slick-firefox-*.xpi dist/release/slick-firefox-*-source.zip dist/release/updates.json --clobber
         env:

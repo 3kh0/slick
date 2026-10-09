@@ -25,6 +25,8 @@ jobs:
       matrix:
         arch: [x86_64, aarch64]
     env:
+      # The manifest supplies Electron; only JavaScript build tools are needed here.
+      ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
       FLATPAK_BUILD_DIR: /tmp/slick-flatpak-build
       FLATPAK_REPO: /tmp/slick-flatpak-repo
       RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
@@ -79,6 +81,7 @@ jobs:
           path: /tmp/slick-${{ matrix.arch }}.flatpak
           if-no-files-found: error
           retention-days: 1
+          compression-level: 0
 
   publish:
     needs: build
