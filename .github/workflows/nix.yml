@@ -11,6 +11,8 @@ on:
       - flake.nix
       - flake.lock
       - packaging/nix/**
+      # The sync PR has already built these pins; merging it needs no second sync.
+      - '!packaging/nix/pins.json'
   workflow_run:
     workflows: [Release]
     types: [completed]
