@@ -62,13 +62,13 @@ modules:
         path: ../..
         dest: slick
       - type: archive
-        url: https://github.com/electron/electron/releases/download/v44.2.0/electron-v44.2.0-linux-x64.zip
-        sha256: 574f7d8cd2a82d77812849729a282b86639b050de120d58b138a126d16b48692
+        url: https://github.com/electron/electron/releases/download/v44.4.5/electron-v44.4.5-linux-x64.zip
+        sha256: 04586a0ec46c3283fbdaef85530f561f71f0b5e136ad0cb9ef63683615609780
         dest: electron
         only-arches: [x86_64]
       - type: archive
-        url: https://github.com/electron/electron/releases/download/v44.2.0/electron-v44.2.0-linux-arm64.zip
-        sha256: 8693fd67332d417775dc2ffc470f4c05eda9d0ed1ac329e4866e108afaa4ddda
+        url: https://github.com/electron/electron/releases/download/v44.4.5/electron-v44.4.5-linux-arm64.zip
+        sha256: 3bf0acab49c4ea3c9283cdb86bf3dd7204bd52a6fba6c8ae51101bdba2adae0e
         dest: electron
         only-arches: [aarch64]
       - type: file
