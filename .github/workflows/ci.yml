@@ -13,7 +13,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
+  ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
 
 jobs:
   check:
@@ -23,19 +23,19 @@ jobs:
       fail-fast: false
       matrix:
         check:
-          - "fmt:check"
+          - 'fmt:check'
           - lint
-          - "lint:sh"
+          - 'lint:sh'
           - typecheck
-          - "test:app"
-          - "test:extension"
-          - "test:userscript"
+          - 'test:app'
+          - 'test:extension'
+          - 'test:userscript'
     steps:
       - uses: actions/checkout@v7
       - uses: oven-sh/setup-bun@v2
       - run: bun install --frozen-lockfile
         env:
-          ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
+          ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
       - run: bun run ${{ matrix.check }}
 
   build:
@@ -48,7 +48,7 @@ jobs:
       - uses: oven-sh/setup-bun@v2
       - run: bun install --frozen-lockfile
         env:
-          ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
+          ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
       - run: bun run build
 
   extension:
@@ -61,7 +61,7 @@ jobs:
       - uses: oven-sh/setup-bun@v2
       - run: bun install --frozen-lockfile
         env:
-          ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
+          ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
       - run: bun run build -- firefox chromium userscript
       - run: bun run extension:lint
       - run: bun run extension:validate
@@ -104,6 +104,6 @@ jobs:
       - run: bun install --frozen-lockfile
       - run: bun run build -- package --arch ${{ matrix.arch }}
         env:
-          SLICK_BUILD: "86"
+          SLICK_BUILD: '86'
           # Exercise every package format without spending time on release compression.
-          SLICK_FAST_PACKAGE: "1"
+          SLICK_FAST_PACKAGE: '1'
