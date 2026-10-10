@@ -171,27 +171,6 @@ void (async () => {
     openFile: (title: string, accept?: string) => call('openFile', [title, accept]),
     openCssEditor: () => call('openCssEditor'),
 
-    // The id is a convention, not a trust boundary; main enforces enablement.
-    plugin: (id: string) => ({
-      call: (method: string, ...args: unknown[]) => ipcRenderer.invoke('slick:plugin-rpc', id, method, args),
-      on(event: string, cb: (payload: unknown) => void) {
-        const handler = (_: unknown, forId: string, name: string, payload: unknown) => {
-          if (forId === id && name === event) cb(payload);
-        };
-        ipcRenderer.on('slick:plugin-event', handler);
-        return () => ipcRenderer.removeListener('slick:plugin-event', handler);
-      },
-    }),
-
-    blobStore: (namespace: string) => ({
-      list: () => call('blobList', [namespace]),
-      read: (key: string) => call('blobRead', [namespace, key]),
-      readAll: (prefix?: string) => call('blobReadAll', [namespace, prefix ?? '']),
-      write: (key: string, value: string) => call('blobWrite', [namespace, key, value]),
-      delete: (key: string) => call('blobDelete', [namespace, key]),
-      clear: () => call('blobClear', [namespace]),
-    }),
-
     // contextBridge structure-clones, so only serializable RequestInit parts pass.
     fetch: (url: string, init?: RequestInit) => {
       const serial: Record<string, unknown> = {};

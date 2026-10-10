@@ -5,6 +5,7 @@ import path from 'node:path';
 import { build, type Plugin } from 'esbuild';
 import type { ThemeJson } from '../../src/app/theme.ts';
 import { compactDictionary } from '../../src/plugins/HaikuWarning/haiku.ts';
+import { packDictionary } from '../../src/plugins/HaikuWarning/dictionary.ts';
 import { APP, ROOT, SLICK_JS, THEMES } from '../lib/paths.ts';
 import { rendererRegistryPlugin, slickSharedAlias, type RendererRegistryOptions } from '../lib/plugin.ts';
 import { versions } from '../lib/versions.ts';
@@ -21,15 +22,17 @@ export async function bundleThemes(): Promise<Record<string, ThemeJson>> {
   return themes;
 }
 
-const haikuDictionary: Plugin = {
+const haikuDictionary = (compressed: boolean): Plugin => ({
   name: 'haiku-dictionary',
   setup(builder) {
     builder.onLoad({ filter: /[\\/]HaikuWarning[\\/]syllable_counts\.txt$/ }, async (args) => ({
-      contents: compactDictionary(await readFile(args.path, 'utf8')),
+      contents: compressed
+        ? packDictionary(compactDictionary(await readFile(args.path, 'utf8')))
+        : compactDictionary(await readFile(args.path, 'utf8')),
       loader: 'text',
     }));
   },
-};
+});
 
 export type BuildAppOptions = RendererRegistryOptions & {
   debug?: boolean;
@@ -37,6 +40,8 @@ export type BuildAppOptions = RendererRegistryOptions & {
   /** Paths are resolved relative to the repository root. */
   entryPoint?: string;
   outFile?: string;
+  /** Benchmark the embedded asset against its uncompressed representation. */
+  compressDictionary?: boolean;
 };
 
 export async function buildApp({
@@ -46,6 +51,7 @@ export async function buildApp({
   outFile = SLICK_JS,
   targetLoader = 'electron',
   pluginNames,
+  compressDictionary = true,
 }: BuildAppOptions = {}) {
   const themes = await bundleThemes();
   const output = path.resolve(ROOT, outFile);
@@ -62,7 +68,7 @@ export async function buildApp({
     plugins: [
       rendererRegistryPlugin({ targetLoader, pluginNames }),
       slickSharedAlias,
-      haikuDictionary,
+      haikuDictionary(compressDictionary),
       ...extraPlugins,
     ],
     // Inline assets to preserve offline use without additional requests.

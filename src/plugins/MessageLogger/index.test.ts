@@ -12,6 +12,48 @@ const bundle = await build({
 const { default: MessageLogger } = await import(
   `data:text/javascript;base64,${Buffer.from(bundle.outputFiles[0]!.text).toString('base64')}`
 );
+
+test('failed persistence retains dirty entries and retries the latest value', async (t) => {
+  const previous = Object.getOwnPropertyDescriptor(globalThis, 'React');
+  Object.defineProperty(globalThis, 'React', { configurable: true, value: { createContext: () => ({}) } });
+  const controller = new AbortController();
+  const persisted = new Map<string, unknown>();
+  const batches: [string, unknown][][] = [];
+  let calls = 0;
+  const plugin = new MessageLogger(
+    {
+      signal: controller.signal,
+      storage: {
+        async batch(changes: [string, unknown][]) {
+          batches.push(changes);
+          if (++calls === 1) return false;
+          for (const [key, value] of changes) persisted.set(key, value);
+          return true;
+        },
+      },
+    },
+    { saveImages: false },
+  );
+  t.after(() => {
+    controller.abort();
+    plugin.stop();
+    if (previous) Object.defineProperty(globalThis, 'React', previous);
+    else Reflect.deleteProperty(globalThis, 'React');
+  });
+  plugin.entries.set('C:1', { at: 1, text: 'old' });
+  plugin.dirty.add('C:1');
+  plugin.flush();
+  await plugin.writes;
+  assert.equal(plugin.dirty.has('C:1'), true);
+  plugin.entries.set('C:1', { at: 2, text: 'latest' });
+  plugin.dirty.add('C:evicted');
+  plugin.flush();
+  await plugin.writes;
+  assert.equal(calls, 2);
+  assert.deepEqual(batches[1][0], ['entry:C:evicted', null]);
+  assert.deepEqual(persisted.get('entry:C:1'), { at: 2, text: 'latest' });
+  assert.equal(plugin.dirty.size, 0);
+});
 const data = 'data:image/png;base64,aGVsbG8=';
 async function drain() {
   for (let i = 0; i < 40; i++) await Promise.resolve();
@@ -34,6 +76,13 @@ test('RTM deletes restore previews in the file slot after restart and remove the
   });
   const values = new Map<string, unknown>();
   const store = {
+    async batch(changes: [string, unknown | null][]) {
+      for (const [key, value] of changes) {
+        if (value === null) values.delete(key);
+        else values.set(key, value);
+      }
+      return true;
+    },
     async entries(prefix: string) {
       return new Map([...values].filter(([key]) => key.startsWith(prefix)));
     },
@@ -169,6 +218,13 @@ test('edit exclusions match sender IDs across message payloads and leave deletes
   const plugin = new MessageLogger(
     {
       storage: {
+        async batch(changes: [string, unknown | null][]) {
+          for (const [key, value] of changes) {
+            if (value === null) values.delete(key);
+            else values.set(key, value);
+          }
+          return true;
+        },
         async set(key: string, value: unknown) {
           values.set(key, value);
           return true;
@@ -251,6 +307,13 @@ test('admin-hidden threads restore parent and replies as deletions, not edits', 
   const plugin = new MessageLogger(
     {
       storage: {
+        async batch(changes: [string, unknown | null][]) {
+          for (const [key, value] of changes) {
+            if (value === null) values.delete(key);
+            else values.set(key, value);
+          }
+          return true;
+        },
         async set(key: string, value: unknown) {
           values.set(key, value);
           return true;

@@ -482,27 +482,6 @@ function reconcile(entry: Registered): Promise<void> {
   return entry.queue;
 }
 
-export function updateSettings(stored: { enabled?: boolean; plugins?: Record<string, Record<string, unknown>> }) {
-  const previousGlobal = globallyEnabled;
-  globallyEnabled = stored.enabled !== false;
-  for (const entry of registered.values()) {
-    const wasActive = previousGlobal && entry.settings.enabled === true;
-    entry.settings = resolveSettings(entry.schema, entry.defaultEnabled, stored.plugins?.[entry.plugin.id]);
-    const active = isActive(entry);
-    if (booted && wasActive !== active) {
-      void reconcile(entry);
-    } else if (active) {
-      for (const listener of entry.settingsListeners) {
-        try {
-          listener(entry.settings);
-        } catch (error) {
-          console.error(`[slick] ${entry.plugin.id} settings listener threw:`, error);
-        }
-      }
-    }
-  }
-}
-
 export function setupPluginRpc() {
   const preloadEvents = new Set([
     'preload.start',
@@ -533,16 +512,4 @@ export function setupPluginRpc() {
 
     return rpc[method](entry.ctx, args, event.sender);
   });
-}
-
-export function setupBlobRpc() {
-  const methods: Record<string, (args: any[]) => unknown> = {
-    blobList: ([namespace]) => blobStore.list(String(namespace)),
-    blobRead: ([namespace, key]) => blobStore.read(String(namespace), String(key)),
-    blobReadAll: ([namespace, prefix]) => blobStore.readAll(String(namespace), prefix ? String(prefix) : ''),
-    blobWrite: ([namespace, key, value]) => blobStore.write(String(namespace), String(key), String(value)),
-    blobDelete: ([namespace, key]) => blobStore.remove(String(namespace), String(key)),
-    blobClear: ([namespace]) => blobStore.clear(String(namespace)),
-  };
-  return methods;
 }

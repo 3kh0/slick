@@ -96,17 +96,6 @@ test('logging plugins get a larger quota; others keep the small one', async () =
   await call(store, 'blob.delete', 'plugin:Censorship', 'k');
   for (let i = 0; i < 8; i++) await call(store, 'blob.write', 'plugin:Censorship', `k${i}`, 'y'.repeat(MAX_BLOB));
   await assert.rejects(call(store, 'blob.write', 'plugin:Censorship', 'k8', 'y'));
-});
-
-test('list and readAll page through a namespace larger than one response', async () => {
-  const backend = memoryBackend();
-  const store = createStorage(memoryStorage(), backend);
-  const ns = 'plugin:MessageLogger';
-  for (let i = 0; i < PAGE_KEYS + 40; i++)
-    await call(store, 'blob.write', ns, `entry:${String(i).padStart(4, '0')}`, 'e');
-  for (let i = 0; i < 6; i++) await call(store, 'blob.write', ns, `entry:big${i}`, 'b'.repeat(100_000));
-  await call(store, 'blob.write', ns, 'legacy', '{}');
-  await call(store, 'blob.write', ns, '__proto__', 'p');
 
   const first = (await call(store, 'blob.readAll', ns, 'entry:', '')) as Record<string, string>;
   assert.equal(Object.keys(first).length, PAGE_KEYS);
@@ -134,6 +123,15 @@ test('list and readAll page through a namespace larger than one response', async
   assert.equal((await blob.readAll()).__proto__, 'p');
   assert.equal(Object.hasOwn(await blob.readAll(), '__proto__'), true);
   assert.equal((await blob.list()).length, PAGE_KEYS + 48);
+  assert.equal(
+    await blob.mutate([
+      ['batch:key', 'value'],
+      ['entry:0000', null],
+    ]),
+    true,
+  );
+  assert.equal(await blob.read('batch:key'), 'value');
+  assert.equal(await blob.read('entry:0000'), null);
 });
 
 test('blobs move out of storage.local on first use, without clobbering newer records', async () => {
@@ -146,4 +144,42 @@ test('blobs move out of storage.local on first use, without clobbering newer rec
   assert.equal(await call(store, 'blob.read', 'plugin:LastSeen', 'cache:x'), 'new');
   assert.equal(BLOB_PREFIX + 'plugin:LastSeen' in area.data, false);
   assert.deepEqual(await call(store, 'blob.list', 'plugin:LastSeen', ''), ['cache:x', 'observed']);
+});
+
+test('batch updates validate envelopes and roll back quota failures as a unit', async () => {
+  const backend = memoryBackend();
+  const store = createStorage(memoryStorage(), backend);
+  const ns = 'plugin:Censorship';
+  const batch = (changes: unknown) => call(store, 'blob.mutate', ns, JSON.stringify(changes));
+  assert.equal(
+    await batch([
+      ['__proto__', 'safe'],
+      ['a', 'first'],
+      ['a', 'last'],
+    ]),
+    true,
+  );
+  assert.equal(await call(store, 'blob.read', ns, 'a'), 'last');
+  assert.equal(await call(store, 'blob.read', ns, '__proto__'), 'safe');
+  const before = new Map(backend.data.get(ns));
+  await assert.rejects(batch([['a', 'bad'], ...Array.from({ length: MAX_KEYS }, (_, i) => [`k${i}`, 'v'])]));
+  assert.deepEqual(backend.data.get(ns), before);
+  await assert.rejects(
+    batch([
+      ['a', 'bad'],
+      ['large', 'x'.repeat(MAX_BLOB + 1)],
+    ]),
+  );
+  assert.deepEqual(backend.data.get(ns), before);
+  assert.equal(
+    await batch([
+      ['a', null],
+      ['__proto__', null],
+      ['b', 'new'],
+    ]),
+    true,
+  );
+  assert.deepEqual([...backend.data.get(ns)!], [['b', 'new']]);
+  for (const bad of [[], [['', 'v']], [['a', 1]], [['a']], [['a', 'v', 'extra']]]) await assert.rejects(batch(bad));
+  assert.equal((await store.dispatch({ method: 'blob.mutate', args: [ns, 'x'.repeat(MAX_TEXT + 1)] })).ok, false);
 });

@@ -1,4 +1,5 @@
 // Durable, plugin-scoped JSON storage backed by the main process.
+import { blobBatches, BATCH_TEXT, type BlobChange } from '../../shared/blobBatch.ts';
 
 export type BlobStore = {
   list(): Promise<string[]>;
@@ -6,6 +7,8 @@ export type BlobStore = {
   /** Every value whose key starts with `prefix`, in one round trip. */
   readAll(prefix?: string): Promise<Record<string, string>>;
   write(key: string, value: string): Promise<boolean>;
+  /** Ordered updates; null deletes. Optional for older loaders. */
+  mutate?(changes: BlobChange[]): Promise<boolean>;
   delete(key: string): Promise<boolean>;
   clear(): Promise<boolean>;
 };
@@ -59,6 +62,32 @@ export class ScopedStorage {
     return this.blob.delete(key).catch(() => false);
   }
 
+  /** Serialize before awaiting so callers can safely mutate their live entries. */
+  async batch(changes: Iterable<[string, unknown | null]>): Promise<boolean> {
+    const encoded: BlobChange[] = [];
+    try {
+      for (const [key, value] of changes) {
+        const text = value === null ? null : JSON.stringify(value);
+        if (text === undefined) return false;
+        encoded.push([key, text]);
+      }
+    } catch {
+      return false;
+    }
+    for (const chunk of blobBatches(encoded)) {
+      // A valid individual value can exceed the batch envelope after escaping.
+      if (this.blob.mutate && JSON.stringify(chunk).length <= BATCH_TEXT) {
+        if (!(await this.blob.mutate(chunk).catch(() => false))) return false;
+      } else {
+        for (const [key, value] of chunk) {
+          const ok = await (value === null ? this.blob.delete(key) : this.blob.write(key, value)).catch(() => false);
+          if (!ok) return false;
+        }
+      }
+    }
+    return true;
+  }
+
   clear(): Promise<boolean> {
     return this.blob.clear().catch(() => false);
   }
@@ -110,10 +139,12 @@ export class Cache<T> {
     const prefix = `cache:${this.name}:`;
     const stored = await this.storage.entries<{ expires?: number } | null>(prefix);
     const now = Date.now();
+    const expired: [string, null][] = [];
     for (const [key, entry] of stored) {
       if (entry && typeof entry.expires === 'number' && entry.expires > now) continue;
-      void this.storage.delete(key);
+      expired.push([key, null]);
     }
+    if (!(await this.storage.batch(expired))) throw new Error('could not remove expired entries');
   }
 
   private sweepOnce() {

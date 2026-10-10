@@ -4,22 +4,12 @@
 
 import { MAX_TEXT, PAGE_KEYS, blobLimits, record } from './rpc.ts';
 import type { Request, StorageArea } from './rpc.ts';
+import { parseBlobBatch, type BlobChange } from '../shared/blobBatch.ts';
 
 /** Where blobs lived before IndexedDB; moved over on first use of each namespace. */
 export const BLOB_PREFIX = 'slick:firefox:blobs:';
 
 export type Usage = { keys: number; bytes: number };
-
-export type BlobBackend = {
-  get(ns: string, key: string): Promise<string | undefined>;
-  // Also keeps the namespace's usage in step, atomically.
-  put(ns: string, key: string, value: string): Promise<void>;
-  delete(ns: string, key: string): Promise<void>;
-  clear(ns: string): Promise<void>;
-  usage(ns: string): Promise<Usage>;
-  // Up to `count` entries of `ns` in key order, starting at `from` (or just after it).
-  range(ns: string, from: string, exclusive: boolean, count: number): Promise<[string, string][]>;
-};
 
 const DB_NAME = 'slick';
 const BLOBS = 'blobs';
@@ -100,6 +90,27 @@ export function indexedDbBackend(factory?: IDBFactory): BlobBackend {
     });
 
   return {
+    mutate: (ns, changes, limits) =>
+      transact('readwrite', async (blobs, usage) => {
+        const entries = [...new Map(changes)];
+        // Queue all requests while the transaction is active, before awaiting.
+        const prior = entries.map(([key]) => done(blobs.get([ns, key])));
+        const next = await readUsage(usage, ns);
+        const values = await Promise.all(prior);
+        entries.forEach(([, value], index) => {
+          const old = values[index];
+          const had = typeof old === 'string';
+          if (value !== null && value.length > limits.value) throw new Error('Blob quota exceeded');
+          next.keys += (value === null ? 0 : 1) - (had ? 1 : 0);
+          next.bytes += (value?.length ?? 0) - (had ? old.length : 0);
+        });
+        if (next.keys > limits.keys || next.bytes > limits.bytes) throw new Error('Blob quota exceeded');
+        for (const [key, value] of entries) {
+          if (value === null) blobs.delete([ns, key]);
+          else blobs.put(value, [ns, key]);
+        }
+        usage.put(next, ns);
+      }),
     get: (ns, key) =>
       transact('readonly', async (blobs) => {
         const value: unknown = await done(blobs.get([ns, key]));
@@ -131,6 +142,19 @@ export function memoryBackend(): BlobBackend & { data: Map<string, Map<string, s
   const space = (ns: string) => data.get(ns) ?? data.set(ns, new Map()).get(ns)!;
   return {
     data,
+    mutate: async (ns, changes, limits) => {
+      const next = new Map(data.get(ns));
+      for (const [key, value] of changes) {
+        if (value === null) next.delete(key);
+        else {
+          if (value.length > limits.value) throw new Error('Blob quota exceeded');
+          next.set(key, value);
+        }
+      }
+      if (next.size > limits.keys || [...next.values()].reduce((sum, value) => sum + value.length, 0) > limits.bytes)
+        throw new Error('Blob quota exceeded');
+      data.set(ns, next);
+    },
     get: async (ns, key) => data.get(ns)?.get(key),
     put: async (ns, key, value) => void space(ns).set(key, value),
     delete: async (ns, key) => void data.get(ns)?.delete(key),
@@ -199,14 +223,13 @@ export function createBlobs(area: StorageArea, backend: BlobBackend) {
         // fromEntries defines own properties, so a "__proto__" key stays data.
         return Object.fromEntries(await readPage(ns, a[1], a[2]));
       case 'blob.write': {
-        const limits = blobLimits(ns);
-        const usage = await backend.usage(ns);
-        const prior = await backend.get(ns, a[1]);
-        const keys = usage.keys + (prior === undefined ? 1 : 0);
-        const bytes = usage.bytes - (prior?.length ?? 0) + a[2].length;
-        if (a[2].length > limits.value || keys > limits.keys || bytes > limits.bytes)
-          throw new Error('Blob quota exceeded');
-        await backend.put(ns, a[1], a[2]);
+        await backend.mutate(ns, [[a[1], a[2]]], blobLimits(ns));
+        return true;
+      }
+      case 'blob.mutate': {
+        const changes = parseBlobBatch(a[1]);
+        if (!changes) throw new Error('Invalid batch');
+        await backend.mutate(ns, changes, blobLimits(ns));
         return true;
       }
       case 'blob.delete':

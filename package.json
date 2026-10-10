@@ -13,6 +13,8 @@
     "check:electron": "node scripts/ci/electron-watch.cjs",
     "check": "npm run fmt:check && npm run lint && npm run lint:sh && npm run typecheck && npm test",
     "build": "node scripts/build.ts",
+    "bench:performance": "node scripts/benchmark-performance.ts",
+    "bench:storage:browser": "node scripts/benchmark-storage-browser.ts",
     "desktop:dev": "node scripts/desktop.ts",
     "test:extension": "node --experimental-strip-types --test \"src/extension/**/*.test.ts\" \"scripts/**/*.test.ts\"",
     "extension:lint": "web-ext lint --source-dir dist/extension/firefox --warnings-as-errors",

@@ -2,11 +2,12 @@
 import type { Dnr } from './mainHost.ts';
 import { BACKGROUND_PLUGINS, EXTENSION_PLUGINS, LARGE_STORAGE_PLUGINS } from './plugins.ts';
 import { record } from '../shared/objects.ts';
+import { BATCH_TEXT, parseBlobBatch } from '../shared/blobBatch.ts';
 export { record } from '../shared/objects.ts';
 
 export const CHANNEL = 'slick:firefox:v1';
 export const RENDERERS = EXTENSION_PLUGINS;
-export const MAX_TEXT = 256 * 1024;
+export const MAX_TEXT = BATCH_TEXT;
 export const MAX_BLOB = 64 * 1024;
 export const MAX_KEYS = 128;
 export const PAGE_KEYS = 512;
@@ -22,6 +23,7 @@ export const METHODS = [
   'blob.read',
   'blob.readAll',
   'blob.write',
+  'blob.mutate',
   'blob.delete',
   'blob.clear',
   'plugin.call',
@@ -97,6 +99,11 @@ export function validRequest(v: unknown): v is Request {
       return a.length === 3 && namespace(a[0]) && text(a[1], 128) && text(a[2], 128);
     case 'blob.write':
       return a.length === 3 && namespace(a[0]) && blobKey(a[1]) && text(a[2], blobLimits(a[0]).value);
+    case 'blob.mutate': {
+      if (a.length !== 2 || !namespace(a[0]) || !text(a[1])) return false;
+      const batch = parseBlobBatch(a[1]);
+      return batch !== null && batch.every(([, value]) => value === null || value.length <= blobLimits(a[0]).value);
+    }
     // [plugin id, rpc method, JSON-encoded argument array]
     case 'plugin.call':
       return (

@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { Cache, type BlobStore, ScopedStorage } from './storage.ts';
+import { BATCH_TEXT, type BlobChange } from '../../shared/blobBatch.ts';
 
 /** An in-memory stand-in for the main process's blob store. */
 function fakeBlob() {
@@ -17,6 +18,50 @@ function fakeBlob() {
 }
 
 const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+test('batch bounds escaped payloads, snapshots values and supports older loaders', async () => {
+  const { files, store } = fakeBlob();
+  const chunks: BlobChange[][] = [];
+  store.mutate = async (changes) => {
+    chunks.push(changes);
+    for (const [key, value] of changes) {
+      if (value === null) files.delete(key);
+      else files.set(key, value);
+    }
+    return true;
+  };
+  const storage = new ScopedStorage(store);
+  const entries = Array.from({ length: 300 }, (_, i): [string, unknown] => [`k${i}`, { text: '"'.repeat(1000) }]);
+  const value = { n: 1 };
+  const pending = storage.batch([...entries, ['snapshot', value]]);
+  value.n = 2;
+  assert.equal(await pending, true);
+  assert.ok(chunks.length > 1 && chunks.length < 300);
+  assert.ok(chunks.every((chunk) => chunk.length <= 128 && JSON.stringify(chunk).length <= BATCH_TEXT));
+  assert.equal(files.get('snapshot'), '{"n":1}');
+  assert.equal(await storage.batch([['k0', null]]), true);
+  assert.equal(files.has('k0'), false);
+  const cyclic: any = {};
+  cyclic.self = cyclic;
+  assert.equal(
+    await storage.batch([
+      ['untouched', 1],
+      ['cyclic', cyclic],
+    ]),
+    false,
+  );
+  assert.equal(files.has('untouched'), false);
+  delete store.mutate;
+  assert.equal(
+    await storage.batch([
+      ['old-loader', 2],
+      ['k1', null],
+    ]),
+    true,
+  );
+  assert.equal(files.get('old-loader'), '2');
+  assert.equal(files.has('k1'), false);
+});
 
 test('entries: reads a whole prefix, skipping unparseable values', async () => {
   const { files, store } = fakeBlob();

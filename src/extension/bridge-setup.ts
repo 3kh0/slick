@@ -85,24 +85,7 @@ export function installBridge(target: Window & typeof globalThis) {
       input.type = 'file';
       if (accept) input.accept = accept;
       const picked = new Promise<File | null>((resolve) => {
-        input.addEventListener('change', () => resolve(input.files?.[0] ?? null), { once: true });
-        input.addEventListener('cancel', () => resolve(null), { once: true });
-      });
-      input.click();
-      return picked.then((file) =>
-        file ? writeStoredFile(bridge.blobStore(`plugin:${owner.plugin}`), owner.setting, file) : '',
-      );
-    },
-    fetch: denied,
-    // Privileged halves run in the background (extension/mainHost.ts); events aren't bridged.
-    plugin: (id) => ({
-      call: async <T>(method: string, ...args: unknown[]) => {
-        if (id === 'AccountSwitcher') {
-          if (method === 'list' && args.length === 0) return JSON.parse(await client.call<string>('account.list')) as T;
-          if (method === 'open' && (args.length === 0 || (args.length === 1 && typeof args[0] === 'string'))) {
-            return (await client.call('account.open', ...(args as string[]))) as T;
-          }
-          return denied();
+
         }
 
         if (!(BACKGROUND_PLUGINS as readonly string[]).includes(id)) return denied();
@@ -125,19 +108,7 @@ export function installBridge(target: Window & typeof globalThis) {
         },
         read: (key) => client.call('blob.read', id, key),
         async readAll(prefix = '') {
-          const entries: [string, string][] = [];
-          for (let cursor = ''; ;) {
-            const page = Object.entries(await client.call<Record<string, string>>('blob.readAll', id, prefix, cursor));
-            if (!page.length) return Object.fromEntries(entries);
-            entries.push(...page);
-            cursor = last(page.map(([key]) => key));
-          }
-        },
-        write: (key, value) => client.call('blob.write', id, key, value),
-        delete: (key) => client.call('blob.delete', id, key),
-        clear: () => client.call('blob.clear', id),
-      };
-    },
+          const out: Record<string, string> = {};
   };
   Object.defineProperty(target, 'SlickBridge', {
     value: Object.freeze({ claim: oneShot(Object.freeze(bridge)) }),

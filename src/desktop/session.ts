@@ -1,9 +1,10 @@
 // Serves the embedded slick.js (and the CSS editor) over slick://.
 // SLICK_APP_URL is a dev-only override for `npm run dev`.
 
-import { readFileSync, statSync } from 'node:fs';
+import { stat } from 'node:fs/promises';
 import path from 'node:path';
-import { session } from 'electron';
+import { app, session } from 'electron';
+import { createAssetReader } from './assetReader.ts';
 import { editorHtml, MONACO_URL_PREFIX } from './windows/cssEditor.ts';
 
 export const SLICK_SCHEME = 'slick';
@@ -21,11 +22,11 @@ export function privilegedSchemes() {
 
 let bundleCandidates: string[] = [];
 
-export function appUrl(): string {
+export async function appUrl(): Promise<string> {
   if (process.env.SLICK_APP_URL) return process.env.SLICK_APP_URL;
   for (const bundle of bundleCandidates) {
     try {
-      return `slick://app/slick.js?v=${Math.trunc(statSync(bundle).mtimeMs)}`;
+      return `slick://app/slick.js?v=${Math.trunc((await stat(bundle)).mtimeMs)}`;
     } catch {}
   }
   return 'slick://app/slick.js';
@@ -50,8 +51,10 @@ export function setupSession(dirs: string[]) {
   const candidates = dirs.map((dir) => path.join(dir, 'slick.js'));
   bundleCandidates = candidates;
   const monacoDirs = dirs.map((dir) => path.join(dir, 'monaco'));
+  const readBundle = createAssetReader(app.isPackaged);
+  const readAsset = createAssetReader();
 
-  session.defaultSession.protocol.handle(SLICK_SCHEME, (request) => {
+  session.defaultSession.protocol.handle(SLICK_SCHEME, async (request) => {
     const url = new URL(request.url);
     const file = url.pathname.replace(/^\//, '');
 
@@ -73,7 +76,7 @@ export function setupSession(dirs: string[]) {
         const target = path.resolve(root, 'vs', relative);
         if (target !== path.resolve(root, 'vs') && !target.startsWith(path.resolve(root, 'vs') + path.sep)) continue;
         try {
-          return new Response(readFileSync(target), { headers: { 'Content-Type': type } });
+          return new Response(await readAsset(target), { headers: { 'Content-Type': type } });
         } catch {}
       }
       return notFound();
@@ -83,7 +86,7 @@ export function setupSession(dirs: string[]) {
 
     for (const bundle of candidates) {
       try {
-        return new Response(readFileSync(bundle), {
+        return new Response(await readBundle(bundle), {
           headers: { 'Content-Type': 'application/javascript' },
         });
       } catch {}

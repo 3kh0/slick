@@ -114,6 +114,7 @@ export default class MessageLogger extends SlickPlugin<typeof meta.settings> {
   private readonly dirty = new Set<string>();
   private writes: Promise<void> = Promise.resolve();
   private persistTimer: ReturnType<typeof setTimeout> | null = null;
+  private persistFailures = 0;
   private rowTimer: ReturnType<typeof setTimeout> | null = null;
   private seenRow = false;
   private images: ImageArchive | null = null;
@@ -384,12 +385,12 @@ export default class MessageLogger extends SlickPlugin<typeof meta.settings> {
     return gone.length > 0;
   }
 
-  private persist() {
+  private persist(delay = 200) {
     if (this.persistTimer) return;
     this.persistTimer = setTimeout(() => {
       this.persistTimer = null;
       this.flush();
-    }, 200);
+    }, delay);
   }
 
   private flush() {
@@ -400,16 +401,25 @@ export default class MessageLogger extends SlickPlugin<typeof meta.settings> {
     const keys = [...this.dirty];
     this.dirty.clear();
     // Serialised: the migration in restore() can flush hundreds of keys at once.
-    for (const key of keys) {
-      const entry = this.entries.get(key);
-      const storageKey = `${ENTRY_PREFIX}${key}`;
-      this.writes = this.writes
-        .then(() => (entry ? this.api.storage.set(storageKey, entry) : this.api.storage.delete(storageKey)))
-        .then(
-          () => {},
-          (error) => console.error('[slick] MessageLogger could not persist an entry:', error),
-        );
-    }
+    if (!keys.length) return;
+    this.writes = this.writes.then(async () => {
+      const changes = keys
+        .map((key): [string, LogEntry | null] => [`${ENTRY_PREFIX}${key}`, this.entries.get(key) ?? null])
+        .toSorted((a, b) => Number(a[1] !== null) - Number(b[1] !== null));
+      // Evictions free quota before later batches try to add new entries.
+      let ok = false;
+      try {
+        ok = await this.api.storage.batch(changes);
+      } catch {}
+      if (ok) {
+        this.persistFailures = 0;
+        return;
+      }
+      for (const key of keys) this.dirty.add(key);
+      console.error('[slick] MessageLogger could not persist history; will retry');
+      const retryMs = Math.min(60_000, 1000 * 2 ** Math.min(this.persistFailures++, 6));
+      if (!this.api.signal.aborted) this.persist(retryMs);
+    });
   }
 
   private injectable(): SlackMessage[] {

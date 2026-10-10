@@ -4,22 +4,6 @@
 export type HistoryMessage = {
   ts?: string;
   thread_ts?: string;
-  subtype?: string;
-};
-
-export type HistorySlice = {
-  timestamps?: string[];
-  start?: string;
-  end?: string;
-};
-
-export type ChannelHistory = {
-  slices?: HistorySlice[];
-  /** Whether the oldest slice includes the conversation's first message. */
-  reachedStart?: boolean;
-  /** Whether the newest slice includes the latest message. */
-  reachedEnd?: boolean;
-};
 
 export const historyKeyChannel = (key: string): string => key.split('-')[0];
 export const historyKeyThread = (key: string): string | undefined =>
@@ -43,12 +27,14 @@ export function sliceCovers(history: ChannelHistory, slice: HistorySlice, positi
 
 export function withTimestamps(history: ChannelHistory, added: string[], excluded: string[] = []): HistorySlice[] {
   const slices = history.slices ?? [];
+  const excludedSet = new Set(excluded);
   let changed = false;
   const next = slices.map((slice, position) => {
     const { timestamps } = slice;
     if (!Array.isArray(timestamps)) return slice;
-    const kept = timestamps.filter((ts) => !excluded.includes(ts));
-    const missing = added.filter((ts) => sliceCovers(history, slice, position, ts) && !kept.includes(ts));
+    const kept = excluded.length ? timestamps.filter((ts) => !excludedSet.has(ts)) : timestamps;
+    const present = new Set(kept);
+    const missing = added.filter((ts) => sliceCovers(history, slice, position, ts) && !present.has(ts));
     if (!missing.length && kept.length === timestamps.length) return slice;
     changed = true;
     // Slack timestamps are fixed-width, so they sort as plain strings.

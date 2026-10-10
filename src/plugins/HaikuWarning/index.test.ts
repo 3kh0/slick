@@ -4,6 +4,7 @@ import { readFile } from 'node:fs/promises';
 import { test } from 'node:test';
 import { build } from 'esbuild';
 import { compactDictionary, dictionaryLookup, estimateSyllables } from './haiku.ts';
+import { createDictionaryLookup, packDictionary } from './dictionary.ts';
 
 const dictionary = await readFile(new URL('./syllable_counts.txt', import.meta.url), 'utf8');
 const bundle = await build({
@@ -12,7 +13,17 @@ const bundle = await build({
   write: false,
   platform: 'node',
   format: 'esm',
-  loader: { '.txt': 'text' },
+  plugins: [
+    {
+      name: 'packed-dictionary',
+      setup(builder) {
+        builder.onLoad({ filter: /syllable_counts\.txt$/ }, () => ({
+          contents: packDictionary(compactDictionary(dictionary)),
+          loader: 'text',
+        }));
+      },
+    },
+  ],
 });
 const { default: HaikuWarning } = await import(
   `data:text/javascript;base64,${Buffer.from(bundle.outputFiles[0]!.text).toString('base64')}`
@@ -34,6 +45,19 @@ test('compacted dictionary gives every word the same count', () => {
     const word = line.slice(0, line.lastIndexOf(' '));
     assert.equal(dictionaryLookup(compact, word) ?? estimateSyllables(word), dictionaryLookup(dictionary, word), word);
   }
+});
+
+test('packed dictionary preserves all counts and is smaller than the plain asset', () => {
+  const compact = compactDictionary(dictionary);
+  const packed = packDictionary(compact);
+  assert.equal(packed, packDictionary(compact));
+  assert.ok(packed.length < compact.length / 2);
+  const lookup = createDictionaryLookup(packed);
+  for (const line of dictionary.trimEnd().split('\n')) {
+    const word = line.slice(0, line.lastIndexOf(' '));
+    assert.equal(lookup(word) ?? estimateSyllables(word), dictionaryLookup(dictionary, word), word);
+  }
+  assert.equal(lookup('thisworddoesnotexist'), undefined);
 });
 
 test('offline warning holds a haiku, permits editing and sends only after approval', async () => {
