@@ -421,6 +421,12 @@ jobs:
         run: gh release upload "$GITHUB_REF_NAME" dist/extension/slick-chromium.zip --clobber
         env:
           GH_TOKEN: ${{ github.token }}
+      - name: Publish to the Chrome Web Store
+        run: node scripts/chrome-webstore.ts dist/extension/slick-chromium.zip
+        env:
+          CWS_ITEM_ID: alfaoldilkoklnfaonfigknfkpkpanca
+          CWS_PUBLISHER_ID: ${{ secrets.CWS_PUBLISHER_ID }}
+          CWS_SERVICE_ACCOUNT: ${{ secrets.CWS_SERVICE_ACCOUNT }}
 
   userscript:
     needs: [validate-tag, release]
