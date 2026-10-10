@@ -300,6 +300,7 @@ jobs:
       attestations: write
     env:
       BUILD: ${{ needs.validate-tag.outputs.build }}
+      CHANNEL: ${{ vars.FIREFOX_CHANNEL || 'unlisted' }}
     steps:
       - uses: actions/checkout@v7
       - uses: oven-sh/setup-bun@v2
@@ -317,6 +318,7 @@ jobs:
           mkdir -p dist/release
           git archive --format=zip -o "dist/release/slick-firefox-2.0.$BUILD-source.zip" HEAD
       - name: Sign on AMO
+        if: env.CHANNEL == 'unlisted'
         run: |
           bunx web-ext sign --channel unlisted \
             --source-dir dist/extension/firefox \
@@ -328,13 +330,30 @@ jobs:
         env:
           WEB_EXT_API_KEY: ${{ secrets.AMO_JWT_ISSUER }}
           WEB_EXT_API_SECRET: ${{ secrets.AMO_JWT_SECRET }}
+      - name: Submit listed version to AMO
+        if: env.CHANNEL == 'listed'
+        run: |
+          jq -n --arg build "$BUILD" '{categories: ["social-communication", "appearance"], version: {
+            license: "GPL-3.0-only",
+            approval_notes: "Bundled with Bun. To reproduce dist/extension/firefox from the source archive: bun install --frozen-lockfile && SLICK_BUILD=\($build) bun run build -- firefox"
+          }}' > "$RUNNER_TEMP/amo.json"
+          bunx web-ext sign --channel listed --approval-timeout 0 \
+            --source-dir dist/extension/firefox \
+            --upload-source-code "dist/release/slick-firefox-2.0.$BUILD-source.zip" \
+            --amo-metadata "$RUNNER_TEMP/amo.json"
+        env:
+          WEB_EXT_API_KEY: ${{ secrets.AMO_JWT_ISSUER }}
+          WEB_EXT_API_SECRET: ${{ secrets.AMO_JWT_SECRET }}
       - name: Update manifest
+        if: env.CHANNEL == 'unlisted'
         run: node scripts/firefox-updates.ts "dist/release/slick-firefox-2.0.$BUILD.xpi" "$BUILD" dist/release/updates.json
       - name: Attest build provenance
+        if: env.CHANNEL == 'unlisted'
         uses: actions/attest@v4.2.2
         with:
           subject-path: dist/release/slick-firefox-*.xpi
       - name: Upload signed extension
+        if: env.CHANNEL == 'unlisted'
         uses: actions/upload-artifact@v7
         with:
           name: firefox-signed
@@ -351,15 +370,30 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    env:
+      CHANNEL: ${{ vars.FIREFOX_CHANNEL || 'unlisted' }}
+      GH_REPO: ${{ github.repository }}
+      GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/download-artifact@v8
+        if: env.CHANNEL == 'unlisted'
         with:
           name: firefox-signed
           path: dist/release
       - name: Attach to release
+        if: env.CHANNEL == 'unlisted'
         run: gh release upload "$GITHUB_REF_NAME" dist/release/slick-firefox-*.xpi dist/release/slick-firefox-*-source.zip dist/release/updates.json --clobber
-        env:
-          GH_TOKEN: ${{ github.token }}
+      - name: Carry the self-hosted update manifest forward
+        if: env.CHANNEL == 'listed'
+        run: |
+          for tag in $(gh release list --exclude-drafts --limit 100 --json tagName --jq '.[].tagName'); do
+            [[ "$tag" == "$GITHUB_REF_NAME" ]] && continue
+            if gh release download "$tag" --pattern updates.json --dir carry 2>/dev/null; then
+              gh release upload "$GITHUB_REF_NAME" carry/updates.json --clobber
+              exit 0
+            fi
+          done
+          echo "::warning::No earlier release has updates.json to carry forward"
 
   copr:
     needs: [validate-tag, release]
