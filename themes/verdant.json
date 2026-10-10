@@ -1,0 +1,51 @@
+{
+  "name": "Verdant Circuit - Created by @Jacob N (and ChatGPT)",
+  "description": "A deep graphite Slack theme with electric fern-green highlights, restrained glow, and readable native text. Inspired by @Jacob N's personal-site palette. Made with ChatGPT.",
+  "palette": {
+    "highlight1": {
+      "100": "42,169,108"
+    }
+  },
+  "sidebar": {
+    "nav-bg": "#0d1510",
+    "text-color": "#f5f5f5",
+    "badge": "#218c5a",
+    "badge-text-color": "#ffffff"
+  },
+  "vars": {
+    "--dt_color-base-pry": "#0a0f0c",
+    "--dt_color-base-sec": "#0a0f0c",
+    "--dt_color-base-ter": "#111a15",
+    "--dt_color-base-inv-pry": "#111a15",
+    "--dt_color-ctr-pry": "#111a15",
+    "--dt_color-ctr-sec": "#142019",
+    "--dt_color-base-modal": "rgba(14,21,17,0.97)",
+    "--sk_primary_background": "10,15,12"
+  },
+  "css": [
+    ".p-theme_background{background:#0a0f0c !important;}",
+    ".p-theme_background:after{backdrop-filter:none !important;background:#0a0f0c !important;}",
+    ".p-view_contents--sidebar{background:linear-gradient(180deg,#0d1510 0%,#0a0f0c 100%) !important;border-right:1px solid rgba(77,190,125,0.13) !important;}",
+    ".p-channel_sidebar__channel--selected,.p-channel_sidebar__link--selected,.p-channel_sidebar__channel[aria-current=page],.p-channel_sidebar__link[aria-current=page]{background:linear-gradient(90deg,rgba(33,140,90,0.25),rgba(33,140,90,0.08)) !important;box-shadow:inset 2px 0 0 #2aa96c !important;border-radius:8px !important;}",
+    ".p-channel_sidebar__channel:hover,.p-channel_sidebar__link:hover{background:rgba(255,255,255,0.045) !important;border-radius:8px !important;}",
+    ".p-message_input__input_container_unstyled,.c-wysiwyg_container--theme_dark{background:#111a15 !important;border:1px solid #24412e !important;border-radius:12px !important;}",
+    ".p-message_input__input_container_unstyled:focus-within,.c-wysiwyg_container--theme_dark:focus-within{border-color:rgba(42,169,108,0.8) !important;box-shadow:0 0 0 3px rgba(33,140,90,0.12) !important;}",
+    ".c-wysiwyg_container__formatting{background:#111a15 !important;border-top:1px solid rgba(255,255,255,0.06) !important;}",
+    ".p-context_bar_v2,[data-qa=context_bar]{background:#111a15 !important;border:1px solid #24412e !important;border-radius:10px !important;}",
+    ".p-context_bar_v2__content,.p-context_bar_v2__icon{color:#c5d4ca !important;}",
+    "[role=menu],[role=dialog],[role=listbox],.c-menu,.p-ia4_floating_window,.c-popover__content{background:#121a15 !important;border:1px solid #24412e !important;}",
+    ".c-message_kit__background--hovered:not(.c-message_kit__background--highlight):not(.c-message_kit__background--editing):not(.c-message_kit__background--huddle):not(.c-message_kit__background--deleting){background:rgba(42,169,108,0.055) !important;}",
+    ".c-message:hover:not(.c-message--highlight):not(.c-message--standalone):not(.c-message--pinned):not(.c-message--ephemeral):not(.c-message--custom_response):not(.c-message--starred),.c-message--hover:not(.c-message--highlight):not(.c-message--standalone):not(.c-message--pinned):not(.c-message--ephemeral):not(.c-message--custom_response):not(.c-message--starred){background:rgba(42,169,108,0.055) !important;}",
+    ".c-button--primary,.c-icon_button--primary,.c-icon_button--primary:link,[class*=sendButtonActive__],[class*=joinButton__],[class*=primaryCtaPrimary__]{background:#218c5a !important;border-color:#218c5a !important;color:#ffffff !important;}",
+    ".c-button--primary:hover,.c-icon_button--primary:hover,.c-icon_button--primary:link:hover,[class*=sendButtonActive__]:hover,[class*=joinButton__]:hover,[class*=primaryCtaPrimary__]:hover{background:#2aa96c !important;border-color:#2aa96c !important;color:#ffffff !important;}",
+    ".c-tabs__tab_menu--vertical .c-tabs__tab.c-tabs__tab--active,.c-tabs__tab_menu--vertical .c-tabs__tab:active{background:#218c5a !important;color:#ffffff !important;border-radius:8px !important;}",
+    "input[type=checkbox],input[type=radio],progress{accent-color:#2aa96c !important;}",
+    ".c-message_list__unread_divider--unread_threads .c-message_list__unread_divider__label,.p-thread_separator_row_generic--dark .p-threads_flexpane__unread_divider__label,.p-thread_separator_row_generic--dark .p-threads_flexpane__read_divider__label{color:#5be3a2 !important;}",
+    ".sk-client-theme--dark .c-reaction--reacted,.sk-client-theme--dark .c-reaction--reacted:hover{background:rgba(42,169,108,0.16) !important;box-shadow:0 0 0 1px rgba(42,169,108,0.75) !important;}",
+    ".sk-client-theme--dark .c-reaction--reacted .c-reaction__count{color:#5be3a2 !important;}",
+    ".c-mrkdwn__code,.c-texty_input code,.c-wysiwyg_container--theme_dark code,.c-pillow_file__post__content code{color:#86d9ae !important;}",
+    ".p-drafts_page__draft_badge,.c-message--pinned .c-message__label__icon,.c-message_kit__labels--pinned .c-message_kit__labels__icon{color:#e6c46a !important;}",
+    "[data-qa=huddle_toolbar__leave_button]{background:#e06c75 !important;color:#111111 !important;}",
+    "::selection{background:rgba(42,169,108,0.38) !important;color:#ffffff !important;}"
+  ]
+}
