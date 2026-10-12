@@ -10,6 +10,7 @@ import {
   type ChannelResult,
 } from './autocomplete.ts';
 import { candidatesFor, CHANNEL_ID, type ChannelName } from './flaron.ts';
+import { openLocalNameDialog } from './localNameDialog.ts';
 import * as meta from './meta.ts';
 
 const SHADOW_TTL_MS = 24 * 60 * 60 * 1000;
@@ -68,6 +69,7 @@ export default class PrivateChannelMapper extends SlickPlugin<typeof meta.settin
   private pendingIds = new Map<string, Promise<string | undefined>>();
   private saveTimer: ReturnType<typeof setTimeout> | null = null;
   private expiryTimer: ReturnType<typeof setTimeout> | null = null;
+  private localNameModal: { close: () => void } | null = null;
 
   async start() {
     const [storedNames, storedShadows, storedLocalNames] = await Promise.all([
@@ -111,6 +113,8 @@ export default class PrivateChannelMapper extends SlickPlugin<typeof meta.settin
   }
 
   stop() {
+    this.localNameModal?.close();
+    this.localNameModal = null;
     if (this.saveTimer) clearTimeout(this.saveTimer);
     if (this.expiryTimer) clearTimeout(this.expiryTimer);
     this.saveTimer = null;
@@ -366,18 +370,34 @@ export default class PrivateChannelMapper extends SlickPlugin<typeof meta.settin
       const id = target?.dataset.slickPcmId;
       if (!id || !CHANNEL_ID.test(id)) return;
 
-      const current = this.localNames.get(id) ?? '';
-      const answer = window.prompt(`Local name for ${id} (leave blank to remove)`, current);
-      if (answer === null) return;
-      const name = answer.trim();
-      if (name) this.localNames.set(id, name);
-      else this.localNames.delete(id);
-      void this.api.storage.set('localNames', Object.fromEntries(this.localNames));
-      this.api.redux.refresh();
+      event.preventDefault();
+      event.stopPropagation();
+      this.openLocalNameModal(id, target.ownerDocument);
     };
-    const listen = (doc: Document) => doc.addEventListener('dblclick', edit, { signal: this.api.signal });
+    const listen = (doc: Document) =>
+      doc.addEventListener('dblclick', edit, { capture: true, signal: this.api.signal });
     listen(document);
     this.api.onDocument(listen);
+  }
+
+  private openLocalNameModal(id: string, doc: Document) {
+    this.localNameModal?.close();
+    this.localNameModal = openLocalNameDialog(doc, {
+      id,
+      value: this.localNames.get(id) ?? '',
+      placeholder: this.api.channels.getCachedChannel(id)?.name || id,
+      onSave: (value) => {
+        if (this.api.signal.aborted) return;
+        const name = value.trim();
+        if (name) this.localNames.set(id, name);
+        else this.localNames.delete(id);
+        void this.api.storage.set('localNames', Object.fromEntries(this.localNames));
+        this.api.redux.refresh();
+      },
+      onClose: () => {
+        this.localNameModal = null;
+      },
+    });
   }
 
   private legacyLocalNames(): Record<string, string> {
