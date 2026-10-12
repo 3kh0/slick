@@ -6,6 +6,7 @@ import { SlickPlugin, type ComponentType, type RtmEvent, type SlackMessage } fro
 import * as meta from './meta.ts';
 import { MAX_EDIT_TEXT, MAX_EDITS_PER_MESSAGE, evictable, mergeEntry, normalize, trim } from './retention.ts';
 import { ImageArchive, type SavedImage } from './images.ts';
+import { hasEvasionPadding, messageText } from './content.ts';
 
 type StoredEdit = { oldText: string; newText: string };
 
@@ -14,6 +15,7 @@ type LogEntry = {
   ts: string;
   user?: string;
   deleted?: boolean;
+  evaded?: boolean;
   message?: SlackMessage;
   edits?: StoredEdit[];
   at: number;
@@ -45,23 +47,10 @@ const ENTRY_PREFIX = 'entry:';
 const RECENT_CAP = 400;
 const ROW_COMPONENTS = ['MessageWrapper', 'ThreadRootGeneric', 'ThreadReplyGeneric'] as const;
 
-function decode(value: string): string {
-  return value
-    .replace(/<([^>|]+)\|([^>]+)>/g, '$2')
-    .replace(/<([^>]+)>/g, '$1')
-    .replace(/&(amp|lt|gt);/g, (_, entity: string) => ({ amp: '&', lt: '<', gt: '>' })[entity]!)
-    .trim();
-}
-
-function messageText(msg: SlackMessage | undefined): string {
-  if (!msg) return '';
-  return typeof msg.text === 'string' ? decode(msg.text) : '';
-}
-
 function channelOf(event: RtmEvent, msg?: SlackMessage): string {
-  if (typeof msg?.channel === 'string' && msg.channel) return msg.channel;
   if (typeof event.channel === 'string' && event.channel) return event.channel;
   if (typeof event.channel_id === 'string' && event.channel_id) return event.channel_id;
+  if (typeof msg?.channel === 'string' && msg.channel) return msg.channel;
   return '';
 }
 
@@ -111,6 +100,7 @@ export default class MessageLogger extends SlickPlugin<typeof meta.settings> {
 
   private readonly entries = new Map<string, LogEntry>();
   private readonly recent = new Map<string, SlackMessage>();
+  private readonly recentEvasion = new Set<string>();
   private readonly dirty = new Set<string>();
   private writes: Promise<void> = Promise.resolve();
   private persistTimer: ReturnType<typeof setTimeout> | null = null;
@@ -118,7 +108,12 @@ export default class MessageLogger extends SlickPlugin<typeof meta.settings> {
   private seenRow = false;
   private images: ImageArchive | null = null;
 
-  private readonly EditContext = React.createContext<{ ts: string; edits: StoredEdit[]; blocks: boolean } | null>(null);
+  private readonly EditContext = React.createContext<{
+    ts: string;
+    edits: StoredEdit[];
+    blocks: boolean;
+    evaded?: boolean;
+  } | null>(null);
 
   private readonly ImageContext = React.createContext<SavedImage[]>([]);
 
@@ -214,12 +209,16 @@ export default class MessageLogger extends SlickPlugin<typeof meta.settings> {
     const channel = channelOf(event, event as SlackMessage);
     const ts = tsOf(event, event as SlackMessage);
     if (!channel || !ts) return;
-    this.recent.set(this.key(channel, ts), { ...(event as SlackMessage), channel, ts });
+    if (isDeleteEvent(event) || this.entries.get(this.key(channel, ts))?.deleted) return;
+    if (hasEvasionPadding(event)) this.recentEvasion.add(this.key(channel, ts));
+    this.recent.delete(this.key(channel, ts));
+    this.recent.set(this.key(channel, ts), JSON.parse(JSON.stringify(trim({ ...event, channel, ts }))));
     this.captureImages(this.key(channel, ts), event as SlackMessage);
     while (this.recent.size > RECENT_CAP) {
       const first = this.recent.keys().next().value;
       if (first === undefined) break;
       this.recent.delete(first);
+      this.recentEvasion.delete(first);
     }
   }
 
@@ -247,9 +246,24 @@ export default class MessageLogger extends SlickPlugin<typeof meta.settings> {
   }
 
   private original(event: RtmEvent, channel: string, ts: string): SlackMessage | undefined {
+    const raw = this.api.messages.getRawMessage(channel, ts);
     return (
-      this.previousOf(event) ?? this.recent.get(this.key(channel, ts)) ?? this.api.messages.getRawMessage(channel, ts)
+      this.recent.get(this.key(channel, ts)) ??
+      (raw && !isDeleteEvent({ message: raw }) ? raw : undefined) ??
+      this.entries.get(this.key(channel, ts))?.message ??
+      this.previousOf(event)
     );
+  }
+
+  private evaded(previous: SlackMessage | undefined, original: SlackMessage | undefined): boolean {
+    if (hasEvasionPadding(previous) || hasEvasionPadding(original)) return true;
+    if (!previous || !original || previous === original) return false;
+    const revision = (message: SlackMessage) => {
+      const edited = message.edited as { ts?: string } | undefined;
+      return Number(edited?.ts ?? message.ts ?? 0);
+    };
+    if (revision(previous) !== revision(original)) return false;
+    return messageText(previous) !== messageText(original);
   }
 
   private currentUserId(): string | undefined {
@@ -308,7 +322,16 @@ export default class MessageLogger extends SlickPlugin<typeof meta.settings> {
 
     const key = this.key(channel, ts);
     const existing = this.entries.get(key);
-    if (existing?.deleted) return;
+    const evaded = this.recentEvasion.has(key) || this.evaded(previous, original);
+    if (existing?.deleted) {
+      if (evaded && !existing.evaded) {
+        this.entries.set(key, { ...existing, evaded: true });
+        this.dirty.add(key);
+        this.persist();
+        this.api.redux.refresh();
+      }
+      return;
+    }
 
     const message = original ? asInjected(original, channel, ts) : undefined;
     const entry: LogEntry = {
@@ -317,6 +340,7 @@ export default class MessageLogger extends SlickPlugin<typeof meta.settings> {
       ts,
       user: existing?.user || user,
       deleted: true,
+      evaded: existing?.evaded || evaded || undefined,
       message: message ?? existing?.message,
       at: Date.now(),
     };
@@ -341,20 +365,23 @@ export default class MessageLogger extends SlickPlugin<typeof meta.settings> {
     if (!channel || !ts) return;
     const original = this.original(event, channel, ts);
     const user = userOf(next ?? original ?? previous, event);
+    if (next) this.remember({ ...next, channel, ts });
     if (this.skipSelf(user)) return;
-    if (this.skipEditsFrom(next, previous, original, event as SlackMessage)) return;
-    if (next) this.captureImages(this.key(channel, ts), next);
-
-    const oldText = messageText(previous) || messageText(original);
+    if (this.skipEditsFrom(next, original, event as SlackMessage)) return;
+    const oldText = messageText(original);
     const newText = messageText(next);
-    if (!oldText || oldText === newText) return;
+    const existing = this.entries.get(this.key(channel, ts));
+    const lastEdit = existing?.edits?.at(-1);
+    const replay = lastEdit?.oldText === messageText(previous) && lastEdit?.newText === newText && oldText === newText;
+    const evaded = this.recentEvasion.has(this.key(channel, ts)) || (!replay && this.evaded(previous, original));
+    const changed = !!original && !!next && oldText !== newText;
+    if (!changed && !evaded) return;
 
     const key = this.key(channel, ts);
-    const existing = this.entries.get(key);
     const edits = existing?.edits ? [...existing.edits] : [];
     const last = edits[edits.length - 1];
-    if (last && last.oldText === oldText && last.newText === newText) return;
-    edits.push({ oldText: oldText.slice(0, MAX_EDIT_TEXT), newText: newText.slice(0, MAX_EDIT_TEXT) });
+    if (changed && !(last && last.oldText === oldText && last.newText === newText))
+      edits.push({ oldText: oldText.slice(0, MAX_EDIT_TEXT), newText: newText.slice(0, MAX_EDIT_TEXT) });
     if (edits.length > MAX_EDITS_PER_MESSAGE) edits.splice(0, edits.length - MAX_EDITS_PER_MESSAGE);
 
     this.entries.set(key, {
@@ -362,6 +389,8 @@ export default class MessageLogger extends SlickPlugin<typeof meta.settings> {
       channel,
       ts,
       user: existing?.user || user,
+      evaded: existing?.evaded || evaded || undefined,
+      message: this.recent.get(key) ?? existing?.message,
       edits,
       at: existing?.at ?? Date.now(),
     });
@@ -480,6 +509,7 @@ export default class MessageLogger extends SlickPlugin<typeof meta.settings> {
       .slick-ml-edited-original-line { display: block; }
       .slick-ml-edited-original s { text-decoration: line-through; }
       .slick-ml-edited-marker { margin-left: 4px; font-size: .85em; opacity: .72; }
+      .slick-ml-evasion { display: block; margin-top: 2px; font-size: .75rem; opacity: .65; }
       .slick-ml-images { display: flex; flex-wrap: wrap; gap: 8px; padding: 4px 0; }
       .slick-ml-image { display: block; max-width: 100%; width: fit-content; }
       .slick-ml-image img { display: block; max-width: min(360px, 100%); max-height: 300px; object-fit: contain; filter: grayscale(1); }
@@ -545,8 +575,15 @@ export default class MessageLogger extends SlickPlugin<typeof meta.settings> {
         return React.createElement(
           React.Fragment,
           null,
-          this.editHistory(edit.edits),
+          edit.edits.length ? this.editHistory(edit.edits) : null,
           React.createElement(Original, props),
+          edit.evaded
+            ? React.createElement(
+                'span',
+                { className: 'slick-ml-evasion' },
+                'this user is trying to evade the message logger',
+              )
+            : null,
         );
       });
     }
@@ -565,10 +602,11 @@ export default class MessageLogger extends SlickPlugin<typeof meta.settings> {
     const entry = React.useMemo(() => this.entryFor(msg, props.channelId), [msg, props.channelId, version]);
     React.useEffect(() => {
       const channel = (typeof msg?.channel === 'string' && msg.channel) || props.channelId;
-      if (msg?.ts && channel && !entry?.deleted) this.captureImages(this.key(channel, msg.ts), msg);
+      if (msg?.ts && channel && !entry?.deleted)
+        this.remember({ ...(this.api.messages.getRawMessage(channel, msg.ts) ?? msg), channel, ts: msg.ts });
     }, [msg, props.channelId, entry?.deleted]);
     this.seenRow = true;
-    if (!entry?.deleted && !entry?.edits?.length) return React.createElement(Original, props);
+    if (!entry?.deleted && !entry?.edits?.length && !entry?.evaded) return React.createElement(Original, props);
 
     const classes = [props.className, entry.deleted && 'slick-ml-deleted', entry.edits?.length && 'slick-ml-edited']
       .filter(Boolean)
@@ -604,10 +642,17 @@ export default class MessageLogger extends SlickPlugin<typeof meta.settings> {
       { value: mapped },
       React.createElement('div', { className: classes || undefined }, React.createElement(Original, rowProps)),
     );
-    if (!entry.edits?.length || !msg?.ts) return row;
+    if ((!entry.edits?.length && !entry.evaded) || !msg?.ts) return row;
     return React.createElement(
       this.EditContext.Provider,
-      { value: { ts: msg.ts, edits: entry.edits, blocks: Array.isArray(msg.blocks) && msg.blocks.length > 0 } },
+      {
+        value: {
+          ts: msg.ts,
+          edits: entry.edits ?? [],
+          blocks: Array.isArray(msg.blocks) && msg.blocks.length > 0,
+          evaded: entry.evaded,
+        },
+      },
       row,
     );
   }
