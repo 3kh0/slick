@@ -355,15 +355,52 @@ type RichTextNode = {
   timestamp?: number;
   format?: string;
   fallback?: string;
+  style?: string | { bold?: boolean; italic?: boolean; strike?: boolean; code?: boolean };
+  offset?: number;
   elements?: RichTextNode[];
 };
+
+function escapeText(text: string): string {
+  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function inlineText(nodes: RichTextNode[]): string {
+  let result = '';
+  let run = '';
+  let markers = '';
+  const flush = () => {
+    result += markers
+      ? run.replace(/^(\s*)([\s\S]*?\S)(\s*)$/, `$1${markers}$2${[...markers].toReversed().join('')}$3`)
+      : run;
+  };
+  for (const node of nodes) {
+    const style = typeof node.style === 'object' ? node.style : {};
+    const next = style.code ? '`' : `${style.bold ? '*' : ''}${style.italic ? '_' : ''}${style.strike ? '~' : ''}`;
+    if (next !== markers) {
+      flush();
+      run = '';
+      markers = next;
+    }
+    run += nodeText(node);
+  }
+  flush();
+  return result;
+}
+
+function joinSections(sections: string[]): string {
+  return sections.reduce((text, next) => {
+    const separator = text && next && !text.endsWith('\n') && !next.startsWith('\n') ? '\n' : '';
+    return text + separator + next;
+  }, '');
+}
 
 function nodeText(node: RichTextNode): string {
   switch (node.type) {
     case 'text':
-      return node.text ?? '';
+      return escapeText(node.text ?? '');
     case 'link':
-      return node.text ? `<${node.url}|${node.text}>` : `<${node.url}>`;
+    case 'message_mention':
+      return node.text ? `<${escapeText(node.url ?? '')}|${escapeText(node.text)}>` : `<${escapeText(node.url ?? '')}>`;
     case 'user':
       return `<@${node.user_id}>`;
     case 'channel':
@@ -376,10 +413,26 @@ function nodeText(node: RichTextNode): string {
       return `:${node.name}:`;
     case 'date':
       return `<!date^${node.timestamp}^${node.format}|${node.fallback}>`;
+    case 'rich_text':
+    case 'expanded_rich_text':
+      return joinSections((node.elements ?? []).map(nodeText));
+    case 'rich_text_list':
+      return (node.elements ?? [])
+        .map((item, index) => {
+          const marker = node.style === 'ordered' ? `${(node.offset ?? 0) + index + 1}.` : '•';
+          return `${marker} ${nodeText(item)}`;
+        })
+        .join('\n');
+    case 'rich_text_quote':
+      return inlineText(node.elements ?? [])
+        .split('\n')
+        .map((line) => `&gt; ${line}`)
+        .join('\n');
+    case 'rich_text_preformatted':
+      return `\`\`\`${(node.elements ?? []).map(nodeText).join('')}\`\`\``;
   }
 
-  const separator = node.type === 'rich_text_list' || node.type === 'rich_text_quote' ? '\n' : '';
-  return (node.elements ?? []).map(nodeText).join(separator);
+  return inlineText(node.elements ?? []);
 }
 
 /** Recreates the mrkdwn-like text delivered with Slack message events. */

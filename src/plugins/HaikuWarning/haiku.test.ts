@@ -93,3 +93,88 @@ test('blocksToSlackText: rebuilds the text field Slack delivers with message eve
   ];
   assert.equal(blocksToSlackText(blocks), 'hello <@U123> in <#C456> <https://example.com|example> :wave:');
 });
+
+const section = (text: string) => ({ type: 'rich_text_section', elements: [{ type: 'text', text }] });
+const richText = (...elements: unknown[]) => [{ type: 'rich_text', elements }];
+
+test('Slack text: quote and code boundaries preserve separate words', () => {
+  for (const type of ['rich_text_quote', 'rich_text_preformatted']) {
+    const blocks = richText(
+      { type, elements: [{ type: 'text', text: 'An old silent pond' }] },
+      section('A frog jumps into the pond\nSplash silence again'),
+    );
+    const prefix = type === 'rich_text_quote' ? '&gt; An old silent pond' : '```An old silent pond```';
+    const text = blocksToSlackText(blocks);
+    assert.equal(text, `${prefix}\nA frog jumps into the pond\nSplash silence again`);
+    assert.equal(Boolean(findHaiku(text, lookup)), type === 'rich_text_preformatted');
+  }
+});
+
+test('Slack text: quote inline elements stay in the same word', () => {
+  assert.equal(
+    blocksToSlackText(
+      richText({
+        type: 'rich_text_quote',
+        elements: [
+          { type: 'text', text: 'sil' },
+          { type: 'text', text: 'ent', style: { bold: true } },
+        ],
+      }),
+    ),
+    '&gt; sil*ent*',
+  );
+});
+
+test('Slack text: ordered-list numbers can both create and break a haiku', () => {
+  const numbered = (text: string, offset = 0) =>
+    blocksToSlackText(
+      richText({
+        type: 'rich_text_list',
+        style: 'ordered',
+        offset,
+        elements: [section(text)],
+      }),
+    );
+  // The period prevents a dictionary hit: Orpheus estimates `one.` as two syllables.
+  const text = 'old still pond a frog jumps into the pond splash silence again';
+  assert.equal(numbered(text), `1. ${text}`);
+  assert.ok(findHaiku(numbered(text), lookup));
+  assert.equal(findHaiku(numbered(`an ${text}`), lookup), null);
+  assert.equal(numbered('hello', 4), '5. hello');
+});
+
+test('Slack text: escaped literal characters affect Orpheus syllables', () => {
+  const text = (input: string) => blocksToSlackText(richText(section(input)));
+  assert.equal(text('<one> & two'), '&lt;one&gt; &amp; two');
+  assert.equal(findHaiku(text('an old silent pond & a frog jumps into the pond splash silence again'), lookup), null);
+  assert.ok(findHaiku(text('an old silent & a frog jumps into the pond splash silence again'), lookup));
+});
+
+test('Slack text: message links are included, with escaped URL and label', () => {
+  assert.equal(
+    blocksToSlackText(
+      richText({
+        type: 'rich_text_section',
+        elements: [{ type: 'message_mention', url: 'https://example.com/?a=1&b=2', text: 'a & b' }],
+      }),
+    ),
+    '<https://example.com/?a=1&amp;b=2|a &amp; b>',
+  );
+});
+
+test('Slack text: bullets and existing newlines are preserved without joining words', () => {
+  assert.equal(
+    blocksToSlackText(
+      richText(
+        section('before\n'),
+        {
+          type: 'rich_text_list',
+          style: 'bullet',
+          elements: [section('one'), section('two')],
+        },
+        section('\nafter'),
+      ),
+    ),
+    'before\n• one\n• two\nafter',
+  );
+});
