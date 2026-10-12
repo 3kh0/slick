@@ -180,6 +180,38 @@ function Find-SlackResources {
 
 function Slack-Exe($res) { if ($res) { Get-ChildItem (Split-Path $res) -Filter 'slack.exe' -EA SilentlyContinue | Select-Object -First 1 } }
 
+# Slack sets this AppUserModelID on its window outside MSIX. Shortcuts need it too,
+# or a pinned Slick gets a separate, iconless taskbar button.
+$AppUserModelId = 'com.squirrel.slack.slack'
+
+function Set-ShortcutAppId([string]$lnk, [string]$id) {
+  if (-not ('SlickShortcut' -as [type])) {
+    Add-Type -TypeDefinition @'
+using System; using System.Runtime.InteropServices;
+[StructLayout(LayoutKind.Sequential, Pack = 4)] public struct SlickPropKey { public Guid fmtid; public uint pid; }
+[StructLayout(LayoutKind.Explicit)] public struct SlickPropVariant { [FieldOffset(0)] public ushort vt; [FieldOffset(8)] public IntPtr p; }
+[ComImport, Guid("886D8EEB-8CF2-4446-8D02-CDBA1DBDCF99"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+public interface ISlickPropertyStore {
+  int GetCount(out uint c); int GetAt(uint i, out SlickPropKey k); int GetValue(ref SlickPropKey k, out SlickPropVariant v);
+  int SetValue(ref SlickPropKey k, ref SlickPropVariant v); int Commit();
+}
+public static class SlickShortcut {
+  [DllImport("shell32.dll", CharSet = CharSet.Unicode, PreserveSig = false)]
+  static extern void SHGetPropertyStoreFromParsingName(string path, IntPtr pbc, int flags, ref Guid riid, out ISlickPropertyStore ps);
+  public static void SetAppId(string path, string id) {
+    Guid iid = typeof(ISlickPropertyStore).GUID; ISlickPropertyStore ps;
+    SHGetPropertyStoreFromParsingName(path, IntPtr.Zero, 2, ref iid, out ps);
+    var key = new SlickPropKey { fmtid = new Guid("9F4C2855-9F79-4B39-A8D0-E1D42DE1D5F3"), pid = 5 };
+    var pv = new SlickPropVariant { vt = 31, p = Marshal.StringToCoTaskMemUni(id) };
+    try { Marshal.ThrowExceptionForHR(ps.SetValue(ref key, ref pv)); Marshal.ThrowExceptionForHR(ps.Commit()); }
+    finally { Marshal.FreeCoTaskMem(pv.p); Marshal.ReleaseComObject(ps); }
+  }
+}
+'@
+  }
+  [SlickShortcut]::SetAppId($lnk, $id)
+}
+
 function New-Shortcuts($exe, $iconFile) {
   $ws = New-Object -ComObject WScript.Shell
   foreach ($lnk in $Shortcuts) {
@@ -189,6 +221,8 @@ function New-Shortcuts($exe, $iconFile) {
       $sc.TargetPath = $exe; $sc.WorkingDirectory = (Split-Path $exe); $sc.Description = 'Slick (Slack mod)'
       if ($iconFile -and (Test-Path $iconFile)) { $sc.IconLocation = "$iconFile,0" }
       $sc.Save()
+      try { Set-ShortcutAppId $lnk $AppUserModelId }
+      catch { Write-Host "    warning: could not set taskbar ID on $lnk ($($_.Exception.Message))" -ForegroundColor Yellow }
       Write-Host "    $lnk"
     } catch {
       Write-Host "    warning: could not create $lnk ($($_.Exception.Message))" -ForegroundColor Yellow
