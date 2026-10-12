@@ -107,6 +107,16 @@ Open Slick from your app menu, or run `flatpak run dev.slick.Slick`.
 nix run github:3kh0/slick
 ```
 
+**Arch** (x86_64), using the AUR package [slick-mod](https://aur.archlinux.org/packages/slick-mod):
+
+Uses the system Electron runtime and depends on the slack-desktop package.
+
+```bash
+yay -S slick-mod
+```
+
+_(Maintained by [@Hash-AK](https://github.com/hash-ak))_
+
 **Other distros:** grab an AppImage, `.deb` or `.rpm` from the [latest release](https://github.com/3kh0/slick/releases/latest). For an AppImage, make it executable in its file properties and open it.
 
 <details>
