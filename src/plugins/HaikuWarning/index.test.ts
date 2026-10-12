@@ -96,3 +96,24 @@ test('offline warning holds a haiku, permits editing and sends only after approv
     (globalThis as any).React = previousReact;
   }
 });
+
+test('reported quoted message produces the exact haiku Orpheus posted', async () => {
+  const { blocksToSlackText, findHaiku } = await import('./haiku.ts');
+  const text = blocksToSlackText([
+    {
+      type: 'rich_text',
+      elements: [
+        { type: 'rich_text_quote', elements: [{ type: 'text', text: 'I’m complex.' }] },
+        {
+          type: 'rich_text_section',
+          elements: [{ type: 'text', text: 'ah, that explains my confusion when I was at best' }],
+        },
+      ],
+    },
+  ]);
+  assert.equal(text, '&gt; I’m complex.\nah, that explains my confusion when I was at best');
+  assert.deepEqual(
+    findHaiku(text, (word) => dictionaryLookup(dictionary, word)),
+    ['gt im complex. ah', 'that explains my confusion', 'when i was at best'],
+  );
+});
