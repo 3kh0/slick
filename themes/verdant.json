@@ -1,6 +1,6 @@
 {
-  "name": "Verdant Circuit - Created by @Jacob N (and ChatGPT)",
-  "description": "A deep graphite Slack theme with electric fern-green highlights, restrained glow, and readable native text. Inspired by @Jacob N's personal-site palette. Made with ChatGPT.",
+  "name": "Verdant Circuit - By @Jacob N",
+  "description": "A deep graphite Slack theme with electric fern-green highlights, restrained glow, and readable native text.",
   "palette": {
     "highlight1": {
       "100": "33,140,90",
