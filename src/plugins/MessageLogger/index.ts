@@ -6,7 +6,7 @@ import { SlickPlugin, type ComponentType, type RtmEvent, type SlackMessage } fro
 import * as meta from './meta.ts';
 import { MAX_EDIT_TEXT, MAX_EDITS_PER_MESSAGE, evictable, mergeEntry, normalize, trim } from './retention.ts';
 import { ImageArchive, type SavedImage } from './images.ts';
-import { hasEvasionPadding, messageText } from './content.ts';
+import { blocksText, hasEvasionPadding, messageText } from './content.ts';
 
 type StoredEdit = { oldText: string; newText: string };
 
@@ -87,6 +87,17 @@ function asInjected(previous: SlackMessage, channel: string, ts: string): SlackM
     delete message.subtype;
   delete message.hidden;
   return trim(message);
+}
+
+function hasContent(message: SlackMessage | undefined): boolean {
+  return !!message && (typeof message.text === 'string' || blocksText(message) !== undefined);
+}
+
+/** Compare blocks with blocks, or fallback text with fallback text. Omission is not tampering. */
+function comparableText(message: SlackMessage, other: SlackMessage): string | undefined {
+  if (blocksText(message) !== undefined && blocksText(other) !== undefined) return messageText(message);
+  if (typeof message.text === 'string' && typeof other.text === 'string') return messageText({ text: message.text });
+  return undefined;
 }
 
 export default class MessageLogger extends SlickPlugin<typeof meta.settings> {
@@ -260,10 +271,14 @@ export default class MessageLogger extends SlickPlugin<typeof meta.settings> {
     if (!previous || !original || previous === original) return false;
     const revision = (message: SlackMessage) => {
       const edited = message.edited as { ts?: string } | undefined;
-      return Number(edited?.ts ?? message.ts ?? 0);
+      const ts = edited?.ts ?? message.ts;
+      return typeof ts === 'string' && /^\d+(\.\d+)?$/.test(ts) ? ts : undefined;
     };
-    if (revision(previous) !== revision(original)) return false;
-    return messageText(previous) !== messageText(original);
+    const previousRevision = revision(previous);
+    if (!previousRevision || previousRevision !== revision(original)) return false;
+    const previousText = comparableText(previous, original);
+    const originalText = comparableText(original, previous);
+    return previousText !== undefined && originalText !== undefined && previousText !== originalText;
   }
 
   private currentUserId(): string | undefined {
@@ -365,7 +380,13 @@ export default class MessageLogger extends SlickPlugin<typeof meta.settings> {
     if (!channel || !ts) return;
     const original = this.original(event, channel, ts);
     const user = userOf(next ?? original ?? previous, event);
-    if (next) this.remember({ ...next, channel, ts });
+    // Metadata-only events must not erase the locally observed body.
+    if (next)
+      this.remember({
+        ...(!hasContent(next) ? { ...original, ...next, text: original?.text, blocks: original?.blocks } : next),
+        channel,
+        ts,
+      });
     if (this.skipSelf(user)) return;
     if (this.skipEditsFrom(next, original, event as SlackMessage)) return;
     const oldText = messageText(original);
@@ -374,7 +395,7 @@ export default class MessageLogger extends SlickPlugin<typeof meta.settings> {
     const lastEdit = existing?.edits?.at(-1);
     const replay = lastEdit?.oldText === messageText(previous) && lastEdit?.newText === newText && oldText === newText;
     const evaded = this.recentEvasion.has(this.key(channel, ts)) || (!replay && this.evaded(previous, original));
-    const changed = !!original && !!next && oldText !== newText;
+    const changed = hasContent(original) && hasContent(next) && oldText !== newText;
     if (!changed && !evaded) return;
 
     const key = this.key(channel, ts);

@@ -407,6 +407,7 @@ test('delete preserves observed blocks over a swapped previous_message and displ
   f.plugin.remember(original);
   original.blocks[0].elements[0].elements[0].text = 'tampered after arrival';
   f.deletion({
+    ...richMessage('forged visible body'),
     ts: '1',
     channel: 'WRONG',
     user: 'ME',
@@ -536,4 +537,94 @@ test('a later delete payload adds evasion evidence without overwriting the prese
   f.deletion(padded);
   assert.equal(f.plugin.entries.get('C:1').evaded, true);
   assert.equal(f.plugin.entries.get('C:1').message.text, 'saved original');
+});
+
+test('/hh to /hj is a legitimate edit with full or incomplete previous payloads', (t) => {
+  for (const previousKind of ['full', 'text-only', 'metadata-only', 'absent']) {
+    const f = loggerFixture(t);
+    const first = richMessage('/hh', { text: '/hh' });
+    const second = richMessage('/hj', { text: '/hj', edited: { ts: '2' } });
+    f.plugin.remember(first);
+    const previous =
+      previousKind === 'full'
+        ? first
+        : previousKind === 'text-only'
+          ? { ts: '1', text: '/hh' }
+          : previousKind === 'metadata-only'
+            ? { ts: '1', user: 'U' }
+            : undefined;
+    f.edit(second, previous);
+    f.edit(second, previous);
+    const entry = f.plugin.entries.get('C:1');
+    assert.deepEqual(entry.edits, [{ oldText: '/hh', newText: '/hj' }], previousKind);
+    assert.equal(entry.evaded, undefined, previousKind);
+    f.deletion(second);
+    assert.equal(f.plugin.entries.get('C:1').evaded, undefined, previousKind);
+  }
+});
+
+test('omitted blocks and different fallback rendering are not evidence of evasion', (t) => {
+  const f = loggerFixture(t);
+  const first = richMessage('/hh', { text: 'fallback /hh' });
+  f.plugin.remember(first);
+  f.edit(richMessage('/hj', { text: 'fallback /hj', edited: { ts: '2' } }), { ts: '1', text: first.text });
+  assert.equal(f.plugin.entries.get('C:1').evaded, undefined);
+  assert.deepEqual(f.plugin.entries.get('C:1').edits, [{ oldText: '/hh', newText: '/hj' }]);
+});
+
+test('metadata-only updates preserve the observed body and do not invent empty edits', (t) => {
+  const f = loggerFixture(t);
+  const first = richMessage('/hh', { text: '/hh' });
+  f.plugin.remember(first);
+  f.edit({ ts: '1', user: 'U', reply_count: 1 }, { ts: '1', user: 'U' });
+  f.edit({ ts: '1', text: undefined, blocks: undefined }, undefined);
+  assert.equal(f.plugin.entries.size, 0);
+  f.edit(richMessage('/hj', { text: '/hj', edited: { ts: '2' } }), first);
+  assert.deepEqual(f.plugin.entries.get('C:1').edits, [{ oldText: '/hh', newText: '/hj' }]);
+  assert.equal(f.plugin.entries.get('C:1').evaded, undefined);
+});
+
+test('empty text remains comparable evidence, while missing revisions are not', (t) => {
+  const f = loggerFixture(t);
+  f.plugin.remember({ channel: 'C', ts: '1', text: 'observed' });
+  f.deletion({ ts: '1', text: '' });
+  assert.equal(f.plugin.entries.get('C:1').evaded, true);
+  assert.equal(f.plugin.evaded({ text: 'one' }, { text: 'two' }), false);
+  assert.equal(f.plugin.evaded({ ts: 'bad', text: 'one' }, { ts: 'bad', text: 'two' }), false);
+  assert.equal(
+    f.plugin.evaded({ ts: '10000000000.000001', text: 'one' }, { ts: '10000000000.000002', text: 'two' }),
+    false,
+  );
+});
+
+test('same-revision altered text and altered blocks still flag evasion on edits', (t) => {
+  for (const original of [{ channel: 'C', ts: '1', text: '/hh' }, richMessage('/hh')]) {
+    const f = loggerFixture(t);
+    f.plugin.remember(original);
+    const forged = 'blocks' in original ? richMessage('forged') : { ts: '1', text: 'forged' };
+    f.edit({ ts: '1', text: '/hj', edited: { ts: '2' } }, forged);
+    assert.equal(f.plugin.entries.get('C:1').evaded, true);
+    assert.equal(f.plugin.entries.get('C:1').edits[0].oldText, '/hh');
+  }
+});
+
+test('a delete omitting blocks preserves the observed body without alleging evasion', (t) => {
+  const f = loggerFixture(t);
+  const original = richMessage('visible body');
+  f.plugin.remember(original);
+  f.deletion({ ts: '1', text: original.text });
+  assert.equal(f.plugin.entries.get('C:1').evaded, undefined);
+  assert.deepEqual(f.plugin.entries.get('C:1').message, original);
+});
+
+test('an already advanced Redux cache does not turn a normal edit into evasion', (t) => {
+  const f = loggerFixture(t);
+  const first = richMessage('/hh', { text: '/hh' });
+  const second = richMessage('/hj', { text: '/hj', edited: { ts: '2' } });
+  f.raw.set('1', second);
+  f.edit(second, first);
+  assert.equal(f.plugin.entries.get('C:1')?.evaded, undefined);
+  f.deletion(second);
+  assert.equal(f.plugin.entries.get('C:1').evaded, undefined);
+  assert.equal(f.plugin.entries.get('C:1').message.text, '/hj');
 });
