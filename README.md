@@ -49,7 +49,8 @@ Slick is widly available on platforms all shapes and sizes. Just scroll down to 
 ### Web
 
 - **Firefox:** open `slick-firefox-*.xpi` from the [latest release](https://github.com/3kh0/slick/releases/latest) with Firefox and approve the install.
-- **Chrome / Chromium:** download and extract [`slick-chromium.zip`](https://github.com/3kh0/slick/releases/latest/download/slick-chromium.zip). Open `chrome://extensions`, enable **Developer mode**, click **Load unpacked** and select the extracted folder.
+- **Chrome / Chromium:** add Slick from the [Chrome Web Store](https://chromewebstore.google.com/detail/slick-for-slack/alfaoldilkoklnfaonfigknfkpkpanca). Works in Chrome, Helium and most other Chromium browsers.
+  - To load it unpacked instead, download and extract [`slick-chromium.zip`](https://github.com/3kh0/slick/releases/latest/download/slick-chromium.zip). Open `chrome://extensions`, enable **Developer mode**, click **Load unpacked** and select the extracted folder.
 - **Userscript:** install [Violentmonkey](https://violentmonkey.github.io/) or any other userscript manager, then open [`slick.user.js`](https://github.com/3kh0/slick/releases/latest/download/slick.user.js) and install it.
 
 Reload Slack in your browser after installing for the changes to take effect.
