@@ -1,5 +1,6 @@
 // Disable Slack's built-in tracking. main.ts blocks the telemetry hosts at the
-// network layer; this half stubs sendBeacon, which bypasses webRequest.
+// network layer; this half fails the same requests inside the page, which covers
+// sendBeacon (it bypasses webRequest) and loaders that can't block requests.
 //
 // Taut also no-ops getGenericTracer / getGenericTelemeter / getNoopTelemeter,
 // but those aren't thunk creators in Slack 4.52.155, so patching them by thunk
@@ -7,6 +8,7 @@
 
 import { SlickPlugin } from '$slick';
 import * as meta from './meta.ts';
+import { blockTelemetry } from './telemetry.ts';
 
 export default class NoTrack extends SlickPlugin<typeof meta.settings> {
   static readonly requiredAPIs = [] as const;
@@ -16,30 +18,15 @@ export default class NoTrack extends SlickPlugin<typeof meta.settings> {
   static readonly defaultEnabled = meta.defaultEnabled;
   static readonly settings = meta.settings;
 
-  private restoreBeacon: (() => void) | null = null;
+  private unblock: (() => void) | null = null;
 
   start() {
-    if (this.config.blockBeacons) this.patchBeacon();
-    this.log(this.config.blockBeacons ? 'beacons blocked' : 'beacon blocking is off');
-  }
-
-  // Returning true keeps Slack's callers happy.
-  private patchBeacon() {
-    const original = navigator.sendBeacon?.bind(navigator);
-    if (!original) return;
-
-    navigator.sendBeacon = (url: string | URL, data?: BodyInit | null) => {
-      const href = typeof url === 'string' ? url : url.href;
-      if (/slackb\.com|\/beacon\/|\/clog\//.test(href)) return true;
-      return original(url, data);
-    };
-    this.restoreBeacon = () => {
-      navigator.sendBeacon = original;
-    };
+    this.unblock = blockTelemetry(window, { beacons: this.config.blockBeacons });
+    this.log(`telemetry requests blocked in page${this.config.blockBeacons ? ', beacons included' : ''}`);
   }
 
   stop() {
-    this.restoreBeacon?.();
-    this.restoreBeacon = null;
+    this.unblock?.();
+    this.unblock = null;
   }
 }
