@@ -7,6 +7,7 @@ test('wildcard matching preserves literal URL punctuation and full-string bounda
   assert.equal(matches('https://app.slack.com/api/track?event=click'), true);
   assert.equal(matches('https://slack.com/beacon'), true);
   assert.equal(matches('https://appXslack.com/api/track?event=click'), false);
+  assert.equal(matches('https://app.slackXcom/api/track?event=click'), false);
   assert.equal(matches('https://app.slack.com/api/trackXevent=click'), false);
   assert.equal(matches('https://slack.com/beacon/extra'), false);
   assert.equal(matches('prefixhttps://app.slack.com/api/track?event=click'), false);
