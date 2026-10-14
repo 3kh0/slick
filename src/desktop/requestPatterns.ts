@@ -4,7 +4,7 @@ export function compileRequestPatterns(patterns: readonly string[]): (url: strin
   const expressions = patterns.map((pattern) => {
     const expression = pattern
       .split('*')
-      .map((literal) => literal.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+      .map((literal) => RegExp.escape(literal))
       .join('.*');
     return new RegExp(`^${expression}$`);
   });
