@@ -84,7 +84,7 @@ function slickMenuTemplate(): Electron.MenuItemConstructorOptions {
     { role: 'reload' },
     { role: 'forceReload' },
     { type: 'separator' },
-    { role: 'quit' },
+    { label: 'Quit Slick', click: () => app.quit() },
   );
   return { label: 'Slick', submenu };
 }
