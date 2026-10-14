@@ -2,6 +2,7 @@
 
 import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import { gzipSync } from 'node:zlib';
 import { build, type Plugin } from 'esbuild';
 import type { ThemeJson } from '../../src/app/theme.ts';
 import { compactDictionary } from '../../src/plugins/HaikuWarning/haiku.ts';
@@ -25,7 +26,7 @@ const haikuDictionary: Plugin = {
   name: 'haiku-dictionary',
   setup(builder) {
     builder.onLoad({ filter: /[\\/]HaikuWarning[\\/]syllable_counts\.txt$/ }, async (args) => ({
-      contents: compactDictionary(await readFile(args.path, 'utf8')),
+      contents: `gzip-base64:${gzipSync(compactDictionary(await readFile(args.path, 'utf8')), { level: 9 }).toString('base64')}`,
       loader: 'text',
     }));
   },

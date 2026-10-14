@@ -253,7 +253,10 @@ export default class ShowSendingBot extends SlickPlugin<typeof meta.settings> {
 
     this.api.patchComponent<AvatarProps>('ConnectedBaseAvatar', (Original) => (props) => {
       const msg = React.useContext(this.SenderContext);
-      const drawn = msg && drawsSender(props.className) ? { ...msg, user: props.userId } : undefined;
+      // Most avatars are not message senders (sidebar, profiles, reactions and
+      // our badge itself). Keep them outside the subscribed badge component.
+      if (!msg || !drawsSender(props.className)) return <Original {...props} />;
+      const drawn = { ...msg, user: props.userId };
       return (
         <this.Badged msg={drawn} size={props.size}>
           <Original {...props} />

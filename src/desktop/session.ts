@@ -1,9 +1,10 @@
 // Serves the embedded slick.js (and the CSS editor) over slick://.
 // SLICK_APP_URL is a dev-only override for `npm run dev`.
 
-import { readFileSync, statSync } from 'node:fs';
+import { statSync } from 'node:fs';
 import path from 'node:path';
-import { session } from 'electron';
+import { app, session } from 'electron';
+import { createAssetReader } from './assetReader.ts';
 import { editorHtml, MONACO_URL_PREFIX } from './windows/cssEditor.ts';
 
 export const SLICK_SCHEME = 'slick';
@@ -50,8 +51,11 @@ export function setupSession(dirs: string[]) {
   const candidates = dirs.map((dir) => path.join(dir, 'slick.js'));
   bundleCandidates = candidates;
   const monacoDirs = dirs.map((dir) => path.join(dir, 'monaco'));
+  // Packaged bundles are immutable for the process lifetime; dev rebuilds must stay fresh.
+  const readBundle = createAssetReader(app.isPackaged && !process.env.SLICK_RESOURCES_PATH);
+  const readAsset = createAssetReader(false);
 
-  session.defaultSession.protocol.handle(SLICK_SCHEME, (request) => {
+  session.defaultSession.protocol.handle(SLICK_SCHEME, async (request) => {
     const url = new URL(request.url);
     const file = url.pathname.replace(/^\//, '');
 
@@ -73,7 +77,7 @@ export function setupSession(dirs: string[]) {
         const target = path.resolve(root, 'vs', relative);
         if (target !== path.resolve(root, 'vs') && !target.startsWith(path.resolve(root, 'vs') + path.sep)) continue;
         try {
-          return new Response(readFileSync(target), { headers: { 'Content-Type': type } });
+          return new Response(await readAsset(target), { headers: { 'Content-Type': type } });
         } catch {}
       }
       return notFound();
@@ -83,7 +87,7 @@ export function setupSession(dirs: string[]) {
 
     for (const bundle of candidates) {
       try {
-        return new Response(readFileSync(bundle), {
+        return new Response(await readBundle(bundle), {
           headers: { 'Content-Type': 'application/javascript' },
         });
       } catch {}
