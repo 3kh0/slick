@@ -9,6 +9,7 @@ import * as blobStore from './blobStore.js';
 import { isSlackClient, safeMode } from './bridge.js';
 import * as secretStore from './secretStore.js';
 import { createAccountNavigation } from './accountNavigation.ts';
+import { compileRequestPatterns } from './requestPatterns.ts';
 import { isAccountDiagnosticDetails, logAccountEvent } from './accountDiagnostics.ts';
 
 export const accountNavigation = createAccountNavigation(
@@ -119,14 +120,6 @@ let displayMediaHandler: ((request: any) => any) | null = null;
 type RequestHandler = (details: Electron.OnBeforeRequestListenerDetails) => Electron.CallbackResponse | void;
 const requestHandlers = new Set<{ patterns: string[]; handler: RequestHandler }>();
 
-function requestMatches(url: string, patterns: string[]): boolean {
-  return patterns.some((pattern) => {
-    if (pattern === '<all_urls>') return true;
-    const expression = pattern.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replaceAll('*', '.*');
-    return new RegExp(`^${expression}$`).test(url);
-  });
-}
-
 function installRequestDispatcher() {
   const webRequest = session.defaultSession.webRequest;
   if (!requestHandlers.size) {
@@ -134,11 +127,15 @@ function installRequestDispatcher() {
     return;
   }
 
-  const urls = [...new Set([...requestHandlers].flatMap((registration) => registration.patterns))];
+  const registrations = [...requestHandlers].map((registration) => ({
+    ...registration,
+    matches: compileRequestPatterns(registration.patterns),
+  }));
+  const urls = [...new Set(registrations.flatMap((registration) => registration.patterns))];
   webRequest.onBeforeRequest({ urls }, (details, callback) => {
     let response: Electron.CallbackResponse = {};
-    for (const registration of requestHandlers) {
-      if (!requestMatches(details.url, registration.patterns)) continue;
+    for (const registration of registrations) {
+      if (!registration.matches(details.url)) continue;
       let next: Electron.CallbackResponse | void;
       try {
         next = registration.handler(details);

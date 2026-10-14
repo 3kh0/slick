@@ -2,6 +2,7 @@ import { SlickPlugin, type Delta } from '$slick';
 import { blocksToSlackText, dictionaryLookup, findHaiku } from './haiku.ts';
 import * as meta from './meta.ts';
 import dictionary from './syllable_counts.txt';
+import { dictionaryLoader } from './dictionary.ts';
 
 type SendArgs = { delta: Delta; channelId?: string; replyToTs?: string; viewContext?: string };
 type SendProps = {
@@ -28,6 +29,7 @@ export default class HaikuWarning extends SlickPlugin<typeof meta.settings> {
   private prompt: { close: () => void } | null = null;
   // Set while an approved send runs, so a wrapper further down the same call lets it through.
   private approved = false;
+  private readonly dictionary = dictionaryLoader(dictionary);
 
   start() {
     for (const name of ['MessagePaneInput', 'InputContainer'] as const) {
@@ -109,7 +111,8 @@ export default class HaikuWarning extends SlickPlugin<typeof meta.settings> {
       const text = blocksToSlackText(blocks);
       // Ruby's String#length counts code points, not UTF-16 units.
       if ([...text].length >= MAX_LENGTH) return null;
-      return findHaiku(text, (word) => dictionaryLookup(dictionary, word));
+      const words = await this.dictionary();
+      return findHaiku(text, (word) => dictionaryLookup(words, word));
     } catch (error) {
       this.log('could not check message', error);
       return null;

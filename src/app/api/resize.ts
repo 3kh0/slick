@@ -39,8 +39,13 @@ function releaseObservers() {
   const pending = [...heldObservers];
   heldObservers.clear();
   for (const held of pending) {
+    const entries = [...held.entries.values()];
+    // A later drag must only replay entries delivered during that hold. Clear
+    // before invoking user code, which can synchronously start another hold.
+    held.entries.clear();
+    if (!entries.length) continue;
     try {
-      held.callback([...held.entries.values()], held.observer);
+      held.callback(entries, held.observer);
     } catch (error) {
       reportError(error);
     }

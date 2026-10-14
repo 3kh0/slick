@@ -117,3 +117,28 @@ test('reported quoted message produces the exact haiku Orpheus posted', async ()
     ['gt im complex. ah', 'that explains my confusion', 'when i was at best'],
   );
 });
+
+test('dictionary decoding is skipped for excluded or long messages and failures do not block sending', async () => {
+  let decodes = 0;
+  let sends = 0;
+  let failures = 0;
+  const plugin = new HaikuWarning(
+    {
+      blocks: { fromDelta: async (delta: any) => [{ type: 'text', text: delta.ops[0].insert }] },
+    },
+    {},
+  );
+  plugin.dictionary = async () => {
+    decodes++;
+    throw new Error('invalid dictionary');
+  };
+  plugin.log = () => failures++;
+  const props = { prepareAndSendMessage: async () => sends++ };
+  await plugin.onSend(props, { channelId: 'C09MATKQM8C', delta: { ops: [{ insert: 'hello' }] } });
+  await plugin.onSend(props, { delta: { ops: [{ insert: 'x'.repeat(300) }] } });
+  assert.equal(decodes, 0);
+  await plugin.onSend(props, { delta: { ops: [{ insert: 'hello' }] } });
+  assert.equal(decodes, 1);
+  assert.equal(failures, 1);
+  assert.equal(sends, 3);
+});

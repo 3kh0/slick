@@ -3,7 +3,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { settingsDir } from './paths.js';
+import { settingsDir } from './paths.ts';
 
 const SETTINGS_FILE = 'settings.json';
 const DEBOUNCE_MS = 150;
@@ -21,9 +21,9 @@ export function readSettingsText(): string {
   }
 }
 
-export function readStoredSettings(): StoredSettings | null {
+export function readStoredSettings(text = readSettingsText()): StoredSettings | null {
   try {
-    const parsed = JSON.parse(readSettingsText());
+    const parsed = JSON.parse(text);
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
     const plugins = parsed.plugins;
     return {
@@ -45,7 +45,7 @@ export function watchSettings(onChange: (text: string, settings: StoredSettings)
   const fire = () => {
     timer = null;
     const text = readSettingsText();
-    const settings = readStoredSettings();
+    const settings = readStoredSettings(text);
     // Don't reset live plugins, or let the renderer save defaults over the damaged file.
     if (settings) onChange(text, settings);
   };
