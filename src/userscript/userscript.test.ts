@@ -60,7 +60,7 @@ test('settings use acknowledged GM writes, reject malformed imports, and remove 
   const { gm, values, listeners } = memoryGm();
   const bridge = createUserscriptBridge(gm);
   const defaults = JSON.parse(await bridge.readSettings());
-  assert.equal(Object.keys(defaults.plugins).length, 34);
+  assert.equal(Object.keys(defaults.plugins).length, 33);
   assert.ok(Object.values(defaults.plugins).every((p: any) => !p.enabled));
   for (const id of ['AccountSwitcher', 'Click2Load']) assert.equal(defaults.plugins[id], undefined);
   assert.deepEqual(defaults.plugins.NoTrack, { enabled: false });
