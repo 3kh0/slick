@@ -20,3 +20,12 @@ test('all URLs and empty filters retain existing matching semantics', () => {
   assert.equal(matches('https://slack.com/a+(b)[c]$'), true);
   assert.equal(matches('https://slack.com/aaabc'), false);
 });
+
+test('literal segments escape regex syntax independently of wildcard expansion', () => {
+  const literal = String.raw`https://slack.com/a+(b)[c]{d}^$|?\\tail`;
+  const matches = compileRequestPatterns([`${literal}*end`]);
+  assert.equal(matches(`${literal}middle/end`), true);
+  assert.equal(matches(`${literal}end`), true);
+  assert.equal(matches(`${literal}end/extra`), false);
+  assert.equal(matches(literal.replace('slack.com', 'slackXcom') + 'end'), false);
+});
