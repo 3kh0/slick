@@ -18,6 +18,13 @@ export const SAFE_MODE = 'slick:userscript:safe-mode';
 
 export function createUserscriptBridge(gm: GMApi, plugins: BackgroundPlugin[] = [], safeMode = false): SlickBridge {
   const enqueue = serialQueue();
+  let initialSettings: string | undefined;
+  try {
+    const text: unknown = gm.get(SETTINGS, DEFAULT_SETTINGS);
+    if (typeof text === 'string') initialSettings = text;
+  } catch {
+    // Early settings consumers must leave Slack unchanged when storage fails.
+  }
   const parse = (text: string): unknown => {
     try {
       return JSON.parse(text);
@@ -39,7 +46,7 @@ export function createUserscriptBridge(gm: GMApi, plugins: BackgroundPlugin[] = 
   };
   const host = createMainHost(area, undefined, plugins, (url, init) => gmFetch(gm, url, init));
   const updateHost = (text: string) => host.update(safeMode ? { enabled: false } : parse(text));
-  const hostReady = updateHost(gm.get(SETTINGS, DEFAULT_SETTINGS));
+  const hostReady = updateHost(initialSettings ?? '{"enabled":false}');
   gm.watch(SETTINGS, (_key, _old, value) => {
     if (typeof value === 'string' && validSettings(value)) void updateHost(value);
   });
@@ -49,6 +56,7 @@ export function createUserscriptBridge(gm: GMApi, plugins: BackgroundPlugin[] = 
     bridgeVersion: 1,
     safeMode,
     paths: {},
+    initialSettings,
     readSettings: async () => gm.get(SETTINGS, DEFAULT_SETTINGS),
     writeSettings: (text) =>
       enqueue(async () => {

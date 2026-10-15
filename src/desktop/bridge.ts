@@ -8,6 +8,7 @@ import { configDir, profileDir, settingsDir } from './paths.js';
 import { setupBlobRpc } from './pluginHost.js';
 import type { Updater } from './updater.js';
 import { appUrl } from './session.js';
+import { readBootSettings } from './settingsFile.js';
 import { createCssEditor } from './windows/cssEditor.js';
 
 const SETTINGS_FILE = 'settings.json';
@@ -82,6 +83,7 @@ export function broadcast(channel: string, ...args: unknown[]) {
 }
 
 const methods: Record<string, (args: any[]) => unknown> = {
+  readBootSettings: () => readBootSettings(),
   readSettings: () => readFile(SETTINGS_FILE, '{}'),
   writeSettings: ([text]) => writeFile(SETTINGS_FILE, String(text ?? '')),
   readUserCss: () => readFile(USER_CSS_FILE, ''),
