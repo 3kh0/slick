@@ -233,19 +233,42 @@ function dirtyMemoizationCache() {
 type ComponentMatcher = (component: ComponentType) => boolean;
 const replacements = new Map<ComponentMatcher, ComponentReplacer>();
 
-let notPatched = new WeakSet<object>();
+// Unchanged identities resolve to themselves, so both hits and misses need
+// only one weak lookup on subsequent renders.
 let resolved = new WeakMap<object, ComponentType>();
 // Host elements and React symbols (Fragment, Suspense) recur throughout renders.
 // Cache both so each type only runs the matchers once per patch set.
 let resolvedPrimitives = new Map<string | symbol, any>();
 
 function invalidateCaches() {
-  notPatched = new WeakSet<object>();
   resolved = new WeakMap<object, ComponentType>();
   resolvedPrimitives = new Map<string | symbol, any>();
 }
 
-const originalObjectCache = new Map<ComponentType, OriginalComponentObject>();
+// Replacements can outlive individual component identities (for example inline
+// components recreated during rendering). Keep those keys weak so enabling a
+// patch does not retain every component it has ever wrapped. Host tags and
+// React's registered symbols use a separate, small primitive cache.
+class ComponentCache<T> {
+  private objects = new WeakMap<object, T>();
+  private primitives = new Map<ComponentType, T>();
+
+  private cache(component: ComponentType) {
+    return component !== null && (typeof component === 'object' || typeof component === 'function')
+      ? this.objects
+      : this.primitives;
+  }
+
+  get(component: ComponentType): T | undefined {
+    return this.cache(component).get(component as any);
+  }
+
+  set(component: ComponentType, value: T): void {
+    this.cache(component).set(component as any, value);
+  }
+}
+
+const originalObjectCache = new ComponentCache<OriginalComponentObject>();
 
 function getOriginalComponentObject(component: ComponentType): OriginalComponentObject {
   const cached = originalObjectCache.get(component);
@@ -296,12 +319,12 @@ function hoistStatics(replaced: any, original: any): void {
   }
 }
 
-const replacerResults = new WeakMap<ComponentReplacer, Map<ComponentType, ComponentType>>();
+const replacerResults = new WeakMap<ComponentReplacer, ComponentCache<ComponentType>>();
 
 function applyReplacer<P = any>(replacer: ComponentReplacer<P>, original: ComponentType<P>): ComponentType<P> {
   let cache = replacerResults.get(replacer);
   if (!cache) {
-    cache = new Map();
+    cache = new ComponentCache();
     replacerResults.set(replacer, cache);
   }
   const hit = cache.get(original);
@@ -316,33 +339,31 @@ function applyReplacer<P = any>(replacer: ComponentReplacer<P>, original: Compon
 }
 
 function resolveType(type: any, props: any): any {
-  if ((typeof type === 'string' || typeof type === 'symbol') && !props?.__original) {
-    const cached = resolvedPrimitives.get(type);
-    if (cached !== undefined) return cached;
-    const result = resolveUncached(type, props);
-    resolvedPrimitives.set(type, result);
-    return result;
-  }
-  return resolveUncached(type, props);
-}
-
-function resolveUncached(type: any, props: any): any {
-  // `__original` lets a replacement render the component it wrapped without
-  // recursing back into itself.
+  // `__original` lets a replacement render its wrapped component once.
   if (props?.__original) {
     delete props.__original;
     return type;
   }
-  if (isOriginalComponentObject(type)) return type.originalComponent;
-
-  const cacheable = typeof type === 'object' || typeof type === 'function';
-  if (cacheable) {
-    if (notPatched.has(type)) return type;
-    const hit = resolved.get(type);
-    if (hit) return hit;
-    rememberRendered(type);
+  if (typeof type === 'string' || typeof type === 'symbol') {
+    const cached = resolvedPrimitives.get(type);
+    if (cached !== undefined) return cached;
+    const result = resolveUncached(type);
+    resolvedPrimitives.set(type, result);
+    return result;
   }
+  if (type !== null && (typeof type === 'object' || typeof type === 'function')) {
+    const cached = resolved.get(type);
+    if (cached !== undefined) return cached;
+    if (isOriginalComponentObject(type)) return type.originalComponent;
+    rememberRendered(type);
+    const result = resolveUncached(type);
+    resolved.set(type, result);
+    return result;
+  }
+  return resolveUncached(type);
+}
 
+function resolveUncached(type: any): any {
   const matched: [ComponentMatcher, ComponentReplacer][] = [];
   for (const [matches, replacer] of replacements) {
     try {
@@ -350,10 +371,7 @@ function resolveUncached(type: any, props: any): any {
     } catch {}
   }
 
-  if (!matched.length) {
-    if (cacheable) notPatched.add(type);
-    return type;
-  }
+  if (!matched.length) return type;
 
   // Start from the marker object so several plugins can stack on one component.
   const original = getOriginalComponentObject(type) as unknown as ComponentType;
@@ -367,12 +385,8 @@ function resolveUncached(type: any, props: any): any {
       console.error(`[slick] component patch for "${getDisplayName(type)}" threw and was disabled:`, replacer, error);
     }
   }
-  if (replaced === original) {
-    if (cacheable) notPatched.add(type);
-    return type;
-  }
+  if (replaced === original) return type;
   hoistStatics(replaced, type);
-  if (cacheable) resolved.set(type, replaced);
   return replaced;
 }
 
