@@ -251,3 +251,55 @@ test('userscript catch-up preserves a running runtime and never re-executes cach
   assert.equal(calls, 1);
   assert.match(api.webpack.getModuleSource('lazy'), /lazyExport/);
 });
+
+test('React symbols cache matcher results and invalidate when patches change', async () => {
+  const { api, queue, execute } = fixture();
+  const Fragment = Symbol.for('react.fragment');
+  const Suspense = Symbol.for('react.suspense');
+  const core = {
+    jsx: (type: unknown, props: unknown) => ({ type, props }),
+    jsxs: (type: unknown, props: unknown) => ({ type, props }),
+    Fragment,
+  };
+  queue.push([
+    [1],
+    {
+      runtime(module: any) {
+        module.exports = core;
+      },
+    },
+  ]);
+  execute(queue[0]);
+  await api.react.jsxRuntimeReady;
+  let matches = 0;
+  const dispose = api.react.patchComponent(
+    {
+      filter: () => {
+        matches++;
+        return false;
+      },
+    },
+    () => {
+      throw new Error('unmatched replacer');
+    },
+  );
+  for (let i = 0; i < 10; i++) {
+    assert.equal(core.jsx(Fragment, {}).type, Fragment);
+    assert.equal(core.jsxs(Suspense, {}).type, Suspense);
+  }
+  assert.equal(matches, 2, 'each symbol runs matchers once');
+
+  const Replacement = () => null;
+  const removeReplacement = api.react.patchComponent(
+    { filter: (type: unknown) => type === Fragment },
+    () => Replacement,
+  );
+  assert.equal(core.jsx(Fragment, {}).type, Replacement, 'adding a patch invalidates cached symbols');
+  const bypass = { __original: true };
+  assert.equal(core.jsx(Fragment, bypass).type, Fragment);
+  assert.equal(Object.hasOwn(bypass, '__original'), false);
+  assert.equal(core.jsx(Fragment, {}).type, Replacement, 'bypassing must not overwrite the cached replacement');
+  removeReplacement();
+  assert.equal(core.jsx(Fragment, {}).type, Fragment, 'disposing a patch invalidates cached symbols');
+  dispose();
+});

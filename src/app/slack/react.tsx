@@ -1,7 +1,7 @@
 // Slack's React and JSX runtime are wrapped so every element type passes
 // through `resolveType` before React sees it; that is how plugins change
 // Slack's UI without a MutationObserver. Each type resolves once per set of
-// patches (identity-keyed weak caches; host tag strings in a plain Map).
+// patches (identity-keyed weak caches; host tag strings and React symbols in a plain Map).
 
 import { forEachExport, findModuleId, getExport, getValueSource, waitForExport } from './webpack.ts';
 import { Store } from '../store.ts';
@@ -235,13 +235,14 @@ const replacements = new Map<ComponentMatcher, ComponentReplacer>();
 
 let notPatched = new WeakSet<object>();
 let resolved = new WeakMap<object, ComponentType>();
-// Host elements are the bulk of renders; without this every one ran every matcher.
-let resolvedHosts = new Map<string, any>();
+// Host elements and React symbols (Fragment, Suspense) recur throughout renders.
+// Cache both so each type only runs the matchers once per patch set.
+let resolvedPrimitives = new Map<string | symbol, any>();
 
 function invalidateCaches() {
   notPatched = new WeakSet<object>();
   resolved = new WeakMap<object, ComponentType>();
-  resolvedHosts = new Map<string, any>();
+  resolvedPrimitives = new Map<string | symbol, any>();
 }
 
 const originalObjectCache = new Map<ComponentType, OriginalComponentObject>();
@@ -315,11 +316,11 @@ function applyReplacer<P = any>(replacer: ComponentReplacer<P>, original: Compon
 }
 
 function resolveType(type: any, props: any): any {
-  if (typeof type === 'string' && !props?.__original) {
-    const host = resolvedHosts.get(type);
-    if (host !== undefined) return host;
+  if ((typeof type === 'string' || typeof type === 'symbol') && !props?.__original) {
+    const cached = resolvedPrimitives.get(type);
+    if (cached !== undefined) return cached;
     const result = resolveUncached(type, props);
-    resolvedHosts.set(type, result);
+    resolvedPrimitives.set(type, result);
     return result;
   }
   return resolveUncached(type, props);
