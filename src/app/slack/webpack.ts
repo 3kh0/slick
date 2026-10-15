@@ -58,6 +58,20 @@ export function waitForExport(matcher: SimpleMatcher): Promise<any> {
   const existing = getExport(matcher);
   if (existing !== undefined) return Promise.resolve(existing);
 
+  return waitForFutureExport(matcher);
+}
+
+type ExportLookup<T> = { found: true; value: T } | { found: false; promise: Promise<T> };
+
+/** One scan, with a synchronous hit for callers that must render immediately. */
+export function getExportOrWait<T>(matcher: ExportMatcher<T>): ExportLookup<T>;
+export function getExportOrWait<T>(matcher: SimpleMatcher): ExportLookup<T>;
+export function getExportOrWait(matcher: SimpleMatcher): ExportLookup<any> {
+  const value = getExport(matcher);
+  return value !== undefined ? { found: true, value } : { found: false, promise: waitForFutureExport(matcher) };
+}
+
+function waitForFutureExport(matcher: SimpleMatcher): Promise<any> {
   return new Promise((resolve) => {
     const id = Symbol();
     pendingMatchers.set(id, {

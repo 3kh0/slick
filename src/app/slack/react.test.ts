@@ -19,11 +19,12 @@ const bundle = await build({
 
 function fixture() {
   const errors: unknown[][] = [];
+  const timers: (() => void)[] = [];
   const context = createContext({
     console: { ...console, error: (...args: unknown[]) => errors.push(args) },
     EventTarget,
     Event,
-    setTimeout,
+    setTimeout: (callback: () => void) => timers.push(callback),
     queueMicrotask,
     document: { querySelector: () => null },
   });
@@ -42,6 +43,9 @@ function fixture() {
     },
     Component() {},
     useState() {},
+    useSyncExternalStore(_subscribe: unknown, read: () => unknown) {
+      return read();
+    },
     Fragment: Symbol.for('react.fragment'),
   };
   context.rspackChunkGantryV2.push([
@@ -54,7 +58,19 @@ function fixture() {
   ]);
   const module = { exports: {} };
   context.rspackChunkGantryV2[0][1].runtime(module, module.exports, () => ({}));
-  return { react, core, errors };
+  return {
+    react,
+    core,
+    errors,
+    timers,
+    load(value: unknown) {
+      const queue = context.rspackChunkGantryV2;
+      const id = queue.length;
+      queue.push([[id], { [id]: (loadedModule: any) => (loadedModule.exports = value) }]);
+      const lateModule = { exports: {} };
+      queue.at(-1)[1][id](lateModule, lateModule.exports, () => ({}));
+    },
+  };
 }
 
 test('component identities run matchers once and remain discoverable across cache invalidation', async () => {
@@ -182,4 +198,46 @@ test('a failed replacer is disabled without breaking surviving replacements or t
 test('invalid element types reach React for its own diagnostics', () => {
   const { core } = fixture();
   for (const type of [null, undefined, false, 42]) assert.equal(core.jsx(type, {}).type, type);
+});
+
+test('lazy components scan missing exports once while keeping loaded components synchronous', async () => {
+  const { react, load, timers, errors } = fixture();
+  let reads = 0;
+  load({
+    get unrelated() {
+      reads++;
+      return function OtherComponent() {};
+    },
+  });
+  reads = 0;
+  const Lazy = react.lazyComponent('DeferredComponent');
+  assert.equal(Lazy({ label: 'waiting' }), null);
+  assert.equal(reads, 1);
+  assert.equal(Lazy({ label: 'still waiting' }), null);
+  assert.equal(reads, 1, 'later renders do not repeat discovery');
+  function DeferredComponent() {}
+  load({ DeferredComponent });
+  await Promise.resolve();
+  assert.equal(Lazy({ label: 'ready' }).type, DeferredComponent);
+  for (const timer of timers) timer();
+  assert.equal(errors.length, 0);
+
+  const AlreadyLoaded = react.lazyComponent('DeferredComponent');
+  assert.equal(AlreadyLoaded({ label: 'first render' }).type, DeferredComponent);
+});
+
+test('lazy components recover when their module arrives after the missing-component timeout', async () => {
+  const { react, load, timers, errors } = fixture();
+  const Lazy = react.lazyComponent('LateComponent');
+  assert.equal(Lazy({}), null);
+  assert.equal(timers.length, 1);
+  timers[0]();
+  assert.equal(Lazy({}).type.displayName, 'Missing(LateComponent)');
+  assert.equal(errors.length, 1);
+
+  function LateComponent() {}
+  load({ LateComponent });
+  await Promise.resolve();
+  assert.equal(Lazy({}).type, LateComponent);
+  assert.equal(errors.length, 1);
 });

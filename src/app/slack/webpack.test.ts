@@ -32,7 +32,14 @@ function fixture(exports: unknown[]) {
     const module = { exports: {} };
     factory(module, module.exports, () => ({}));
   }
-  return api;
+  return {
+    ...api,
+    load(value: unknown, id = 'late') {
+      queue.push([[id], { [id]: (module: any) => (module.exports = value) }]);
+      const module = { exports: {} };
+      queue.at(-1)[1][id](module, module.exports, () => ({}));
+    },
+  };
 }
 
 test('single export lookups return a matching namespace without reading its getters', () => {
@@ -111,4 +118,35 @@ test('discovery handles throwing getters and predicates, function properties and
     undefined,
   );
   assert.equal(api.getExport(() => false, true).length, 0);
+});
+
+test('synchronous-or-wait discovery scans a miss once and resolves when a matching module arrives', async () => {
+  let reads = 0;
+  const namespace = {
+    get member() {
+      reads++;
+      return 'other';
+    },
+  };
+  const api = fixture([namespace]);
+  const pending = api.getExportOrWait((value: unknown) => value === 'wanted');
+  assert.equal(pending.found, false);
+  assert.equal(reads, 1);
+  api.load({ value: 'wanted' });
+  assert.equal(await pending.promise, 'wanted');
+  const immediate = api.getExportOrWait((value: unknown) => value === namespace);
+  assert.equal(immediate.found, true);
+  assert.equal(immediate.value, namespace);
+  assert.equal(reads, 1, 'matching the namespace still avoids invoking its getter');
+});
+
+test('ordinary waitForExport retains its one-scan matcher behavior', async () => {
+  const marker = {};
+  const api = fixture([marker]);
+  let calls = 0;
+  const waiting = api.waitForExport((value: unknown) => value === marker && ++calls === 2);
+  assert.equal(calls, 1);
+  api.load(marker);
+  assert.equal(await waiting, marker);
+  assert.equal(calls, 2);
 });

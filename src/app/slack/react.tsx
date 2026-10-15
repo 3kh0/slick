@@ -3,7 +3,7 @@
 // Slack's UI without a MutationObserver. Each type resolves once per set of
 // patches (identity-keyed weak caches; host tag strings and React symbols in a plain Map).
 
-import { forEachExport, findModuleId, getExport, getValueSource, waitForExport } from './webpack.ts';
+import { forEachExport, findModuleId, getExport, getExportOrWait, getValueSource, waitForExport } from './webpack.ts';
 import { Store } from '../store.ts';
 
 const global = globalThis as any;
@@ -103,12 +103,12 @@ export function lazyComponent<P extends {}>(name: string, filter?: Filter): Reac
     if (looked) return;
     looked = true;
 
-    const loaded = getExport<React.ComponentType<P>>(match);
-    if (loaded) {
-      component.set(loaded);
+    const result = getExportOrWait<React.ComponentType<P>>(match);
+    if (result.found) {
+      component.set(result.value);
       return;
     }
-    void waitForExport<React.ComponentType<P>>(match).then(component.set);
+    void result.promise.then(component.set);
     setTimeout(() => {
       if (component.get()) return;
       console.error(`[slick] "${name}" is unavailable`);
