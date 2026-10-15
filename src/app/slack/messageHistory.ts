@@ -43,12 +43,21 @@ export function sliceCovers(history: ChannelHistory, slice: HistorySlice, positi
 
 export function withTimestamps(history: ChannelHistory, added: string[], excluded: string[] = []): HistorySlice[] {
   const slices = history.slices ?? [];
+  const excludedSet = excluded.length > 8 ? new Set(excluded) : undefined;
   let changed = false;
   const next = slices.map((slice, position) => {
     const { timestamps } = slice;
     if (!Array.isArray(timestamps)) return slice;
-    const kept = timestamps.filter((ts) => !excluded.includes(ts));
-    const missing = added.filter((ts) => sliceCovers(history, slice, position, ts) && !kept.includes(ts));
+    const kept = timestamps.filter((ts) => !(excludedSet ? excludedSet.has(ts) : excluded.includes(ts)));
+    let present: Set<string> | undefined;
+    const missing = added.filter((ts) => {
+      if (!sliceCovers(history, slice, position, ts)) return false;
+      // A few lookups are cheaper than building an index. Build it lazily so
+      // timestamps outside this slice never index the whole history window.
+      if (added.length <= 8) return !kept.includes(ts);
+      present ??= new Set(kept);
+      return !present.has(ts);
+    });
     if (!missing.length && kept.length === timestamps.length) return slice;
     changed = true;
     // Slack timestamps are fixed-width, so they sort as plain strings.

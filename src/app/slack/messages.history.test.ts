@@ -81,3 +81,42 @@ test('withTimestamps: removes hidden reply timestamps already present in channel
   assert.deepEqual(withTimestamps(history, [], ['2', '4'])[0].timestamps, ['1', '3', '5']);
   assert.equal(withTimestamps(history, [], ['absent']), history.slices);
 });
+
+test('withTimestamps: indexed membership preserves duplicate additions and permits excluded timestamps to be restored', () => {
+  const first = {
+    timestamps: ['00', '02', '04', '06', '08', '10', '12', '14', '16', '18', '20', '22'],
+    start: '00',
+    end: '30',
+  };
+  const second = { timestamps: ['99'], start: '90', end: '99' };
+  const history = { slices: [first, second] };
+  const next = withTimestamps(
+    history,
+    ['01', '01', '03', '05', '07', '09', '11', '13', '15', '16'],
+    ['00', '02', '04', '06', '08', '10', '12', '14', '16'],
+  );
+  assert.deepEqual(next[0].timestamps, ['01', '01', '03', '05', '07', '09', '11', '13', '15', '16', '18', '20', '22']);
+  assert.equal(next[1], second);
+  assert.deepEqual(first.timestamps, ['00', '02', '04', '06', '08', '10', '12', '14', '16', '18', '20', '22']);
+});
+
+test('withTimestamps: larger membership indexes preserve unchanged history and ignore out-of-range additions', () => {
+  const timestamps = ['00', '01', '02', '03', '04', '05', '06', '07', '08', '09'];
+  const slices = [{ timestamps, start: '00', end: '09' }];
+  const absent = ['10', '11', '12', '13', '14', '15', '16', '17', '18'];
+  assert.equal(withTimestamps({ slices }, timestamps, absent), slices);
+  assert.equal(withTimestamps({ slices }, absent), slices);
+  assert.equal(slices[0].timestamps, timestamps);
+});
+
+test('withTimestamps: sparse history arrays still discard holes and retain duplicate injected timestamps', () => {
+  const timestamps: string[] = [];
+  timestamps.length = 12;
+  timestamps[0] = '02';
+  timestamps[11] = '06';
+  const history = { slices: [{ timestamps }] };
+  const next = withTimestamps(history, ['03', '03', '04', '05', '07', '08', '09', '10', '11']);
+  assert.deepEqual(next[0].timestamps, ['02', '03', '03', '04', '05', '06', '07', '08', '09', '10', '11']);
+  assert.equal(timestamps.length, 12);
+  assert.equal(1 in timestamps, false);
+});
