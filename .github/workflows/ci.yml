@@ -33,7 +33,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       # Match the Node major embedded in the shipped Electron runtime.
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: '24'
       - uses: oven-sh/setup-bun@v2
@@ -50,7 +50,7 @@ jobs:
         with:
           fetch-depth: 0
       # Match the Node major embedded in the shipped Electron runtime.
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: '24'
       - uses: oven-sh/setup-bun@v2
@@ -67,7 +67,7 @@ jobs:
         with:
           fetch-depth: 0
       # Match the Node major embedded in the shipped Electron runtime.
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: '24'
       - uses: oven-sh/setup-bun@v2
@@ -105,7 +105,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       # Match the Node major embedded in the shipped Electron runtime.
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: '24'
       - uses: oven-sh/setup-bun@v2
