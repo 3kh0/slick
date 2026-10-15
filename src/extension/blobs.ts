@@ -17,6 +17,8 @@ export type BlobBackend = {
   delete(ns: string, key: string): Promise<void>;
   clear(ns: string): Promise<void>;
   usage(ns: string): Promise<Usage>;
+  // Listing must not deserialize values that can be much larger than the keys.
+  keys(ns: string, from: string, exclusive: boolean, count: number): Promise<string[]>;
   // Up to `count` entries of `ns` in key order, starting at `from` (or just after it).
   range(ns: string, from: string, exclusive: boolean, count: number): Promise<[string, string][]>;
 };
@@ -113,6 +115,12 @@ export function indexedDbBackend(factory?: IDBFactory): BlobBackend {
         usage.delete(ns);
       }),
     usage: (ns) => transact('readonly', (_blobs, usage) => readUsage(usage, ns)),
+    keys: (ns, from, exclusive, count) =>
+      transact('readonly', async (blobs) => {
+        const range = IDBKeyRange.bound([ns, from], [ns, []], exclusive, true);
+        const keys = await done(blobs.getAllKeys(range, count));
+        return keys.map((key) => (key as [string, string])[1]);
+      }),
     range: (ns, from, exclusive, count) =>
       transact('readonly', async (blobs) => {
         const range = IDBKeyRange.bound([ns, from], [ns, []], exclusive, true);
@@ -139,6 +147,11 @@ export function memoryBackend(): BlobBackend & { data: Map<string, Map<string, s
       const values = [...(data.get(ns)?.values() ?? [])];
       return { keys: values.length, bytes: values.reduce((sum, value) => sum + value.length, 0) };
     },
+    keys: async (ns, from, exclusive, count) =>
+      [...(data.get(ns)?.keys() ?? [])]
+        .filter((key) => (exclusive ? key > from : key >= from))
+        .toSorted()
+        .slice(0, count),
     range: async (ns, from, exclusive, count) =>
       [...(data.get(ns) ?? [])]
         .filter(([key]) => (exclusive ? key > from : key >= from))
@@ -192,7 +205,7 @@ export function createBlobs(area: StorageArea, backend: BlobBackend) {
     await migrate(ns);
     switch (method) {
       case 'blob.list':
-        return (await backend.range(ns, a[1], a[1] !== '', PAGE_KEYS)).map(([key]) => key);
+        return backend.keys(ns, a[1], a[1] !== '', PAGE_KEYS);
       case 'blob.read':
         return (await backend.get(ns, a[1])) ?? null;
       case 'blob.readAll':

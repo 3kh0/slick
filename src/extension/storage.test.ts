@@ -136,6 +136,28 @@ test('list and readAll page through a namespace larger than one response', async
   assert.equal((await blob.list()).length, PAGE_KEYS + 48);
 });
 
+test('listing pages only reads keys and preserves cursor order and namespace isolation', async () => {
+  const backend = memoryBackend();
+  const ns = 'plugin:MessageLogger';
+  for (let i = PAGE_KEYS + 2; i >= 0; i--)
+    await backend.put(ns, `entry:${String(i).padStart(4, '0')}`, 'large value'.repeat(1000));
+  await backend.put('plugin:LastSeen', 'other', 'private to the other namespace');
+  backend.range = async () => {
+    throw new Error('Listing must not load stored values');
+  };
+  backend.get = async () => {
+    throw new Error('Listing must not read individual values');
+  };
+  const store = createStorage(memoryStorage(), backend);
+  const first = (await call(store, 'blob.list', ns, '')) as string[];
+  assert.equal(first.length, PAGE_KEYS);
+  assert.equal(first[0], 'entry:0000');
+  assert.equal(first.at(-1), 'entry:0511');
+  assert.deepEqual(await call(store, 'blob.list', ns, first.at(-1)!), ['entry:0512', 'entry:0513', 'entry:0514']);
+  assert.deepEqual(await call(store, 'blob.list', ns, 'entry:0514'), []);
+  assert.deepEqual(await call(store, 'blob.list', 'plugin:LastSeen', ''), ['other']);
+});
+
 test('blobs move out of storage.local on first use, without clobbering newer records', async () => {
   const area = memoryStorage();
   const backend = memoryBackend();
