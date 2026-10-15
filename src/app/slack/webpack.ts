@@ -311,27 +311,33 @@ export function getExport<T>(matcher: ExportMatcher<T>): T | undefined;
 export function getExport<T>(matcher: SimpleMatcher): T | undefined;
 export function getExport<T>(matcher: SimpleMatcher, all: true): T[];
 export function getExport(matcher: SimpleMatcher, all = false) {
-  const results = new Set<any>();
+  const results = all ? new Set<any>() : undefined;
 
   for (const exports of moduleRegistry.values()) {
-    const candidates = [exports];
+    // Most lookups need one result. Avoid a candidate array for every module
+    // and do not invoke namespace getters when the namespace itself matches.
+    let matched = false;
+    try {
+      matched = matcher(exports);
+    } catch {}
+    if (matched) {
+      if (!results) return exports;
+      results.add(exports);
+    }
     for (const key in exports) {
       if (!Object.hasOwn(exports, key)) continue;
+      let candidate: any;
       try {
-        candidates.push(exports[key]);
-      } catch {}
-    }
-    for (const candidate of candidates) {
-      try {
+        candidate = exports[key];
         if (!matcher(candidate)) continue;
       } catch {
         continue;
       }
-      if (!all) return candidate;
+      if (!results) return candidate;
       results.add(candidate);
     }
   }
-  return all ? [...results] : undefined;
+  return results ? [...results] : undefined;
 }
 
 export function getByProps<T>(props: string[]): T | undefined;

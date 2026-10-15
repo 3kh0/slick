@@ -12,6 +12,27 @@ const GROUPS = new Set([
 const RECHECK_MS = 30_000;
 const MAX_RECHECK_MS = 240_000;
 
+function groupHeader(rule: CSSRule, kind: string): string {
+  // cssText serializes every descendant before we can yield. Read the small
+  // prelude directly so a large @media/@supports block stays interruptible.
+  switch (kind) {
+    case 'CSSMediaRule':
+      return `@media ${(rule as CSSConditionRule).conditionText}`;
+    case 'CSSSupportsRule':
+      return `@supports ${(rule as CSSConditionRule).conditionText}`;
+    case 'CSSContainerRule':
+      // conditionText includes the container name as well as its query.
+      return `@container ${(rule as CSSConditionRule).conditionText}`;
+    case 'CSSStartingStyleRule':
+      return '@starting-style';
+    default: {
+      // Keep the serialized spelling for prefixed/unprefixed keyframes.
+      const text = rule.cssText;
+      return text.slice(0, text.indexOf('{')).trim();
+    }
+  }
+}
+
 export function* equivalentStyles(a: CSSRuleList, b: CSSRuleList, inStyle = false): Generator<void, string | null> {
   if (a.length !== b.length) return null;
   const prelude: string[] = [];
@@ -32,16 +53,24 @@ export function* equivalentStyles(a: CSSRuleList, b: CSSRuleList, inStyle = fals
       if (nested === null) return null;
       prelude.push(nested ? `@layer ${name} { ${nested} }` : `@layer ${name};`);
     } else if (GROUPS.has(kind)) {
-      // Compare group headers, then walk their children in slices. CSSOM may
-      // still serialize a whole group when reading cssText.
-      const text = left.cssText;
-      const otherText = right.cssText;
-      const header = text.slice(0, text.indexOf('{')).trim();
-      const otherHeader = otherText.slice(0, otherText.indexOf('{')).trim();
+      const header = groupHeader(left, kind);
+      const otherHeader = groupHeader(right, kind);
       if (header !== otherHeader || !otherChildren) return null;
       const nested = yield* equivalentStyles(children, otherChildren, inStyle);
       if (nested === null) return null;
       if (nested) prelude.push(`${header} { ${nested} }`);
+    } else if (left.type === 1 && children?.length) {
+      // Nested style rules have the same whole-subtree serialization cost.
+      // Compare their own selector/declarations, then yield between children.
+      const style = left as CSSStyleRule;
+      const otherStyle = right as CSSStyleRule;
+      if (
+        style.selectorText !== otherStyle.selectorText ||
+        style.style.cssText !== otherStyle.style.cssText ||
+        !otherChildren ||
+        (yield* equivalentStyles(children, otherChildren, true)) === null
+      )
+        return null;
     } else if (LEAVES.has(left.type) || NAMED_LEAVES.has(kind)) {
       if (left.cssText !== right.cssText) return null;
       if (children?.length && (!otherChildren || (yield* equivalentStyles(children, otherChildren, true)) === null))

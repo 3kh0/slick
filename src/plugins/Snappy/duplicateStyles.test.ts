@@ -33,6 +33,84 @@ test('compares nested conditions and yields while walking large groups', () => {
   assert.deepEqual(scan.next(), { done: true, value: true });
 });
 
+test('conditional groups compare their preludes without serializing their descendants', () => {
+  const group = (kind: string, conditionText: string) => ({
+    type: 0,
+    constructor: { name: kind },
+    conditionText,
+    get cssText(): string {
+      throw new Error('group cssText would serialize the entire subtree before yielding');
+    },
+    cssRules: list([style('.a{}'), style('.b{}')]),
+  });
+  for (const kind of ['CSSMediaRule', 'CSSSupportsRule', 'CSSContainerRule']) {
+    assert.equal(matches([group(kind, 'screen')], [group(kind, 'screen')]), true);
+    assert.equal(matches([group(kind, 'screen')], [group(kind, 'print')]), false);
+  }
+  assert.equal(
+    matches([group('CSSContainerRule', 'sidebar (width > 1px)')], [group('CSSContainerRule', 'main (width > 1px)')]),
+    false,
+    'container names remain part of the condition',
+  );
+  assert.equal(matches([group('CSSStartingStyleRule', '')], [group('CSSStartingStyleRule', '')]), true);
+});
+
+test('preserves layer declarations inside conditions, including braces in a query value', () => {
+  const rule = {
+    type: 0,
+    constructor: { name: 'CSSSupportsRule' },
+    conditionText: '(--label: "{")',
+    cssRules: list([{ type: 0, constructor: { name: 'CSSLayerStatementRule' }, cssText: '@layer slack;' }]),
+  };
+  const scan = equivalentStyles(list([rule]), list([rule]));
+  let result = scan.next();
+  while (!result.done) result = scan.next();
+  assert.equal(result.value, '@supports (--label: "{") { @layer slack; }');
+});
+
+test('nested style rules compare own declarations and yield before serializing another subtree', () => {
+  const nested = (selectorText = '.a', declarations = 'color: red;', children = [style('& .b { color: blue; }')]) => ({
+    type: 1,
+    selectorText,
+    style: { cssText: declarations },
+    cssRules: list(children),
+    get cssText(): string {
+      throw new Error('nested style cssText would serialize all descendants');
+    },
+  });
+  assert.equal(matches([nested()], [nested()]), true);
+  assert.equal(matches([nested()], [nested('.different')]), false);
+  assert.equal(matches([nested()], [nested('.a', 'color: blue;')]), false);
+  assert.equal(matches([nested()], [nested('.a', 'color: red;', [style('& .b { color: red; }')])]), false);
+  assert.equal(matches([nested()], [nested('.a', 'color: red;', [])]), false);
+  const scan = equivalentRules(list([nested()]), list([nested()]));
+  assert.equal(scan.next().done, false);
+  assert.equal(scan.next().done, false);
+  assert.deepEqual(scan.next(), { done: true, value: true });
+});
+
+test('still rejects layers nested in a style rule', () => {
+  const rule = {
+    type: 1,
+    selectorText: '.a',
+    style: { cssText: '' },
+    cssRules: list([{ type: 0, constructor: { name: 'CSSLayerStatementRule' }, cssText: '@layer slack;' }]),
+  };
+  assert.equal(matches([rule], [rule]), false);
+});
+
+test('keeps keyframe names and vendor prefixes distinct', () => {
+  const keyframes = (header: string) => ({
+    type: 7,
+    constructor: { name: 'CSSKeyframesRule' },
+    cssText: `${header} { from { opacity: 0; } }`,
+    cssRules: list([{ type: 8, cssText: '0% { opacity: 0; }' }]),
+  });
+  assert.equal(matches([keyframes('@keyframes fade')], [keyframes('@keyframes fade')]), true);
+  assert.equal(matches([keyframes('@keyframes fade')], [keyframes('@keyframes move')]), false);
+  assert.equal(matches([keyframes('@keyframes fade')], [keyframes('@-webkit-keyframes fade')]), false);
+});
+
 test('imports, namespaces, layers and unsupported rules are never suppressed', () => {
   for (const type of [0, 3, 10, 15, 16]) {
     assert.equal(matches([{ type, cssText: 'same' }], [{ type, cssText: 'same' }]), false);

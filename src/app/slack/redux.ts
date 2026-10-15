@@ -4,6 +4,7 @@
 
 import { getFiberFromNode, reactReady } from './react.tsx';
 import { patchExportFunction, patchModuleExports } from './webpack.ts';
+import { createThunkPatches } from './thunkPatches.ts';
 
 export type SlackStore = {
   getState(): any;
@@ -16,6 +17,10 @@ export type StatePatch = (state: any) => any;
 const statePatches = new Set<StatePatch>();
 /** Bumped whenever patches change, to invalidate every memo keyed on it. */
 let patchVersion = 0;
+type StateMemo = { raw: any; out: any; valid: boolean };
+// Weak records let refresh release outputs even for dormant stores without a
+// WeakMap lookup on every state read or retaining the stores themselves.
+const stateMemos = new Set<WeakRef<StateMemo>>();
 
 type WrappedGetState = (() => any) & { __slickWrapped?: true; __slickRawGetState?: () => any };
 
@@ -23,14 +28,16 @@ function wrapGetState(store: SlackStore): void {
   if ((store.getState as WrappedGetState).__slickWrapped) return;
 
   const rawGetState = store.getState.bind(store);
-  let cachedRaw: any;
-  let cachedVersion = -1;
-  let cachedOut: any;
+  const memo: StateMemo = { raw: undefined, out: undefined, valid: false };
+  // Prune on store creation too: dead records should not accumulate when no
+  // plugins change settings. Both cleanup paths run without a polling timer.
+  for (const ref of stateMemos) if (!ref.deref()) stateMemos.delete(ref);
+  stateMemos.add(new WeakRef(memo));
 
   const wrapped: WrappedGetState = () => {
     const raw = rawGetState();
     if (statePatches.size === 0) return raw;
-    if (raw === cachedRaw && cachedVersion === patchVersion) return cachedOut;
+    if (memo.valid && raw === memo.raw) return memo.out;
 
     let out = raw;
     for (const patch of statePatches) {
@@ -40,9 +47,9 @@ function wrapGetState(store: SlackStore): void {
         console.error('[slick] state patch threw:', error);
       }
     }
-    cachedRaw = raw;
-    cachedVersion = patchVersion;
-    cachedOut = out;
+    memo.raw = raw;
+    memo.out = out;
+    memo.valid = true;
     return out;
   };
 
@@ -126,6 +133,15 @@ export const getPatchVersion = () => patchVersion;
  */
 export function refresh(): void {
   patchVersion++;
+  for (const ref of stateMemos) {
+    const memo = ref.deref();
+    if (!memo) {
+      stateMemos.delete(ref);
+      continue;
+    }
+    memo.raw = memo.out = undefined;
+    memo.valid = false;
+  }
   try {
     getStore()?.dispatch({ type: '@@slick/PATCH_STATE' });
   } catch {}
@@ -155,6 +171,7 @@ const hasOwn = (object: object, key: PropertyKey): boolean => typeof key !== 'sy
 export type MapEntry<T> = (key: string, entry: T | undefined) => T | undefined;
 
 type Memo = {
+  objects: WeakMap<object, { key: string; output: any; aliases?: Map<string, any> }>;
   cache: Map<string, { input: any; output: any }>;
   added: Set<string>;
   version: number;
@@ -167,7 +184,7 @@ const failedAddedKeys = new WeakSet<() => Iterable<string>>();
 function memoFor(mapEntry: MapEntry<any>): Memo {
   let memo = memos.get(mapEntry);
   if (!memo) {
-    memo = { cache: new Map(), added: new Set(), version: -1 };
+    memo = { objects: new WeakMap(), cache: new Map(), added: new Set(), version: -1 };
     memos.set(mapEntry, memo);
   }
   return memo;
@@ -184,6 +201,7 @@ export function mapEntries<T = any>(
 
   const sync = () => {
     if (memo.version === patchVersion) return;
+    memo.objects = new WeakMap();
     memo.cache = new Map();
     if (addedKeys && !failedAddedKeys.has(addedKeys)) {
       try {
@@ -201,19 +219,42 @@ export function mapEntries<T = any>(
     if (typeof key !== 'string') return value;
     sync();
     if (failed || failedEntryPatches.has(mapEntry)) return value;
-    const hit = memo.cache.get(key);
-    if (hit && hit.input === value) return hit.output;
+    const isObject = value !== null && (typeof value === 'object' || typeof value === 'function');
+    const objectHit = isObject ? memo.objects.get(value) : undefined;
+    if (objectHit?.key === key) return objectHit.output;
+    if (objectHit?.aliases?.has(key)) return objectHit.aliases.get(key);
+    if (!isObject) {
+      const hit = memo.cache.get(key);
+      if (hit && hit.input === value) return hit.output;
+    }
     let output: T | undefined;
     try {
       output = mapEntry(key, value as T | undefined);
     } catch (error) {
       failed = true;
       failedEntryPatches.add(mapEntry);
+      memo.objects = new WeakMap();
       memo.cache.clear();
       console.error(`[slick] entry patch "${patchName}" threw for key "${key}" and was disabled:`, mapEntry, error);
       return value;
     }
-    memo.cache.set(key, { input: value, output });
+    if (isObject) {
+      // Slack replaces and evicts entries over time. Keying by their raw object
+      // keeps stable transformed identities without pinning evicted messages.
+      // The callback may have read another alias and populated this record.
+      // Re-read on misses so an outer completion preserves that nested result.
+      const current = memo.objects.get(value);
+      if (current?.key === key) current.output = output;
+      else if (current) (current.aliases ??= new Map()).set(key, output);
+      else memo.objects.set(value, { key, output });
+      memo.cache.delete(key);
+    } else if (value !== undefined || output !== undefined) {
+      memo.cache.set(key, { input: value, output });
+    } else {
+      // Missing IDs are common during discovery; caching undefined -> undefined
+      // retains an unbounded list of IDs without saving useful work.
+      memo.cache.delete(key);
+    }
     return output;
   };
 
@@ -397,36 +438,11 @@ export function patchSlice<T = any>(
 // yields a registry keyed by meta.name, independent of minified module ids.
 
 type ThunkCreator = (...args: any[]) => any;
-type ThunkWrap = {
-  match: (value: any) => boolean;
-  wrap: (original: ThunkCreator) => ThunkCreator;
-};
-
-const thunkWraps = new Set<ThunkWrap>();
+const thunkPatches = createThunkPatches();
 const thunkCreators = new Map<string, ThunkCreator>();
 type ThunkWaiter = { resolve: (creator: ThunkCreator) => void; timer: ReturnType<typeof setTimeout> };
 const waitingForThunk = new Map<string, Set<ThunkWaiter>>();
 const THUNK_WAIT_MS = 30_000;
-
-const wrapCreator = (original: ThunkCreator): ThunkCreator =>
-  new Proxy(original, {
-    apply(target, thisArg, args) {
-      let creator: ThunkCreator = target;
-      for (const { match, wrap } of thunkWraps) {
-        let matched = false;
-        try {
-          matched = match(target);
-        } catch {}
-        if (!matched) continue;
-        try {
-          creator = wrap(creator);
-        } catch (error) {
-          console.error('[slick] thunk wrapper threw:', error);
-        }
-      }
-      return Reflect.apply(creator, thisArg, args);
-    },
-  });
 
 function registerCreator(creator: ThunkCreator): void {
   // The defining module assigns `meta` on the statement *after* createThunk
@@ -472,7 +488,7 @@ patchModuleExports((exports) => {
   const descriptors = Object.getOwnPropertyDescriptors(exports);
   descriptors[key] = {
     value: (...args: any[]) => {
-      const creator = wrapCreator(createThunk(...args));
+      const creator = thunkPatches.wrapCreator(createThunk(...args));
       registerCreator(creator);
       return creator;
     },
@@ -517,12 +533,7 @@ export async function dispatchThunk<T = any>(name: string, ...args: any[]): Prom
 }
 
 /** Observe or alter one of Slack's thunks. */
-export function patchThunk(match: string | ThunkWrap['match'], wrap: ThunkWrap['wrap']): () => void {
-  const matcher: ThunkWrap['match'] = typeof match === 'string' ? (value) => value?.meta?.name === match : match;
-  const entry: ThunkWrap = { match: matcher, wrap };
-  thunkWraps.add(entry);
-  return () => void thunkWraps.delete(entry);
-}
+export const patchThunk = thunkPatches.patch;
 
 export const reduxReady = (async () => {
   const React = await reactReady;

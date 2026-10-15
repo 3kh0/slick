@@ -87,9 +87,16 @@ test('loaded telemetry factories stop producing work and restore on plugin resta
   const tracer = new Tracer();
   const telemeter = new Telemeter();
   const noop = new NoopTelemeter();
-  const getGenericTracer = () => tracer;
-  const getGenericTelemeter = () => telemeter;
-  const getNoopTelemeter = () => noop;
+  // Discovery uses Slack's export names; keep them explicit across test runtimes.
+  function getGenericTracer() {
+    return tracer;
+  }
+  function getGenericTelemeter() {
+    return telemeter;
+  }
+  function getNoopTelemeter() {
+    return noop;
+  }
   const exports = [getGenericTracer, getGenericTelemeter, getNoopTelemeter, () => undefined];
   const plugin = new NoTrack(
     {
@@ -131,9 +138,9 @@ test('missing or throwing telemetry factories leave beacon transport protection 
     if (previous) Object.defineProperty(navigator, 'sendBeacon', previous);
     else Reflect.deleteProperty(navigator, 'sendBeacon');
   });
-  const getGenericTracer = () => {
+  function getGenericTracer() {
     throw new Error('changed Slack internals');
-  };
+  }
   const plugin = new NoTrack({ getExport: () => [getGenericTracer] }, { blockBeacons: true });
   plugin.log = () => {};
   plugin.start();
