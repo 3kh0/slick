@@ -85,11 +85,13 @@ export function overrideTransitions(
   };
 
   const scheduleIdle = () => {
+    timer = undefined;
+    if (stopped || document.hidden) return;
     idle = requestIdleCallback(loop, { timeout: SETTLE_MS });
   };
   const loop = (deadline: IdleDeadline) => {
     idle = undefined;
-    if (stopped) return;
+    if (stopped || document.hidden) return;
     work ??= scan();
     let done = false;
     const start = performance.now();
@@ -114,22 +116,40 @@ export function overrideTransitions(
   };
   // Rewriting selectors rebuilds Slack's rule index; keep that out of first paint.
   const waitForWorkspace = () => {
-    if (stopped) return;
+    timer = undefined;
+    if (stopped || document.hidden) return;
     if (!document.querySelector(WORKSPACE)) {
       timer = setTimeout(waitForWorkspace, 250);
       return;
     }
     timer = setTimeout(() => {
+      timer = undefined;
+      if (stopped || document.hidden) return;
       idle = requestIdleCallback(loop, { timeout: FIRST_SCAN_MS });
     }, SETTLE_MS);
   };
+  const cancelPending = () => {
+    clearTimeout(timer);
+    timer = undefined;
+    if (idle !== undefined) cancelIdleCallback(idle);
+    idle = undefined;
+  };
+  const onVisibilityChange = () => {
+    cancelPending();
+    if (stopped || document.hidden) return;
+    // Keep a partial scan intact so its pending selector rewrites are flushed
+    // together. New windows still wait for the workspace and first paint.
+    if (work || scans) scheduleIdle();
+    else waitForWorkspace();
+  };
+  document.addEventListener('visibilitychange', onVisibilityChange);
   waitForWorkspace();
 
   return {
     stop() {
       stopped = true;
-      clearTimeout(timer);
-      if (idle !== undefined) cancelIdleCallback(idle);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+      cancelPending();
       work = undefined;
     },
   };

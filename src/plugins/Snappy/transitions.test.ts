@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test, type TestContext } from 'node:test';
 import { overrideTransitions } from './transitions.ts';
 
-function fixture(t: TestContext) {
+function fixture(t: TestContext, hidden = false) {
   let now = 0;
   let next = 0;
   const timers = new Map<number, () => void>();
@@ -15,10 +15,21 @@ function fixture(t: TestContext) {
     style = { getPropertyValue: (name: string) => (name === 'transition-duration' ? '100ms' : '') };
   }
   const rules = Array.from({ length: 20 }, (_, i) => new Rule(`.item-${i}`));
+  const visibilityListeners = new Set<() => void>();
+  let workspace = true;
   const globals = {
     CSSStyleRule: Rule,
     document: {
-      querySelector: () => ({}),
+      hidden,
+      addEventListener: (name: string, callback: () => void) => {
+        assert.equal(name, 'visibilitychange');
+        visibilityListeners.add(callback);
+      },
+      removeEventListener: (name: string, callback: () => void) => {
+        assert.equal(name, 'visibilitychange');
+        visibilityListeners.delete(callback);
+      },
+      querySelector: () => (workspace ? {} : null),
       styleSheets: [
         { ownerNode: { dataset: { slickStyle: 'user' } }, cssRules: [new Rule('.slick-owned')] },
         { cssRules: [{ cssRules: rules }] },
@@ -64,7 +75,24 @@ function fixture(t: TestContext) {
     },
     flush: () => flushes.push(now),
   };
-  return { idle, timers, runTimer, runIdle, rewriter, flushes, tick: () => (now += 1) };
+  return {
+    idle,
+    timers,
+    runTimer,
+    runIdle,
+    rewriter,
+    flushes,
+    visibilityListeners,
+    tick: () => (now += 1),
+    setWorkspace: (value: boolean) => {
+      workspace = value;
+    },
+    setHidden: (value: boolean) => {
+      globals.document.hidden = value;
+      for (const callback of visibilityListeners) callback();
+    },
+    addSheet: () => globals.document.styleSheets.push({ cssRules: [{ cssRules: [new Rule('.added')] }] }),
+  };
 }
 
 test('yields even after an idle timeout, walks nested rules, and skips Slick styles', (t) => {
@@ -106,4 +134,78 @@ test('stopping a partial scan cancels pending idle work before teardown restores
   scan.stop();
   assert.equal(f.idle.size, 0);
   assert.equal(f.timers.size, 0);
+});
+
+test('hidden startup does not poll and waits for the workspace when shown', (t) => {
+  const f = fixture(t, true);
+  f.setWorkspace(false);
+  const scan = overrideTransitions(() => {}, f.rewriter);
+  assert.equal(f.timers.size, 0);
+  assert.equal(f.idle.size, 0);
+  f.setHidden(false);
+  assert.equal(f.timers.size, 1);
+  f.runTimer();
+  assert.equal(f.idle.size, 0);
+  f.setWorkspace(true);
+  f.runTimer();
+  assert.equal(f.idle.size, 0, 'first scan still waits for initial paint');
+  f.runTimer();
+  assert.equal(f.idle.size, 1);
+  scan.stop();
+});
+
+test('hiding pauses partial work and resuming finishes its rewrites once', (t) => {
+  const f = fixture(t);
+  const emitted: string[] = [];
+  const scan = overrideTransitions((css) => emitted.push(css), f.rewriter);
+  f.runTimer();
+  f.runIdle();
+  const staleIdle = [...f.idle.values()][0];
+  f.setHidden(true);
+  assert.equal(f.idle.size, 0);
+  assert.equal(f.timers.size, 0);
+  staleIdle({ didTimeout: true, timeRemaining: () => 50 });
+  assert.equal(f.idle.size, 0, 'an already queued callback cannot resume hidden work');
+  assert.equal(f.flushes.length, 0);
+  f.setHidden(false);
+  for (let i = 0; i < 10 && !emitted.length; i++) f.runIdle();
+  assert.equal(emitted.length, 1);
+  assert.equal(f.flushes.length, 1);
+  assert.ok(emitted[0].includes('.fast-0'));
+  assert.ok(emitted[0].includes('.fast-19'));
+  scan.stop();
+});
+
+test('resuming discovers styles added while hidden and stop removes visibility listener', (t) => {
+  const f = fixture(t);
+  const emitted: string[] = [];
+  const scan = overrideTransitions((css) => emitted.push(css), f.rewriter);
+  f.runTimer();
+  for (let i = 0; i < 10 && !emitted.length; i++) f.runIdle();
+  f.setHidden(true);
+  assert.equal(f.timers.size, 0);
+  f.addSheet();
+  f.setHidden(false);
+  f.runIdle();
+  assert.equal(emitted.length, 2);
+  assert.ok(emitted[1].includes('.added'));
+  f.setHidden(true);
+  scan.stop();
+  assert.equal(f.visibilityListeners.size, 0);
+  f.setHidden(false);
+  assert.equal(f.timers.size, 0);
+  assert.equal(f.idle.size, 0);
+});
+
+test('hiding during the first paint delay cancels and restores that delay', (t) => {
+  const f = fixture(t);
+  const scan = overrideTransitions(() => {}, f.rewriter);
+  f.setHidden(true);
+  assert.equal(f.timers.size, 0);
+  f.setHidden(false);
+  assert.equal(f.idle.size, 0);
+  assert.equal(f.timers.size, 1);
+  f.runTimer();
+  assert.equal(f.idle.size, 1);
+  scan.stop();
 });
