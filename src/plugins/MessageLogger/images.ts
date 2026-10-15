@@ -163,8 +163,13 @@ export class ImageArchive {
     this.retained = new Set(keys());
     for (const [key, images] of stored) {
       const id = key.slice(PREFIX.length);
-      if (!this.retained.has(id) || !validImages(images)) this.remove(id);
-      else if (!this.archived.has(id)) this.archived.set(id, images);
+      if (!this.retained.has(id)) this.remove(id);
+      else if (!this.archived.has(id)) {
+        // A download may have persisted a valid replacement while this older
+        // snapshot was being loaded and parsed.
+        if (!validImages(images)) this.remove(id);
+        else this.archived.set(id, images);
+      }
     }
     this.cap();
     this.changed();

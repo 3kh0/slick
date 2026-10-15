@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { build } from 'esbuild';
+import { ScopedStorage } from '../../app/api/storage.ts';
 
 const bundle = await build({
   entryPoints: [new URL('./index.ts', import.meta.url).pathname],
@@ -327,7 +328,7 @@ test('admin-hidden threads restore parent and replies as deletions, not edits', 
   assert.equal(plugin.entries.get('C:5').message.text, 'cached reply');
 });
 
-function loggerFixture(t: import('node:test').TestContext) {
+function loggerFixture(t: import('node:test').TestContext, storage?: ScopedStorage) {
   const previous = Object.getOwnPropertyDescriptor(globalThis, 'React');
   const React = {
     createContext: () => ({ Provider: 'provider' }),
@@ -340,6 +341,7 @@ function loggerFixture(t: import('node:test').TestContext) {
   const raw = new Map<string, any>();
   const values = new Map<string, any>();
   const patches = new Map<string, any>();
+  const controller = new AbortController();
   const config = {
     saveImages: false,
     retentionDays: 30,
@@ -348,12 +350,12 @@ function loggerFixture(t: import('node:test').TestContext) {
     ignoreEditsFrom: 'IGNORED',
   };
   const api = {
-    signal: new AbortController().signal,
+    signal: controller.signal,
     react: React,
     patchComponent: (name: string, patch: unknown) => patches.set(name, patch),
     messages: { getRawMessage: (_channel: string, ts: string) => raw.get(ts) },
     redux: { getRawState: () => ({ bootData: { user_id: 'ME' } }), refresh() {}, usePatchVersion: () => 0 },
-    storage: {
+    storage: storage ?? {
       async entries(prefix: string) {
         return new Map([...values].filter(([key]) => key.startsWith(prefix)));
       },
@@ -372,6 +374,7 @@ function loggerFixture(t: import('node:test').TestContext) {
   const plugin = new MessageLogger(api, config);
   t.after(() => {
     plugin.stop();
+    controller.abort();
     if (previous) Object.defineProperty(globalThis, 'React', previous);
     else Reflect.deleteProperty(globalThis, 'React');
   });
@@ -392,7 +395,7 @@ function loggerFixture(t: import('node:test').TestContext) {
       message,
       previous_message,
     });
-  return { plugin, raw, values, deletion, edit, config, patches, React };
+  return { plugin, raw, values, deletion, edit, config, patches, React, controller, api };
 }
 
 function richMessage(body: string, extra = {}) {
@@ -698,4 +701,103 @@ test('legacy lookup bookkeeping follows replacement, expiry, dismissal and resto
   f.plugin.forget('archived-key');
   assert.equal(f.plugin.entryFor({ channel: 'C', ts: '3' }), undefined);
   assert.equal(f.plugin.legacyEntries.size, 1);
+});
+
+function pausedRestoreFixture(t: import('node:test').TestContext) {
+  const files = new Map<string, string>();
+  const at = Date.now();
+  files.set(
+    'entry:C:1',
+    JSON.stringify({
+      channel: 'C',
+      ts: '1',
+      at,
+      message: { channel: 'C', ts: '1', user: 'U', text: 'stored' },
+      edits: [{ oldText: 'original', newText: 'stored' }],
+    }),
+  );
+  files.set('entry:historical-key', JSON.stringify({ channel: 'D', ts: '2', at }));
+  for (let i = 0; i < 63; i++) files.set(`entry:Z:${i}`, JSON.stringify({ channel: 'Z', ts: `${i}`, at }));
+  let mutations = 0;
+  const storage = new ScopedStorage({
+    list: async () => [...files.keys()],
+    read: async (key) => files.get(key) ?? null,
+    readAll: async (prefix = '') => Object.fromEntries([...files].filter(([key]) => key.startsWith(prefix))),
+    write: async (key, value) => {
+      mutations++;
+      files.set(key, value);
+      return true;
+    },
+    delete: async (key) => {
+      mutations++;
+      return files.delete(key);
+    },
+    clear: async () => {
+      mutations++;
+      files.clear();
+      return true;
+    },
+  });
+  const f = loggerFixture(t, storage);
+  f.plugin.log = () => {};
+  const pending: (() => void)[] = [];
+  const descriptor = Object.getOwnPropertyDescriptor(globalThis, 'scheduler');
+  const scheduler = { yield: () => new Promise<void>((resolve) => pending.push(resolve)) };
+  Object.defineProperty(globalThis, 'scheduler', { configurable: true, value: scheduler });
+  t.after(() => {
+    if (descriptor) Object.defineProperty(globalThis, 'scheduler', descriptor);
+    else Reflect.deleteProperty(globalThis, 'scheduler');
+  });
+  let now = 0;
+  t.mock.method(performance, 'now', () => (now += 10));
+  return { ...f, files, pending, mutations: () => mutations };
+}
+
+test('live edits remain authoritative when archive parsing pauses before legacy indexing', async (t) => {
+  const f = pausedRestoreFixture(t);
+  const restoring = f.plugin.restore();
+  await drain();
+  assert.equal(f.pending.length, 1, 'the actual storage parser paused after 64 records');
+  assert.equal(f.plugin.entries.size, 0, 'partially parsed records remain outside the live archive');
+  f.edit({ channel: 'C', ts: '1', user: 'U', text: 'live' }, { channel: 'C', ts: '1', user: 'U', text: 'stored' });
+  assert.equal(f.plugin.entries.get('C:1').message.text, 'live');
+  f.pending.shift()!();
+  await restoring;
+  await f.plugin.writes;
+
+  const merged = f.plugin.entries.get('C:1');
+  assert.equal(merged.message.text, 'live');
+  assert.deepEqual(merged.edits, [
+    { oldText: 'original', newText: 'stored' },
+    { oldText: 'stored', newText: 'live' },
+  ]);
+  assert.equal(f.plugin.entryFor({ channel: 'C', ts: '1' }), merged);
+  assert.equal(f.plugin.entries.size, 65);
+  assert.equal(f.plugin.legacyEntries.size, 1);
+  assert.equal(f.plugin.legacyEntries.get('historical-key'), f.plugin.entries.get('historical-key'));
+  assert.equal(f.plugin.entryFor({ channel: 'D', ts: '2' }), f.plugin.entries.get('historical-key'));
+  assert.equal(JSON.parse(f.files.get('entry:C:1')!).message.text, 'live');
+  assert.equal(f.pending.length, 0);
+});
+
+test('scope abort during archive parsing prevents restore mutations and index updates', async (t) => {
+  const f = pausedRestoreFixture(t);
+  const existing = { channel: 'LIVE', ts: '99', at: Date.now() };
+  f.plugin.setEntry('active-legacy', existing);
+  let refreshes = 0;
+  t.mock.method(f.api.redux, 'refresh', () => refreshes++);
+  const restoring = f.plugin.restore();
+  await drain();
+  assert.equal(f.pending.length, 1);
+  f.controller.abort();
+  f.pending.shift()!();
+  await restoring;
+  await f.plugin.writes;
+
+  assert.deepEqual([...f.plugin.entries], [['active-legacy', existing]]);
+  assert.deepEqual([...f.plugin.legacyEntries], [['active-legacy', existing]]);
+  assert.equal(f.plugin.dirty.size, 0);
+  assert.equal(f.mutations(), 0);
+  assert.equal(refreshes, 0);
+  assert.equal(f.pending.length, 0);
 });

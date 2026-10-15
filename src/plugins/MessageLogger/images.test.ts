@@ -133,6 +133,31 @@ test('restore removes orphaned or invalid image data and respects archive bounds
   assert.equal(f.archive.get('C:129').length, 1);
 });
 
+test('restore keeps fresh images that replace a malformed snapshot during the read', async () => {
+  const f = fixture();
+  let resume!: () => void;
+  const original = f.store.entries;
+  f.values.set('images:C:1', [{ name: 'old', data: 'malformed' }]);
+  f.store.entries = async <T>(prefix: string) => {
+    const snapshot = await original<T>(prefix);
+    await new Promise<void>((resolve) => {
+      resume = resolve;
+    });
+    return snapshot;
+  };
+  const restoring = f.archive.restore(() => ['C:1']);
+  await drain();
+  f.archive.capture('C:1', message);
+  f.archive.retain('C:1');
+  await drain();
+  assert.deepEqual(f.values.get('images:C:1'), [{ name: 'Cat', data }]);
+  resume();
+  await restoring;
+  await drain();
+  assert.deepEqual(f.archive.get('C:1'), [{ name: 'Cat', data }]);
+  assert.deepEqual(f.values.get('images:C:1'), [{ name: 'Cat', data }]);
+});
+
 test('stop ignores downloads that finish after the plugin aborts', async () => {
   let resolve!: (data: string) => void;
   const f = fixture(
