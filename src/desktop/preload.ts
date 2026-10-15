@@ -100,13 +100,20 @@ function abandon(message: string, error: unknown): void {
   location.reload();
 }
 
+// Keep direct eval out of the bridge's closure: it would retain the temporary
+// parsed document and script list for the window's lifetime. An arrow preserves
+// the preload's lexical this/arguments and access to require and other globals.
+const evaluateOriginalPreload = (source: string): void => {
+  // biome-ignore lint/security/noGlobalEval: the preload we displaced has to run
+  // oxlint-disable-next-line no-eval
+  eval(source);
+};
+
 void (async () => {
   try {
     const originalPreload = await originalPreloadPromise;
     if (!originalPreload) throw new Error('Slack preload source is unavailable');
-    // biome-ignore lint/security/noGlobalEval: the preload we displaced has to run
-    // oxlint-disable-next-line no-eval
-    eval(originalPreload);
+    evaluateOriginalPreload(originalPreload);
     accountDiagnostic('preload.original-ready');
     if (!isClientPage && (location.hostname === 'slack.com' || location.hostname.endsWith('.slack.com'))) {
       installCookieSignInButton(document, () => ipcRenderer.send('slick:open-cookie-login'));
