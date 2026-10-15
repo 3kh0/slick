@@ -110,6 +110,7 @@ export default class MessageLogger extends SlickPlugin<typeof meta.settings> {
   static readonly liveSettings = ['deletedStyle', 'retentionDays', 'ignoreEditsFrom'];
 
   private readonly entries = new Map<string, LogEntry>();
+  private readonly legacyEntries = new Map<string, LogEntry>();
   private readonly recent = new Map<string, SlackMessage>();
   private readonly recentEvasion = new Set<string>();
   private readonly dirty = new Set<string>();
@@ -200,7 +201,7 @@ export default class MessageLogger extends SlickPlugin<typeof meta.settings> {
     for (const [key, entry] of loaded.entries) {
       const live = this.entries.get(key);
       if (live || loaded.dirty.has(key)) this.dirty.add(key);
-      this.entries.set(key, live ? mergeEntry(entry, live) : entry);
+      this.setEntry(key, live ? mergeEntry(entry, live) : entry);
     }
     this.cap();
     this.flush();
@@ -340,7 +341,7 @@ export default class MessageLogger extends SlickPlugin<typeof meta.settings> {
     const evaded = this.recentEvasion.has(key) || this.evaded(previous, original);
     if (existing?.deleted) {
       if (evaded && !existing.evaded) {
-        this.entries.set(key, { ...existing, evaded: true });
+        this.setEntry(key, { ...existing, evaded: true });
         this.dirty.add(key);
         this.persist();
         this.api.redux.refresh();
@@ -359,7 +360,7 @@ export default class MessageLogger extends SlickPlugin<typeof meta.settings> {
       message: message ?? existing?.message,
       at: Date.now(),
     };
-    this.entries.set(key, entry);
+    this.setEntry(key, entry);
     this.images?.retain(key);
     if (original) this.captureImages(key, original);
     this.dirty.add(key);
@@ -405,7 +406,7 @@ export default class MessageLogger extends SlickPlugin<typeof meta.settings> {
       edits.push({ oldText: oldText.slice(0, MAX_EDIT_TEXT), newText: newText.slice(0, MAX_EDIT_TEXT) });
     if (edits.length > MAX_EDITS_PER_MESSAGE) edits.splice(0, edits.length - MAX_EDITS_PER_MESSAGE);
 
-    this.entries.set(key, {
+    this.setEntry(key, {
       ...(existing ?? { channel, ts, at: Date.now() }),
       channel,
       ts,
@@ -422,7 +423,7 @@ export default class MessageLogger extends SlickPlugin<typeof meta.settings> {
   }
 
   private forget(key: string) {
-    this.entries.delete(key);
+    this.deleteEntry(key);
     this.images?.forget(key);
     this.dirty.add(key);
   }
@@ -501,6 +502,19 @@ export default class MessageLogger extends SlickPlugin<typeof meta.settings> {
     });
   }
 
+  private setEntry(key: string, entry: LogEntry) {
+    this.entries.set(key, entry);
+    // Older archives can contain noncanonical keys or entries without a
+    // channel. Keep their fallback separate from the normal keyed row path.
+    if (!entry.channel || key !== this.key(entry.channel, entry.ts)) this.legacyEntries.set(key, entry);
+    else this.legacyEntries.delete(key);
+  }
+
+  private deleteEntry(key: string) {
+    this.entries.delete(key);
+    this.legacyEntries.delete(key);
+  }
+
   private entryFor(msg?: SlackMessage, channelId?: string): LogEntry | undefined {
     const ts = typeof msg?.ts === 'string' ? msg.ts : undefined;
     if (!ts) return;
@@ -510,7 +524,8 @@ export default class MessageLogger extends SlickPlugin<typeof meta.settings> {
       if (hit) return hit;
     }
     let found: LogEntry | undefined;
-    for (const entry of this.entries.values()) {
+    const candidates = channel ? this.legacyEntries : this.entries;
+    for (const entry of candidates.values()) {
       if (entry.ts !== ts) continue;
       if (channel && entry.channel && entry.channel !== channel) continue;
       if (found) return;
@@ -735,8 +750,8 @@ export default class MessageLogger extends SlickPlugin<typeof meta.settings> {
     const key = this.key(entry.channel, entry.ts);
     const current = this.entries.get(key);
     if (!current) return;
-    if (current.deleted) this.entries.set(key, { ...current, edits: undefined });
-    else this.entries.delete(key);
+    if (current.deleted) this.setEntry(key, { ...current, edits: undefined });
+    else this.deleteEntry(key);
     this.dirty.add(key);
     this.persist();
     this.api.redux.refresh();

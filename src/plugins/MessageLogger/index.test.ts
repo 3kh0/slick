@@ -348,11 +348,18 @@ function loggerFixture(t: import('node:test').TestContext) {
     ignoreEditsFrom: 'IGNORED',
   };
   const api = {
+    signal: new AbortController().signal,
     react: React,
     patchComponent: (name: string, patch: unknown) => patches.set(name, patch),
     messages: { getRawMessage: (_channel: string, ts: string) => raw.get(ts) },
     redux: { getRawState: () => ({ bootData: { user_id: 'ME' } }), refresh() {}, usePatchVersion: () => 0 },
     storage: {
+      async entries(prefix: string) {
+        return new Map([...values].filter(([key]) => key.startsWith(prefix)));
+      },
+      async get(key: string, fallback: unknown) {
+        return values.get(key) ?? fallback;
+      },
       async set(key: string, value: unknown) {
         values.set(key, value);
         return true;
@@ -625,4 +632,70 @@ test('an already advanced Redux cache does not turn a normal edit into evasion',
   f.deletion(second);
   assert.equal(f.plugin.entries.get('C:1').evaded, undefined);
   assert.equal(f.plugin.entries.get('C:1').message.text, '/hj');
+});
+
+test('channel-scoped row misses avoid scanning the canonical archive', (t) => {
+  const f = loggerFixture(t);
+  for (let i = 0; i < 1000; i++) f.plugin.setEntry(`C:${i}`, { channel: 'C', ts: `${i}`, at: Date.now() });
+  const wanted = f.plugin.entries.get('C:1');
+  f.plugin.entries.values = () => {
+    throw new Error('Known-channel rows must not scan canonical entries');
+  };
+  assert.equal(f.plugin.entryFor({ channel: 'C', ts: '1' }), wanted);
+  assert.equal(f.plugin.entryFor({ channel: 'C', ts: 'missing' }), undefined);
+  assert.equal(f.plugin.entryFor({ ts: 'missing' }, 'C'), undefined);
+  assert.equal(f.plugin.legacyEntries.size, 0);
+});
+
+test('legacy-key and context-free lookups preserve channel matching and ambiguity rules', (t) => {
+  const f = loggerFixture(t);
+  const legacy = { channel: 'C', ts: '1', at: Date.now() };
+  f.plugin.setEntry('old-storage-key', legacy);
+  assert.equal(f.plugin.entryFor({ ts: '1' }), legacy);
+  assert.equal(f.plugin.entryFor({ ts: '1' }, 'C'), legacy);
+  assert.equal(f.plugin.entryFor({ channel: 'OTHER', ts: '1' }, 'C'), undefined);
+  const unknownChannel = { channel: '', ts: '2', at: Date.now() };
+  f.plugin.setEntry(':2', unknownChannel);
+  assert.equal(f.plugin.entryFor({ channel: 'C', ts: '2' }), unknownChannel);
+  f.plugin.setEntry('another-old-key', { channel: 'C', ts: '2', at: Date.now() });
+  assert.equal(f.plugin.entryFor({ channel: 'C', ts: '2' }), undefined);
+  assert.equal(f.plugin.entryFor({ ts: '2' }), undefined);
+  const canonical = { channel: 'C', ts: '2', at: Date.now() };
+  f.plugin.setEntry('C:2', canonical);
+  assert.equal(
+    f.plugin.entryFor({ channel: 'C', ts: '2' }),
+    canonical,
+    'an exact key still wins over fallback ambiguity',
+  );
+  assert.equal(f.plugin.entryFor({ channel: 'C', ts: 2 }), undefined);
+});
+
+test('legacy lookup bookkeeping follows replacement, expiry, dismissal and restore', async (t) => {
+  const f = loggerFixture(t);
+  const old = { channel: '', ts: '1', at: Date.now() };
+  f.plugin.setEntry('C:1', old);
+  assert.equal(f.plugin.legacyEntries.size, 1);
+  const canonical = { channel: 'C', ts: '1', at: Date.now(), edits: [{ oldText: 'a', newText: 'b' }] };
+  f.plugin.setEntry('C:1', canonical);
+  assert.equal(f.plugin.legacyEntries.size, 0);
+  f.plugin.hideEdits(canonical);
+  assert.equal(f.plugin.entryFor({ channel: 'C', ts: '1' }), undefined);
+  f.plugin.setEntry('old-storage-key', { ...old, at: 1 });
+  f.plugin.cap();
+  assert.equal(f.plugin.legacyEntries.size, 0);
+  assert.equal(f.plugin.entryFor({ ts: '1' }), undefined);
+  f.plugin.flush();
+  await f.plugin.writes;
+  const restored = { channel: 'C', ts: '3', at: Date.now(), deleted: true };
+  f.values.set('entry:archived-key', restored);
+  f.values.set('entry::4', { channel: '', ts: '4', at: Date.now() });
+  f.plugin.log = () => {};
+  await f.plugin.restore();
+  assert.equal(f.plugin.entryFor({ channel: 'C', ts: '3' }), restored);
+  assert.equal(f.plugin.entryFor({ channel: 'C', ts: '4' }), f.values.get('entry::4'));
+  assert.equal(f.plugin.legacyEntries.size, 2);
+  assert.ok(f.values.has('entry:archived-key'), 'restoring does not rewrite historical storage keys');
+  f.plugin.forget('archived-key');
+  assert.equal(f.plugin.entryFor({ channel: 'C', ts: '3' }), undefined);
+  assert.equal(f.plugin.legacyEntries.size, 1);
 });
