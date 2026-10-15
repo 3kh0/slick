@@ -9,7 +9,7 @@ const bundle = await build({
   platform: 'node',
   format: 'esm',
 });
-const { mapEntries } = await import(
+const { mapEntries, refresh } = await import(
   `data:text/javascript;base64,${Buffer.from(bundle.outputFiles[0]!.text).toString('base64')}`
 );
 
@@ -133,4 +133,78 @@ test('primitive changes and transitions between object and primitive inputs inva
   raw.U1 = 2;
   assert.equal(proxy.U1.value, 2);
   assert.notEqual(proxy.U1, one);
+});
+
+test('a mapper failure disables existing and future proxies across refreshes without disabling other mappers', () => {
+  const raw = { name: 'raw' };
+  const broken = { name: 'broken' };
+  let calls = 0;
+  const map = (_key: string, entry: any) => {
+    calls++;
+    if (entry === broken) throw new Error('mapper failed');
+    return { ...entry, mapped: true };
+  };
+  const first = mapEntries(hiddenSlice({ U1: raw, U2: broken }), map) as any;
+  const second = mapEntries({ U1: raw }, map) as any;
+  const cached = first.U1;
+  assert.notEqual(cached, raw);
+  assert.equal(second.U1, cached);
+
+  const errors: unknown[][] = [];
+  const originalError = console.error;
+  console.error = (...args: unknown[]) => errors.push(args);
+  try {
+    assert.equal(first.U2, broken);
+    assert.equal(first.U1, raw);
+    assert.equal(second.U1, raw);
+    assert.equal((mapEntries({ U1: raw }, map) as any).U1, raw);
+    refresh();
+    assert.equal(first.U1, raw);
+    assert.equal(second.U1, raw);
+    assert.equal((mapEntries({ U2: broken }, map) as any).U2, broken);
+  } finally {
+    console.error = originalError;
+  }
+  assert.equal(calls, 2);
+  assert.equal(errors.length, 1);
+
+  let suffix = 1;
+  const independent = mapEntries({ U1: raw }, (_key: string, entry: any) => ({ ...entry, suffix })) as any;
+  const before = independent.U1;
+  assert.equal(before.suffix, 1);
+  suffix = 2;
+  refresh();
+  assert.equal(independent.U1.suffix, 2);
+  assert.notEqual(independent.U1, before);
+  assert.equal(first.U1, raw);
+});
+
+test('a reentrant failure in another proxy stays disabled after the outer mapping completes', () => {
+  const raw = {};
+  const broken = {};
+  let calls = 0;
+  let nested: any;
+  const map = (key: string, entry: any) => {
+    calls++;
+    if (key === 'broken') throw new Error('nested mapper failed');
+    assert.equal(nested.broken, broken);
+    return { entry };
+  };
+  nested = mapEntries({ broken }, map);
+  const outer = mapEntries({ entry: raw }, map) as any;
+  const originalError = console.error;
+  let errors = 0;
+  console.error = () => errors++;
+  try {
+    // The outer call may finish, but its cached result cannot revive the mapper.
+    assert.equal(outer.entry.entry, raw);
+    assert.equal(outer.entry, raw);
+    assert.equal(nested.broken, broken);
+    refresh();
+    assert.equal(outer.entry, raw);
+  } finally {
+    console.error = originalError;
+  }
+  assert.equal(calls, 2);
+  assert.equal(errors, 1);
 });

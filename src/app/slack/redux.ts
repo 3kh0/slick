@@ -175,16 +175,16 @@ type Memo = {
   cache: Map<string, { input: any; output: any }>;
   added: Set<string>;
   version: number;
+  failed: boolean;
 };
 
 const memos = new WeakMap<MapEntry<any>, Memo>();
-const failedEntryPatches = new WeakSet<MapEntry<any>>();
 const failedAddedKeys = new WeakSet<() => Iterable<string>>();
 
 function memoFor(mapEntry: MapEntry<any>): Memo {
   let memo = memos.get(mapEntry);
   if (!memo) {
-    memo = { objects: new WeakMap(), cache: new Map(), added: new Set(), version: -1 };
+    memo = { objects: new WeakMap(), cache: new Map(), added: new Set(), version: -1, failed: false };
     memos.set(mapEntry, memo);
   }
   return memo;
@@ -197,7 +197,6 @@ export function mapEntries<T = any>(
   patchName = 'anonymous',
 ): object {
   const memo = memoFor(mapEntry);
-  let failed = false;
 
   const sync = () => {
     if (memo.version === patchVersion) return;
@@ -218,7 +217,7 @@ export function mapEntries<T = any>(
   const run = (key: PropertyKey, value: any): any => {
     if (typeof key !== 'string') return value;
     sync();
-    if (failed || failedEntryPatches.has(mapEntry)) return value;
+    if (memo.failed) return value;
     const isObject = value !== null && (typeof value === 'object' || typeof value === 'function');
     const objectHit = isObject ? memo.objects.get(value) : undefined;
     if (objectHit?.key === key) return objectHit.output;
@@ -231,8 +230,7 @@ export function mapEntries<T = any>(
     try {
       output = mapEntry(key, value as T | undefined);
     } catch (error) {
-      failed = true;
-      failedEntryPatches.add(mapEntry);
+      memo.failed = true;
       memo.objects = new WeakMap();
       memo.cache.clear();
       console.error(`[slick] entry patch "${patchName}" threw for key "${key}" and was disabled:`, mapEntry, error);

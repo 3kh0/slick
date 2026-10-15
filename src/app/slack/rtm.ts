@@ -40,15 +40,19 @@ type RoutedBatch = {
 };
 
 patchExportFunction('routeMessages', (original) => (batch: RoutedBatch, ...rest: unknown[]) => {
-  const { rtmEventType, msgs } = batch?.messages ?? {};
-  for (const msg of msgs ?? []) emit(msg, rtmEventType ?? msg?.type);
+  // The default plugins do not listen to RTM. Leave native routing alone
+  // without walking every event and allocating its notification keys.
+  if (listeners.size) {
+    const { rtmEventType, msgs } = batch?.messages ?? {};
+    for (const msg of msgs ?? []) emit(msg, rtmEventType ?? msg?.type);
+  }
   return original(batch, ...rest);
 });
 
 // Degraded mode skips the router, so events would go missing on a bad connection.
 patchThunk('handleMessageImmediatelyWithoutPreprocessing', (original) => (...args: unknown[]) => {
   const event = args[0] as RtmEvent | undefined;
-  emit(event, event?.type);
+  if (listeners.size) emit(event, event?.type);
   return original(...args);
 });
 
@@ -61,7 +65,7 @@ export function onRtmEvent(type: string, listener: RtmListener): () => void {
   }
   set.add(listener);
   return () => {
-    set.delete(listener);
+    if (!set.delete(listener)) return;
     if (set.size === 0) listeners.delete(type);
   };
 }

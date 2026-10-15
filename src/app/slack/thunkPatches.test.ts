@@ -20,6 +20,47 @@ test('named hooks skip unrelated creators and preserve receiver, arguments and r
   assert.equal((wrapped as any).meta, original.meta);
 });
 
+test('creators and independent registries keep their own targets and live hook state', () => {
+  const first = createThunkPatches();
+  const second = createThunkPatches();
+  const target = (label: string) =>
+    Object.assign(
+      function (this: { prefix: string }, value: string) {
+        return `${this.prefix}:${label}:${value}`;
+      },
+      { meta: { name: 'send' } },
+    );
+  const left = target('left');
+  const right = target('right');
+  const leftWrapped = first.wrapCreator(left);
+  const rightWrapped = first.wrapCreator(right);
+  const independent = second.wrapCreator(left);
+  const receiver = { prefix: 'receiver' };
+  const remove = first.patch(
+    'send',
+    (original) =>
+      function (this: unknown, ...args: unknown[]) {
+        return `first(${Reflect.apply(original, this, args)})`;
+      },
+  );
+  second.patch(
+    'send',
+    (original) =>
+      function (this: unknown, ...args: unknown[]) {
+        return `second(${Reflect.apply(original, this, args)})`;
+      },
+  );
+  assert.equal(leftWrapped.call(receiver, 'a'), 'first(receiver:left:a)');
+  assert.equal(rightWrapped.call(receiver, 'b'), 'first(receiver:right:b)');
+  assert.equal(independent.call(receiver, 'c'), 'second(receiver:left:c)');
+  right.meta.name = 'read';
+  assert.equal(rightWrapped.call(receiver, 'd'), 'receiver:right:d');
+  assert.equal(leftWrapped.call(receiver, 'e'), 'first(receiver:left:e)');
+  remove();
+  assert.equal(leftWrapped.call(receiver, 'f'), 'receiver:left:f');
+  assert.equal(independent.call(receiver, 'g'), 'second(receiver:left:g)');
+});
+
 test('named and predicate hooks compose in registration order and predicates stay live', () => {
   const patches = createThunkPatches();
   const original = Object.assign(() => 'original', { meta: { name: 'send' } });

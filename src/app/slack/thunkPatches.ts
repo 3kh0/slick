@@ -39,56 +39,60 @@ export function createThunkPatches() {
     };
   }
 
-  function wrapCreator(original: ThunkCreator): ThunkCreator {
-    return new Proxy(original, {
-      apply(target, thisArg, args) {
-        let name: unknown;
-        if (named.size) {
+  // Every creator uses the same live registry. Keep one handler per registry
+  // instead of retaining an identical handler and apply closure for each thunk.
+  const handler: ProxyHandler<ThunkCreator> = {
+    apply(target, thisArg, args) {
+      let name: unknown;
+      if (named.size) {
+        try {
+          name = (target as any).meta?.name;
+        } catch {}
+      }
+      let candidates = (typeof name === 'string' && plans.get(name)) || generic;
+      let seenVersion = version;
+      let creator = target;
+      for (let index = 0; index < candidates.length; index++) {
+        const entry = candidates[index];
+        let matched = true;
+        if (typeof entry.match === 'function') {
           try {
-            name = (target as any).meta?.name;
-          } catch {}
-        }
-        let candidates = (typeof name === 'string' && plans.get(name)) || generic;
-        let seenVersion = version;
-        let creator = target;
-        for (let index = 0; index < candidates.length; index++) {
-          const entry = candidates[index];
-          let matched = true;
-          if (typeof entry.match === 'function') {
-            try {
-              matched = entry.match(target);
-            } catch {
-              matched = false;
-            }
-          }
-          // Build wrappers per call: plugins may read live settings here.
-          if (matched) {
-            try {
-              creator = entry.wrap(creator);
-            } catch (error) {
-              console.error('[slick] thunk wrapper threw:', error);
-            }
-          }
-          if (seenVersion !== version) {
-            // A hook may synchronously stop/start another plugin. Preserve the
-            // old Set iteration behavior: skip removals and visit new hooks.
-            // There may have been no named hooks when this invocation began.
-            name = undefined;
-            if (named.size) {
-              try {
-                name = (target as any).meta?.name;
-              } catch {}
-            }
-            candidates = (typeof name === 'string' && plans.get(name)) || generic;
-            seenVersion = version;
-            const next = candidates.findIndex((candidate) => candidate.order > entry.order);
-            if (next < 0) break;
-            index = next - 1;
+            matched = entry.match(target);
+          } catch {
+            matched = false;
           }
         }
-        return Reflect.apply(creator, thisArg, args);
-      },
-    });
+        // Build wrappers per call: plugins may read live settings here.
+        if (matched) {
+          try {
+            creator = entry.wrap(creator);
+          } catch (error) {
+            console.error('[slick] thunk wrapper threw:', error);
+          }
+        }
+        if (seenVersion !== version) {
+          // A hook may synchronously stop/start another plugin. Preserve the
+          // old Set iteration behavior: skip removals and visit new hooks.
+          // There may have been no named hooks when this invocation began.
+          name = undefined;
+          if (named.size) {
+            try {
+              name = (target as any).meta?.name;
+            } catch {}
+          }
+          candidates = (typeof name === 'string' && plans.get(name)) || generic;
+          seenVersion = version;
+          const next = candidates.findIndex((candidate) => candidate.order > entry.order);
+          if (next < 0) break;
+          index = next - 1;
+        }
+      }
+      return Reflect.apply(creator, thisArg, args);
+    },
+  };
+
+  function wrapCreator(original: ThunkCreator): ThunkCreator {
+    return new Proxy(original, handler);
   }
 
   return { patch, wrapCreator };
