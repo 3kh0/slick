@@ -48,6 +48,74 @@ test('CAS serializes concurrent writers and recovers after failures', async () =
   await store.dispatch({ method: 'writeSettings', args: ['bad'] });
   assert.deepEqual(await store.dispatch({ method: 'readSettings', args: [] }), { ok: true, value: '{"a":1}' });
 });
+
+test('a pending archive preserves its own order without blocking settings, CSS or another namespace', async () => {
+  const backend = memoryBackend();
+  const ns = 'plugin:MessageLogger';
+  await backend.put(ns, 'message', 'saved');
+  let release = () => {};
+  let started = () => {};
+  const blocked = new Promise<void>((resolve) => (release = resolve));
+  const reading = new Promise<void>((resolve) => (started = resolve));
+  const range = backend.range;
+  backend.range = async (...args) => {
+    if (args[0] === ns) {
+      started();
+      await blocked;
+    }
+    return range(...args);
+  };
+  const store = createStorage(memoryStorage(), backend);
+  const archive = call(store, 'blob.readAll', ns, '', '');
+  await reading;
+  let sameNamespaceFinished = false;
+  const sameNamespace = call(store, 'blob.read', ns, 'message').then((value) => {
+    sameNamespaceFinished = true;
+    return value;
+  });
+  let independentFinished = false;
+  const independent = Promise.all([
+    call(store, 'readSettings'),
+    call(store, 'writeUserCss', 'body{}'),
+    call(store, 'readUserCss'),
+    call(store, 'blob.write', 'plugin:LastSeen', 'observed', '{}'),
+  ]).then((values) => {
+    independentFinished = true;
+    return values;
+  });
+  try {
+    // All of the independent fake backends resolve in microtasks. The stalled
+    // archive must not prevent them from finishing by the next event-loop turn.
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    assert.equal(independentFinished, true);
+    assert.equal(sameNamespaceFinished, false);
+    assert.deepEqual(await independent, [DEFAULT_SETTINGS, true, 'body{}', true]);
+  } finally {
+    release();
+    await Promise.all([archive, sameNamespace, independent]);
+  }
+  assert.deepEqual(await archive, { message: 'saved' });
+  assert.equal(await sameNamespace, 'saved');
+});
+
+test('concurrent writes in one namespace cannot race its quota and a failure leaves the queue usable', async () => {
+  const backend = memoryBackend();
+  const ns = 'plugin:Censorship';
+  for (let i = 0; i < MAX_KEYS - 1; i++) await backend.put(ns, `key${i}`, 'value');
+  const store = createStorage(memoryStorage(), backend);
+  const responses = await Promise.all([
+    store.dispatch({ method: 'blob.write', args: [ns, 'first', 'value'] }),
+    store.dispatch({ method: 'blob.write', args: [ns, 'second', 'value'] }),
+  ]);
+  assert.deepEqual(responses, [
+    { ok: true, value: true },
+    { ok: false, error: 'Storage request failed' },
+  ]);
+  assert.equal(await call(store, 'blob.read', ns, 'first'), 'value');
+  assert.equal(await call(store, 'blob.read', ns, 'second'), null);
+  await call(store, 'blob.delete', ns, 'first');
+  assert.equal(await call(store, 'blob.write', ns, 'second', 'replacement'), true);
+});
 test('blobs are namespace allowlisted, bounded and prototype-safe', async () => {
   const area = memoryStorage();
   const store = createStorage(area, memoryBackend());
