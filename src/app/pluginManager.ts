@@ -30,6 +30,7 @@ import { userAPI } from './api/userAPI.ts';
 import { addSettingsTab, type SettingsTab } from './api/settingsTabs.ts';
 
 import { createAPILoader } from './apiLoader.ts';
+import { createScope, type PluginScope } from './pluginScope.ts';
 
 const loadAPIs = createAPILoader({
   redux: () => reduxReady,
@@ -71,46 +72,6 @@ function withTimeout<T>(id: string, phase: string, operation: Promise<T>): Promi
       },
     );
   });
-}
-
-type PluginScope = {
-  signal: AbortSignal;
-  track(cleanup: () => void): () => void;
-  dispose(): void;
-};
-
-function createScope(): PluginScope {
-  let active = true;
-  const controller = new AbortController();
-  const cleanups: (() => void)[] = [];
-
-  return {
-    signal: controller.signal,
-    track(cleanup) {
-      let done = false;
-      const once = () => {
-        if (done) return;
-        done = true;
-        cleanup();
-      };
-      // Runs immediately after teardown, so a slow async registration cannot outlive the plugin.
-      if (active) cleanups.push(once);
-      else once();
-      return once;
-    },
-    dispose() {
-      if (!active) return;
-      active = false;
-      controller.abort();
-      for (let i = cleanups.length - 1; i >= 0; i--) {
-        try {
-          cleanups[i]();
-        } catch (error) {
-          console.error('[slick] error disposing plugin resource:', error);
-        }
-      }
-    },
-  };
 }
 
 async function createBaseAPI(bridge: SlickBridge, required: readonly PluginAPIName[]) {

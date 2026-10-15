@@ -28,16 +28,32 @@ export default class Nicknames extends SlickPlugin<typeof meta.settings> {
   // does not; context carries it across.
   private readonly MemberIdContext = React.createContext<string | null>(null);
 
+  private removeMemberPatch: (() => void) | null = null;
+
   private get nicknames(): NicknameMap {
     return (this.config.names as NicknameMap) ?? {};
   }
 
-  start() {
-    this.api.redux.patchSlice<SlackMember>('members', (id, member) => {
+  private syncMemberPatch(refreshExisting = false) {
+    if (!Object.values(this.nicknames).some(Boolean)) {
+      const remove = this.removeMemberPatch;
+      this.removeMemberPatch = null;
+      remove?.();
+      return;
+    }
+    if (this.removeMemberPatch) {
+      if (refreshExisting) this.api.redux.refresh();
+      return;
+    }
+    this.removeMemberPatch = this.api.redux.patchSlice<SlackMember>('members', (id, member) => {
       const nickname = this.nicknames[id];
       if (!nickname || !member?.profile) return member;
       return this.api.members.modifyMemberObject(member, { name: nickname });
     });
+  }
+
+  start() {
+    this.syncMemberPatch();
 
     this.api.patchComponent<OverflowMenuProps>('RimetoMemberProfileOverflowMenu', (Original) => (props) => (
       <this.MemberIdContext.Provider value={props.memberId ?? null}>
@@ -71,9 +87,15 @@ export default class Nicknames extends SlickPlugin<typeof meta.settings> {
   }
 
   onSettingsChange() {
-    // mapEntries memoizes on the patch version, so without this the store
-    // keeps handing out members built from the previous nickname map.
-    this.api.redux.refresh();
+    // Installing/removing a slice patch already refreshes Redux. Edits to an
+    // active map need an explicit refresh to invalidate mapped member objects.
+    this.syncMemberPatch(true);
+  }
+
+  stop() {
+    const remove = this.removeMemberPatch;
+    this.removeMemberPatch = null;
+    remove?.();
   }
 
   private setNickname(userId: string, nickname: string) {
