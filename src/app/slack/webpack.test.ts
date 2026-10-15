@@ -51,6 +51,25 @@ test('single export lookups return a matching namespace without reading its gett
   assert.equal(reads, 0);
 });
 
+test('primitive exports remain whole values while function members stay discoverable', () => {
+  const member = {};
+  const fn = Object.assign(() => {}, { member });
+  const primitives = ['asset-url', 42, false, Symbol('export'), 1n, null, undefined];
+  const api = fixture([...primitives, fn]);
+  for (const primitive of primitives) {
+    assert.deepEqual([...api.getExport((value: unknown) => value === primitive, true)], [primitive]);
+  }
+  assert.equal(
+    api.getExport((value: unknown) => value === 'a'),
+    undefined,
+  );
+  assert.deepEqual([...api.getExport((value: unknown) => typeof value === 'string', true)], ['asset-url']);
+  assert.equal(
+    api.getExport((value: unknown) => value === member),
+    member,
+  );
+});
+
 test('discovery handles throwing getters and predicates, function properties and shared exports', () => {
   const found = { target: true };
   let reads = 0;
