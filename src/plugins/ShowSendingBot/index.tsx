@@ -53,8 +53,10 @@ export default class ShowSendingBot extends SlickPlugin<typeof meta.settings> {
 
   private apps = this.api.Cache<string | null>('message_apps', 30 * 24 * 60 * 60 * 1000, 5000);
   private pendingApps = new Set<string>();
+  private inFlightApps = new Set<string>();
   private failedApps = new Set<string>();
   private appTimer: ReturnType<typeof setTimeout> | null = null;
+  private stopped = false;
   private readonly SenderContext = React.createContext<SlackMessage | undefined>(undefined);
   private readonly ThreadSenderContext = React.createContext<SlackMessage | undefined>(undefined);
 
@@ -68,8 +70,9 @@ export default class ShowSendingBot extends SlickPlugin<typeof meta.settings> {
   }
 
   private queueApp(key?: string) {
-    if (key) this.pendingApps.add(key);
-    if (this.appTimer || this.api.signal.aborted) return;
+    if (this.stopped || this.api.signal.aborted) return;
+    if (key && !this.inFlightApps.has(key)) this.pendingApps.add(key);
+    if (this.appTimer || !this.pendingApps.size) return;
     this.appTimer = setTimeout(() => void this.lookUpApps(), 50);
   }
 
@@ -95,9 +98,13 @@ export default class ShowSendingBot extends SlickPlugin<typeof meta.settings> {
 
   private async lookUpApps() {
     this.appTimer = null;
+    if (this.stopped || this.api.signal.aborted) return;
     const byChannel = this.takeApps();
     if (!byChannel.size) return;
     const keys = [...byChannel].flatMap(([channel, timestamps]) => timestamps.map((ts) => `${channel}:${ts}`));
+    // A batch leaves the queue before its response populates the cache. Keep
+    // repeated renders from sending those same messages in another batch.
+    for (const key of keys) this.inFlightApps.add(key);
     try {
       const response = await this.api.userAPI<{ messages?: Record<string, SlackMessage[]> }>(
         'messages.list',
@@ -119,8 +126,10 @@ export default class ShowSendingBot extends SlickPlugin<typeof meta.settings> {
       );
     } catch {
       for (const key of keys) this.failedApps.add(key);
+    } finally {
+      for (const key of keys) this.inFlightApps.delete(key);
     }
-    if (this.api.signal.aborted) return;
+    if (this.stopped || this.api.signal.aborted) return;
     this.api.redux.refresh();
     if (this.pendingApps.size) this.queueApp();
   }
@@ -345,6 +354,10 @@ export default class ShowSendingBot extends SlickPlugin<typeof meta.settings> {
   }
 
   stop() {
+    this.stopped = true;
     if (this.appTimer) clearTimeout(this.appTimer);
+    this.appTimer = null;
+    this.pendingApps.clear();
+    this.inFlightApps.clear();
   }
 }
