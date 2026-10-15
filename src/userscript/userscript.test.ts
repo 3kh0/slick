@@ -86,6 +86,40 @@ test('settings use acknowledged GM writes, reject malformed imports, and remove 
   assert.equal(bridge.onOpenSettings, undefined, 'settings belong in native Slack Preferences');
 });
 
+test('each bridge captures fresh boot settings while live reads continue to see changes', async () => {
+  const { gm, values } = memoryGm();
+  const enabled = '{"plugins":{"Snappy":{"enabled":true}}}';
+  const disabled = '{"enabled":false,"plugins":{"Snappy":{"enabled":false}}}';
+  values.set(SETTINGS, enabled);
+  const first = createUserscriptBridge(gm);
+  assert.equal(first.initialSettings, enabled);
+  values.set(SETTINGS, disabled);
+  assert.equal(first.initialSettings, enabled, 'a boot snapshot does not mutate during the session');
+  assert.equal(await first.readSettings(), disabled, 'normal reads must not use the boot snapshot');
+  assert.equal(createUserscriptBridge(gm).initialSettings, disabled, 'an external disable is read on the next boot');
+  const safe = createUserscriptBridge(gm, [], true);
+  assert.equal(safe.safeMode, true);
+  assert.equal(safe.initialSettings, disabled, 'safe mode preserves the stored preferences');
+});
+
+test('unavailable or invalid boot settings never become an enabled default snapshot', () => {
+  const { gm, values } = memoryGm();
+  for (const invalid of [null, false, {}, []]) {
+    values.set(SETTINGS, invalid);
+    assert.equal(createUserscriptBridge(gm).initialSettings, undefined);
+  }
+  for (const invalid of ['null', '[]', '{broken']) {
+    values.set(SETTINGS, invalid);
+    assert.equal(createUserscriptBridge(gm).initialSettings, invalid, 'strict boot policy must see the invalid text');
+  }
+  const originalGet = gm.get;
+  gm.get = (key, fallback) => {
+    if (key === SETTINGS) throw new Error('Storage unavailable');
+    return originalGet(key, fallback);
+  };
+  assert.equal(createUserscriptBridge(gm).initialSettings, undefined);
+});
+
 test('cross-origin networking uses GM without sending browser cookies and reports failures', async () => {
   const { gm, request } = memoryGm();
   const response = gmFetch(gm, 'https://example.org/blob', {

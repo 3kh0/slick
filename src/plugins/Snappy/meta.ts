@@ -6,6 +6,13 @@ export const description = 'Make Slack feel more responsive by disabling animati
 export const defaultEnabled = true;
 
 export const settings = {
+  optimizeStateTracking: {
+    type: 'boolean',
+    label: 'Faster navigation',
+    description: 'Reduce work when navigating Slack. Restart to apply, including when disabling Snappy or Slick.',
+    default: true,
+    restartRequired: true,
+  },
   optimizeDuplicateStyles: {
     type: 'boolean',
     label: 'Reduce duplicate stylesheets (experimental)',
@@ -48,3 +55,5 @@ export const settings = {
 
 // A page extension cannot change the browser process or Slack's Crashpad.
 export const { ignoreGpuBlocklist: _gpu, disableCrashReporter: _crash, ...browserSettings } = settings;
+// Extensions cannot synchronously read preferences before Slack initializes.
+export const { optimizeStateTracking: _state, ...extensionSettings } = browserSettings;

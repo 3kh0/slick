@@ -15,6 +15,8 @@ export interface SlickBridge {
   safeMode: boolean;
   paths: Record<string, string>;
 
+  /** Fresh settings captured by the loader before Slack starts; absent when unavailable. */
+  readonly initialSettings?: string;
   readSettings(): Promise<string>;
   writeSettings(text: string): Promise<boolean>;
   /** Optional atomic update. False means the expected text is stale; reread and retry. */

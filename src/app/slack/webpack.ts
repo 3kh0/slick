@@ -324,6 +324,9 @@ export function getExport(matcher: SimpleMatcher, all = false) {
       if (!results) return exports;
       results.add(exports);
     }
+    // Primitive exports are values, not namespaces. Enumerating a string
+    // boxes it and offers every character as a spurious export candidate.
+    if (!isIndexable(exports)) continue;
     for (const key in exports) {
       if (!Object.hasOwn(exports, key)) continue;
       let candidate: any;

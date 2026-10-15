@@ -2,6 +2,7 @@
 // precondition means do nothing: a half-started Slick can stop Slack booting.
 
 import { applyPendingAccountSwitch } from './api/accounts.ts';
+import { installStateTrackingOptimization } from '../plugins/Snappy/boot.ts';
 import { registerDocument } from './api/css.ts';
 import { installResizeGate } from './api/resize.ts';
 import { bootstrap } from './bootstrap.ts';
@@ -67,6 +68,12 @@ function main() {
   // Must be synchronous: the next <script> is Slack's bundle.
   try {
     applyPendingAccountSwitch();
+    // Check before hooks create the chunk globals. Late userscripts keep Slack's
+    // original state tracking; changing only some consumers would be unsafe.
+    installStateTrackingOptimization(
+      bridge,
+      CHUNK_GLOBALS.some((name) => !!(globalThis as any)[name]),
+    );
     installWebpackHooks({ allowExisting: bridge.loader === 'userscript' });
     exposeWebpackDebug();
     exposeReactDebug();
