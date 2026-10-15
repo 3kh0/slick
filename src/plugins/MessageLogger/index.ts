@@ -530,7 +530,6 @@ export default class MessageLogger extends SlickPlugin<typeof meta.settings> {
       .slick-ml-edited-original-line { display: block; }
       .slick-ml-edited-original s { text-decoration: line-through; }
       .slick-ml-edited-marker { margin-left: 4px; font-size: .85em; opacity: .72; }
-      .slick-ml-evasion { display: block; margin-top: 2px; font-size: .75rem; opacity: .65; }
       .slick-ml-images { display: flex; flex-wrap: wrap; gap: 8px; padding: 4px 0; }
       .slick-ml-image { display: block; max-width: 100%; width: fit-content; }
       .slick-ml-image img { display: block; max-width: min(360px, 100%); max-height: 300px; object-fit: contain; filter: grayscale(1); }
@@ -598,13 +597,6 @@ export default class MessageLogger extends SlickPlugin<typeof meta.settings> {
           null,
           edit.edits.length ? this.editHistory(edit.edits) : null,
           React.createElement(Original, props),
-          edit.evaded
-            ? React.createElement(
-                'span',
-                { className: 'slick-ml-evasion' },
-                'this user is trying to evade the message logger',
-              )
-            : null,
         );
       });
     }

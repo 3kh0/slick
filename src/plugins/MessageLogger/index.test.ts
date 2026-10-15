@@ -401,7 +401,7 @@ function richMessage(body: string, extra = {}) {
   };
 }
 
-test('delete preserves observed blocks over a swapped previous_message and displays the evasion notice', async (t) => {
+test('delete preserves observed blocks over a swapped previous_message without displaying a notice', async (t) => {
   const f = loggerFixture(t);
   const original = richMessage('lmaoo');
   f.plugin.remember(original);
@@ -425,10 +425,8 @@ test('delete preserves observed blocks over a swapped previous_message and displ
   const row = f.plugin.renderRow(() => null, { msg: entry.message });
   f.React.useContext = () => row.props.value;
   const body = f.patches.get('Blocks')(() => null)({ msg: entry.message });
-  const notice = body.children[2];
-  assert.equal(row.children[0].children[0].children.length, 1, 'notice belongs inside the body, not beside the row');
-  assert.equal(notice.props.className, 'slick-ml-evasion');
-  assert.equal(notice.children[0], 'this user is trying to evade the message logger');
+  assert.equal(body.children.length, 2, 'body contains only edit history and the original content');
+  assert.equal(body.children[0], null, 'a recovered deletion does not add edit history');
   f.plugin.flush();
   await drain();
   assert.equal(f.values.get('entry:C:1').evaded, true);
