@@ -75,6 +75,7 @@ export function streamerCss(options: StreamerCss): string {
     `${root} ${sidebarRow}:hover .p-channel_sidebar__name`,
     `${root} .c-inline_channel_entity:hover .c-channel_entity__name`,
     `${root} ${activityRow}:hover ${inRow}`,
+    `${root} ${activityDm}:hover ${inRow}`,
     `${root} ${dmsRow}:hover ${inRow}`,
     `${root} .${REVEAL_CLASS} ${threadBody}`,
     `${root} .${REVEAL_CLASS} ${mention}`,
