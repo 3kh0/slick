@@ -154,6 +154,18 @@ export default class ShowSendingBot extends SlickPlugin<typeof meta.settings> {
     return memberId ? { memberId } : undefined;
   }
 
+  // Subscribe only where a badge can appear, keeping sender updates inside
+  // the badge instead of rerendering the surrounding Slack component.
+  private readonly SenderBadge = ({ msg, size, corner }: { msg: SlackMessage; size: number; corner: string }) => {
+    const sender = this.useSender(msg);
+    return sender ? <this.Badge {...sender} size={size} corner={corner} /> : null;
+  };
+
+  private readonly ThreadBadge = ({ msg }: { msg: SlackMessage }) => {
+    const dense = this.api.redux.useReduxState((state) => state.userPrefs?.messages_theme === 'dense');
+    return dense ? <this.SenderBadge msg={msg} size={18} corner="inline" /> : null;
+  };
+
   private readonly Badge = ({
     bot,
     memberId,
@@ -290,9 +302,8 @@ export default class ShowSendingBot extends SlickPlugin<typeof meta.settings> {
       },
       (Original) => (props) => {
         const msg = React.useContext(this.SenderContext);
-        const sender = this.useSender(msg);
         const slot = isCompactGutter(props.compact) ? 'compact' : isCompactGutter(props.light) ? 'light' : null;
-        if (!sender || !slot) return <Original {...props} />;
+        if (!msg || !slot) return <Original {...props} />;
         return (
           <Original
             {...props}
@@ -300,7 +311,7 @@ export default class ShowSendingBot extends SlickPlugin<typeof meta.settings> {
               [slot]: (
                 <>
                   {props[slot]}
-                  <this.Badge {...sender} size={18} corner="gutter" />
+                  <this.SenderBadge msg={msg} size={18} corner="gutter" />
                 </>
               ),
             }}
@@ -316,13 +327,10 @@ export default class ShowSendingBot extends SlickPlugin<typeof meta.settings> {
     ));
     this.api.patchComponent('MessageSender', (Original) => (props: object) => {
       const msg = React.useContext(this.ThreadSenderContext);
-      const dense = this.api.redux.useReduxState((state) => state.userPrefs?.messages_theme === 'dense');
-      const sender = this.useSender(msg);
-      if (!dense || !sender) return <Original {...props} />;
       return (
         <>
           <Original {...props} />
-          <this.Badge {...sender} size={18} corner="inline" />
+          {msg && <this.ThreadBadge msg={msg} />}
         </>
       );
     });

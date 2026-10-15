@@ -22,12 +22,16 @@ function deferred<T>() {
   return { promise, resolve, reject };
 }
 
-function fixture(initial: Promise<unknown>, safeMode: unknown = false) {
+function fixture(initial: Promise<unknown>, safeMode: unknown = false, originalPreload = 'void 0') {
   const html = deferred<unknown>();
   const parsed = deferred<void>();
   const ready = deferred<void>();
   const calls: string[] = [];
   const writes: string[] = [];
+  const lifecycle: string[] = [];
+  const exposedValues = new Map<string, unknown>();
+  const recovery = new Map<string, string>();
+  let reloads = 0;
   const timers = new Map<number, { callback: () => void; delay: number }>();
   let nextTimer = 0;
   let exposed: { claim(): SlickBridge | null } | undefined;
@@ -35,7 +39,7 @@ function fixture(initial: Promise<unknown>, safeMode: unknown = false) {
   const ipc = {
     invoke(channel: string, method?: string) {
       calls.push(method ? `${channel}:${method}` : channel);
-      if (channel === 'slick:get-original-preload') return Promise.resolve('void 0');
+      if (channel === 'slick:get-original-preload') return Promise.resolve(originalPreload);
       if (channel === 'slick:get-app-url') return Promise.resolve('slick://app/slick.js');
       if (channel === 'slick:get-paths') return Promise.resolve({});
       if (channel === 'slick:get-safe-mode') return Promise.resolve(safeMode);
@@ -45,6 +49,7 @@ function fixture(initial: Promise<unknown>, safeMode: unknown = false) {
     },
     sendSync: () => null,
     send(_channel: string, event: string) {
+      lifecycle.push(event);
       if (event === 'preload.ready') ready.resolve();
       if (event === 'preload.failed') ready.reject(new Error('Preload failed'));
     },
@@ -65,14 +70,17 @@ function fixture(initial: Promise<unknown>, safeMode: unknown = false) {
     querySelectorAll: (selector: string) => (selector === 'script' ? [originalScript] : []),
     createElement: () => ({ setAttribute() {} }),
   };
+  const exports = {};
   runInNewContext(preload, {
     require(id: string) {
       if (id === 'electron')
         return {
           ipcRenderer: ipc,
           contextBridge: {
-            exposeInMainWorld(_name: string, value: typeof exposed) {
-              exposed = value;
+            exposeInMainWorld(name: string, value: typeof exposed) {
+              lifecycle.push(`expose:${name}`);
+              exposedValues.set(name, value);
+              if (name === 'SlickBridge') exposed = value;
             },
           },
         };
@@ -82,6 +90,9 @@ function fixture(initial: Promise<unknown>, safeMode: unknown = false) {
     },
     console,
     process: { argv: [] },
+    module: { exports },
+    exports,
+    arguments: ['preload-argument'],
     URL,
     setTimeout(callback: () => void, delay: number) {
       const id = ++nextTimer;
@@ -96,9 +107,15 @@ function fixture(initial: Promise<unknown>, safeMode: unknown = false) {
       pathname: '/client/T/C',
       href: 'https://app.slack.com/client/T/C',
       origin: 'https://app.slack.com',
-      reload() {},
+      reload() {
+        reloads++;
+      },
     },
-    sessionStorage: { getItem: () => null, removeItem() {}, setItem() {} },
+    sessionStorage: {
+      getItem: (key: string) => recovery.get(key) ?? null,
+      removeItem: (key: string) => recovery.delete(key),
+      setItem: (key: string, value: string) => recovery.set(key, value),
+    },
     document: {
       open() {},
       close() {},
@@ -120,6 +137,10 @@ function fixture(initial: Promise<unknown>, safeMode: unknown = false) {
   return {
     calls,
     writes,
+    lifecycle,
+    exposedValues,
+    recovery,
+    reloads: () => reloads,
     parsed: parsed.promise,
     ready: ready.promise,
     exposed: () => exposed,
@@ -145,6 +166,38 @@ function fixture(initial: Promise<unknown>, safeMode: unknown = false) {
     },
   };
 }
+
+test('original preload retains its bindings and runs before the bridge is exposed', async () => {
+  const f = fixture(
+    Promise.resolve('{}'),
+    false,
+    `require('electron').contextBridge.exposeInMainWorld('OriginalPreload', {
+      processAvailable: Array.isArray(process.argv),
+      sharedExports: module.exports === exports,
+      sameThis: this === globalThis,
+      argument: arguments[0],
+    });`,
+  );
+  f.resolveHtml();
+  await f.ready;
+  const original = f.exposedValues.get('OriginalPreload') as Record<string, unknown>;
+  assert.equal(original.processAvailable, true);
+  assert.equal(original.sharedExports, true);
+  assert.equal(original.sameThis, true);
+  assert.equal(original.argument, 'preload-argument');
+  assert.ok(f.lifecycle.indexOf('expose:OriginalPreload') < f.lifecycle.indexOf('preload.original-ready'));
+  assert.ok(f.lifecycle.indexOf('preload.original-ready') < f.lifecycle.indexOf('expose:SlickBridge'));
+  assert.equal(f.writes.length, 2);
+});
+
+test('an original preload failure still reloads stock Slack before exposing the bridge', async () => {
+  const f = fixture(Promise.resolve('{}'), false, 'throw new Error("original preload failed")');
+  await assert.rejects(f.ready, /Preload failed/);
+  assert.equal(f.exposed(), undefined);
+  assert.equal(f.writes.length, 1);
+  assert.equal(f.recovery.get('slick:preload-recovery'), '1');
+  assert.equal(f.reloads(), 1);
+});
 
 test('preload starts settings beside HTML and exposes the snapshot before committing Slack', async () => {
   const settings = deferred<unknown>();
