@@ -2,6 +2,8 @@ import { extensionBrowser, MAX_TEXT, RENDERERS, record, validMethodResponse, val
 import type { ExtensionBrowser, Method } from './rpc.ts';
 import { CSS_KEY, SETTINGS_KEY } from './storage.ts';
 import { importedThemes, isThemeJson, parseThemeJson, type ThemeJson } from '../shared/themes.ts';
+import { COG_PATH } from '../shared/icons.ts';
+import { coerceSetting, type Setting, type SettingsSchema } from '../shared/settings.ts';
 
 type OptionsBrowser = ExtensionBrowser & {
   tabs: { query(options: { active: true; currentWindow: true }): Promise<{ id?: number; url?: string }[]> };
@@ -21,7 +23,8 @@ export type Change =
   | { property: 'importTheme'; id: string; value: ThemeJson }
   | { property: 'removeTheme'; id: string }
   | { property: 'toolbarIcon'; value: string }
-  | { property: 'plugin'; id: (typeof RENDERERS)[number]; value: boolean };
+  | { property: 'plugin'; id: (typeof RENDERERS)[number]; value: boolean }
+  | { property: 'pluginSetting'; id: (typeof RENDERERS)[number]; key: string; value: boolean | number | string };
 
 export async function request(send: Send, method: Method, args: string[] = []) {
   if (!validRequest({ method, args })) throw new Error('Invalid request');
@@ -49,12 +52,14 @@ export async function updateSetting(send: Send, change: Change): Promise<void> {
       delete themes[change.id];
       config.importedThemes = themes;
       if (config.theme === change.id) config.theme = '';
-    } else if (change.property === 'plugin') {
+    } else if (change.property === 'plugin' || change.property === 'pluginSetting') {
       if (config.plugins !== undefined && !record(config.plugins)) throw new Error('Invalid plugins');
       const plugins = record(config.plugins) ? config.plugins : {};
       const prior = plugins[change.id];
       if (prior !== undefined && !record(prior)) throw new Error('Invalid plugin');
-      config.plugins = { ...plugins, [change.id]: { ...(record(prior) ? prior : {}), enabled: change.value } };
+      const key = change.property === 'plugin' ? 'enabled' : change.key;
+      if (key === '__proto__') throw new Error('Invalid setting');
+      config.plugins = { ...plugins, [change.id]: { ...(record(prior) ? prior : {}), [key]: change.value } };
     } else {
       config[change.property] = change.value;
     }
@@ -128,10 +133,27 @@ export async function recover(api: OptionsBrowser, mode: Recovery): Promise<void
 }
 
 export type OptionsData = {
-  plugins: { id: string; name: string; description: string }[];
+  plugins: { id: string; name: string; description: string; settings?: SettingsSchema }[];
   themes: { id: string; name: string; background: string | null; accent: string | null }[];
   version: string;
 };
+
+type Inline = Exclude<Setting, { type: 'names' | 'schedule' }>;
+const inline = (setting: Setting): setting is Inline =>
+  ['boolean', 'number', 'text', 'color', 'select'].includes(setting.type);
+
+function cogIcon() {
+  const ns = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(ns, 'svg');
+  svg.setAttribute('viewBox', '0 0 20 20');
+  svg.setAttribute('aria-hidden', 'true');
+  const path = document.createElementNS(ns, 'path');
+  path.setAttribute('fill', 'currentColor');
+  path.setAttribute('fill-rule', 'evenodd');
+  path.setAttribute('d', COG_PATH);
+  svg.append(path);
+  return svg;
+}
 
 const TABS = ['plugins', 'appearance', 'troubleshooting', 'about'] as const;
 const TAB_KEY = 'slick:options:tab';
@@ -206,9 +228,17 @@ export function mount(api: OptionsBrowser | undefined, data: OptionsData) {
   select((TABS as readonly string[]).includes(initial ?? '') ? (initial as (typeof TABS)[number]) : 'plugins');
 
   const rows = new Map<string, HTMLElement>();
+  const fields: {
+    id: (typeof RENDERERS)[number];
+    key: string;
+    setting: Inline;
+    input: HTMLInputElement | HTMLSelectElement;
+  }[] = [];
   for (const plugin of data.plugins) {
+    const row = document.createElement('div');
+    row.className = 'row';
     const label = document.createElement('label');
-    label.className = 'row plugin';
+    label.className = 'plugin';
     const input = document.createElement('input');
     input.id = plugin.id;
     input.type = 'checkbox';
@@ -221,8 +251,75 @@ export function mount(api: OptionsBrowser | undefined, data: OptionsData) {
     description.textContent = plugin.description;
     text.append(name, description);
     label.append(input, text);
-    element('plugins').append(label);
-    rows.set(plugin.id, label);
+    const head = document.createElement('div');
+    head.className = 'plugin__head';
+    head.append(label);
+    row.append(head);
+    const entries = Object.entries(plugin.settings ?? {});
+    if (entries.length) {
+      const panel = document.createElement('div');
+      panel.className = 'plugin__settings';
+      panel.id = `${plugin.id}-settings`;
+      panel.hidden = true;
+      const cog = document.createElement('button');
+      cog.type = 'button';
+      cog.className = 'cog';
+      cog.title = `Configure ${plugin.name}`;
+      cog.setAttribute('aria-label', cog.title);
+      cog.setAttribute('aria-controls', panel.id);
+      cog.setAttribute('aria-expanded', 'false');
+      cog.append(cogIcon());
+      cog.addEventListener('click', () => {
+        panel.hidden = !panel.hidden;
+        cog.setAttribute('aria-expanded', String(!panel.hidden));
+      });
+      head.append(cog);
+      for (const [key, setting] of entries) {
+        if (!inline(setting)) continue;
+        const field = document.createElement('label');
+        field.className = setting.type === 'boolean' ? 'plugin' : 'setting';
+        let control: HTMLInputElement | HTMLSelectElement;
+        if (setting.type === 'select') {
+          control = document.createElement('select');
+          control.className = 'input select';
+          for (const option of setting.options) control.append(new Option(option.label, option.value));
+        } else {
+          control = document.createElement('input');
+          if (setting.type === 'boolean') control.type = 'checkbox';
+          else {
+            control.className = 'input';
+            control.type = setting.type;
+          }
+          if (setting.type === 'number') {
+            if (setting.min !== undefined) control.min = String(setting.min);
+            if (setting.max !== undefined) control.max = String(setting.max);
+          } else if (setting.type === 'text' && setting.maxLength) control.maxLength = setting.maxLength;
+        }
+        const copy = document.createElement('span');
+        const title = document.createElement('span');
+        title.className = 'setting__name';
+        title.textContent = setting.label;
+        copy.append(title);
+        if (setting.description) {
+          const hint = document.createElement('span');
+          hint.className = 'plugin__description';
+          hint.textContent = setting.description;
+          copy.append(hint);
+        }
+        field.append(...(setting.type === 'boolean' ? [control, copy] : [copy, control]));
+        panel.append(field);
+        fields.push({ id: plugin.id as (typeof RENDERERS)[number], key, setting, input: control });
+      }
+      if (entries.some(([, setting]) => !inline(setting))) {
+        const more = document.createElement('p');
+        more.className = 'hint';
+        more.textContent = 'More settings in Slack › Preferences › Slick.';
+        panel.append(more);
+      }
+      row.append(panel);
+    }
+    element('plugins').append(row);
+    rows.set(plugin.id, row);
   }
   search.addEventListener('input', () => {
     const terms = search.value.toLowerCase().split(/\s+/).filter(Boolean);
@@ -298,6 +395,12 @@ export function mount(api: OptionsBrowser | undefined, data: OptionsData) {
       const plugin = plugins[id];
       element<HTMLInputElement>(id).checked = record(plugin) && plugin.enabled === true;
     }
+    for (const { id, key, setting, input } of fields) {
+      const own = plugins[id];
+      const value = coerceSetting(setting, record(own) ? own[key] : undefined);
+      if (input instanceof HTMLInputElement && input.type === 'checkbox') input.checked = value === true;
+      else input.value = String(value);
+    }
     loaded = true;
     settings.disabled = busy;
     theme.disabled = busy;
@@ -371,6 +474,21 @@ export function mount(api: OptionsBrowser | undefined, data: OptionsData) {
     const input = element<HTMLInputElement>(id);
     input.addEventListener('change', () => void change({ property: 'plugin', id, value: input.checked }));
   }
+  for (const { id, key, setting, input } of fields)
+    input.addEventListener('change', () => {
+      const raw =
+        input instanceof HTMLInputElement && input.type === 'checkbox'
+          ? input.checked
+          : setting.type === 'number'
+            ? Number(input.value)
+            : input.value;
+      void change({
+        property: 'pluginSetting',
+        id,
+        key,
+        value: coerceSetting(setting, raw) as boolean | number | string,
+      });
+    });
   css.maxLength = MAX_TEXT;
   css.addEventListener('input', () => {
     draft.edit(css.value);

@@ -1,7 +1,7 @@
 // All Flaron (third-party) requests go through the main process: the page
 // can't reach it cross-origin, and it keeps the network surface reviewable in
 // one place. Only a channel id or the typed name is sent -- no token, team or
-// identity. Both settings default off.
+// identity. Flaron lookups default on; mentions default off.
 
 import type { MainCtx, SlickMainPlugin } from '$slick';
 import { CHANNEL_ID } from './flaron.ts';
