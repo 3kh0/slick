@@ -67,3 +67,18 @@ test('queues rewrites until flushed, skips rules changed meanwhile, and restores
   rewriter.flush();
   assert.equal(pending.selectorText, ':is(.e, .f)', 'restore discards queued rewrites');
 });
+
+test('discarding an interrupted scan drops pending rewrites without reverting completed ones', () => {
+  const applied = { selectorText: ':is(.a, .b)' } as CSSStyleRule;
+  const pending = { selectorText: ':is(.c, .d)' } as CSSStyleRule;
+  const rewriter = selectorRewriter();
+  rewriter.visit(applied);
+  rewriter.flush();
+  rewriter.visit(pending);
+  rewriter.discard();
+  rewriter.flush();
+  assert.equal(applied.selectorText, '.a, .b');
+  assert.equal(pending.selectorText, ':is(.c, .d)');
+  rewriter.restore();
+  assert.equal(applied.selectorText, ':is(.a, .b)');
+});

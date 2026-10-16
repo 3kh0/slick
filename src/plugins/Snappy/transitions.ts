@@ -35,7 +35,7 @@ function* collect(rules: CSSRuleList): Generator<CSSStyleRule> {
 
 export type TransitionOverride = { stop(): void };
 
-export type RuleRewriter = { visit(rule: CSSStyleRule): string; flush(): void };
+export type RuleRewriter = { visit(rule: CSSStyleRule): string; flush(): void; discard?(): void };
 
 // Each batch gets its own key, so later batches add a sheet instead of
 // re-parsing earlier ones.
@@ -55,6 +55,7 @@ export function overrideTransitions(
 
   const scan = function* (): Generator<void> {
     const found = new Set<string>();
+    const visited = new Map<CSSStyleSheet, number>();
     for (const sheet of document.styleSheets) {
       const owner = sheet.ownerNode as HTMLElement | null;
       if (owner?.dataset?.slickStyle !== undefined) continue;
@@ -71,9 +72,12 @@ export function overrideTransitions(
         if (hasDuration(rule.style)) found.add(selector ?? rule.selectorText);
         yield;
       }
-      scanned.set(sheet, count);
+      visited.set(sheet, count);
     }
     rewriter?.flush();
+    // An interrupted scan emits nothing. Only cache completed scans so sheets
+    // visited before an interruption still get their transition overrides.
+    for (const [sheet, count] of visited) scanned.set(sheet, count);
 
     const fresh = [...found].filter((selector) => !known.has(selector));
     if (!fresh.length) return;
@@ -136,10 +140,16 @@ export function overrideTransitions(
   };
   const onVisibilityChange = () => {
     cancelPending();
-    if (stopped || document.hidden) return;
-    // Keep a partial scan intact so its pending selector rewrites are flushed
-    // together. New windows still wait for the workspace and first paint.
-    if (work || scans) scheduleIdle();
+    if (stopped) return;
+    if (document.hidden) {
+      // CSSRuleList is live: resuming its old iterator after hidden mutations
+      // can skip rules. Restart without applying an unfinished rewrite batch.
+      work = undefined;
+      rewriter?.discard?.();
+      return;
+    }
+    // Let the returning workspace settle before restarting idle work.
+    if (scans) timer = setTimeout(scheduleIdle, scans < 10 ? SETTLE_MS : RESCAN_MS);
     else waitForWorkspace();
   };
   document.addEventListener('visibilitychange', onVisibilityChange);
@@ -151,6 +161,7 @@ export function overrideTransitions(
       document.removeEventListener('visibilitychange', onVisibilityChange);
       cancelPending();
       work = undefined;
+      rewriter?.discard?.();
     },
   };
 }

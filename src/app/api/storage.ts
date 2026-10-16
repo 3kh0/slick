@@ -20,6 +20,25 @@ async function yieldToInput() {
       // A caller's scheduler task may have been aborted; finish the storage read.
     }
   }
+  // Posted messages yield without the background/nested-timer clamp. Close
+  // both ports after delivery so archive loads leave no scheduler resources.
+  if (typeof MessageChannel !== 'undefined') {
+    await new Promise<void>((resolve) => {
+      const channel = new MessageChannel();
+      channel.port1.addEventListener(
+        'message',
+        () => {
+          channel.port1.close();
+          channel.port2.close();
+          resolve();
+        },
+        { once: true },
+      );
+      channel.port1.start();
+      channel.port2.postMessage(null);
+    });
+    return;
+  }
   await new Promise<void>((resolve) => setTimeout(resolve, 0));
 }
 

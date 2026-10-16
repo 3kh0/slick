@@ -18,6 +18,39 @@ function fakeBlob() {
 
 const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
 
+function postedTasks(t: import('node:test').TestContext) {
+  const pending: (() => void)[] = [];
+  let closed = 0;
+  const descriptor = Object.getOwnPropertyDescriptor(globalThis, 'MessageChannel');
+  class Channel {
+    callback: (() => void) | undefined;
+    started = false;
+    port1 = {
+      addEventListener: (_event: string, callback: () => void) => {
+        this.callback = callback;
+      },
+      start: () => {
+        this.started = true;
+      },
+      close: () => closed++,
+    };
+    port2 = {
+      postMessage: () =>
+        pending.push(() => {
+          assert.equal(this.started, true);
+          this.callback?.();
+        }),
+      close: () => closed++,
+    };
+  }
+  Object.defineProperty(globalThis, 'MessageChannel', { configurable: true, value: Channel });
+  t.after(() => {
+    if (descriptor) Object.defineProperty(globalThis, 'MessageChannel', descriptor);
+    else Reflect.deleteProperty(globalThis, 'MessageChannel');
+  });
+  return { pending, closed: () => closed };
+}
+
 test('entries: reads a whole prefix, skipping unparseable values', async () => {
   const { files, store } = fakeBlob();
   files.set('entry:a', '{"n":1}');
@@ -34,8 +67,8 @@ test('entries: large parse batches yield to queued work without changing order o
   files.set('entry:70', 'broken');
   let now = 0;
   t.mock.method(performance, 'now', () => (now += 10));
-  const pending: (() => void)[] = [];
-  t.mock.method(globalThis, 'setTimeout', (callback: () => void) => (pending.push(callback), 0));
+  const { pending, closed } = postedTasks(t);
+  t.mock.method(globalThis, 'setTimeout', () => assert.fail('fallback must not use throttled timers'));
   let done = false;
   const operation = new ScopedStorage(store).entries<number>('entry:').then((out) => {
     done = true;
@@ -58,6 +91,7 @@ test('entries: large parse batches yield to queued work without changing order o
   );
   assert.equal(out.get('entry:139'), 139);
   assert.equal(pending.length, 0, 'no unnecessary yield after the final batch');
+  assert.equal(closed(), 4, 'both ports are closed after each yield');
 });
 
 test('entries: small loads and read failures do not schedule additional tasks', async (t) => {
@@ -117,14 +151,14 @@ test('entries: an aborted scheduler task falls back and finishes the read', asyn
     if (descriptor) Object.defineProperty(globalThis, 'scheduler', descriptor);
     else Reflect.deleteProperty(globalThis, 'scheduler');
   });
-  let timers = 0;
-  t.mock.method(globalThis, 'setTimeout', (callback: () => void) => {
-    timers++;
-    callback();
-    return 0;
-  });
-  assert.equal((await new ScopedStorage(store).entries()).size, 2);
-  assert.equal(timers, 1);
+  const { pending, closed } = postedTasks(t);
+  t.mock.method(globalThis, 'setTimeout', () => assert.fail('aborted tasks must also avoid throttled timers'));
+  const reading = new ScopedStorage(store).entries();
+  for (let i = 0; i < 10 && !pending.length; i++) await Promise.resolve();
+  assert.equal(pending.length, 1);
+  pending.shift()!();
+  assert.equal((await reading).size, 2);
+  assert.equal(closed(), 2);
 });
 
 test('Cache: sweeps expired blobs off disk, once, and keeps live ones', async () => {

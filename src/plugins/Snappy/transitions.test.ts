@@ -91,6 +91,11 @@ function fixture(t: TestContext, hidden = false) {
       globals.document.hidden = value;
       for (const callback of visibilityListeners) callback();
     },
+    replaceFirstRule: () => {
+      rules.shift();
+      rules.push(new Rule('.replacement'));
+    },
+    prependSheet: () => globals.document.styleSheets.unshift({ cssRules: [{ cssRules: [new Rule('.first-sheet')] }] }),
     addSheet: () => globals.document.styleSheets.push({ cssRules: [{ cssRules: [new Rule('.added')] }] }),
   };
 }
@@ -154,7 +159,7 @@ test('hidden startup does not poll and waits for the workspace when shown', (t) 
   scan.stop();
 });
 
-test('hiding pauses partial work and resuming finishes its rewrites once', (t) => {
+test('hiding discards partial work and resuming restarts after the settle delay', (t) => {
   const f = fixture(t);
   const emitted: string[] = [];
   const scan = overrideTransitions((css) => emitted.push(css), f.rewriter);
@@ -168,6 +173,8 @@ test('hiding pauses partial work and resuming finishes its rewrites once', (t) =
   assert.equal(f.idle.size, 0, 'an already queued callback cannot resume hidden work');
   assert.equal(f.flushes.length, 0);
   f.setHidden(false);
+  assert.equal(f.idle.size, 0, 'returning workspace gets a settle delay');
+  f.runTimer();
   for (let i = 0; i < 10 && !emitted.length; i++) f.runIdle();
   assert.equal(emitted.length, 1);
   assert.equal(f.flushes.length, 1);
@@ -186,6 +193,8 @@ test('resuming discovers styles added while hidden and stop removes visibility l
   assert.equal(f.timers.size, 0);
   f.addSheet();
   f.setHidden(false);
+  assert.equal(f.idle.size, 0);
+  f.runTimer();
   f.runIdle();
   assert.equal(emitted.length, 2);
   assert.ok(emitted[1].includes('.added'));
@@ -195,6 +204,28 @@ test('resuming discovers styles added while hidden and stop removes visibility l
   f.setHidden(false);
   assert.equal(f.timers.size, 0);
   assert.equal(f.idle.size, 0);
+});
+
+test('a hidden mutation cannot skip rules or lose earlier sheets from an interrupted scan', (t) => {
+  const f = fixture(t);
+  f.prependSheet();
+  const emitted: string[] = [];
+  const scan = overrideTransitions((css) => emitted.push(css), f.rewriter);
+  f.runTimer();
+  f.runIdle();
+  assert.equal(emitted.length, 0);
+  f.setHidden(true);
+  f.replaceFirstRule();
+  f.setHidden(false);
+  f.runTimer();
+  for (let i = 0; i < 20 && !emitted.length; i++) f.runIdle();
+  assert.equal(emitted.length, 1);
+  assert.ok(emitted[0].includes('.first-sheet'), 'completed sheets in an abandoned scan must be revisited');
+  assert.ok(!emitted[0].includes('.fast-0'), 'the removed rule must not be emitted');
+  for (let i = 1; i < 20; i++) assert.ok(emitted[0].includes(`.fast-${i}`));
+  assert.ok(emitted[0].includes('.replacement'));
+  assert.equal(f.flushes.length, 1);
+  scan.stop();
 });
 
 test('hiding during the first paint delay cancels and restores that delay', (t) => {

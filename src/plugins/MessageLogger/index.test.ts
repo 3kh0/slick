@@ -800,4 +800,64 @@ test('scope abort during archive parsing prevents restore mutations and index up
   assert.equal(f.mutations(), 0);
   assert.equal(refreshes, 0);
   assert.equal(f.pending.length, 0);
+  assert.equal(f.plugin.restoreDismissals, null);
+});
+
+for (const action of ['hideEdits', 'acceptDelete', 'expire'] as const) {
+  test(`${action} during archive parsing stays dismissed after its deletion is flushed`, async (t) => {
+    const f = pausedRestoreFixture(t);
+    const restoring = f.plugin.restore();
+    await drain();
+    assert.equal(f.pending.length, 1);
+    f.edit({ channel: 'C', ts: '1', user: 'U', text: 'live' }, { channel: 'C', ts: '1', user: 'U', text: 'stored' });
+    if (action === 'acceptDelete') f.deletion({ channel: 'C', ts: '1', user: 'U', text: 'live' });
+    const live = f.plugin.entries.get('C:1');
+    if (action === 'expire') {
+      live.at = Date.now() - 31 * 24 * 60 * 60 * 1000;
+      assert.equal(f.plugin.cap(), true);
+    } else f.plugin[action](live);
+    f.plugin.flush();
+    await f.plugin.writes;
+    assert.equal(f.files.has('entry:C:1'), false);
+    f.pending.shift()!();
+    await restoring;
+    await f.plugin.writes;
+    assert.equal(f.plugin.entries.has('C:1'), false);
+    assert.equal(f.files.has('entry:C:1'), false);
+    assert.equal(f.plugin.restoreDismissals, null, 'dismissal tracking is released after the load');
+  });
+}
+
+test('hiding edits on a deleted message during parsing preserves the deletion without old edits', async (t) => {
+  const f = pausedRestoreFixture(t);
+  const restoring = f.plugin.restore();
+  await drain();
+  f.edit({ channel: 'C', ts: '1', user: 'U', text: 'live' }, { channel: 'C', ts: '1', user: 'U', text: 'stored' });
+  f.deletion({ channel: 'C', ts: '1', user: 'U', text: 'live' });
+  f.plugin.hideEdits(f.plugin.entries.get('C:1'));
+  f.plugin.flush();
+  await f.plugin.writes;
+  f.pending.shift()!();
+  await restoring;
+  await f.plugin.writes;
+  assert.equal(f.plugin.entries.get('C:1').deleted, true);
+  assert.equal(f.plugin.entries.get('C:1').edits, undefined);
+  assert.equal(JSON.parse(f.files.get('entry:C:1')!).edits, undefined);
+});
+
+test('new edits after a dismissal during parsing survive without resurrecting older history', async (t) => {
+  const f = pausedRestoreFixture(t);
+  const restoring = f.plugin.restore();
+  await drain();
+  f.edit({ channel: 'C', ts: '1', user: 'U', text: 'live' }, { channel: 'C', ts: '1', user: 'U', text: 'stored' });
+  f.plugin.hideEdits(f.plugin.entries.get('C:1'));
+  f.plugin.flush();
+  await f.plugin.writes;
+  f.edit({ channel: 'C', ts: '1', user: 'U', text: 'newer' }, { channel: 'C', ts: '1', user: 'U', text: 'live' });
+  f.pending.shift()!();
+  await restoring;
+  await f.plugin.writes;
+  const edits = [{ oldText: 'live', newText: 'newer' }];
+  assert.deepEqual(f.plugin.entries.get('C:1').edits, edits);
+  assert.deepEqual(JSON.parse(f.files.get('entry:C:1')!).edits, edits);
 });

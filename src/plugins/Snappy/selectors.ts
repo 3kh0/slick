@@ -86,6 +86,7 @@ export function rewriteSelectorList(text: string): string | null {
 export type SelectorRewriter = {
   visit(rule: CSSStyleRule): string;
   flush(): void;
+  discard(): void;
   restore(): void;
 };
 
@@ -108,6 +109,9 @@ export function selectorRewriter(): SelectorRewriter {
         rule.selectorText = next;
         if (rule.selectorText !== before) originals.set(rule, before);
       }
+      pending = [];
+    },
+    discard() {
       pending = [];
     },
     restore() {

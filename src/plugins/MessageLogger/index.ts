@@ -114,6 +114,8 @@ export default class MessageLogger extends SlickPlugin<typeof meta.settings> {
   private readonly recent = new Map<string, SlackMessage>();
   private readonly recentEvasion = new Set<string>();
   private readonly dirty = new Set<string>();
+  /** Dismissals must outlive a flush until the startup snapshot is merged. */
+  private restoreDismissals: Set<string> | null = null;
   private writes: Promise<void> = Promise.resolve();
   private persistTimer: ReturnType<typeof setTimeout> | null = null;
   private rowTimer: ReturnType<typeof setTimeout> | null = null;
@@ -175,42 +177,51 @@ export default class MessageLogger extends SlickPlugin<typeof meta.settings> {
 
   /** One key per entry so a delete doesn't rewrite the whole log (the blob reached 881 KB). */
   private async restore() {
-    const started = performance.now();
-    // Kept apart from `entries`/`dirty` until merged: a stop() mid-load flushes
-    // `dirty`, and a dirty key missing from `entries` is deleted from disk.
-    const loaded: Loaded = { entries: new Map(), dirty: new Set() };
-    const stored = await this.api.storage.entries<LogEntry>(ENTRY_PREFIX);
-    for (const [key, entry] of stored) this.accept(loaded, key.slice(ENTRY_PREFIX.length), entry);
+    const dismissed = new Set<string>();
+    this.restoreDismissals = dismissed;
+    try {
+      const started = performance.now();
+      // Kept apart from `entries`/`dirty` until merged: a stop() mid-load flushes
+      // `dirty`, and a dirty key missing from `entries` is deleted from disk.
+      const loaded: Loaded = { entries: new Map(), dirty: new Set() };
+      const stored = await this.api.storage.entries<LogEntry>(ENTRY_PREFIX);
+      for (const [key, entry] of stored) this.accept(loaded, key.slice(ENTRY_PREFIX.length), entry);
 
-    const legacy = await this.api.storage.get<Record<string, LogEntry> | null>(LEGACY_STORAGE_KEY, null);
-    if (this.api.signal.aborted) return;
-    const hasLegacy = !!legacy && typeof legacy === 'object';
-    if (hasLegacy) {
-      let migrated = 0;
-      for (const [key, entry] of Object.entries(legacy)) {
-        // A per-entry copy is newer.
-        if (loaded.entries.has(key)) continue;
-        if (!this.accept(loaded, key, entry)) continue;
-        loaded.dirty.add(key);
-        migrated++;
+      const legacy = await this.api.storage.get<Record<string, LogEntry> | null>(LEGACY_STORAGE_KEY, null);
+      if (this.api.signal.aborted) return;
+      const hasLegacy = !!legacy && typeof legacy === 'object';
+      if (hasLegacy) {
+        let migrated = 0;
+        for (const [key, entry] of Object.entries(legacy)) {
+          // A per-entry copy is newer.
+          if (loaded.entries.has(key)) continue;
+          if (!this.accept(loaded, key, entry)) continue;
+          loaded.dirty.add(key);
+          migrated++;
+        }
+        this.log(`migrated ${migrated} entries out of the single-blob log`);
       }
-      this.log(`migrated ${migrated} entries out of the single-blob log`);
-    }
 
-    // Anything in `entries` already was recorded live while this was loading.
-    for (const [key, entry] of loaded.entries) {
-      const live = this.entries.get(key);
-      if (live || loaded.dirty.has(key)) this.dirty.add(key);
-      this.setEntry(key, live ? mergeEntry(entry, live) : entry);
+      // Anything in `entries` already was recorded live while this was loading.
+      for (const [key, entry] of loaded.entries) {
+        // A dismissal also rejects older edits if new live activity has since
+        // recreated the entry. Keep that live entry without merging the snapshot.
+        if (dismissed.has(key)) continue;
+        const live = this.entries.get(key);
+        if (live || loaded.dirty.has(key)) this.dirty.add(key);
+        this.setEntry(key, live ? mergeEntry(entry, live) : entry);
+      }
+      this.cap();
+      this.flush();
+      // Only once the migrated entries are written, so a crash can't lose them.
+      if (hasLegacy) this.writes = this.writes.then(() => this.api.storage.delete(LEGACY_STORAGE_KEY)).then(() => {});
+      this.api.redux.refresh();
+      await this.images?.restore(() => [...this.entries].filter(([, entry]) => entry.deleted).map(([key]) => key));
+      const ms = Math.round(performance.now() - started);
+      this.log(`logging deletes and edits (${this.entries.size} stored, loaded in ${ms}ms)`);
+    } finally {
+      this.restoreDismissals = null;
     }
-    this.cap();
-    this.flush();
-    // Only once the migrated entries are written, so a crash can't lose them.
-    if (hasLegacy) this.writes = this.writes.then(() => this.api.storage.delete(LEGACY_STORAGE_KEY)).then(() => {});
-    this.api.redux.refresh();
-    await this.images?.restore(() => [...this.entries].filter(([, entry]) => entry.deleted).map(([key]) => key));
-    const ms = Math.round(performance.now() - started);
-    this.log(`logging deletes and edits (${this.entries.size} stored, loaded in ${ms}ms)`);
   }
 
   private key(channel: string, ts: string) {
@@ -423,6 +434,7 @@ export default class MessageLogger extends SlickPlugin<typeof meta.settings> {
   }
 
   private forget(key: string) {
+    this.restoreDismissals?.add(key);
     this.deleteEntry(key);
     this.images?.forget(key);
     this.dirty.add(key);
@@ -750,6 +762,7 @@ export default class MessageLogger extends SlickPlugin<typeof meta.settings> {
     const key = this.key(entry.channel, entry.ts);
     const current = this.entries.get(key);
     if (!current) return;
+    this.restoreDismissals?.add(key);
     if (current.deleted) this.setEntry(key, { ...current, edits: undefined });
     else this.deleteEntry(key);
     this.dirty.add(key);
