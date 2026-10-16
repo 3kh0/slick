@@ -21,7 +21,8 @@ async function optionsData(): Promise<Plugin> {
     ...EXTENSION_PLUGINS.map((id, i) => `import * as m${i} from ${JSON.stringify(path.join(PLUGINS, id, 'meta.ts'))};`),
     'export const plugins = [',
     ...EXTENSION_PLUGINS.map(
-      (id, i) => `  { id: ${JSON.stringify(id)}, name: m${i}.pluginName, description: m${i}.description },`,
+      (id, i) =>
+        `  { id: ${JSON.stringify(id)}, name: m${i}.pluginName, description: m${i}.description, settings: m${i}.settings ?? {} },`,
     ),
     '];',
     `export const themes = ${JSON.stringify(themes)};`,

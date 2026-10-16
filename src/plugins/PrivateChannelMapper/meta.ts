@@ -11,7 +11,7 @@ export const settings = {
     label: 'Use external private channel DB (Flaron)',
     description:
       'If enabled, sends channel IDs to flaron.halceon.dev to find known private channel names when no local name is found.',
-    default: false,
+    default: true,
   },
   mentions: {
     type: 'boolean',

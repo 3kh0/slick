@@ -456,3 +456,51 @@ html:not(.popup) #open-editor {
     width: 160px;
   }
 }
+.plugin__settings {
+  display: grid;
+  gap: 12px;
+  margin: 12px 0 0 26px;
+}
+.plugin__settings .hint {
+  margin: 0;
+}
+.setting .input {
+  flex: none;
+  width: 180px;
+  margin: 0;
+}
+.plugin__head {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+.plugin__head .plugin {
+  flex: 1;
+}
+.cog {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  margin: -4px -4px 0 0;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: inherit;
+  opacity: 0.55;
+  cursor: pointer;
+}
+.cog:hover,
+.cog[aria-expanded='true'] {
+  opacity: 1;
+}
+.cog:hover {
+  background: color-mix(in srgb, currentColor 10%, transparent);
+}
+.cog svg {
+  width: 16px;
+  height: 16px;
+  stroke: none;
+}

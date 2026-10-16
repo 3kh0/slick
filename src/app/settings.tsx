@@ -10,6 +10,7 @@ import type { ConfigStore } from './configStore.ts';
 import type { PluginManager } from './pluginManager.ts';
 import { patchComponent, reactReady } from './slack/react.tsx';
 import { parseThemeJson } from '../shared/themes.ts';
+import { COG_PATH } from '../shared/icons.ts';
 
 let elements: Awaited<typeof elementsReady>;
 let warnedUnrecognisedTabs = false;
@@ -267,17 +268,12 @@ function CogIcon() {
     <svg
       xmlns="http://www.w3.org/2000/svg"
       viewBox="0 0 20 20"
-      width="15"
-      height="15"
+      width="16"
+      height="16"
       aria-hidden="true"
       style={{ display: 'block' }}
     >
-      <path
-        fill="currentColor"
-        fillRule="evenodd"
-        clipRule="evenodd"
-        d="M11.486 1.286a4 4 0 0 0-2.972 0 .75.75 0 0 0-.45.518l-.372 1.523-.004.018a.5.5 0 0 1-.758.314l-.016-.01-1.34-.813a.75.75 0 0 0-.685-.048 4 4 0 0 0-2.1 2.1.75.75 0 0 0 .047.685l.814 1.34.01.016a.5.5 0 0 1-.314.759l-.018.004-1.523.372a.75.75 0 0 0-.519.45 4 4 0 0 0 0 2.971.75.75 0 0 0 .519.45l1.523.373.018.004a.5.5 0 0 1 .314.758l-.01.016-.814 1.34a.75.75 0 0 0-.048.685 4 4 0 0 0 2.101 2.1.75.75 0 0 0 .685-.048l1.34-.813.016-.01a.5.5 0 0 1 .758.314l.004.018.372 1.523a.75.75 0 0 0 .45.518 4 4 0 0 0 2.972 0 .75.75 0 0 0 .45-.518l.372-1.523.004-.018a.5.5 0 0 1 .758-.314l.016.01 1.34.813a.75.75 0 0 0 .685.049 4 4 0 0 0 2.101-2.101.75.75 0 0 0-.048-.685l-.814-1.34-.01-.016a.5.5 0 0 1 .314-.758l.018-.004 1.523-.373a.75.75 0 0 0 .519-.45 4 4 0 0 0 0-2.97.75.75 0 0 0-.519-.45l-1.523-.373-.018-.004a.5.5 0 0 1-.314-.759l.01-.015.814-1.34a.75.75 0 0 0 .048-.685 4 4 0 0 0-2.101-2.101.75.75 0 0 0-.685.048l-1.34.814-.016.01a.5.5 0 0 1-.758-.315l-.004-.017-.372-1.524a.75.75 0 0 0-.45-.518M8 10a2 2 0 1 1 4 0 2 2 0 0 1-4 0m2-3.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7"
-      />
+      <path fill="currentColor" fillRule="evenodd" clipRule="evenodd" d={COG_PATH} />
     </svg>
   );
 }
@@ -884,7 +880,7 @@ function Appearance({ config, bridge }: { config: ConfigStore; bridge: SlickBrid
       </p>
       {bridge.loader === 'extension' ? (
         // Slack's page may not open extension tabs; the toolbar popup owns the editor.
-        <div style={{ opacity: 0.85 }}>Edit custom CSS from the Slick button in the Firefox toolbar.</div>
+        <div style={{ opacity: 0.85 }}>Edit custom CSS from the Slick button in the browser toolbar.</div>
       ) : (
         <elements.Button onClick={() => void bridge.openCssEditor()}>Open CSS editor</elements.Button>
       )}
