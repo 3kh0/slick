@@ -4,6 +4,7 @@ import type { GMApi } from './gm.ts';
 import { createUserscriptBridge, installUserscriptBridge, BYPASS, SAFE_MODE } from './bridge.ts';
 import { createBlobStore, CSS, SETTINGS, validSettings } from './storage.ts';
 import { gmFetch } from './network.ts';
+import { USERSCRIPT_PLUGINS } from './plugins.ts';
 
 function memoryGm() {
   const values = new Map<string, unknown>();
@@ -60,10 +61,11 @@ test('settings use acknowledged GM writes, reject malformed imports, and remove 
   const { gm, values, listeners } = memoryGm();
   const bridge = createUserscriptBridge(gm);
   const defaults = JSON.parse(await bridge.readSettings());
-  assert.equal(Object.keys(defaults.plugins).length, 33);
+  assert.deepEqual(Object.keys(defaults.plugins).toSorted(), [...USERSCRIPT_PLUGINS].toSorted());
   assert.ok(Object.values(defaults.plugins).every((p: any) => !p.enabled));
   for (const id of ['AccountSwitcher', 'Click2Load']) assert.equal(defaults.plugins[id], undefined);
   assert.deepEqual(defaults.plugins.NoTrack, { enabled: false });
+  assert.deepEqual(defaults.plugins.HuddleMuteDetector, { enabled: false });
   let notified = '';
   const stop = bridge.onSettingsChange((text) => {
     notified = text;
