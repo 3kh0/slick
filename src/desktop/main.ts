@@ -69,11 +69,7 @@ app.on = function (event, listener) {
   if (event === 'open-url') process.nextTick(replayPendingOpenUrls);
   return result;
 } as typeof app.on;
-app.on('second-instance', (_event, commandLine) => {
-  const url = commandLine.find((value) => typeof value === 'string' && /^slack:/i.test(value));
-  if (url) app.emit('open-url', { preventDefault() {} } as Electron.Event, url);
-  focusExistingWindow();
-});
+app.on('second-instance', focusExistingWindow);
 app.on('open-url', focusExistingWindow);
 if (!app.requestSingleInstanceLock()) {
   app.quit();
