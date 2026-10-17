@@ -17,6 +17,7 @@ export const EXTENSION_PLUGINS = [
   'Experiments',
   'HaikuWarning',
   'HcaStatus',
+  'HuddleMuteDetector',
   'HumanCount',
   'LastSeen',
   'MessageLogger',
