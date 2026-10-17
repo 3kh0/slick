@@ -637,6 +637,25 @@ test('an already advanced Redux cache does not turn a normal edit into evasion',
   assert.equal(f.plugin.entries.get('C:1').message.text, '/hj');
 });
 
+test('own edits log the previous body after Slack optimistically updated the row', (t) => {
+  const f = loggerFixture(t);
+  f.config.ignoreSelf = false;
+  const first = richMessage('first', { user: 'ME', text: 'first' });
+  const second = richMessage('second', { user: 'ME', text: 'second', edited: { ts: '2' } });
+  f.plugin.remember(first);
+  f.plugin.renderRow(() => null, { msg: richMessage('second', { user: 'ME', text: 'first' }) });
+  f.edit(second, first);
+  assert.deepEqual(f.plugin.entries.get('C:1').edits, [{ oldText: 'first', newText: 'second' }]);
+  assert.equal(f.plugin.entries.get('C:1').evaded, undefined);
+  f.plugin.renderRow(() => null, { msg: richMessage('third', { user: 'ME', text: 'second' }) });
+  f.edit(richMessage('third', { user: 'ME', text: 'third', edited: { ts: '3' } }), second);
+  assert.deepEqual(f.plugin.entries.get('C:1').edits, [
+    { oldText: 'first', newText: 'second' },
+    { oldText: 'second', newText: 'third' },
+  ]);
+  assert.equal(f.plugin.entries.get('C:1').evaded, undefined);
+});
+
 test('channel-scoped row misses avoid scanning the canonical archive', (t) => {
   const f = loggerFixture(t);
   for (let i = 0; i < 1000; i++) f.plugin.setEntry(`C:${i}`, { channel: 'C', ts: `${i}`, at: Date.now() });

@@ -298,10 +298,13 @@ export default class MessageLogger extends SlickPlugin<typeof meta.settings> {
     return typeof id === 'string' ? id : undefined;
   }
 
-  private skipSelf(user: string | undefined): boolean {
-    if (!this.config.ignoreSelf || !user) return false;
+  private isSelf(user: string | undefined): boolean {
     const me = this.currentUserId();
-    return !!me && me === user;
+    return !!user && !!me && me === user;
+  }
+
+  private skipSelf(user: string | undefined): boolean {
+    return !!this.config.ignoreSelf && this.isSelf(user);
   }
 
   private skipAnchor(msg: SlackMessage | undefined): boolean {
@@ -390,8 +393,9 @@ export default class MessageLogger extends SlickPlugin<typeof meta.settings> {
     const channel = channelOf(event, next ?? previous);
     const ts = tsOf(event, next ?? previous);
     if (!channel || !ts) return;
-    const original = this.original(event, channel, ts);
-    const user = userOf(next ?? original ?? previous, event);
+    const local = this.original(event, channel, ts);
+    const user = userOf(next ?? local ?? previous, event);
+    const original = this.isSelf(user) && hasContent(previous) ? previous : local;
     // Metadata-only events must not erase the locally observed body.
     if (next)
       this.remember({
