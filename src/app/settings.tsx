@@ -544,6 +544,11 @@ function SettingControl({
             Choose file…
           </elements.Button>
           <span style={{ overflowWrap: 'anywhere' }}>{fileLabel(value) || 'No file selected'}</span>
+          {!!value && (
+            <elements.Button type="ghost" size="small" aria-label={`Clear ${setting.label}`} onClick={() => save('')}>
+              Clear
+            </elements.Button>
+          )}
         </div>
       );
     case 'schedule':
