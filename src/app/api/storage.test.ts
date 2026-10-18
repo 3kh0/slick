@@ -189,6 +189,19 @@ test('Cache: a hit does not refetch, and a miss de-duplicates in flight', async 
   assert.equal(calls, 1);
 });
 
+test('Cache: a TTL function sets expiry per value', async () => {
+  const { files, store } = fakeBlob();
+  const cache = new Cache<string>(new ScopedStorage(store), 't', (value) => (value === 'no' ? -1 : 60_000));
+  let calls = 0;
+
+  await cache.get('k', async () => (calls++, 'no'));
+  await settle();
+  assert.ok(JSON.parse(files.get('cache:t:k')!).expires <= Date.now());
+  assert.equal(await cache.get('k', async () => (calls++, 'yes')), 'yes');
+  assert.equal(await cache.get('k', async () => (calls++, 'no')), 'yes');
+  assert.equal(calls, 2);
+});
+
 test('Cache: memory is bounded even when nothing has expired', async () => {
   const { store } = fakeBlob();
   // A long TTL is the point: without a ceiling, a per-message key grows for

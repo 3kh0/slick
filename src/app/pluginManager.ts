@@ -249,7 +249,8 @@ function createScopedAPI(
       scope.track(() => URL.revokeObjectURL(url));
       return url;
     },
-    Cache: <T>(name: string, ttlMs?: number, maxEntries?: number) => new Cache<T>(storage, name, ttlMs, maxEntries),
+    Cache: <T>(name: string, ttlMs?: number | ((value: T) => number), maxEntries?: number) =>
+      new Cache<T>(storage, name, ttlMs, maxEntries),
 
     /**
      * Persist one of this plugin's settings. The key must be in the schema and

@@ -122,11 +122,16 @@ export class Cache<T> {
 
   private storage: ScopedStorage;
   private name: string;
-  private ttlMs: number;
+  private ttlMs: number | ((value: T) => number);
   /** In-memory ceiling; a TTL alone doesn't bound residency (ShowRealUser keys per message). */
   private maxEntries: number;
 
-  constructor(storage: ScopedStorage, name: string, ttlMs = 60 * 60 * 1000, maxEntries = 5000) {
+  constructor(
+    storage: ScopedStorage,
+    name: string,
+    ttlMs: number | ((value: T) => number) = 60 * 60 * 1000,
+    maxEntries = 5000,
+  ) {
     this.storage = storage;
     this.name = name;
     this.ttlMs = ttlMs;
@@ -192,7 +197,8 @@ export class Cache<T> {
       }
 
       const value = await fetcher(key);
-      const entry = { value, expires: Date.now() + this.ttlMs };
+      const ttl = typeof this.ttlMs === 'function' ? this.ttlMs(value) : this.ttlMs;
+      const entry = { value, expires: Date.now() + ttl };
       this.remember(key, entry);
       void this.storage.set(this.storageKey(key), entry);
       return value;

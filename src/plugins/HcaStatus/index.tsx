@@ -6,7 +6,8 @@ import * as meta from './meta.ts';
 
 type SenderProps = { botId?: string; userId?: string; className?: string };
 
-const STATUS_TTL_MS = 24 * 60 * 60 * 1000;
+const VERIFIED_TTL_MS = 24 * 60 * 60 * 1000;
+const UNVERIFIED_TTL_MS = 10 * 60 * 1000;
 const USER_ID = /^[UW][A-Z0-9]+$/;
 
 const CLASS: Record<string, string> = {
@@ -23,7 +24,9 @@ export default class HcaStatus extends SlickPlugin<typeof meta.settings> {
   static readonly settings = meta.settings;
   static readonly liveSettings = ['unverifiedColor', 'over18Color'];
 
-  private statuses = this.api.Cache<meta.HcaStatus | null>('hca_status', STATUS_TTL_MS);
+  private statuses = this.api.Cache<meta.HcaStatus | null>('hca_status', (status) =>
+    status === 'unverified' ? UNVERIFIED_TTL_MS : VERIFIED_TTL_MS,
+  );
 
   start() {
     this.applyStyle();
