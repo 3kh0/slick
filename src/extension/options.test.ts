@@ -171,3 +171,27 @@ test('packaged recovery function sets and clears only recovery flags', () => {
     else Reflect.deleteProperty(globalThis, 'sessionStorage');
   }
 });
+
+test('workspace selection writes preserve other settings and reject app-wide or invalid restrictions', async () => {
+  let stored = JSON.stringify({
+    plugins: { HaikuWarning: { enabled: true } },
+    pluginWorkspaces: { HumanCount: ['T2'] },
+  });
+  const send = async ({ method, args }: Request) => {
+    if (method === 'readSettings') return { ok: true, value: stored };
+    assert.equal(args[0], stored);
+    stored = args[1];
+    return { ok: true, value: true };
+  };
+  await updateSetting(send, { property: 'pluginWorkspaces', id: 'HaikuWarning', value: ['T1', 'E2'] });
+  assert.deepEqual(JSON.parse(stored), {
+    plugins: { HaikuWarning: { enabled: true } },
+    pluginWorkspaces: { HumanCount: ['T2'], HaikuWarning: ['T1', 'E2'] },
+  });
+  await updateSetting(send, { property: 'pluginWorkspaces', id: 'HaikuWarning', value: [] });
+  assert.deepEqual(JSON.parse(stored).pluginWorkspaces.HaikuWarning, []);
+  await updateSetting(send, { property: 'pluginWorkspaces', id: 'HaikuWarning', value: null });
+  assert.equal(JSON.parse(stored).pluginWorkspaces.HaikuWarning, null);
+  await assert.rejects(updateSetting(send, { property: 'pluginWorkspaces', id: 'HaikuWarning', value: ['bad'] }));
+  await assert.rejects(updateSetting(send, { property: 'pluginWorkspaces', id: 'NoTrack', value: ['T1'] }));
+});

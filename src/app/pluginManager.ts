@@ -31,6 +31,8 @@ import { addSettingsTab, type SettingsTab } from './api/settingsTabs.ts';
 
 import { createAPILoader } from './apiLoader.ts';
 import { createScope, type PluginScope } from './pluginScope.ts';
+import { appWideReason } from '../shared/pluginWorkspaces.ts';
+import { currentWorkspaceId, watchWorkspace } from './workspaces.ts';
 
 const loadAPIs = createAPILoader({
   redux: () => reduxReady,
@@ -154,6 +156,7 @@ function createScopedAPI(
       scope.track(fn(...args));
 
   const storage = new ScopedStorage(blob);
+  const workspaceId = currentWorkspaceId();
   let redux: BaseAPI['redux'] | undefined;
   let rtm: BaseAPI['rtm'] | undefined;
   let messages: BaseAPI['messages'] | undefined;
@@ -202,6 +205,8 @@ function createScopedAPI(
     },
     id,
     signal: scope.signal,
+    isActive: () =>
+      !scope.signal.aborted && config.isActive(id) && (!!appWideReason(id) || currentWorkspaceId() === workspaceId),
 
     patchComponent: tracked(base.patchComponent) as typeof base.patchComponent,
 
@@ -270,6 +275,7 @@ type Entry = {
   settings: PluginSettings;
   running: boolean;
   startError: string | null;
+  workspaceId: string | null;
 };
 
 export class PluginManager {
@@ -282,6 +288,10 @@ export class PluginManager {
     private config: ConfigStore,
   ) {
     this.config.onConfigChange(() => void this.reconcile());
+    watchWorkspace(() => {
+      void this.reconcile();
+      this.notifyStatus();
+    });
   }
 
   /** Serialize lifecycle work per plugin, so enable/disable cannot interleave. */
@@ -322,6 +332,7 @@ export class PluginManager {
       settings: this.config.settingsFor(id),
       running: false,
       startError: null,
+      workspaceId: null,
     });
     return id;
   }
@@ -342,6 +353,12 @@ export class PluginManager {
   }
 
   async reconcile(): Promise<void> {
+    // Cancel resources immediately, even if an async lifecycle call is queued.
+    for (const [id, entry] of this.plugins) {
+      if (!this.config.isActive(id) || (!appWideReason(id) && entry.workspaceId !== currentWorkspaceId())) {
+        entry.scope?.dispose();
+      }
+    }
     await Promise.all(
       [...this.plugins.keys()].map((id) =>
         this.exclusive(id, () => this.reconcileOne(id)).catch((error) =>
@@ -360,6 +377,9 @@ export class PluginManager {
     const previous = entry.settings;
     entry.settings = next;
     const changed = changedKeys(previous, next);
+
+    if (entry.workspaceId !== currentWorkspaceId()) entry.startError = null;
+    if (entry.scope?.signal.aborted) await this.stop(id, entry);
 
     if (!wanted) {
       if (entry.instance) await this.stop(id, entry);
@@ -399,6 +419,8 @@ export class PluginManager {
   }
 
   private async start(id: string, entry: Entry): Promise<void> {
+    const workspaceId = currentWorkspaceId();
+    entry.workspaceId = workspaceId;
     entry.startError = null;
     entry.running = false;
     this.notifyStatus();
@@ -411,6 +433,7 @@ export class PluginManager {
       this.notifyStatus();
       return;
     }
+    if (!this.config.isActive(id) || workspaceId !== currentWorkspaceId()) return;
     const scope = createScope();
     const api = createScopedAPI(
       base,
@@ -434,9 +457,14 @@ export class PluginManager {
 
     entry.instance = instance;
     entry.scope = scope;
+    entry.workspaceId = workspaceId;
 
     try {
       await withTimeout(id, 'start', Promise.resolve(instance.start()));
+      if (scope.signal.aborted || !this.config.isActive(id) || workspaceId !== currentWorkspaceId()) {
+        await this.stop(id, entry);
+        return;
+      }
       entry.running = true;
       this.notifyStatus();
       console.log(`[slick] started ${id}`);
@@ -454,6 +482,7 @@ export class PluginManager {
     entry.instance = null;
     entry.scope = null;
     entry.running = false;
+    scope?.dispose();
 
     if (instance) {
       try {
@@ -462,8 +491,6 @@ export class PluginManager {
         console.error(`[slick] ${id} failed to stop cleanly:`, error);
       }
     }
-    // Always dispose, even if stop() threw.
-    scope?.dispose();
     this.notifyStatus();
     console.log(`[slick] stopped ${id}`);
   }
@@ -477,7 +504,10 @@ export class PluginManager {
       settings: entry.PluginClass.settings,
       relaunchSettings: entry.PluginClass.relaunchSettings,
       running: entry.running,
-      enabled: this.config.isActive(id),
+      enabled: this.config.settingsFor(id).enabled === true,
+      active: this.config.isActive(id),
+      workspaceAllowed: this.config.isAllowedInWorkspace(id),
+      appWideReason: appWideReason(id),
       startError: entry.startError,
     }));
   }

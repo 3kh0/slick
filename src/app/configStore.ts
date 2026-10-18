@@ -4,6 +4,13 @@
 import { type PluginSettings, resolveSettings, type SettingsSchema } from '../shared/settings.ts';
 import type { SlickBridge } from './bridge.ts';
 import { importedThemes, isThemeJson, type ThemeJson } from '../shared/themes.ts';
+import {
+  appWideReason,
+  workspaceAllowed,
+  workspaceSelection,
+  type PluginWorkspaces,
+} from '../shared/pluginWorkspaces.ts';
+import { currentWorkspaceId } from './workspaces.ts';
 
 export type StoredConfig = {
   /** Global kill switch; false means Slick loads but does nothing. */
@@ -11,6 +18,7 @@ export type StoredConfig = {
   theme?: string;
   importedThemes?: Record<string, ThemeJson>;
   plugins?: Record<string, Record<string, unknown>>;
+  pluginWorkspaces?: PluginWorkspaces;
 };
 
 type SchemaEntry = { schema: SettingsSchema; defaultEnabled: boolean };
@@ -142,9 +150,16 @@ export class ConfigStore {
     return settings;
   }
 
-  /** Its own switch and the global one. */
+  workspacesFor(id: string): string[] | null {
+    return workspaceSelection(this.stored.pluginWorkspaces?.[id]);
+  }
+
+  isAllowedInWorkspace(id: string, workspaceId = currentWorkspaceId()): boolean {
+    return !!appWideReason(id) || workspaceAllowed(this.stored.pluginWorkspaces?.[id], workspaceId);
+  }
+
   isActive(id: string): boolean {
-    return this.globallyEnabled && this.settingsFor(id).enabled === true;
+    return this.globallyEnabled && this.settingsFor(id).enabled === true && this.isAllowedInWorkspace(id);
   }
 
   onConfigChange(cb: () => void): () => void {
@@ -216,6 +231,28 @@ export class ConfigStore {
 
   setPluginEnabled(id: string, enabled: boolean) {
     return this.setPluginSetting(id, 'enabled', enabled);
+  }
+
+  setPluginWorkspaces(id: string, workspaces: string[] | null) {
+    if (appWideReason(id)) return Promise.resolve(false);
+    return this.update((config) => {
+      config.pluginWorkspaces = { ...config.pluginWorkspaces };
+      if (workspaces === null) delete config.pluginWorkspaces[id];
+      else config.pluginWorkspaces[id] = workspaceSelection(workspaces);
+    });
+  }
+
+  setPluginWorkspace(id: string, workspaceId: string, included: boolean) {
+    if (appWideReason(id)) return Promise.resolve(false);
+    return this.update((config) => {
+      const selected = workspaceSelection(config.pluginWorkspaces?.[id]) ?? [];
+      config.pluginWorkspaces = {
+        ...config.pluginWorkspaces,
+        [id]: workspaceSelection(
+          included ? [...selected, workspaceId] : selected.filter((selectedId) => selectedId !== workspaceId),
+        ),
+      };
+    });
   }
 
   setTheme(theme: string) {

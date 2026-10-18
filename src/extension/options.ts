@@ -4,7 +4,7 @@ import { CSS_KEY, SETTINGS_KEY } from './storage.ts';
 import { importedThemes, isThemeJson, parseThemeJson, type ThemeJson } from '../shared/themes.ts';
 import { COG_PATH } from '../shared/icons.ts';
 import { coerceSetting, type Setting, type SettingsSchema } from '../shared/settings.ts';
-
+import { appWideReason, workspaceSelection, WORKSPACE_ID } from '../shared/pluginWorkspaces.ts';
 type OptionsBrowser = ExtensionBrowser & {
   tabs: { query(options: { active: true; currentWindow: true }): Promise<{ id?: number; url?: string }[]> };
   scripting: {
@@ -24,6 +24,7 @@ export type Change =
   | { property: 'removeTheme'; id: string }
   | { property: 'toolbarIcon'; value: string }
   | { property: 'plugin'; id: (typeof RENDERERS)[number]; value: boolean }
+  | { property: 'pluginWorkspaces'; id: (typeof RENDERERS)[number]; value: string[] | null }
   | { property: 'pluginSetting'; id: (typeof RENDERERS)[number]; key: string; value: boolean | number | string };
 
 export async function request(send: Send, method: Method, args: string[] = []) {
@@ -43,7 +44,13 @@ export async function updateSetting(send: Send, change: Change): Promise<void> {
   for (let attempt = 0; attempt < 8; attempt++) {
     const previous = (await request(send, 'readSettings')) as string;
     const config = parseSettings(previous);
-    if (change.property === 'importTheme') {
+    if (change.property === 'pluginWorkspaces') {
+      if (appWideReason(change.id)) throw new Error('This plugin runs in all workspaces');
+      if (change.value !== null && !change.value.every((id) => WORKSPACE_ID.test(id)))
+        throw new Error('Invalid workspace ID');
+      const selected = record(config.pluginWorkspaces) ? config.pluginWorkspaces : {};
+      config.pluginWorkspaces = { ...selected, [change.id]: workspaceSelection(change.value) };
+    } else if (change.property === 'importTheme') {
       if (!change.id.startsWith('imported:') || !isThemeJson(change.value)) throw new Error('Invalid theme');
       config.importedThemes = { ...importedThemes(config.importedThemes), [change.id]: change.value };
       config.theme = change.id;
@@ -228,6 +235,7 @@ export function mount(api: OptionsBrowser | undefined, data: OptionsData) {
   select((TABS as readonly string[]).includes(initial ?? '') ? (initial as (typeof TABS)[number]) : 'plugins');
 
   const rows = new Map<string, HTMLElement>();
+  const workspaceFields = new Map<string, { mode: HTMLSelectElement; ids: HTMLInputElement; detail: HTMLElement }>();
   const fields: {
     id: (typeof RENDERERS)[number];
     key: string;
@@ -256,7 +264,7 @@ export function mount(api: OptionsBrowser | undefined, data: OptionsData) {
     head.append(label);
     row.append(head);
     const entries = Object.entries(plugin.settings ?? {});
-    if (entries.length) {
+    {
       const panel = document.createElement('div');
       panel.className = 'plugin__settings';
       panel.id = `${plugin.id}-settings`;
@@ -274,6 +282,54 @@ export function mount(api: OptionsBrowser | undefined, data: OptionsData) {
         cog.setAttribute('aria-expanded', String(!panel.hidden));
       });
       head.append(cog);
+      const reason = appWideReason(plugin.id);
+      const workspaceHint = document.createElement('p');
+      workspaceHint.className = 'hint';
+      if (reason) {
+        workspaceHint.textContent = `All workspaces. ${reason}`;
+      } else {
+        const workspaceLabel = document.createElement('label');
+        workspaceLabel.className = 'setting';
+        workspaceLabel.textContent = 'Run this plugin in';
+        const mode = document.createElement('select');
+        mode.className = 'input select';
+        mode.append(new Option('All workspaces', 'all'), new Option('Selected workspaces', 'selected'));
+        workspaceLabel.append(mode);
+        panel.append(workspaceLabel);
+        const detail = document.createElement('div');
+        const idsLabel = document.createElement('label');
+        idsLabel.className = 'setting';
+        idsLabel.textContent = 'Workspace IDs (separated by commas)';
+        const ids = document.createElement('input');
+        ids.className = 'input';
+        ids.placeholder = 'T0123456789, E0123456789';
+        idsLabel.append(ids);
+        const apply = document.createElement('button');
+        apply.type = 'button';
+        apply.className = 'button';
+        apply.textContent = 'Save workspaces';
+        const id = plugin.id as (typeof RENDERERS)[number];
+        apply.addEventListener('click', () => {
+          const value = ids.value.split(/[\s,]+/).filter(Boolean);
+          if (value.some((workspaceId) => !WORKSPACE_ID.test(workspaceId))) {
+            ids.setCustomValidity('Use the T… or E… ID from the workspace’s Slack URL.');
+            ids.reportValidity();
+            return;
+          }
+          void change({ property: 'pluginWorkspaces', id, value });
+        });
+        ids.addEventListener('input', () => ids.setCustomValidity(''));
+        mode.addEventListener(
+          'change',
+          () => void change({ property: 'pluginWorkspaces', id, value: mode.value === 'all' ? null : [] }),
+        );
+        detail.append(idsLabel, apply);
+        panel.append(detail);
+        workspaceFields.set(plugin.id, { mode, ids, detail });
+        workspaceHint.textContent =
+          'Choose workspaces by name in Slack › Preferences › Slick. An empty selection runs nowhere.';
+      }
+      panel.append(workspaceHint);
       for (const [key, setting] of entries) {
         if (!inline(setting)) continue;
         const field = document.createElement('label');
@@ -391,6 +447,13 @@ export function mount(api: OptionsBrowser | undefined, data: OptionsData) {
     applyTheme(theme.value);
     toolbarIcon.value = config.toolbarIcon === 'black' || config.toolbarIcon === 'white' ? config.toolbarIcon : 'auto';
     const plugins = record(config.plugins) ? config.plugins : {};
+    const restrictions = record(config.pluginWorkspaces) ? config.pluginWorkspaces : {};
+    for (const [id, { mode, ids, detail }] of workspaceFields) {
+      const selected = workspaceSelection(restrictions[id]);
+      mode.value = selected === null ? 'all' : 'selected';
+      ids.value = selected?.join(', ') ?? '';
+      detail.hidden = selected === null;
+    }
     for (const id of RENDERERS) {
       const plugin = plugins[id];
       element<HTMLInputElement>(id).checked = record(plugin) && plugin.enabled === true;
