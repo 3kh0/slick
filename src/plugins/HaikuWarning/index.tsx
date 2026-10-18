@@ -32,6 +32,7 @@ export default class HaikuWarning extends SlickPlugin<typeof meta.settings> {
   private readonly dictionary = dictionaryLoader(dictionary);
 
   start() {
+    this.api.signal.addEventListener('abort', () => this.stop(), { once: true });
     for (const name of ['MessagePaneInput', 'InputContainer'] as const) {
       this.api.patchComponent<SendProps>(name, (Original) => (props) => {
         const send = (args: SendArgs) => this.onSend(props, args);
@@ -46,13 +47,15 @@ export default class HaikuWarning extends SlickPlugin<typeof meta.settings> {
   }
 
   private async onSend(props: SendProps, args: SendArgs): Promise<unknown> {
+    if (this.api.signal?.aborted || this.api.isActive?.() === false) return props.prepareAndSendMessage(args);
     const channelId = args.channelId || props.channelId;
     if (this.approved || channelId === EXCLUDED_CHANNEL) return props.prepareAndSendMessage(args);
 
     const haiku = await this.findHaiku(args.delta);
+    if (this.api.signal?.aborted || this.api.isActive?.() === false) return props.prepareAndSendMessage(args);
     if (!haiku) return props.prepareAndSendMessage(args);
 
-    this.ask(haiku, () => this.sendAnyway(props, args));
+    if (!this.ask(haiku, () => this.sendAnyway(props, args))) return props.prepareAndSendMessage(args);
     // The composer clears itself before sending and puts the message back when
     // the send rejects, which is how Slack's own warning dialogs hold a send.
     throw new Error('HaikuWarning: waiting for confirmation');
@@ -79,12 +82,13 @@ export default class HaikuWarning extends SlickPlugin<typeof meta.settings> {
       ),
       onSubmit: () => {
         settle();
-        if (!this.api.signal.aborted) send();
+        if (!this.api.signal.aborted && this.api.isActive?.() !== false) send();
       },
       onCancel: settle,
       onClose: settle,
     });
     this.prompt = handle;
+    return handle !== null;
   }
 
   private sendAnyway(props: SendProps, args: SendArgs) {

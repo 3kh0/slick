@@ -11,6 +11,7 @@ import type { PluginManager } from './pluginManager.ts';
 import { patchComponent, reactReady } from './slack/react.tsx';
 import { parseThemeJson } from '../shared/themes.ts';
 import { COG_PATH } from '../shared/icons.ts';
+import { currentWorkspaceId, knownWorkspaces } from './workspaces.ts';
 
 let elements: Awaited<typeof elementsReady>;
 let warnedUnrecognisedTabs = false;
@@ -311,37 +312,44 @@ function PluginRow({ info, config, bridge }: { info: PluginInfo; config: ConfigS
             <span
               id={statusId}
               role={info.startError ? 'alert' : undefined}
-              style={{ display: 'block', fontSize: '12px', color: 'var(--sk_raspberry_red, #e01e5a)' }}
+              style={{
+                display: 'block',
+                fontSize: '12px',
+                color: info.startError ? 'var(--sk_raspberry_red, #e01e5a)' : undefined,
+              }}
             >
-              {info.startError
-                ? `Could not start: ${info.startError}. Turn this plugin off and on to retry.`
-                : 'Starting…'}
+              {!info.workspaceAllowed
+                ? 'Not enabled in this workspace'
+                : !config.globallyEnabled
+                  ? 'Slick is paused'
+                  : info.startError
+                    ? `Could not start: ${info.startError}. Turn this plugin off and on to retry.`
+                    : 'Starting…'}
             </span>
           )}
         </label>
-        {!!entries.length && (
-          <button
-            type="button"
-            className="c-button-unstyled"
-            aria-expanded={expanded}
-            aria-label={`Configure ${info.name}`}
-            title={`Configure ${info.name}`}
-            onClick={() => setExpanded((value) => !value)}
-            style={{
-              flex: '0 0 auto',
-              padding: '4px',
-              borderRadius: '4px',
-              cursor: 'pointer',
-              opacity: expanded ? 1 : 0.55,
-              color: 'currentColor',
-            }}
-          >
-            <CogIcon />
-          </button>
-        )}
+        <button
+          type="button"
+          className="c-button-unstyled"
+          aria-expanded={expanded}
+          aria-label={`Configure ${info.name}`}
+          title={`Configure ${info.name}`}
+          onClick={() => setExpanded((value) => !value)}
+          style={{
+            flex: '0 0 auto',
+            padding: '4px',
+            borderRadius: '4px',
+            cursor: 'pointer',
+            opacity: expanded ? 1 : 0.55,
+            color: 'currentColor',
+          }}
+        >
+          <CogIcon />
+        </button>
       </div>
       {expanded && (
         <div style={{ margin: '14px 0 0 30px' }}>
+          <WorkspaceSettings info={info} config={config} />
           {entries.map(([key, setting]) => (
             <SettingRow
               key={key}
@@ -360,6 +368,81 @@ function PluginRow({ info, config, bridge }: { info: PluginInfo; config: ConfigS
         </div>
       )}
     </div>
+  );
+}
+
+function WorkspaceSettings({ info, config }: { info: PluginInfo; config: ConfigStore }) {
+  const [saving, setSaving] = React.useState(false);
+  const [error, setError] = React.useState('');
+  const selected = config.workspacesFor(info.id);
+  const current = currentWorkspaceId();
+  const workspaces = knownWorkspaces(selected ?? []);
+  const save = async (write: () => Promise<boolean>) => {
+    setSaving(true);
+    setError('');
+    try {
+      if (!(await write())) setError('Could not save workspace selection. Try again.');
+    } catch {
+      setError('Could not save workspace selection. Try again.');
+    } finally {
+      setSaving(false);
+    }
+  };
+  if (info.appWideReason)
+    return (
+      <div style={{ marginBottom: '16px' }}>
+        <Hint>All workspaces. {info.appWideReason}</Hint>
+      </div>
+    );
+  return (
+    <fieldset disabled={saving} style={{ border: 0, padding: 0, margin: '0 0 20px', minWidth: 0 }}>
+      <legend style={{ fontWeight: 700 }}>Workspaces</legend>
+      <label htmlFor={`slick-workspaces-${info.id}`} style={{ display: 'block' }}>
+        Run this plugin in
+      </label>
+      <select
+        id={`slick-workspaces-${info.id}`}
+        className="c-select_input"
+        style={{ ...SELECT_STYLE, maxWidth: '100%' }}
+        value={selected === null ? 'all' : 'selected'}
+        onChange={(event) => {
+          const next = event.currentTarget.value === 'all' ? null : current ? [current] : [];
+          void save(() => config.setPluginWorkspaces(info.id, next));
+        }}
+      >
+        <option value="all">All workspaces</option>
+        <option value="selected">Selected workspaces</option>
+      </select>
+      {selected !== null && (
+        <div style={{ marginTop: '10px' }}>
+          {workspaces.map(({ id, name }) => (
+            <label key={id} style={{ display: 'flex', alignItems: 'baseline', gap: '8px', margin: '8px 0' }}>
+              <input
+                type="checkbox"
+                className="c-input_checkbox"
+                checked={selected.includes(id)}
+                onChange={(event) => {
+                  const included = event.currentTarget.checked;
+                  void save(() => config.setPluginWorkspace(info.id, id, included));
+                }}
+              />
+              <span>
+                {name}
+                {id === current ? ' (current)' : ''}
+                <span style={{ display: 'block', fontSize: '12px', opacity: 0.7 }}>{id}</span>
+              </span>
+            </label>
+          ))}
+          <Hint>
+            {selected.length
+              ? 'Runs only in the selected workspaces. Changes apply immediately.'
+              : 'No workspaces selected. This plugin will not run anywhere.'}
+          </Hint>
+          <Hint>Open another workspace in Slack to make it available here.</Hint>
+        </div>
+      )}
+      {error && <div role="alert">{error}</div>}
+    </fieldset>
   );
 }
 

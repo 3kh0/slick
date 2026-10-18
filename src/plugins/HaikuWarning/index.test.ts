@@ -142,3 +142,37 @@ test('dictionary decoding is skipped for excluded or long messages and failures 
   assert.equal(failures, 1);
   assert.equal(sends, 3);
 });
+
+test('deactivation during detection and unavailable modals never hold a send', async () => {
+  let active = true;
+  let release!: (value: string[]) => void;
+  let sends = 0;
+  let prompts = 0;
+  const controller = new AbortController();
+  const plugin = new HaikuWarning({ signal: controller.signal, isActive: () => active }, {});
+  plugin.findHaiku = () =>
+    new Promise((resolve) => {
+      release = resolve;
+    });
+  plugin.ask = () => {
+    prompts++;
+    return false;
+  };
+  const props = { prepareAndSendMessage: async () => sends++ };
+  const args = { delta: { ops: [{ insert: 'haiku' }] } };
+  const pending = plugin.onSend(props, args);
+  active = false;
+  release(['five', 'seven', 'five']);
+  await pending;
+  assert.equal(sends, 1);
+  assert.equal(prompts, 0);
+  active = true;
+  plugin.findHaiku = async () => ['five', 'seven', 'five'];
+  await plugin.onSend(props, args);
+  assert.equal(prompts, 1);
+  assert.equal(sends, 2);
+  controller.abort();
+  await plugin.onSend(props, args);
+  assert.equal(prompts, 1);
+  assert.equal(sends, 3);
+});

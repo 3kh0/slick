@@ -155,3 +155,43 @@ test('desktop theme imports persist separately from CSS, survive restart, and re
   assert.equal(restarted.theme, '');
   assert.deepEqual(restarted.importedThemes, {});
 });
+
+test('workspace selections persist independently of plugin schemas and toggles', async () => {
+  let stored = JSON.stringify({ plugins: { HaikuWarning: { enabled: true, extra: 12 } } });
+  const bridge = {
+    readSettings: async () => stored,
+    readUserCss: async () => '',
+    writeSettings: async (text: string) => {
+      stored = text;
+      return true;
+    },
+    onSettingsChange: () => () => {},
+    onUserCssChange: () => () => {},
+  } as unknown as SlickBridge;
+  const config = new ConfigStore(bridge);
+  await config.init();
+  config.registerSchema('HaikuWarning', {}, false);
+  assert.equal(config.workspacesFor('HaikuWarning'), null);
+  assert.equal(await config.setPluginWorkspaces('HaikuWarning', ['T1']), true);
+  assert.equal(config.isAllowedInWorkspace('HaikuWarning', 'T1'), true);
+  assert.equal(config.isAllowedInWorkspace('HaikuWarning', 'T2'), false);
+  assert.equal(config.isAllowedInWorkspace('HaikuWarning', null), false);
+  assert.equal(config.settingsFor('HaikuWarning').enabled, true);
+  await Promise.all([
+    config.setPluginWorkspace('HaikuWarning', 'T2', true),
+    config.setPluginWorkspace('HaikuWarning', 'T3', true),
+  ]);
+  assert.deepEqual(config.workspacesFor('HaikuWarning'), ['T1', 'T2', 'T3']);
+  await config.setPluginEnabled('HaikuWarning', false);
+  await config.setPluginEnabled('HaikuWarning', true);
+  assert.deepEqual(config.workspacesFor('HaikuWarning'), ['T1', 'T2', 'T3']);
+  const reloaded = new ConfigStore(bridge);
+  await reloaded.init();
+  assert.deepEqual(reloaded.workspacesFor('HaikuWarning'), ['T1', 'T2', 'T3']);
+  assert.equal(JSON.parse(stored).plugins.HaikuWarning.extra, 12);
+  await config.setPluginWorkspaces('HaikuWarning', []);
+  assert.equal(config.isAllowedInWorkspace('HaikuWarning', 'T1'), false);
+  await config.setPluginWorkspaces('HaikuWarning', null);
+  assert.equal(config.isAllowedInWorkspace('HaikuWarning', 'T2'), true);
+  assert.equal(await config.setPluginWorkspaces('Snappy', ['T1']), false);
+});

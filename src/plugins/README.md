@@ -91,6 +91,10 @@ The class fields in the example cover the basics. Optional fields:
 
 `defaultEnabled` defaults to `false`. Leave new experiments opt-in. The full class contract lives in [`src/shared/Plugin.ts`](../shared/Plugin.ts).
 
+Users can restrict plugins to selected workspaces from each plugin's gear menu. The host stores these choices in `pluginWorkspaces`, separately from plugin settings, and starts/stops renderer instances as their window's workspace changes. An absent or `null` selection means all workspaces; `[]` means none. Workspace IDs come from the window's `/client/T…` or `/client/E…` route, never shared `lastActiveTeamId` storage. Settings and plugin storage remain shared across the selected workspaces.
+
+After asynchronous work, check `api.isActive()` before opening UI or acting on a retained event. The host aborts `api.signal` and disposes registrations before awaiting `stop()`, including when a workspace restriction changes during startup. Cancel pending work and close dialogs on abort. Process/session-wide plugins are listed with explanations in `src/shared/pluginWorkspaces.ts`; add an entry there if a new plugin owns global effects that cannot be restricted safely.
+
 ## Declare the APIs you actually use
 
 ```ts
