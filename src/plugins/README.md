@@ -103,20 +103,22 @@ static readonly requiredAPIs = ['redux', 'members'] as const;
 
 Slick discovers these integrations before calling `start()`. Accessing one you didn't declare throws `Plugin must declare requiredAPIs: ...`. Omitting the field requests **all** integrations for legacy compatibility. Don't make Slack find half its internals just to inject twelve bytes of CSS; use `[]` when you only need base helpers.
 
-| `requiredAPIs` entry | What you get                                                                                |
-| -------------------- | ------------------------------------------------------------------------------------------- |
-| `redux`              | `api.redux`: store access, React selectors, state/slice/thunk patches, thunk dispatch.      |
-| `rtm`                | `api.rtm.on(type, listener)`: incoming events by type, subtype, or `'*'`.                   |
-| `messages`           | `api.messages`: message lookup, modification, and local message injection.                  |
-| `members`            | `api.members`: cached/async member lookup, `useMember`, current user ID, member transforms. |
-| `channels`           | `api.channels`: cached channel lookup, current channel ID, channel object helpers.          |
-| `blocks`             | `api.blocks`: Quill Delta, Slack blocks, plain text, and Markdown conversion.               |
-| `files`              | `api.files`: Slack file upload helper.                                                      |
-| `elements`           | `api.elements`: discovered Slack UI components.                                             |
-| `menu`               | `api.menu.Menu`: menu component.                                                            |
-| `modal`              | `api.modal`: `openModal`, `confirm`, and `alert`.                                           |
-| `react`              | `api.react`: Slack's React instance.                                                        |
-| `onMessageSendDelta` | `api.onMessageSendDelta(transform)`: synchronous outgoing-message and edit transform.       |
+| `requiredAPIs` entry  | What you get                                                                                                 |
+| --------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `redux`               | `api.redux`: store access, React selectors, state/slice/thunk patches, thunk dispatch.                       |
+| `rtm`                 | `api.rtm.on(type, listener)`: incoming events by type, subtype, or `'*'`.                                    |
+| `messages`            | `api.messages`: message lookup, modification, and local message injection.                                   |
+| `members`             | `api.members`: cached/async member lookup, `useMember`, current user ID, member transforms.                  |
+| `channels`            | `api.channels`: cached channel lookup, current channel ID, channel object helpers.                           |
+| `blocks`              | `api.blocks`: Quill Delta, Slack blocks, plain text, and Markdown conversion.                                |
+| `files`               | `api.files`: Slack file upload helper.                                                                       |
+| `elements`            | `api.elements`: discovered Slack UI components.                                                              |
+| `menu`                | `api.menu.Menu`: menu component.                                                                             |
+| `modal`               | `api.modal`: `openModal`, `confirm`, and `alert`.                                                            |
+| `react`               | `api.react`: Slack's React instance.                                                                         |
+| `onMessageSendDelta`  | `api.onMessageSendDelta(transform)`: synchronous outgoing-message and edit transform.                        |
+| `onMessageSendBlocks` | `api.onMessageSendBlocks(transform)`: synchronous Block Kit transform for sends, edits and scheduled drafts. |
+| `addSendCheck`        | `api.addSendCheck(check)`: hold a message back in the composer by returning `false`.                         |
 
 Base helpers don't need a `requiredAPIs` entry: `patchComponent`, module/component discovery, `setStyle`, `onDocument`, `deferResizeWork`, `Store`, `storage`, `Cache`, `storedFileUrl`, `settings`, `userAPI`, `fetch`, `main`, `loader`, `id`, and `signal`.
 
@@ -131,7 +133,7 @@ Keep `start()` fast. Register your hooks immediately; kick off slow work separat
 Slick automatically removes registrations made through these scoped APIs:
 
 - `patchComponent`, `redux.patchState`, `redux.patchSlice`, `redux.patchThunk`.
-- `rtm.on`, `messages.injectMessages`, `onMessageSendDelta`.
+- `rtm.on`, `messages.injectMessages`, `onMessageSendDelta`, `onMessageSendBlocks`, `addSendCheck`.
 - `setStyle`, `onDocument`, `deferResizeWork`, `settings.addTab`, `main.on`.
 - Blob URLs created by `storedFileUrl`.
 
