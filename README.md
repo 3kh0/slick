@@ -87,9 +87,10 @@ The installer picks the build that matches your Slack install and sets everythin
 
 On x86_64, install [Slack](https://slack.com/downloads/linux) first. The ARM64 AppImage and Flatpak download their own Slack bundle on first launch.
 
-**Fedora** (x86_64), using [COPR](https://copr.fedorainfracloud.org/coprs/echolive/slick/):
+**Fedora** (x86_64), using [COPR](https://copr.fedorainfracloud.org/coprs/echolive/slick/). Install Slack's `.rpm` from [slack.com](https://slack.com/downloads/linux) first (Fedora's repos don't carry Slack):
 
 ```bash
+sudo dnf install ./slack-*.x86_64.rpm
 sudo dnf copr enable echolive/slick
 sudo dnf install slick
 ```
