@@ -14,6 +14,9 @@ export type DeltaTransform = (delta: Delta) => Delta;
 
 type RegisteredTransform = { transform: DeltaTransform; label: string };
 
+/** The composer's Delta behind each transformed one, so send checks see what the user wrote. */
+export const composedDeltas = new WeakMap<Delta, Delta>();
+
 function isUsableDelta(value: unknown, input: Delta): value is Delta {
   if (!value || typeof value !== 'object' || !Array.isArray((value as Delta).ops)) return false;
 
@@ -56,7 +59,11 @@ export function setupMessageSendDelta(patchComponent: PatchComponent) {
   for (const name of ['MessagePaneInput', 'InputContainer'] as const) {
     patchComponent<SendProps>(name, (Original) => (props) => {
       const send = React.useCallback(
-        (opts: { delta: Delta }) => props.prepareAndSendMessage({ ...opts, delta: applyTransforms(opts.delta) }),
+        (opts: { delta: Delta }) => {
+          const delta = applyTransforms(opts.delta);
+          if (delta !== opts.delta) composedDeltas.set(delta, opts.delta);
+          return props.prepareAndSendMessage({ ...opts, delta });
+        },
         [props.prepareAndSendMessage],
       );
       return <Original {...props} prepareAndSendMessage={send} />;
