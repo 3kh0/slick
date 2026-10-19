@@ -22,7 +22,12 @@ function deferred<T>() {
   return { promise, resolve, reject };
 }
 
-function fixture(initial: Promise<unknown>, safeMode: unknown = false, originalPreload = 'void 0') {
+function fixture(
+  initial: Promise<unknown>,
+  safeMode: unknown = false,
+  originalPreload = 'void 0',
+  argv: string[] = [],
+) {
   const html = deferred<unknown>();
   const parsed = deferred<void>();
   const ready = deferred<void>();
@@ -86,10 +91,11 @@ function fixture(initial: Promise<unknown>, safeMode: unknown = false, originalP
         };
       if (id.endsWith('/accounts.ts')) return { applyPendingAccountSwitch() {}, PENDING_ACCOUNT_SWITCH_KEY: 'pending' };
       if (id.endsWith('/signInButton.ts')) return { installCookieSignInButton() {} };
+      if (id.endsWith('/liteMode.ts')) return { LITE_ARG: '--slick-lite' };
       throw new Error(`Unexpected preload import: ${id}`);
     },
     console,
-    process: { argv: [] },
+    process: { argv },
     module: { exports },
     exports,
     arguments: ['preload-argument'],
@@ -187,6 +193,16 @@ test('original preload retains its bindings and runs before the bridge is expose
   assert.equal(original.argument, 'preload-argument');
   assert.ok(f.lifecycle.indexOf('expose:OriginalPreload') < f.lifecycle.indexOf('preload.original-ready'));
   assert.ok(f.lifecycle.indexOf('preload.original-ready') < f.lifecycle.indexOf('expose:SlickBridge'));
+  assert.equal(f.writes.length, 2);
+});
+
+test('lite mode skips the Slack preload and still exposes the bridge', async () => {
+  const f = fixture(Promise.resolve('{}'), false, 'throw new Error("must not run")', ['--slick-lite']);
+  f.resolveHtml();
+  await f.ready;
+  assert.ok(!f.calls.includes('slick:get-original-preload'));
+  assert.ok(f.lifecycle.includes('expose:SlickBridge'));
+  assert.equal(f.reloads(), 0);
   assert.equal(f.writes.length, 2);
 });
 
