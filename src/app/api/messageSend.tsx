@@ -4,6 +4,7 @@
 
 import type { Delta } from '../../shared/delta.ts';
 import type { ComponentReplacer } from '../slack/react.tsx';
+import { registrationLabel } from './registrationLabel.ts';
 
 type PatchComponent = <P>(name: string, replacer: ComponentReplacer<P>) => () => void;
 
@@ -36,7 +37,6 @@ function isUsableDelta(value: unknown, input: Delta): value is Delta {
 
 export function setupMessageSendDelta(patchComponent: PatchComponent) {
   const transforms = new Map<DeltaTransform, RegisteredTransform>();
-  let nextTransformId = 1;
 
   function applyTransforms(delta: Delta): Delta {
     let result = delta;
@@ -80,15 +80,7 @@ export function setupMessageSendDelta(patchComponent: PatchComponent) {
 
   /** Register a transform run over every outgoing message and edit. */
   return function onMessageSendDelta(transform: DeltaTransform): () => void {
-    const registrationSite = new Error().stack
-      ?.split('\n')
-      .find((line) => line.includes(' at ') && !/messageSend|pluginManager/.test(line))
-      ?.trim();
-    // Names the plugin bundle even when a malformed return throws nothing.
-    const registered = {
-      transform,
-      label: `${transform.name || 'anonymous'} (#${nextTransformId++}${registrationSite ? `, ${registrationSite}` : ''})`,
-    };
+    const registered = { transform, label: registrationLabel(transform) };
     transforms.set(transform, registered);
     return () => {
       transforms.delete(transform);

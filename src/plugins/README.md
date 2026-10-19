@@ -118,7 +118,7 @@ Slick discovers these integrations before calling `start()`. Accessing one you d
 | `react`               | `api.react`: Slack's React instance.                                                                         |
 | `onMessageSendDelta`  | `api.onMessageSendDelta(transform)`: synchronous outgoing-message and edit transform.                        |
 | `onMessageSendBlocks` | `api.onMessageSendBlocks(transform)`: synchronous Block Kit transform for sends, edits and scheduled drafts. |
-| `addSendCheck`        | `api.addSendCheck(check)`: hold a message back in the composer by returning `false`.                         |
+| `addSendCheck`        | `api.addSendCheck(check)`: hold a message back in the composer by returning (or resolving) `false`.          |
 
 Base helpers don't need a `requiredAPIs` entry: `patchComponent`, module/component discovery, `setStyle`, `onDocument`, `deferResizeWork`, `Store`, `storage`, `Cache`, `storedFileUrl`, `settings`, `userAPI`, `fetch`, `main`, `loader`, `id`, and `signal`.
 
@@ -236,6 +236,10 @@ Replace the ID with one you're testing. This is a local view change. [Nicknames]
 For incoming events, declare `'rtm'`, then register `this.api.rtm.on('message', event => { /* ... */ })`. Event fields vary; check them. Subscribe to the specific type/subtype you need instead of processing every event for no reason. [LastSeen](LastSeen/index.tsx) and [MessageLogger](MessageLogger/index.ts) are real examples.
 
 For outgoing messages and edits, declare `'onMessageSendDelta'`. The callback must synchronously return a valid Slack Delta instance, not a promise or a plain `{ ops: [...] }` object. Return the input when unchanged. [NotShitMarkdown](NotShitMarkdown/index.ts) shows how to reuse the incoming Delta's constructor when creating a replacement.
+
+To change the Block Kit Slack actually sends, declare `'onMessageSendBlocks'`. It covers sends, thread replies, resends, edits, scheduled messages, file shares and forwards, including sends and edits from the markdown composer. The callback must synchronously return an array of blocks; return the input when unchanged and new objects when not, never the input edited in place. It has to be idempotent: one message can pass through it more than once, and resends and rescheduled drafts hand it its own output.
+
+To stop a message going out, declare `'addSendCheck'` and return `false` from `this.api.addSendCheck((blocks, { channelId, threadTs }) => ...)`; the message stays in the composer. Checks see what the user wrote, before any transform. A check may return a promise, for example to ask with `modal.confirm`: the message waits in the composer and goes out once every check passes, unless the user has edited it by then. A check that throws or rejects is ignored rather than blocking the send.
 
 ### Storage and requests
 

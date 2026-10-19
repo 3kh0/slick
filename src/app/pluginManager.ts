@@ -54,7 +54,7 @@ const loadAPIs = createAPILoader({
     import('./api/messageSend.tsx').then((m) => m.setupMessageSendDelta(patchComponent)),
   onMessageSendBlocks: (): Promise<ReturnType<typeof import('./api/messageSendBlocks.ts').setupMessageSendBlocks>> =>
     Promise.all([import('./api/messageSendBlocks.ts'), reduxReady]).then(([m, redux]) =>
-      m.setupMessageSendBlocks(redux.patchThunk),
+      m.setupMessageSendBlocks(redux),
     ),
   addSendCheck: (): Promise<ReturnType<typeof import('./api/sendChecks.tsx').setupSendChecks>> =>
     import('./api/sendChecks.tsx').then((m) => m.setupSendChecks(patchComponent)),

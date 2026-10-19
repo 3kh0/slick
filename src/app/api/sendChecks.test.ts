@@ -1,0 +1,267 @@
+import assert from 'node:assert/strict';
+import { test, type TestContext } from 'node:test';
+import { build } from 'esbuild';
+
+// Slack's converter and module registry are stubbed: the composer below
+// stands in for the real one.
+const bundle = await build({
+  stdin: {
+    contents:
+      "export { setupSendChecks } from './src/app/api/sendChecks.tsx'; export { composedDeltas } from './src/app/api/messageSend.tsx';",
+    resolveDir: process.cwd(),
+    loader: 'ts',
+  },
+  bundle: true,
+  write: false,
+  platform: 'node',
+  format: 'esm',
+  plugins: [
+    {
+      name: 'slack-stubs',
+      setup(stubs) {
+        stubs.onResolve({ filter: /\/slack\/(blocks|webpack)\.ts$/ }, (args) => ({
+          path: args.path,
+          namespace: 'stub',
+        }));
+        stubs.onLoad({ filter: /blocks\.ts$/, namespace: 'stub' }, () => ({
+          contents: 'export const fromDeltaNow = (delta) => [{ type: "text", text: delta.text }];',
+        }));
+        stubs.onLoad({ filter: /webpack\.ts$/, namespace: 'stub' }, () => ({
+          contents:
+            'export const getExport = (matcher) => [globalThis.getInputProxy].find((exp) => exp && matcher(exp));',
+        }));
+      },
+    },
+  ],
+});
+const { setupSendChecks, composedDeltas } = await import(
+  `data:text/javascript;base64,${Buffer.from(bundle.outputFiles[0]!.text).toString('base64')}`
+);
+
+type TextChange = (change: unknown, old: unknown, source: string) => void;
+type Delta = { ops: { insert: string }[]; text: string };
+const delta = (text: string): Delta => ({ ops: [{ insert: `${text}\n` }], text });
+
+let current: ReturnType<typeof composer> | undefined;
+(globalThis as any).getInputProxy = function getInputProxy() {
+  return current?.input;
+};
+(globalThis as any).React = {
+  useCallback: (callback: unknown) => callback,
+  createElement: (type: unknown, props: unknown) => ({ type, props }),
+};
+
+/** A composer whose sends behave like Slack's, plus the plugin API on top. */
+function composer({ found = true, restores = true, restoreDelay = 0 } = {}) {
+  const listeners = new Set<TextChange>();
+  let contents: { insert: string }[] = [];
+  const emit = (source: string) => {
+    for (const listener of listeners) listener(null, null, source);
+  };
+  const quill = {
+    on: (_event: string, listener: TextChange) => listeners.add(listener),
+    off: (_event: string, listener: TextChange) => listeners.delete(listener),
+  };
+  const input = {
+    clear() {
+      contents = [];
+      emit('api');
+    },
+    isEmpty: () => !contents.length,
+    getContents: () => ({ contents }),
+    setContents({ contents: next }: { contents: { insert: string }[] }) {
+      contents = next;
+      emit('api');
+    },
+    getContainer: () => ({ __quill: quill }),
+  };
+  const sent: Delta[] = [];
+  const replacers: Record<string, (Original: unknown) => (props: unknown) => any> = {};
+  const addSendCheck = setupSendChecks((name: string, replacer: (typeof replacers)[string]) => {
+    replacers[name] = replacer;
+    return () => {};
+  });
+  const wrap = (name: string, prepareAndSendMessage: (options: { delta: Delta }) => Promise<unknown>) =>
+    replacers[name]!(() => null)({ channelId: 'C1', prepareAndSendMessage }).props.prepareAndSendMessage;
+  let send = wrap('MessagePaneInput', async (options) => void sent.push(options.delta));
+  const fixture = {
+    input,
+    sent,
+    addSendCheck,
+    text: () => contents.map((op) => op.insert).join(''),
+    type(text: string) {
+      contents = delta(text).ops;
+      emit('user');
+    },
+    /** InputContainer passing its send on to MessagePaneInput's. */
+    nest() {
+      send = wrap('InputContainer', send);
+    },
+    /** What Slack does on Enter: empty the composer, send, put a rejected message back. */
+    async enter(text = 'hello', message = delta(text)) {
+      contents = [];
+      emit('api');
+      try {
+        await send({ delta: message });
+        return 'sent';
+      } catch {
+        for (let hop = 0; hop < restoreDelay; hop++) await Promise.resolve();
+        if (restores && input.isEmpty()) input.setContents({ contents: message.ops });
+        return 'held';
+      }
+    },
+    /** Slack clearing the composer again a frame later, after deleting a draft. */
+    wipe: () => input.clear(),
+  };
+  current = found ? fixture : undefined;
+  return fixture;
+}
+
+const flush = () => new Promise<void>((resolve) => setImmediate(resolve));
+const deferred = () => {
+  let resolve!: (passed: boolean) => void;
+  const promise = new Promise<boolean>((done) => (resolve = done));
+  return { promise, resolve };
+};
+
+test('passing checks send at once and failing ones keep the message', async () => {
+  const slack = composer();
+  slack.addSendCheck((blocks: { text: string }[]) => blocks[0]!.text !== 'nope');
+  assert.equal(await slack.enter('hello'), 'sent');
+  assert.equal(slack.sent.length, 1);
+  assert.equal(slack.text(), '');
+
+  assert.equal(await slack.enter('nope'), 'held');
+  slack.wipe();
+  assert.equal(slack.text(), 'nope\n');
+  assert.equal(slack.sent.length, 1);
+});
+
+test('an async check that passes before Slack puts the message back still sends it once', async () => {
+  const slack = composer({ restoreDelay: 5 });
+  slack.addSendCheck(async () => true);
+  assert.equal(await slack.enter('hello'), 'held');
+  await flush();
+  assert.deepEqual(
+    slack.sent.map((message) => message.text),
+    ['hello'],
+  );
+  assert.equal(slack.text(), '');
+});
+
+test('a passed message Slack never puts back goes out when the hold ends', async (t: TestContext) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const slack = composer({ restores: false });
+  slack.addSendCheck(async () => true);
+  assert.equal(await slack.enter('hello'), 'held');
+  await flush();
+  assert.equal(slack.sent.length, 0);
+  t.mock.timers.tick(1000);
+  await flush();
+  assert.equal(slack.sent.length, 1);
+});
+
+test('an async check that passes after the user edits sends nothing', async () => {
+  const slack = composer();
+  const check = deferred();
+  slack.addSendCheck(() => check.promise);
+  assert.equal(await slack.enter('hello'), 'held');
+  slack.type('hello there');
+  check.resolve(true);
+  await flush();
+  assert.equal(slack.sent.length, 0);
+  assert.equal(slack.text(), 'hello there\n');
+});
+
+test('an async check that passes after confirmation sends the held message', async () => {
+  const slack = composer();
+  const check = deferred();
+  slack.addSendCheck(() => check.promise);
+  assert.equal(await slack.enter('hello'), 'held');
+  slack.wipe();
+  assert.equal(slack.text(), 'hello\n');
+  check.resolve(true);
+  await flush();
+  assert.equal(slack.sent.length, 1);
+  assert.equal(slack.text(), '');
+});
+
+test('sending a held message again sends it once, from the later decision', async () => {
+  const slack = composer();
+  const decisions = [deferred(), deferred()];
+  let call = 0;
+  slack.addSendCheck(() => decisions[call++]!.promise);
+  assert.equal(await slack.enter('hello'), 'held');
+  assert.equal(await slack.enter('hello'), 'held');
+  assert.equal(slack.text(), 'hello\n');
+  decisions[0]!.resolve(true);
+  await flush();
+  assert.equal(slack.sent.length, 0);
+  decisions[1]!.resolve(true);
+  await flush();
+  assert.equal(slack.sent.length, 1);
+  assert.equal(slack.text(), '');
+});
+
+test('a send passing through both composers is checked once', async () => {
+  const slack = composer();
+  let runs = 0;
+  const check = deferred();
+  slack.addSendCheck(() => {
+    runs++;
+    return check.promise;
+  });
+  slack.nest();
+  assert.equal(await slack.enter('hello'), 'held');
+  check.resolve(true);
+  await flush();
+  assert.equal(runs, 1);
+  assert.equal(slack.sent.length, 1);
+});
+
+test('checks read what the user wrote, before Delta transforms', async () => {
+  const slack = composer();
+  const seen: string[] = [];
+  slack.addSendCheck((blocks: { text: string }[]) => {
+    seen.push(blocks[0]!.text);
+    return true;
+  });
+  const written = delta('hello');
+  const transformed = delta('HELLO');
+  composedDeltas.set(transformed, written);
+  assert.equal(await slack.enter('', transformed), 'sent');
+  assert.deepEqual(seen, ['hello']);
+  assert.equal(slack.sent[0], transformed);
+});
+
+test('without a composer to hold it in, the send waits for the checks', async () => {
+  const slack = composer({ found: false });
+  const checks = [true, false];
+  slack.addSendCheck(async () => checks.shift());
+  assert.equal(await slack.enter('hello'), 'sent');
+  assert.equal(await slack.enter('nope'), 'held');
+  assert.equal(slack.sent.length, 1);
+});
+
+test('broken checks are ignored, and each registration removes only itself', async (t: TestContext) => {
+  const errors: unknown[][] = [];
+  t.mock.method(console, 'error', (...args: unknown[]) => errors.push(args));
+  const slack = composer();
+  slack.addSendCheck(function throws() {
+    throw new Error('broken');
+  });
+  slack.addSendCheck(() => Promise.reject(new Error('also broken')));
+  const block = () => false;
+  const remove = slack.addSendCheck(block);
+  slack.addSendCheck(block);
+  remove();
+  assert.equal(await slack.enter('hello'), 'held');
+  assert.match(String(errors[0]![0]), /send check throws \(#\d+/);
+
+  current = undefined;
+  const open = composer();
+  open.addSendCheck(function throws() {
+    throw new Error('broken');
+  });
+  assert.equal(await open.enter('hello'), 'sent');
+});
