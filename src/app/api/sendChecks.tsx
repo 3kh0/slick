@@ -36,12 +36,20 @@ type InputProxy = {
   setContents: (contents: { contents: unknown[] }) => void;
   getContainer?: () => (Element & { __quill?: Quill }) | null | undefined;
 };
-type GetInputProxy = (key: { viewContext?: string; channelId: string; threadTs?: string }) => InputProxy | undefined;
+type GetInputProxy = (key: {
+  viewContext?: string;
+  channelId: string;
+  threadTs?: string;
+  targetWindow: Window;
+}) => InputProxy | undefined;
+type WindowContext = { windowRef?: WeakRef<Window> };
 type Hold = {
   /** Stops holding the message; true if it had just put it back. */
   drop: () => boolean;
   /** Once the checks pass, sends the message if it's still the composer's or about to be. */
   release: (send: () => void) => void;
+  /** Keeps a rejected message through Slack's final wipe, then removes the listener. */
+  reject: () => void;
 };
 
 const HELD = '[slick] a send check held this message back';
@@ -78,10 +86,11 @@ function runChecks(queue: RegisteredCheck[], blocks: Block[], context: SendCheck
 
 let getInputProxy: GetInputProxy | undefined;
 
-function inputFor(options: SendOptions, context: SendCheckContext): InputProxy | undefined {
+function inputFor(options: SendOptions, context: SendCheckContext, targetWindow?: Window): InputProxy | undefined {
+  if (!targetWindow) return undefined;
   getInputProxy ??= getExport<GetInputProxy>((exp: any) => typeof exp === 'function' && exp.name === 'getInputProxy');
   try {
-    return getInputProxy?.({ viewContext: options.viewContext, ...context });
+    return getInputProxy?.({ viewContext: options.viewContext, ...context, targetWindow });
   } catch {
     return undefined;
   }
@@ -99,6 +108,7 @@ const holds = new WeakMap<Quill, Hold>();
 function holdInComposer(input: InputProxy, quill: Quill, held: Delta): Hold {
   let active = true;
   let restoring = true;
+  let checking = true;
   let restoredNow = false;
   let putting = false;
   let pending: (() => void) | undefined;
@@ -107,20 +117,20 @@ function holdInComposer(input: InputProxy, quill: Quill, held: Delta): Hold {
   const stopRestoring = () => {
     restoring = false;
     clearTimeout(timer);
-    quill.off('text-change', onChange);
   };
   const drop = () => {
     const undo = restoring && restoredNow;
     active = false;
     pending = undefined;
     stopRestoring();
+    quill.off('text-change', onChange);
     if (holds.get(quill) === hold) holds.delete(quill);
     return undo;
   };
   const onChange: TextChange = (_change, _old, source) => {
     if (source === 'user') {
       drop();
-    } else if (input.isEmpty()) {
+    } else if (restoring && input.isEmpty()) {
       // A message that reads as empty would put itself back forever.
       if (putting) return;
       restoredNow = true;
@@ -136,7 +146,11 @@ function holdInComposer(input: InputProxy, quill: Quill, held: Delta): Hold {
     }
   };
   const timer = setTimeout(() => {
-    if (!pending) stopRestoring();
+    if (!pending) {
+      stopRestoring();
+      // Keep observing user edits for the entire async check, including undo.
+      if (!checking) drop();
+    }
     // Empty means Slack never put it back, so there's nothing to take out first.
     else if (holding() || input.isEmpty()) pending();
     else drop();
@@ -145,6 +159,10 @@ function holdInComposer(input: InputProxy, quill: Quill, held: Delta): Hold {
 
   const hold: Hold = {
     drop,
+    reject() {
+      checking = false;
+      if (!restoring) drop();
+    },
     release(send) {
       if (!active) return;
       const sendNow = () => {
@@ -181,59 +199,68 @@ export function setupSendChecks(patchComponent: PatchComponent) {
 
   // Channel composers send through MessagePaneInput, thread composers through InputContainer.
   for (const name of ['MessagePaneInput', 'InputContainer']) {
-    patchComponent<SendProps>(name, (Original) => (props) => {
-      const send = props.prepareAndSendMessage;
-      const checkedSend = React.useCallback(
-        async (options: SendOptions) => {
-          const { delta } = options;
-          const channelId = options.channelId || props.channelId;
-          if (!send || !checks.size || !delta || !channelId) return send?.(options);
+    patchComponent<SendProps>(name, (Original) => {
+      // A thread can have composers in both windows. Slack otherwise returns
+      // whichever registered last, which can hold or clear the other draft.
+      const WindowContext =
+        getExport<React.Context<WindowContext | undefined>>((exp: any) => exp?.displayName === 'WindowContext') ??
+        React.createContext<WindowContext | undefined>(undefined);
+      return (props) => {
+        const targetWindow = React.useContext(WindowContext)?.windowRef?.deref();
+        const send = props.prepareAndSendMessage;
+        const checkedSend = React.useCallback(
+          async (options: SendOptions) => {
+            const { delta } = options;
+            const channelId = options.channelId || props.channelId;
+            if (!send || !checks.size || !delta || !channelId) return send?.(options);
 
-          const composed = composedDeltas.get(delta) ?? delta;
-          if (decided.has(composed)) return send(options);
+            const composed = composedDeltas.get(delta) ?? delta;
+            if (decided.has(composed)) return send(options);
 
-          const context = { channelId, threadTs: options.replyToTs ?? props.threadTs };
-          const input = inputFor(options, context);
-          // A held message is only resent while the composer still holds it, which takes getContents.
-          const quill = input?.getContents ? input.getContainer?.()?.__quill : undefined;
-          // Slack empties the composer before it sends, which a hold still
-          // running from the last send takes for a wipe and undoes.
-          if (input && quill && holds.get(quill)?.drop()) input.clear();
+            const context = { channelId, threadTs: options.replyToTs ?? props.threadTs };
+            const input = inputFor(options, context, targetWindow);
+            // A held message is only resent while the composer still holds it, which takes getContents.
+            const quill = input?.getContents ? input.getContainer?.()?.__quill : undefined;
+            // Slack empties the composer before it sends, which a hold still
+            // running from the last send takes for a wipe and undoes.
+            if (input && quill && holds.get(quill)?.drop()) input.clear();
 
-          let blocks: Block[];
-          try {
-            blocks = fromDeltaNow(composed);
-          } catch (error) {
-            console.error('[slick] send checks could not read the message:', error);
-            return send(options);
-          }
-          const passed = runChecks([...checks], blocks, context);
-          if (passed === true) {
-            decided.add(composed);
-            return send(options);
-          }
-          if (!input || !quill) {
-            // Without the composer there's nowhere to hold the message, so the send waits instead.
-            if (passed && (await passed)) {
+            let blocks: Block[];
+            try {
+              blocks = fromDeltaNow(composed);
+            } catch (error) {
+              console.error('[slick] send checks could not read the message:', error);
+              return send(options);
+            }
+            const passed = runChecks([...checks], blocks, context);
+            if (passed === true) {
               decided.add(composed);
               return send(options);
             }
+            if (!input || !quill) {
+              // Without the composer there's nowhere to hold the message, so the send waits instead.
+              if (passed && (await passed)) {
+                decided.add(composed);
+                return send(options);
+              }
+              throw new Error(HELD);
+            }
+            // Slack has already emptied the composer, and puts a rejected message
+            // back only while it's still empty, so a pending check can't hold the send open.
+            const hold = holdInComposer(input, quill, composed);
+            if (passed) {
+              void passed.then((ok) => {
+                if (ok) hold.release(() => void sendHeld(send, options, input, composed));
+                else hold.reject();
+              });
+            } else hold.reject();
             throw new Error(HELD);
-          }
-          // Slack has already emptied the composer, and puts a rejected message
-          // back only while it's still empty, so a pending check can't hold the send open.
-          const hold = holdInComposer(input, quill, composed);
-          if (passed) {
-            void passed.then((ok) => {
-              if (ok) hold.release(() => void sendHeld(send, options, input, composed));
-            });
-          }
-          throw new Error(HELD);
-        },
-        [send, props.channelId, props.threadTs],
-      );
-      if (!send) return <Original {...props} />;
-      return <Original {...props} prepareAndSendMessage={checkedSend} />;
+          },
+          [send, props.channelId, props.threadTs, targetWindow],
+        );
+        if (!send) return <Original {...props} />;
+        return <Original {...props} prepareAndSendMessage={checkedSend} />;
+      };
     });
   }
 

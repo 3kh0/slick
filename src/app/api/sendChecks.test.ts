@@ -7,7 +7,7 @@ import { build } from 'esbuild';
 const bundle = await build({
   stdin: {
     contents:
-      "export { setupSendChecks } from './src/app/api/sendChecks.tsx'; export { composedDeltas } from './src/app/api/messageSend.tsx';",
+      "export { setupSendChecks } from './src/app/api/sendChecks.tsx'; export { composedDeltas, setupMessageSendDelta } from './src/app/api/messageSend.tsx';",
     resolveDir: process.cwd(),
     loader: 'ts',
   },
@@ -28,13 +28,13 @@ const bundle = await build({
         }));
         stubs.onLoad({ filter: /webpack\.ts$/, namespace: 'stub' }, () => ({
           contents:
-            'export const getExport = (matcher) => [globalThis.getInputProxy].find((exp) => exp && matcher(exp));',
+            'export const getExport = (matcher) => [globalThis.getInputProxy, globalThis.windowContext].find((exp) => exp && matcher(exp));',
         }));
       },
     },
   ],
 });
-const { setupSendChecks, composedDeltas } = await import(
+const { setupSendChecks, composedDeltas, setupMessageSendDelta } = await import(
   `data:text/javascript;base64,${Buffer.from(bundle.outputFiles[0]!.text).toString('base64')}`
 );
 
@@ -43,16 +43,21 @@ type Delta = { ops: { insert: string }[]; text: string };
 const delta = (text: string): Delta => ({ ops: [{ insert: `${text}\n` }], text });
 
 let current: ReturnType<typeof composer> | undefined;
-(globalThis as any).getInputProxy = function getInputProxy() {
-  return current?.input;
+let renderWindow = {};
+const inputs = new WeakMap<object, ReturnType<typeof composer>['input']>();
+(globalThis as any).getInputProxy = function getInputProxy({ targetWindow }: { targetWindow?: object }) {
+  return targetWindow ? inputs.get(targetWindow) : current?.input;
 };
+(globalThis as any).windowContext = { displayName: 'WindowContext' };
 (globalThis as any).React = {
   useCallback: (callback: unknown) => callback,
+  useContext: () => ({ windowRef: new WeakRef(renderWindow) }),
   createElement: (type: unknown, props: unknown) => ({ type, props }),
 };
 
 /** A composer whose sends behave like Slack's, plus the plugin API on top. */
 function composer({ found = true, readable = true, restores = true, restoreDelay = 0 } = {}) {
+  renderWindow = {};
   const listeners = new Set<TextChange>();
   let contents: { insert: string }[] = [];
   const emit = (source: string) => {
@@ -76,6 +81,7 @@ function composer({ found = true, readable = true, restores = true, restoreDelay
     getContainer: () => ({ __quill: quill }),
   };
   const sent: Delta[] = [];
+  if (found) inputs.set(renderWindow, input);
   const replacers: Record<string, (Original: unknown) => (props: unknown) => any> = {};
   const addSendCheck = setupSendChecks((name: string, replacer: (typeof replacers)[string]) => {
     replacers[name] = replacer;
@@ -88,6 +94,7 @@ function composer({ found = true, readable = true, restores = true, restoreDelay
     input,
     sent,
     addSendCheck,
+    listenerCount: () => listeners.size,
     text: () => contents.map((op) => op.insert).join(''),
     type(text: string) {
       contents = delta(text).ops;
@@ -232,6 +239,87 @@ test('checks read what the user wrote, before Delta transforms', async () => {
   assert.equal(await slack.enter('', transformed), 'sent');
   assert.deepEqual(seen, ['hello']);
   assert.equal(slack.sent[0], transformed);
+});
+
+for (const checksFirst of [false, true]) {
+  test(`nested composers check the original once (checks registered ${checksFirst ? 'first' : 'last'})`, async () => {
+    current = undefined;
+    const patches = new Map<string, ((original: unknown) => (props: any) => any)[]>();
+    const patch = (name: string, replace: any) => {
+      patches.set(name, [...(patches.get(name) ?? []), replace]);
+      return () => {};
+    };
+    const first = (checksFirst ? setupSendChecks : setupMessageSendDelta)(patch);
+    const second = (checksFirst ? setupMessageSendDelta : setupSendChecks)(patch);
+    const [check, transform] = checksFirst ? [first, second] : [second, first];
+    transform((message: Delta) => delta(message.text.toUpperCase()));
+    const seen: string[] = [];
+    check((blocks: { text: string }[]) => {
+      seen.push(blocks[0]!.text);
+      return true;
+    });
+    const wrap = (name: string, send: any) => {
+      let props = { channelId: 'C1', prepareAndSendMessage: send };
+      for (const replace of patches.get(name)!.toReversed()) props = replace(() => null)(props).props;
+      return props.prepareAndSendMessage;
+    };
+    const sent: Delta[] = [];
+    const send = wrap(
+      'InputContainer',
+      wrap('MessagePaneInput', async ({ delta: message }: { delta: Delta }) => sent.push(message)),
+    );
+    await send({ delta: delta('hello') });
+    assert.deepEqual(seen, ['hello']);
+    assert.equal(sent.length, 1);
+  });
+}
+
+test('editing a held message after the restoration window cancels its pending send', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const slack = composer(),
+    check = deferred();
+  slack.addSendCheck(() => check.promise);
+  await slack.enter('hello');
+  t.mock.timers.tick(1000);
+  slack.type('changed');
+  slack.type('hello');
+  check.resolve(true);
+  await flush();
+  assert.equal(slack.sent.length, 0);
+  assert.equal(slack.text(), 'hello\n');
+});
+
+for (const asynchronous of [false, true]) {
+  test(`a rejected ${asynchronous ? 'async' : 'sync'} check removes its hold listener`, async (t) => {
+    t.mock.timers.enable({ apis: ['setTimeout'] });
+    const slack = composer();
+    const check = deferred();
+    slack.addSendCheck(() => (asynchronous ? check.promise : false));
+    await slack.enter();
+    t.mock.timers.tick(1000);
+    if (asynchronous) {
+      assert.equal(slack.listenerCount(), 1);
+      check.resolve(false);
+      await flush();
+    }
+    assert.equal(slack.listenerCount(), 0);
+    assert.equal(slack.sent.length, 0);
+    assert.equal(slack.text(), 'hello\n');
+  });
+}
+
+test('a confirmation holds only the sending window when the same thread is also popped out', async () => {
+  const main = composer();
+  const check = deferred();
+  main.addSendCheck(() => check.promise);
+  const popout = composer();
+  popout.type('different draft');
+  assert.equal(await main.enter('hello'), 'held');
+  check.resolve(true);
+  await flush();
+  assert.equal(main.sent.length, 1);
+  assert.equal(main.text(), '');
+  assert.equal(popout.text(), 'different draft\n');
 });
 
 for (const [name, options] of [

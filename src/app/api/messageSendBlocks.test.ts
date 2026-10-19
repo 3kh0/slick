@@ -39,6 +39,10 @@ const text = (value: string): Block => ({
   type: 'rich_text',
   elements: [{ type: 'rich_text_section', elements: [{ type: 'text', text: value }] }],
 });
+const links = (...urls: string[]): Block => ({
+  type: 'rich_text',
+  elements: [{ type: 'rich_text_section', elements: urls.map((url) => ({ type: 'link', url })) }],
+});
 const shout = (blocks: Block[]) => blocks.map((block) => ({ ...block, shouted: true }));
 
 test('sends carry transformed blocks for both the pending message and the wire', () => {
@@ -124,6 +128,28 @@ test('markdown composer sends are converted to blocks before transforming', asyn
   const sent = await dispatch(sendMessage(args));
   assert.deepEqual(sent.args[0], { channelId: 'C1', blocks: [{ ...text('**hi**'), shouted: true }] });
   assert.deepEqual(JSON.parse((formatCalls[1] as { blocks: string }).blocks), [{ type: 'markdown', text: '**hi**' }]);
+});
+
+test('removing a link also removes its unfurl request', () => {
+  const { onMessageSendBlocks, sendMessage } = fixture();
+  const url = 'https://private.example/secret';
+  onMessageSendBlocks(() => [text('redacted')]);
+  const sent = sendMessage({
+    blocks: [{ type: 'rich_text', elements: [{ type: 'rich_text_section', elements: [{ type: 'link', url }] }] }],
+    unfurl: JSON.stringify([{ type: 'link', url }]),
+  }).args[0];
+  assert.deepEqual(JSON.parse(sent.unfurl), []);
+});
+
+test('removing and reordering links preserves the remaining preview metadata', () => {
+  const { onMessageSendBlocks, sendMessage } = fixture();
+  const urls = ['https://a.example/', 'https://b.example/', 'https://c.example/'];
+  const unfurl = urls.map((url, id) => ({ type: 'link', url, id }));
+  const remove = onMessageSendBlocks(() => [links(urls[2]!, urls[0]!)]);
+  assert.deepEqual(sendMessage({ blocks: [links(...urls)], unfurl }).args[0].unfurl, [unfurl[0], unfurl[2]]);
+  remove();
+  onMessageSendBlocks(() => [links(...urls.toReversed())]);
+  assert.deepEqual(sendMessage({ blocks: [links(...urls)], unfurl }).args[0].unfurl, unfurl);
 });
 
 test('markdown sends go out untouched when Slack cannot format them', async (t) => {

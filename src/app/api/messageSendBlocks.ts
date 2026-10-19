@@ -62,17 +62,22 @@ function linkUrls(blocks: Block[]): string[] {
 function remapUnfurls(unfurl: unknown, before: Block[], after: Block[]): unknown {
   const from = linkUrls(before);
   const to = linkUrls(after);
-  if (from.length !== to.length) return unfurl;
+  const removed = new Set(from.filter((url) => !to.includes(url)));
+  if (!removed.size) return unfurl;
   const renamed = new Map<string, string>();
-  from.forEach((url, index) => {
-    if (url !== to[index]) renamed.set(url, to[index]);
-  });
-  if (!renamed.size) return unfurl;
+  // Only infer replacements when positions are preserved; reordered links keep
+  // their own preview metadata, and removed links must not leak through previews.
+  if (from.length === to.length) {
+    from.forEach((url, index) => {
+      if (removed.has(url) && !from.includes(to[index]!)) renamed.set(url, to[index]!);
+    });
+  }
   const list = parseArray(unfurl);
   if (!list) return unfurl;
-  const next = list.map((entry: any) =>
-    typeof entry?.url === 'string' && renamed.has(entry.url) ? { ...entry, url: renamed.get(entry.url) } : entry,
-  );
+  const next = list.flatMap((entry: any) => {
+    if (!removed.has(entry?.url)) return [entry];
+    return renamed.has(entry.url) ? [{ ...entry, url: renamed.get(entry.url) }] : [];
+  });
   return typeof unfurl === 'string' ? JSON.stringify(next) : next;
 }
 
