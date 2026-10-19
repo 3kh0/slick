@@ -25,6 +25,8 @@ const API_METHODS = new Set([
   'chat.shareMessage',
   'files.share',
   'files.uploadExternal',
+  // Messages with attachments.
+  'files.completeUploadExternal',
   'drafts.create',
   'drafts.update',
 ]);

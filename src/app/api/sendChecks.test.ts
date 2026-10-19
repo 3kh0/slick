@@ -52,7 +52,7 @@ let current: ReturnType<typeof composer> | undefined;
 };
 
 /** A composer whose sends behave like Slack's, plus the plugin API on top. */
-function composer({ found = true, restores = true, restoreDelay = 0 } = {}) {
+function composer({ found = true, readable = true, restores = true, restoreDelay = 0 } = {}) {
   const listeners = new Set<TextChange>();
   let contents: { insert: string }[] = [];
   const emit = (source: string) => {
@@ -68,7 +68,7 @@ function composer({ found = true, restores = true, restoreDelay = 0 } = {}) {
       emit('api');
     },
     isEmpty: () => !contents.length,
-    getContents: () => ({ contents }),
+    getContents: readable ? () => ({ contents }) : undefined,
     setContents({ contents: next }: { contents: { insert: string }[] }) {
       contents = next;
       emit('api');
@@ -234,14 +234,19 @@ test('checks read what the user wrote, before Delta transforms', async () => {
   assert.equal(slack.sent[0], transformed);
 });
 
-test('without a composer to hold it in, the send waits for the checks', async () => {
-  const slack = composer({ found: false });
-  const checks = [true, false];
-  slack.addSendCheck(async () => checks.shift());
-  assert.equal(await slack.enter('hello'), 'sent');
-  assert.equal(await slack.enter('nope'), 'held');
-  assert.equal(slack.sent.length, 1);
-});
+for (const [name, options] of [
+  ['without a composer', { found: false }],
+  ['with a composer it cannot read', { readable: false }],
+] as const) {
+  test(`${name} to hold it in, the send waits for the checks`, async () => {
+    const slack = composer(options);
+    const checks = [true, false];
+    slack.addSendCheck(async () => checks.shift());
+    assert.equal(await slack.enter('hello'), 'sent');
+    assert.equal(await slack.enter('nope'), 'held');
+    assert.equal(slack.sent.length, 1);
+  });
+}
 
 test('broken checks are ignored, and each registration removes only itself', async (t: TestContext) => {
   const errors: unknown[][] = [];

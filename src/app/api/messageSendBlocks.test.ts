@@ -155,6 +155,9 @@ test('wire calls transform JSON blocks, and drafts only once scheduled', () => {
 
   const other = { method: 'conversations.history', args: { blocks } };
   assert.equal(apiCall(other).args[0], other);
+  const attachment = apiCall({ method: 'files.completeUploadExternal', args: { blocks } }).args[0];
+  assert.equal(JSON.parse(attachment.args.blocks)[0].shouted, true);
+
   const malformed = { method: 'chat.postMessage', args: { blocks: '[1]' } };
   assert.equal(apiCall(malformed).args[0], malformed);
 });

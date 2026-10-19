@@ -194,7 +194,8 @@ export function setupSendChecks(patchComponent: PatchComponent) {
 
           const context = { channelId, threadTs: options.replyToTs ?? props.threadTs };
           const input = inputFor(options, context);
-          const quill = input?.getContainer?.()?.__quill;
+          // A held message is only resent while the composer still holds it, which takes getContents.
+          const quill = input?.getContents ? input.getContainer?.()?.__quill : undefined;
           // Slack empties the composer before it sends, which a hold still
           // running from the last send takes for a wipe and undoes.
           if (input && quill && holds.get(quill)?.drop()) input.clear();
