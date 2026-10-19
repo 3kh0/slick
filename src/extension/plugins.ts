@@ -6,6 +6,7 @@ export const EXTENSION_PLUGINS = [
   'AdminBackend',
   'AnonymiseFileNames',
   'bChannel',
+  'BetterBlock',
   'Censorship',
   'ClearURLs',
   'Click2Load',
