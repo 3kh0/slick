@@ -16,6 +16,8 @@ export const PLUGIN_APIS = [
   'modal',
   'react',
   'onMessageSendDelta',
+  'onMessageSendBlocks',
+  'addSendCheck',
 ] as const;
 export type PluginAPIName = (typeof PLUGIN_APIS)[number];
 

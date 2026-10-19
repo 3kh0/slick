@@ -52,6 +52,12 @@ const loadAPIs = createAPILoader({
   react: () => reactReady,
   onMessageSendDelta: (): Promise<ReturnType<typeof import('./api/messageSend.tsx').setupMessageSendDelta>> =>
     import('./api/messageSend.tsx').then((m) => m.setupMessageSendDelta(patchComponent)),
+  onMessageSendBlocks: (): Promise<ReturnType<typeof import('./api/messageSendBlocks.ts').setupMessageSendBlocks>> =>
+    Promise.all([import('./api/messageSendBlocks.ts'), reduxReady]).then(([m, redux]) =>
+      m.setupMessageSendBlocks(redux),
+    ),
+  addSendCheck: (): Promise<ReturnType<typeof import('./api/sendChecks.tsx').setupSendChecks>> =>
+    import('./api/sendChecks.tsx').then((m) => m.setupSendChecks(patchComponent)),
 });
 
 const PLUGIN_ID = /^[A-Za-z0-9_.-]{1,100}$/;
@@ -126,6 +132,12 @@ async function createBaseAPI(bridge: SlickBridge, required: readonly PluginAPINa
     get onMessageSendDelta() {
       return integrations.onMessageSendDelta;
     },
+    get onMessageSendBlocks() {
+      return integrations.onMessageSendBlocks;
+    },
+    get addSendCheck() {
+      return integrations.addSendCheck;
+    },
     /** A reactive value a plugin's components can read with `.use()`. */
     Store,
     get react() {
@@ -161,6 +173,8 @@ function createScopedAPI(
   let rtm: BaseAPI['rtm'] | undefined;
   let messages: BaseAPI['messages'] | undefined;
   let onMessageSendDelta: BaseAPI['onMessageSendDelta'] | undefined;
+  let onMessageSendBlocks: BaseAPI['onMessageSendBlocks'] | undefined;
+  let addSendCheck: BaseAPI['addSendCheck'] | undefined;
 
   return {
     getExport: base.getExport,
@@ -231,6 +245,14 @@ function createScopedAPI(
 
     get onMessageSendDelta() {
       return (onMessageSendDelta ??= tracked(base.onMessageSendDelta));
+    },
+
+    get onMessageSendBlocks() {
+      return (onMessageSendBlocks ??= tracked(base.onMessageSendBlocks));
+    },
+
+    get addSendCheck() {
+      return (addSendCheck ??= tracked(base.addSendCheck));
     },
 
     /** Notified for each of Slack's pop-out documents (slack/childWindows.ts). */

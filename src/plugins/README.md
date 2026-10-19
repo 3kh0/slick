@@ -103,20 +103,22 @@ static readonly requiredAPIs = ['redux', 'members'] as const;
 
 Slick discovers these integrations before calling `start()`. Accessing one you didn't declare throws `Plugin must declare requiredAPIs: ...`. Omitting the field requests **all** integrations for legacy compatibility. Don't make Slack find half its internals just to inject twelve bytes of CSS; use `[]` when you only need base helpers.
 
-| `requiredAPIs` entry | What you get                                                                                |
-| -------------------- | ------------------------------------------------------------------------------------------- |
-| `redux`              | `api.redux`: store access, React selectors, state/slice/thunk patches, thunk dispatch.      |
-| `rtm`                | `api.rtm.on(type, listener)`: incoming events by type, subtype, or `'*'`.                   |
-| `messages`           | `api.messages`: message lookup, modification, and local message injection.                  |
-| `members`            | `api.members`: cached/async member lookup, `useMember`, current user ID, member transforms. |
-| `channels`           | `api.channels`: cached channel lookup, current channel ID, channel object helpers.          |
-| `blocks`             | `api.blocks`: Quill Delta, Slack blocks, plain text, and Markdown conversion.               |
-| `files`              | `api.files`: Slack file upload helper.                                                      |
-| `elements`           | `api.elements`: discovered Slack UI components.                                             |
-| `menu`               | `api.menu.Menu`: menu component.                                                            |
-| `modal`              | `api.modal`: `openModal`, `confirm`, and `alert`.                                           |
-| `react`              | `api.react`: Slack's React instance.                                                        |
-| `onMessageSendDelta` | `api.onMessageSendDelta(transform)`: synchronous outgoing-message and edit transform.       |
+| `requiredAPIs` entry  | What you get                                                                                                 |
+| --------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `redux`               | `api.redux`: store access, React selectors, state/slice/thunk patches, thunk dispatch.                       |
+| `rtm`                 | `api.rtm.on(type, listener)`: incoming events by type, subtype, or `'*'`.                                    |
+| `messages`            | `api.messages`: message lookup, modification, and local message injection.                                   |
+| `members`             | `api.members`: cached/async member lookup, `useMember`, current user ID, member transforms.                  |
+| `channels`            | `api.channels`: cached channel lookup, current channel ID, channel object helpers.                           |
+| `blocks`              | `api.blocks`: Quill Delta, Slack blocks, plain text, and Markdown conversion.                                |
+| `files`               | `api.files`: Slack file upload helper.                                                                       |
+| `elements`            | `api.elements`: discovered Slack UI components.                                                              |
+| `menu`                | `api.menu.Menu`: menu component.                                                                             |
+| `modal`               | `api.modal`: `openModal`, `confirm`, and `alert`.                                                            |
+| `react`               | `api.react`: Slack's React instance.                                                                         |
+| `onMessageSendDelta`  | `api.onMessageSendDelta(transform)`: synchronous outgoing-message and edit transform.                        |
+| `onMessageSendBlocks` | `api.onMessageSendBlocks(transform)`: synchronous Block Kit transform for sends, edits and scheduled drafts. |
+| `addSendCheck`        | `api.addSendCheck(check)`: hold a message back in the composer by returning (or resolving) `false`.          |
 
 Base helpers don't need a `requiredAPIs` entry: `patchComponent`, module/component discovery, `setStyle`, `onDocument`, `deferResizeWork`, `Store`, `storage`, `Cache`, `storedFileUrl`, `settings`, `userAPI`, `fetch`, `main`, `loader`, `id`, and `signal`.
 
@@ -131,7 +133,7 @@ Keep `start()` fast. Register your hooks immediately; kick off slow work separat
 Slick automatically removes registrations made through these scoped APIs:
 
 - `patchComponent`, `redux.patchState`, `redux.patchSlice`, `redux.patchThunk`.
-- `rtm.on`, `messages.injectMessages`, `onMessageSendDelta`.
+- `rtm.on`, `messages.injectMessages`, `onMessageSendDelta`, `onMessageSendBlocks`, `addSendCheck`.
 - `setStyle`, `onDocument`, `deferResizeWork`, `settings.addTab`, `main.on`.
 - Blob URLs created by `storedFileUrl`.
 
@@ -234,6 +236,10 @@ Replace the ID with one you're testing. This is a local view change. [Nicknames]
 For incoming events, declare `'rtm'`, then register `this.api.rtm.on('message', event => { /* ... */ })`. Event fields vary; check them. Subscribe to the specific type/subtype you need instead of processing every event for no reason. [LastSeen](LastSeen/index.tsx) and [MessageLogger](MessageLogger/index.ts) are real examples.
 
 For outgoing messages and edits, declare `'onMessageSendDelta'`. The callback must synchronously return a valid Slack Delta instance, not a promise or a plain `{ ops: [...] }` object. Return the input when unchanged. [NotShitMarkdown](NotShitMarkdown/index.ts) shows how to reuse the incoming Delta's constructor when creating a replacement.
+
+To change the Block Kit Slack actually sends, declare `'onMessageSendBlocks'`. It covers sends, thread replies, resends, edits, scheduled messages, file shares and forwards, including sends and edits from the markdown composer. The callback must synchronously return an array of blocks; return the input when unchanged and new objects when not, never the input edited in place. It has to be idempotent: one message can pass through it more than once, and resends and rescheduled drafts hand it its own output.
+
+To stop a message going out, declare `'addSendCheck'` and return `false` from `this.api.addSendCheck((blocks, { channelId, threadTs }) => ...)`; the message stays in the composer. Checks see what the user wrote, before any transform. A check may return a promise, for example to ask with `modal.confirm`: the message waits in the composer and goes out once every check passes, unless the user has edited it by then. A check that throws or rejects is ignored rather than blocking the send.
 
 ### Storage and requests
 

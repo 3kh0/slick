@@ -42,17 +42,26 @@ const isDelta = (exp: any): boolean => {
   );
 };
 
+function state(): unknown {
+  const store = getStore();
+  if (!store) throw new Error('[slick] Block Kit: redux store unavailable');
+  return store.getState();
+}
+
+let convertNow: ConvertDeltaToBlocks | undefined;
+
+/** `fromDelta` without waiting, for code that has to answer before Slack moves on. */
+export function fromDeltaNow(delta: Delta): Block[] {
+  if (!convertNow) throw new Error('[slick] Block Kit: convertDeltaToBlocks has not loaded');
+  return convertNow({ delta, state: state() })?.blocks ?? [];
+}
+
 export const blocksReady = (async () => {
   const deltaToBlocks = waitForExport<ConvertDeltaToBlocks>(named('convertDeltaToBlocks'));
   const blocksToPlainText = waitForExport<ConvertBlocksToText>(named('convertBlocksToPlainText'));
   const blocksToMarkdown = waitForExport<ConvertBlocksToText>(named('convertBlocksToMarkdown'));
   const deltaClass = waitForExport<DeltaConstructor>(isDelta);
-
-  function state(): unknown {
-    const store = getStore();
-    if (!store) throw new Error('[slick] Block Kit: redux store unavailable');
-    return store.getState();
-  }
+  void deltaToBlocks.then((convert) => (convertNow = convert));
 
   /** Build a real Delta from raw ops, e.g. the `ops` array on a stored draft. */
   async function makeDelta(ops: unknown[]): Promise<Delta> {

@@ -4,6 +4,7 @@
 
 import type { Delta } from '../../shared/delta.ts';
 import type { ComponentReplacer } from '../slack/react.tsx';
+import { registrationLabel } from './registrationLabel.ts';
 
 type PatchComponent = <P>(name: string, replacer: ComponentReplacer<P>) => () => void;
 
@@ -13,6 +14,9 @@ type EditProps = { prepareAndSaveEditMessage: (opts: { delta: Delta }) => Promis
 export type DeltaTransform = (delta: Delta) => Delta;
 
 type RegisteredTransform = { transform: DeltaTransform; label: string };
+
+/** The composer's Delta behind each transformed one, so send checks see what the user wrote. */
+export const composedDeltas = new WeakMap<Delta, Delta>();
 
 function isUsableDelta(value: unknown, input: Delta): value is Delta {
   if (!value || typeof value !== 'object' || !Array.isArray((value as Delta).ops)) return false;
@@ -33,7 +37,6 @@ function isUsableDelta(value: unknown, input: Delta): value is Delta {
 
 export function setupMessageSendDelta(patchComponent: PatchComponent) {
   const transforms = new Map<DeltaTransform, RegisteredTransform>();
-  let nextTransformId = 1;
 
   function applyTransforms(delta: Delta): Delta {
     let result = delta;
@@ -56,7 +59,11 @@ export function setupMessageSendDelta(patchComponent: PatchComponent) {
   for (const name of ['MessagePaneInput', 'InputContainer'] as const) {
     patchComponent<SendProps>(name, (Original) => (props) => {
       const send = React.useCallback(
-        (opts: { delta: Delta }) => props.prepareAndSendMessage({ ...opts, delta: applyTransforms(opts.delta) }),
+        (opts: { delta: Delta }) => {
+          const delta = applyTransforms(opts.delta);
+          if (delta !== opts.delta) composedDeltas.set(delta, composedDeltas.get(opts.delta) ?? opts.delta);
+          return props.prepareAndSendMessage({ ...opts, delta });
+        },
         [props.prepareAndSendMessage],
       );
       return <Original {...props} prepareAndSendMessage={send} />;
@@ -73,15 +80,7 @@ export function setupMessageSendDelta(patchComponent: PatchComponent) {
 
   /** Register a transform run over every outgoing message and edit. */
   return function onMessageSendDelta(transform: DeltaTransform): () => void {
-    const registrationSite = new Error().stack
-      ?.split('\n')
-      .find((line) => line.includes(' at ') && !/messageSend|pluginManager/.test(line))
-      ?.trim();
-    // Names the plugin bundle even when a malformed return throws nothing.
-    const registered = {
-      transform,
-      label: `${transform.name || 'anonymous'} (#${nextTransformId++}${registrationSite ? `, ${registrationSite}` : ''})`,
-    };
+    const registered = { transform, label: registrationLabel(transform) };
     transforms.set(transform, registered);
     return () => {
       transforms.delete(transform);
