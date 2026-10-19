@@ -4,6 +4,7 @@
 // styles. React patches already apply, since the opener's React renders them.
 
 import { patchExportFunction } from './webpack.ts';
+import { installChildWindowQuill } from './childWindowQuill.ts';
 
 const documents = new Set<Document>();
 const listeners = new Set<(doc: Document) => void>();
@@ -37,6 +38,7 @@ export function onChildWindow(listener: (doc: Document) => void): () => void {
 function register(doc: Document): void {
   if (!doc || doc === document || documents.has(doc)) return;
   documents.add(doc);
+  installChildWindowQuill(doc);
   doc.defaultView?.addEventListener('pagehide', () => documents.delete(doc), { once: true });
   for (const listener of listeners) notify(listener, doc);
 }
