@@ -10,6 +10,7 @@ import {
   historyKeyThread,
   inHistory,
   sliceCovers,
+  withLiveThread,
   withTimestamps,
   type ChannelHistory,
   type HistorySlice,
@@ -173,7 +174,10 @@ export function injectMessages(getMessages: () => Iterable<SlackMessage>): () =>
       if (!injected?.size) return bucket;
       return mapEntries<SlackMessage>(
         bucket ?? {},
-        (ts, msg) => injected.get(ts) ?? msg,
+        (ts, msg) => {
+          const restored = injected.get(ts);
+          return restored ? withLiveThread(restored, msg) : msg;
+        },
         () => injected.keys(),
       );
     },

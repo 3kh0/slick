@@ -32,6 +32,29 @@ export function inHistory(msg: HistoryMessage, thread: string | undefined): bool
   return parent === undefined || parent === msg.ts || msg.subtype === 'thread_broadcast';
 }
 
+const THREAD_FIELDS = [
+  'thread_ts',
+  'reply_count',
+  'reply_users',
+  'reply_users_count',
+  'latest_reply',
+  'last_read',
+  'subscribed',
+] as const;
+
+export function withLiveThread<T extends object>(injected: T, live: object | undefined): T {
+  if (!live) return injected;
+  let next: T | undefined;
+  for (const field of THREAD_FIELDS) {
+    if (!(field in live)) continue;
+    const value = (live as Record<string, unknown>)[field];
+    if ((injected as Record<string, unknown>)[field] === value) continue;
+    next ??= { ...injected };
+    (next as Record<string, unknown>)[field] = value;
+  }
+  return next ?? injected;
+}
+
 export function sliceCovers(history: ChannelHistory, slice: HistorySlice, position: number, ts: string): boolean {
   const last = (history.slices?.length ?? 0) - 1;
   const { start, end } = slice;

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { inHistory, withTimestamps, type HistoryMessage } from './messageHistory.ts';
+import { inHistory, withLiveThread, withTimestamps, type HistoryMessage } from './messageHistory.ts';
 
 test('inHistory: channel view hides thread replies unless they are the parent or a broadcast', () => {
   const reply: HistoryMessage = { ts: '2', thread_ts: '1' };
@@ -119,4 +119,21 @@ test('withTimestamps: sparse history arrays still discard holes and retain dupli
   assert.deepEqual(next[0].timestamps, ['02', '03', '03', '04', '05', '06', '07', '08', '09', '10', '11']);
   assert.equal(timestamps.length, 12);
   assert.equal(1 in timestamps, false);
+});
+
+test('withLiveThread: a restored parent takes reply state from the live tombstone', () => {
+  const logged = { ts: '1', thread_ts: '1', text: 'hi', reply_count: 1, reply_users: ['U1'] };
+  const tombstone = { ts: '1', thread_ts: '1', subtype: 'tombstone', reply_count: 9, reply_users: ['U1', 'U2'] };
+  const next = withLiveThread(logged, tombstone);
+  assert.equal(next.text, 'hi');
+  assert.equal(next.reply_count, 9);
+  assert.deepEqual(next.reply_users, ['U1', 'U2']);
+  assert.equal('subtype' in next, false);
+});
+
+test('withLiveThread: keeps identity when nothing differs or nothing is live', () => {
+  const logged = { ts: '1', thread_ts: '1', reply_count: 2 };
+  assert.equal(withLiveThread(logged, undefined), logged);
+  assert.equal(withLiveThread(logged, { ts: '1', thread_ts: '1', reply_count: 2 }), logged);
+  assert.equal(withLiveThread(logged, { ts: '1', subtype: 'tombstone' }), logged);
 });
