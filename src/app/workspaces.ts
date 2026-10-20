@@ -45,7 +45,8 @@ export function watchWorkspace(onChange: () => void): () => void {
       });
     }
   }
-  const timer = setInterval(check, 250);
+  // History hooks and popstate catch navigation; the timer only covers a path change made through a reference taken before the hooks were installed.
+  const timer = setInterval(check, 2000);
   window.addEventListener('popstate', check);
   return () => {
     clearInterval(timer);
