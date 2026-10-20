@@ -12,12 +12,6 @@ export const settings = {
     description: 'Show the Identity backend',
     default: true,
   },
-  joe: {
-    type: 'boolean',
-    label: 'Joe',
-    description: 'Show the Joe fraud backend',
-    default: true,
-  },
   telescreen: {
     type: 'boolean',
     label: 'Telescreen',
@@ -32,17 +26,11 @@ export const settings = {
   },
 } as const satisfies SettingsSchema;
 
-/** The tools offered, in menu order, each with the one URL it may open. */
 export const TOOLS = [
   {
     id: 'identity',
     label: 'Open in Identity',
     url: (member: string) => `https://auth.hackclub.com/backend/identities?search=${encodeURIComponent(member)}`,
-  },
-  {
-    id: 'joe',
-    label: 'Open in Joe',
-    url: (member: string) => `https://joe.fraud.hackclub.com/profile/${encodeURIComponent(member)}`,
   },
   {
     id: 'telescreen',
