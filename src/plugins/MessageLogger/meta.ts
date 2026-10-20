@@ -39,8 +39,8 @@ export const settings = {
   },
   ignoreEditsFrom: {
     type: 'text',
-    label: 'Ignore edits from',
-    description: 'Comma-separated app, user, or bot IDs (e.g. A08GT3TM7A4)',
+    label: 'Ignore messages from',
+    description: 'Skip edits and deletes from these comma-separated app, user, or bot IDs (e.g. A08GT3TM7A4)',
     default: '',
   },
   ignoreAnchors: {

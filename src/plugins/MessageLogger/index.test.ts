@@ -148,7 +148,7 @@ test('RTM deletes restore previews in the file slot after restart and remove the
   assert.equal(values.size, 0);
 });
 
-test('edit exclusions match sender IDs across message payloads and leave deletes intact', async (t) => {
+test('sender exclusions match IDs across message payloads and skip edits and deletes', async (t) => {
   const previousReact = Object.getOwnPropertyDescriptor(globalThis, 'React');
   Object.defineProperty(globalThis, 'React', {
     configurable: true,
@@ -231,7 +231,31 @@ test('edit exclusions match sender IDs across message payloads and leave deletes
   plugin.flush();
   await drain();
   assert.equal(values.get('entry:C:app').edits.length, 1);
-  assert.equal(values.get('entry:C:app').deleted, true);
+  assert.equal(values.get('entry:C:app').deleted, undefined);
+
+  config.ignoreEditsFrom = 'A08GT3TM7A4,UIGNORED,BIGNORED';
+
+  for (const [ts, previous_message] of [
+    ['del-app', { app_id: 'A08GT3TM7A4' }],
+    ['del-user', { user: 'UIGNORED' }],
+    ['del-profile', { bot_profile: { id: 'BIGNORED' } }],
+  ] as const)
+    plugin.record({ type: 'message', subtype: 'message_deleted', channel: 'C', deleted_ts: ts, previous_message });
+  cached.set('del-cached', { ts: 'del-cached', text: 'cached', bot_id: 'BIGNORED' });
+  plugin.record({ type: 'message', subtype: 'message_deleted', channel: 'C', deleted_ts: 'del-cached' });
+  plugin.record({
+    type: 'message',
+    subtype: 'message_deleted',
+    channel: 'C',
+    deleted_ts: 'del-other',
+    previous_message: { ts: 'del-other', text: 'kept', user: 'UOTHER' },
+  });
+  plugin.flush();
+  await drain();
+  assert.deepEqual(
+    [...values.keys()].filter((key) => key.startsWith('entry:C:del-')),
+    ['entry:C:del-other'],
+  );
 });
 
 test('admin-hidden threads restore parent and replies as deletions, not edits', async (t) => {
@@ -534,6 +558,7 @@ test('ignored edits still update the observed body for subsequent deletes', (t) 
   f.plugin.remember(first);
   f.edit(second, first);
   assert.equal(f.plugin.entries.size, 0);
+  f.config.ignoreEditsFrom = '';
   f.deletion({ ts: '1', text: 'fake' });
   assert.equal(f.plugin.entries.get('C:1').message.blocks[0].elements[0].elements[0].text, 'second');
 });

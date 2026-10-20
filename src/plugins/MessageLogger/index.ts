@@ -319,7 +319,7 @@ export default class MessageLogger extends SlickPlugin<typeof meta.settings> {
     );
   }
 
-  private skipEditsFrom(...messages: (SlackMessage | undefined)[]): boolean {
+  private skipIgnored(...messages: (SlackMessage | undefined)[]): boolean {
     const ignored = new Set(
       (this.config.ignoreEditsFrom ?? '')
         .split(',')
@@ -349,6 +349,7 @@ export default class MessageLogger extends SlickPlugin<typeof meta.settings> {
     const user = userOf(original ?? previous, event);
     if (this.skipAnchor(original ?? previous)) return;
     if (this.skipSelf(user)) return;
+    if (this.skipIgnored(original, previous, event as SlackMessage)) return;
 
     const key = this.key(channel, ts);
     const existing = this.entries.get(key);
@@ -404,7 +405,7 @@ export default class MessageLogger extends SlickPlugin<typeof meta.settings> {
         ts,
       });
     if (this.skipSelf(user)) return;
-    if (this.skipEditsFrom(next, original, event as SlackMessage)) return;
+    if (this.skipIgnored(next, original, event as SlackMessage)) return;
     const oldText = messageText(original);
     const newText = messageText(next);
     const existing = this.entries.get(this.key(channel, ts));
