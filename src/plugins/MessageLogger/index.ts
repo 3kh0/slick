@@ -46,6 +46,7 @@ const LEGACY_STORAGE_KEY = 'log';
 const ENTRY_PREFIX = 'entry:';
 const RECENT_CAP = 400;
 const ROW_COMPONENTS = ['MessageWrapper', 'ThreadRootGeneric', 'ThreadReplyGeneric'] as const;
+const ANCHOR_EVENT_TYPES = new Set(['anchor', 'anchor_poll']);
 
 function channelOf(event: RtmEvent, msg?: SlackMessage): string {
   if (typeof event.channel === 'string' && event.channel) return event.channel;
@@ -308,15 +309,14 @@ export default class MessageLogger extends SlickPlugin<typeof meta.settings> {
   }
 
   private skipAnchor(msg: SlackMessage | undefined): boolean {
-    if (!msg) return false;
-    switch (this.config.ignoreAnchors) {
-      case 'lax':
-        return !!msg.app_id;
-      case 'strict':
-        return (msg.metadata as { event_type?: string } | undefined)?.event_type === 'anchor' && !!msg.app_id;
-      default:
-        return false;
-    }
+    const mode = this.config.ignoreAnchors;
+    if (!msg || mode === 'off') return false;
+    if (!(msg.app_id || msg.bot_profile?.app_id || this.api.messages.getMessageBotId(msg))) return false;
+    if (mode === 'lax') return true;
+    const eventType = (msg.metadata as { event_type?: string } | undefined)?.event_type;
+    return (
+      (!!eventType && ANCHOR_EVENT_TYPES.has(eventType)) || (Array.isArray(msg.pinned_to) && msg.pinned_to.length > 0)
+    );
   }
 
   private skipEditsFrom(...messages: (SlackMessage | undefined)[]): boolean {
