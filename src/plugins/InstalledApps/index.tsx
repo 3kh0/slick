@@ -50,7 +50,6 @@ export default class InstalledApps extends SlickPlugin<typeof meta.settings> {
   static readonly description = meta.description;
   static readonly defaultEnabled = meta.defaultEnabled;
   static readonly settings = meta.settings;
-  static readonly authors = '<@U0905G0BRU5>';
   static readonly requiredAPIs = ['members', 'elements'] as const;
 
   private active = new this.api.Store(false);

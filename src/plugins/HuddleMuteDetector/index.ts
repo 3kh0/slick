@@ -13,7 +13,6 @@ export default class HuddleMuteDetector extends SlickPlugin<typeof meta.settings
   static readonly id = meta.id;
   static readonly pluginName = meta.pluginName;
   static readonly description = meta.description;
-  static readonly authors = '<@U09KKMHLS15>';
   static readonly defaultEnabled = meta.defaultEnabled;
   static readonly settings = meta.settings;
 
