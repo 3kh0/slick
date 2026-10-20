@@ -353,7 +353,10 @@ function loggerFixture(t: import('node:test').TestContext, storage?: ScopedStora
     signal: controller.signal,
     react: React,
     patchComponent: (name: string, patch: unknown) => patches.set(name, patch),
-    messages: { getRawMessage: (_channel: string, ts: string) => raw.get(ts) },
+    messages: {
+      getRawMessage: (_channel: string, ts: string) => raw.get(ts),
+      getMessageBotId: (msg: any) => msg?.bot_id ?? msg?.bot_profile?.id,
+    },
     redux: { getRawState: () => ({ bootData: { user_id: 'ME' } }), refresh() {}, usePatchVersion: () => 0 },
     storage: storage ?? {
       async entries(prefix: string) {
@@ -487,6 +490,20 @@ test('history rows and raw Redux messages protect deletes even without an RTM ar
   f.deletion({ ts: '3', text: 'unseen' }, { deleted_ts: '3' });
   assert.equal(f.plugin.entries.get('C:3').message.text, 'unseen');
   assert.equal(f.plugin.entries.get('C:3').evaded, undefined);
+});
+
+test('strict anchor mode skips history-loaded bot anchors and pinned bot messages only', (t) => {
+  const f = loggerFixture(t);
+  const bot = { user: 'UBOT', bot_id: 'B', bot_profile: { id: 'B', app_id: 'A' } };
+  f.raw.set('1', { channel: 'C', ts: '1', ...bot, text: 'anchor', metadata: { event_type: 'anchor_poll' } });
+  f.deletion({ ts: '1', text: 'anchor' }, { deleted_ts: '1' });
+  f.raw.set('2', { channel: 'C', ts: '2', ...bot, text: 'pinned', pinned_to: ['C'] });
+  f.deletion({ ts: '2', text: 'pinned' }, { deleted_ts: '2' });
+  f.raw.set('3', { channel: 'C', ts: '3', ...bot, text: 'unpinned bot' });
+  f.deletion({ ts: '3', text: 'unpinned bot' }, { deleted_ts: '3' });
+  f.raw.set('4', { channel: 'C', ts: '4', user: 'U', text: 'pinned human', pinned_to: ['C'] });
+  f.deletion({ ts: '4', text: 'pinned human' }, { deleted_ts: '4' });
+  assert.deepEqual([...f.plugin.entries.keys()].toSorted(), ['C:3', 'C:4']);
 });
 
 test('legitimate fallback differences, repeated edits, and different revisions do not allege evasion', (t) => {
