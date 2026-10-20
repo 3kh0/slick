@@ -375,7 +375,12 @@ jobs:
           name: firefox-signed
           path: dist/release
       - name: Attach to release
-        run: gh release upload "$GITHUB_REF_NAME" dist/release/slick-firefox-*.xpi dist/release/slick-firefox-*-source.zip dist/release/updates.json --clobber
+        run: |
+          for attempt in 1 2 3; do
+            gh release upload "$GITHUB_REF_NAME" dist/release/slick-firefox-*.xpi dist/release/slick-firefox-*-source.zip dist/release/updates.json --clobber && break
+            [[ $attempt == 3 ]] && exit 1
+            sleep 15
+          done
 
   copr:
     needs: [validate-tag, release]
@@ -434,7 +439,12 @@ jobs:
         env:
           SLICK_BUILD: ${{ needs.validate-tag.outputs.build }}
       - name: Attach Chromium store package
-        run: gh release upload "$GITHUB_REF_NAME" dist/extension/slick-chromium.zip --clobber
+        run: |
+          for attempt in 1 2 3; do
+            gh release upload "$GITHUB_REF_NAME" dist/extension/slick-chromium.zip --clobber && break
+            [[ $attempt == 3 ]] && exit 1
+            sleep 15
+          done
         env:
           GH_TOKEN: ${{ github.token }}
       - name: Publish to the Chrome Web Store
@@ -460,7 +470,11 @@ jobs:
           SLICK_BUILD: ${{ needs.validate-tag.outputs.build }}
       - name: Attach Violentmonkey userscript and update metadata
         run: |
-          gh release upload "$GITHUB_REF_NAME" dist/userscript/slick-monaco-*.js --clobber
-          gh release upload "$GITHUB_REF_NAME" dist/userscript/*.user.js dist/userscript/*.meta.js --clobber
+          for attempt in 1 2 3; do
+            gh release upload "$GITHUB_REF_NAME" dist/userscript/slick-monaco-*.js --clobber &&
+              gh release upload "$GITHUB_REF_NAME" dist/userscript/*.user.js dist/userscript/*.meta.js --clobber && break
+            [[ $attempt == 3 ]] && exit 1
+            sleep 15
+          done
         env:
           GH_TOKEN: ${{ github.token }}
