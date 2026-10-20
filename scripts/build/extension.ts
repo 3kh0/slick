@@ -89,6 +89,10 @@ export async function buildExtension({
   const manifest = JSON.parse(await readFile(path.join(source, `${browser}/manifest.json`), 'utf8'));
   // Keep the manifest numeric even for local builds whose app version has a git suffix.
   manifest.version = `2.0.${versions.build}`;
+  if (browser === 'firefox' && process.env.SLICK_FIREFOX_CHANNEL === 'listed') {
+    manifest.version += '.1';
+    delete manifest.browser_specific_settings.gecko.update_url;
+  }
   const entries: Record<string, Uint8Array> = {
     'manifest.json': Buffer.from(`${JSON.stringify(manifest, null, 2)}\n`),
     'page.js': await readFile(path.join(out, 'page.js')),

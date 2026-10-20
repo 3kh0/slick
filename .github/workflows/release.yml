@@ -293,32 +293,31 @@ jobs:
     # AMO signing can take several minutes; overlap it with desktop packaging.
     needs: [validate-tag, electron-compatible]
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     permissions:
       contents: read
       id-token: write
       attestations: write
     env:
       BUILD: ${{ needs.validate-tag.outputs.build }}
-      CHANNEL: ${{ vars.FIREFOX_CHANNEL || 'unlisted' }}
+      SLICK_BUILD: ${{ needs.validate-tag.outputs.build }}
+      WEB_EXT_API_KEY: ${{ secrets.AMO_JWT_ISSUER }}
+      WEB_EXT_API_SECRET: ${{ secrets.AMO_JWT_SECRET }}
     steps:
       - uses: actions/checkout@v7
       - uses: oven-sh/setup-bun@v2
       - run: bun install --frozen-lockfile
         env:
           ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
-      - name: Build and lint
-        run: |
-          bun run build -- firefox
-          bun run extension:lint
-        env:
-          SLICK_BUILD: ${{ env.BUILD }}
       - name: Source archive for AMO review
         run: |
           mkdir -p dist/release
           git archive --format=zip -o "dist/release/slick-firefox-2.0.$BUILD-source.zip" HEAD
-      - name: Sign on AMO
-        if: env.CHANNEL == 'unlisted'
+      - name: Build and lint self-hosted
+        run: |
+          bun run build -- firefox
+          bun run extension:lint
+      - name: Sign self-hosted on AMO
         run: |
           bunx web-ext sign --channel unlisted \
             --source-dir dist/extension/firefox \
@@ -327,33 +326,13 @@ jobs:
           signed=$(find dist/signed -name '*.xpi' -print -quit)
           test -n "$signed"
           mv "$signed" "dist/release/slick-firefox-2.0.$BUILD.xpi"
-        env:
-          WEB_EXT_API_KEY: ${{ secrets.AMO_JWT_ISSUER }}
-          WEB_EXT_API_SECRET: ${{ secrets.AMO_JWT_SECRET }}
-      - name: Submit listed version to AMO
-        if: env.CHANNEL == 'listed'
-        run: |
-          jq -n --arg build "$BUILD" '{categories: ["social-communication", "appearance"], version: {
-            license: "GPL-3.0-only",
-            approval_notes: "Bundled with Bun. To reproduce dist/extension/firefox from the source archive: bun install --frozen-lockfile && SLICK_BUILD=\($build) bun run build -- firefox"
-          }}' > "$RUNNER_TEMP/amo.json"
-          bunx web-ext sign --channel listed --approval-timeout 0 \
-            --source-dir dist/extension/firefox \
-            --upload-source-code "dist/release/slick-firefox-2.0.$BUILD-source.zip" \
-            --amo-metadata "$RUNNER_TEMP/amo.json"
-        env:
-          WEB_EXT_API_KEY: ${{ secrets.AMO_JWT_ISSUER }}
-          WEB_EXT_API_SECRET: ${{ secrets.AMO_JWT_SECRET }}
       - name: Update manifest
-        if: env.CHANNEL == 'unlisted'
         run: node scripts/firefox-updates.ts "dist/release/slick-firefox-2.0.$BUILD.xpi" "$BUILD" dist/release/updates.json
       - name: Attest build provenance
-        if: env.CHANNEL == 'unlisted'
         uses: actions/attest@v4.2.2
         with:
           subject-path: dist/release/slick-firefox-*.xpi
       - name: Upload signed extension
-        if: env.CHANNEL == 'unlisted'
         uses: actions/upload-artifact@v7
         with:
           name: firefox-signed
@@ -364,6 +343,23 @@ jobs:
           if-no-files-found: error
           retention-days: 1
           compression-level: 0
+      - name: Build and lint listed
+        run: |
+          bun run build -- firefox
+          bunx web-ext lint --source-dir dist/extension/firefox --warnings-as-errors
+        env:
+          SLICK_FIREFOX_CHANNEL: listed
+      - name: Submit listed version to AMO
+        continue-on-error: true
+        run: |
+          jq -n --arg build "$BUILD" '{categories: ["social-communication", "appearance"], version: {
+            license: "GPL-3.0-only",
+            approval_notes: "Bundled with Bun. To reproduce dist/extension/firefox from the source archive: ELECTRON_SKIP_BINARY_DOWNLOAD=1 bun install --frozen-lockfile && SLICK_BUILD=\($build) SLICK_FIREFOX_CHANNEL=listed bun run build -- firefox"
+          }}' > "$RUNNER_TEMP/amo.json"
+          bunx web-ext sign --channel listed --approval-timeout 0 \
+            --source-dir dist/extension/firefox \
+            --upload-source-code "dist/release/slick-firefox-2.0.$BUILD-source.zip" \
+            --amo-metadata "$RUNNER_TEMP/amo.json"
 
   firefox-publish:
     needs: [release, firefox]
@@ -371,29 +367,15 @@ jobs:
     permissions:
       contents: write
     env:
-      CHANNEL: ${{ vars.FIREFOX_CHANNEL || 'unlisted' }}
       GH_REPO: ${{ github.repository }}
       GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/download-artifact@v8
-        if: env.CHANNEL == 'unlisted'
         with:
           name: firefox-signed
           path: dist/release
       - name: Attach to release
-        if: env.CHANNEL == 'unlisted'
         run: gh release upload "$GITHUB_REF_NAME" dist/release/slick-firefox-*.xpi dist/release/slick-firefox-*-source.zip dist/release/updates.json --clobber
-      - name: Carry the self-hosted update manifest forward
-        if: env.CHANNEL == 'listed'
-        run: |
-          for tag in $(gh release list --exclude-drafts --limit 100 --json tagName --jq '.[].tagName'); do
-            [[ "$tag" == "$GITHUB_REF_NAME" ]] && continue
-            if gh release download "$tag" --pattern updates.json --dir carry 2>/dev/null; then
-              gh release upload "$GITHUB_REF_NAME" carry/updates.json --clobber
-              exit 0
-            fi
-          done
-          echo "::warning::No earlier release has updates.json to carry forward"
 
   copr:
     needs: [validate-tag, release]
