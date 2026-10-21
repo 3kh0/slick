@@ -31,7 +31,7 @@ import { addSettingsTab, type SettingsTab } from './api/settingsTabs.ts';
 
 import { createAPILoader } from './apiLoader.ts';
 import { createScope, type PluginScope } from './pluginScope.ts';
-import { evaluatePlugin } from './userPlugins.ts';
+import { adoptPlugins, evaluatePlugin } from './userPlugins.ts';
 import { appWideReason } from '../shared/pluginWorkspaces.ts';
 import { currentWorkspaceId, watchWorkspace } from './workspaces.ts';
 
@@ -403,6 +403,15 @@ export class PluginManager {
         console.error(`[slick] could not load user plugin ${key}:`, error);
       }
     }
+  }
+
+  /** Registers plugins that web user scripts hand to the page. */
+  adoptUserPlugins(): void {
+    let booted = false;
+    adoptPlugins((PluginClass) => {
+      if (this.register(PluginClass, true) && booted) void this.reconcile();
+    });
+    booted = true;
   }
 
   /** Installs or updates a user plugin and returns its name. */

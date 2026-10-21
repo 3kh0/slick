@@ -300,11 +300,11 @@ Testing plugins are quite important and this is the easiest way to share them wi
 bun run build:plugin src/plugins/YourPlugin # or any folder with an index.ts(x)
 ```
 
-This will pop out `dist/plugins/YourPlugin.js`, which anyone can install from **Slick Settings > Plugins > Install plugin...** on desktop. If you try to install a newer file with the same `id`, it will just update it in place! **Remove plugin** under its cog uninstalls it and kerblams its data. The folder doesn't have to be in this repo since `$slick` resolves from anywhere.
+This will pop out `dist/plugins/YourPlugin.js` and `dist/plugins/YourPlugin.user.js`. On desktop, install the `.js` from **Slick Settings > Plugins > Install plugin...**; in the browser extension, use **Install plugin file…** under the Slick toolbar button's Plugins tab (Chromium also needs **Allow User Scripts** turned on in the extension's details page); with the userscript, install the `.user.js` in Violentmonkey next to Slick. If you try to install a newer file with the same `id`, it will just update it in place! **Remove plugin** under its cog uninstalls it and kerblams its data. The folder doesn't have to be in this repo since `$slick` resolves from anywhere.
 
 For the sake of security, user plugins are renderer-only and may only import `$slick` and their own files (plus packages, which get bundled!) Trying to access Slick's internals or shipping a `main.ts` will throw an error.
 
-Web builds can't install install custom plugins yet since Slack's CSP blocks this type of stuff...
+On the web, user plugins run as user scripts (the extension's `userScripts` API or your userscript manager), so Slack's CSP never has to allow eval. Reload Slack after installing or removing one there.
 
 ## Debug it before declaring victory
 

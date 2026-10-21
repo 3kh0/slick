@@ -2,6 +2,7 @@
 import type { Dnr } from './mainHost.ts';
 import { BACKGROUND_PLUGINS, EXTENSION_PLUGINS, LARGE_STORAGE_PLUGINS } from './plugins.ts';
 import { record } from '../shared/objects.ts';
+import { USER_PLUGIN_ID, type UserScripts } from './userPlugins.ts';
 export { record } from '../shared/objects.ts';
 
 export const CHANNEL = 'slick:firefox:v1';
@@ -45,10 +46,12 @@ export type Response =
 const text = (v: unknown, max = MAX_TEXT): v is string => typeof v === 'string' && v.length <= max;
 const accountId = (v: unknown): v is string => typeof v === 'string' && /^[A-Z][A-Z0-9]{5,63}$/.test(v);
 const tabId = (v: unknown): v is string => typeof v === 'string' && /^\d{1,10}$/.test(v);
-// PluginManager namespaces blob stores as `plugin:<id>`.
+// PluginManager namespaces blob stores as `plugin:<id>`. The background only
+// serves user plugin ids that are installed.
 export function namespace(v: unknown): v is string {
-  return typeof v === 'string' && v.startsWith('plugin:') && (RENDERERS as readonly string[]).includes(v.slice(7));
+  return typeof v === 'string' && v.startsWith('plugin:') && USER_PLUGIN_ID.test(v.slice(7));
 }
+export const bundled = (ns: string) => (RENDERERS as readonly string[]).includes(ns.slice(7));
 // Per-namespace quota. Logging plugins get room for their history (MessageLogger keeps 1000 entries).
 export function blobLimits(ns: string) {
   return (LARGE_STORAGE_PLUGINS as readonly string[]).includes(ns.slice(7))
@@ -173,6 +176,12 @@ export type ExtensionBrowser = {
     onRemoved?: { addListener(cb: (tabId: number) => void): void };
   };
   declarativeNetRequest?: Dnr;
+  userScripts?: UserScripts;
+  permissions?: {
+    contains(permissions: { permissions: string[] }): Promise<boolean>;
+    request(permissions: { permissions: string[] }): Promise<boolean>;
+    onAdded?: { addListener(cb: () => void): void };
+  };
   action?: { setIcon(details: { path: string | null }): Promise<void> };
 };
 export function extensionBrowser(): ExtensionBrowser | undefined {
@@ -183,6 +192,10 @@ export function extensionBrowser(): ExtensionBrowser | undefined {
   // Older Chromium needs a literal true and sendResponse for async replies.
   return {
     ...chrome,
+    // Appears once the optional permission is granted.
+    get userScripts() {
+      return chrome.userScripts;
+    },
     runtime: {
       id: chrome.runtime.id,
       getURL: (path) => chrome.runtime.getURL(path),

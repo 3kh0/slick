@@ -16,21 +16,28 @@ async function fixture(name: string, files: Record<string, string>) {
   return dir;
 }
 
-test('a repo plugin builds to one file that only imports $slick', async () => {
+test('a repo plugin builds to one file that only imports $slick, plus a userscript twin', async () => {
   const out = await buildUserPlugin(path.join(PLUGINS, 'HumanCount'), path.join(tmp, 'HumanCount.js'));
   const code = await readFile(out, 'utf8');
+  assert.match(code, /^\/\/ slick-plugin \{"id":"HumanCount","name":"Human Count","description":"[^"]+"\}\n/);
   assert.match(code, /require\("\$slick"\)/);
   assert.doesNotMatch(code, /src\/app\//);
   class SlickPlugin {
     start() {}
   }
-  const module = { exports: {} as { default?: { id: string; prototype: object } } };
-  new Function('module', 'exports', 'require', code)(module, module.exports, (name: string) => {
+  const queue: ((require: (name: string) => unknown) => { id: string; prototype: object })[] = [];
+  new Function('globalThis', code)({ __slickPlugins: queue });
+  const PluginClass = queue[0]!((name) => {
     assert.equal(name, '$slick');
     return { __esModule: true, SlickPlugin };
   });
-  assert.equal(module.exports.default?.id, 'HumanCount');
-  assert.ok(module.exports.default?.prototype instanceof SlickPlugin);
+  assert.equal(PluginClass.id, 'HumanCount');
+  assert.ok(PluginClass.prototype instanceof SlickPlugin);
+
+  const userscript = await readFile(path.join(tmp, 'HumanCount.user.js'), 'utf8');
+  assert.match(userscript, /^\/\/ ==UserScript==\n\/\/ @name Slick: Human Count\n/);
+  assert.match(userscript, /\/\/ @grant none\n/);
+  assert.ok(userscript.endsWith(code.slice(code.indexOf('\n') + 1).replace('HumanCount.js', 'HumanCount.user.js')));
 });
 
 test("importing Slick's internals or shipping a main.ts fails the build", async () => {

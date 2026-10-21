@@ -4,6 +4,7 @@ import { createMainHost, type BackgroundPlugin } from './mainHost.ts';
 import { SETTINGS_KEY, createStorage } from './storage.ts';
 import { indexedDbBackend, type BlobBackend } from './blobs.ts';
 import { createAccountService, AccountError, type AccountBrowser } from './accounts.ts';
+import { USER_PLUGINS_KEY, installedPlugins, syncUserScripts, userScripts } from './userPlugins.ts';
 
 export const TOOLBAR_ICONS = { black: 'icons/black.svg', white: 'icons/white.svg' } as const;
 
@@ -106,7 +107,20 @@ export function createBackground(
   void storage.dispatch({ method: 'readSettings', args: [] }).then((r) => {
     if (r.ok) void applyIcon(r.value);
   });
+  const userPlugins = async () => installedPlugins((await api.storage.local.get(USER_PLUGINS_KEY))[USER_PLUGINS_KEY]);
+  let synced = Promise.resolve();
+  const sync = () => {
+    synced = synced
+      .then(async () => {
+        const scripts = userScripts(api);
+        if (scripts) await syncUserScripts(scripts, await userPlugins());
+      })
+      .catch((error) => console.error('[slick] could not register user plugins:', error));
+  };
+  sync();
+  api.permissions?.onAdded?.addListener(sync);
   api.storage.onChanged.addListener((changes, area) => {
+    if (area === 'local' && USER_PLUGINS_KEY in changes) sync();
     if (area !== 'local' || !(SETTINGS_KEY in changes)) return;
     applyIcon(changes[SETTINGS_KEY].newValue);
     void hostReady.then(() => host.update(parse(changes[SETTINGS_KEY].newValue)));

@@ -253,7 +253,17 @@ function SlickSettings({
             <Hint>No plugins match “{query.trim()}”.</Hint>
           </div>
         )}
-        {manager.supportsUserPlugins && <InstallPlugin manager={manager} />}
+        {manager.supportsUserPlugins ? (
+          <InstallPlugin manager={manager} />
+        ) : (
+          <div style={{ borderTop: '1px solid rgba(127,127,127,.2)', padding: '14px 0' }}>
+            <Hint>
+              {bridge.loader === 'extension'
+                ? 'Install plugin files from the Slick toolbar button.'
+                : 'Install a plugin’s .user.js file in your userscript manager.'}
+            </Hint>
+          </div>
+        )}
       </Section>
       <Appearance config={config} bridge={bridge} />
       <Section title="About">
@@ -397,7 +407,7 @@ function PluginRow({
       {expanded && (
         <div style={{ margin: '14px 0 0 30px' }}>
           <WorkspaceSettings info={info} config={config} />
-          {info.user && (
+          {info.user && manager.supportsUserPlugins && (
             <elements.Button type="ghost" size="small" onClick={() => void manager.removeUserPlugin(info.id)}>
               Remove plugin
             </elements.Button>

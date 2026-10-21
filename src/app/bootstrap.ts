@@ -33,6 +33,7 @@ export async function bootstrap(bridge: SlickBridge): Promise<void> {
   }
 
   await manager.loadUserPlugins();
+  manager.adoptUserPlugins();
   installHot(bridge, manager);
   await manager.reconcile();
   await addSettingsTab(manager, config, bridge);

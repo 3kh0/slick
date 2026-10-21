@@ -1,6 +1,7 @@
 import { extensionBrowser, MAX_TEXT, RENDERERS, record, validMethodResponse, validRequest } from './rpc.ts';
 import type { ExtensionBrowser, Method } from './rpc.ts';
 import { CSS_KEY, SETTINGS_KEY } from './storage.ts';
+import { USER_PLUGINS_KEY, installedPlugins, parsePluginFile, userScripts } from './userPlugins.ts';
 import { importedThemes, isThemeJson, parseThemeJson, type ThemeJson } from '../shared/themes.ts';
 import { COG_PATH } from '../shared/icons.ts';
 import { coerceSetting, type Setting, type SettingsSchema } from '../shared/settings.ts';
@@ -593,10 +594,75 @@ export function mount(api: OptionsBrowser | undefined, data: OptionsData) {
       }
     });
   }
+  const browser = api;
+  const pluginStatus = element('plugin-status');
+  const installPlugin = element<HTMLButtonElement>('install-plugin');
+  const pluginFile = element<HTMLInputElement>('plugin-file');
+  const permission = { permissions: ['userScripts'] };
+  const stored = async () => installedPlugins((await browser.storage.local.get(USER_PLUGINS_KEY))[USER_PLUGINS_KEY]);
+  let allowed = false;
+  async function renderUserPlugins() {
+    const plugins = await stored();
+    element('user-plugins').replaceChildren(
+      ...Object.values(plugins).map((plugin) => {
+        const row = document.createElement('div');
+        row.className = 'row setting';
+        const text = document.createElement('div');
+        const name = document.createElement('div');
+        name.className = 'setting__name';
+        name.textContent = plugin.name;
+        const description = document.createElement('div');
+        description.className = 'hint';
+        description.textContent = plugin.description || 'User plugin';
+        text.append(name, description);
+        const remove = document.createElement('button');
+        remove.type = 'button';
+        remove.className = 'button';
+        remove.textContent = 'Remove';
+        remove.setAttribute('aria-label', `Remove ${plugin.name}`);
+        remove.addEventListener('click', async () => {
+          remove.disabled = true;
+          await request(send, 'blob.clear', [`plugin:${plugin.id}`]).catch(() => {});
+          const rest = await stored();
+          delete rest[plugin.id];
+          await browser.storage.local.set({ [USER_PLUGINS_KEY]: rest });
+          pluginStatus.textContent = `Removed ${plugin.name}. Reload Slack to finish.`;
+        });
+        row.append(text, remove);
+        return row;
+      }),
+    );
+    allowed = (await browser.permissions?.contains(permission)) === true;
+    installPlugin.textContent = allowed ? 'Install plugin file…' : 'Allow user plugins';
+    if (allowed && !userScripts(browser))
+      pluginStatus.textContent = 'Turn on “Allow User Scripts” in Slick’s extension details, then reopen this page.';
+  }
+  installPlugin.addEventListener('click', () => {
+    if (allowed) return pluginFile.click();
+    // Firefox only prompts from inside the click.
+    void browser.permissions?.request(permission).then(renderUserPlugins, () => {
+      pluginStatus.textContent = 'This browser can’t run user plugins.';
+    });
+  });
+  pluginFile.addEventListener('change', async () => {
+    const file = pluginFile.files?.[0];
+    pluginFile.value = '';
+    if (!file) return;
+    try {
+      const plugin = parsePluginFile(await file.text());
+      if ((RENDERERS as readonly string[]).includes(plugin.id)) throw new Error(`${plugin.id} is built into Slick.`);
+      await browser.storage.local.set({ [USER_PLUGINS_KEY]: { ...(await stored()), [plugin.id]: plugin } });
+      pluginStatus.textContent = `Installed ${plugin.name}. Reload Slack to run it.`;
+    } catch (cause) {
+      pluginStatus.textContent = cause instanceof Error ? cause.message : 'Could not install the plugin.';
+    }
+  });
+  void renderUserPlugins();
   const reload = () => void refresh().catch(() => report("Couldn't load your settings."));
   element('retry').addEventListener('click', reload);
   api.storage.onChanged.addListener((changes, area) => {
     if (area === 'local' && (SETTINGS_KEY in changes || CSS_KEY in changes)) reload();
+    if (area === 'local' && USER_PLUGINS_KEY in changes) void renderUserPlugins();
   });
   reload();
 }

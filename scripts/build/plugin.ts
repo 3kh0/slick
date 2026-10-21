@@ -1,5 +1,6 @@
-// Single-file user plugins: a plugin's own files bundled as CommonJS, with
-// `$slick` left for the page to provide (src/app/userPlugins.ts).
+// Single-file user plugins: a plugin's own files bundled as CommonJS inside a
+// factory queued on `globalThis.__slickPlugins`, with `$slick` left for the page
+// to provide (src/app/userPlugins.ts). The .user.js twin is for userscript managers.
 
 import { existsSync, statSync } from 'node:fs';
 import path from 'node:path';
@@ -43,7 +44,52 @@ export async function buildUserPlugin(input: string, out?: string) {
     minify: false,
     plugins: [ownFilesOnly(dir), ...pagePlugins],
   });
+  const code = `(globalThis.__slickPlugins ??= []).push((require) => {
+var module = { exports: {} }, exports = module.exports;
+${outputFiles[0].text}return module.exports.default;
+});
+`;
+  const meta = describe(code, name);
   const file = path.resolve(out ?? path.join(DIST, 'plugins', `${name}.js`));
-  await writePage(file, outputFiles[0].text, 'plugin', `plugins/${name}.js`);
+  await writePage(file, `// slick-plugin ${JSON.stringify(meta)}\n${code}`, 'plugin', `plugins/${name}.js`);
+  await writePage(
+    file.replace(/(\.js)?$/, '.user.js'),
+    userscriptHeader(meta) + code,
+    'plugin',
+    `plugins/${name}.user.js`,
+  );
   return file;
+}
+
+/** Reads the plugin's statics by running it against a stub `$slick`. */
+function describe(code: string, fallback: string) {
+  class SlickPlugin {
+    start() {}
+  }
+  const queue: ((require: () => unknown) => Record<string, unknown> | undefined)[] = [];
+  const text = (value: unknown, or: string) => (typeof value === 'string' && value ? value : or);
+  try {
+    new Function('globalThis', code)({ __slickPlugins: queue });
+    const PluginClass = queue[0]?.(() => ({ __esModule: true, SlickPlugin }));
+    const id = text(PluginClass?.id, fallback);
+    return { id, name: text(PluginClass?.pluginName, id), description: text(PluginClass?.description, '') };
+  } catch {
+    return { id: fallback, name: fallback, description: '' };
+  }
+}
+
+function userscriptHeader({ id, name, description }: ReturnType<typeof describe>) {
+  const tags = [
+    ['name', `Slick: ${name}`],
+    ['namespace', `slick-plugin/${id}`],
+    ['description', description],
+    ['match', 'https://app.slack.com/client'],
+    ['match', 'https://app.slack.com/client/*'],
+    ['run-at', 'document-start'],
+    ['inject-into', 'page'],
+    ['grant', 'none'],
+    ['noframes', ''],
+  ];
+  const lines = tags.filter(([key, value]) => value || key === 'noframes');
+  return `// ==UserScript==\n${lines.map(([key, value]) => `// @${key} ${value.replace(/\s+/g, ' ')}`.trimEnd() + '\n').join('')}// ==/UserScript==\n`;
 }

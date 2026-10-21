@@ -4,6 +4,7 @@ import { BLOB_PREFIX, memoryBackend } from './blobs.ts';
 import { createStorage, DEFAULT_SETTINGS, SETTINGS_KEY, CSS_KEY } from './storage.ts';
 import { MAX_BLOB, MAX_KEYS, MAX_TEXT, PAGE_KEYS, RENDERERS, blobLimits } from './rpc.ts';
 import { installBridge } from './bridge-setup.ts';
+import { USER_PLUGINS_KEY } from './userPlugins.ts';
 import type { StorageArea } from './rpc.ts';
 export function memoryStorage(): StorageArea & { data: Record<string, unknown> } {
   const data: Record<string, unknown> = {};
@@ -121,6 +122,8 @@ test('blobs are namespace allowlisted, bounded and prototype-safe', async () => 
   const store = createStorage(area, memoryBackend());
   for (const bad of ['Other', 'Censorship', 'plugin:Other'])
     assert.equal((await store.dispatch({ method: 'blob.write', args: [bad, 'x', 'y'] })).ok, false);
+  await area.set({ [USER_PLUGINS_KEY]: { Other: { id: 'Other', name: 'Other', description: '', code: '' } } });
+  assert.equal((await store.dispatch({ method: 'blob.write', args: ['plugin:Other', 'x', 'y'] })).ok, true);
   assert.equal(
     (await store.dispatch({ method: 'blob.write', args: ['plugin:Censorship', 'x', 'y'.repeat(MAX_BLOB + 1)] })).ok,
     false,

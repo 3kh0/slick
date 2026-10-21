@@ -230,14 +230,16 @@ test('replace swaps a running plugin for the new class and keeps a disabled one 
 });
 
 const userPlugin = (id: string, version: number) => `
-const { SlickPlugin } = require('$slick');
-module.exports = { default: class extends SlickPlugin {
-  static id = '${id}';
-  static pluginName = '${id} v${version}';
-  static requiredAPIs = [];
-  static defaultEnabled = true;
-  start() { globalThis.userVersion = ${version}; this.api.patchComponent('Example', () => {}); }
-} };`;
+(globalThis.__slickPlugins ??= []).push((require) => {
+  const { SlickPlugin } = require('$slick');
+  return class extends SlickPlugin {
+    static id = '${id}';
+    static pluginName = '${id} v${version}';
+    static requiredAPIs = [];
+    static defaultEnabled = true;
+    start() { globalThis.userVersion = ${version}; this.api.patchComponent('Example', () => {}); }
+  };
+});`;
 
 test('user plugins install, update in place, reload from storage and remove cleanly', async () => {
   const f = await fixture();
@@ -263,4 +265,23 @@ test('user plugins install, update in place, reload from storage and remove clea
     ['Probe'],
   );
   assert.equal(f.blobs.get('user-plugins')?.size, 0);
+});
+
+test('plugins that web user scripts queue before or after boot are registered and started', async () => {
+  const f = await fixture();
+  runInContext(userPlugin('Early', 1), f.context);
+  f.manager.adoptUserPlugins();
+  await f.manager.reconcile();
+  assert.equal(f.context.userVersion, 1);
+  runInContext(userPlugin('Late', 2), f.context);
+  await f.manager.reconcile();
+  assert.equal(f.context.userVersion, 2);
+  assert.deepEqual(
+    Array.from(f.manager.info(), (info: any) => [info.id, info.user, info.running]),
+    [
+      ['Probe', false, true],
+      ['Early', true, true],
+      ['Late', true, true],
+    ],
+  );
 });
