@@ -3,34 +3,8 @@
 import { SlickPlugin } from '$slick';
 import { appSessions, sessionRequest, type SessionChoice } from './session.ts';
 import { getActiveTeam, readLocalConfig } from '../../app/slack/localConfig.ts';
-import { listInstalledApps, type InstalledApp } from './data.ts';
+import { listInstalledApps, type AppPageData, type InstalledApp } from './data.ts';
 import * as meta from './meta.ts';
-
-type Authorization = {
-  date: number;
-  userDisplayName: string;
-  encodedUserLink: string; // this is actually the user's id, e.g. "U0123ABC"
-  fullDescription: string;
-};
-
-type AppDirectoryAuthorizations = {
-  appId: string;
-  appName: string;
-  appIcons: Record<string, string>;
-  authorizations: Authorization[];
-};
-
-type AppDirectoryBotUser = {
-  botUsername: string;
-  memberships: string[];
-  otherGroups: number;
-};
-
-type AppPageData = {
-  authorizations: { userId: string; name: string }[];
-  memberships: string[];
-  otherGroups: number;
-};
 
 type AppProps = {
   appId?: string;
@@ -50,7 +24,7 @@ export default class InstalledApps extends SlickPlugin<typeof meta.settings> {
   static readonly description = meta.description;
   static readonly defaultEnabled = meta.defaultEnabled;
   static readonly settings = meta.settings;
-  static readonly requiredAPIs = ['members', 'elements'] as const;
+  static readonly requiredAPIs = ['members', 'elements', 'redux'] as const;
 
   private active = new this.api.Store(false);
   private sessionChoice: SessionChoice & { account?: string } = {};
@@ -210,8 +184,15 @@ export default class InstalledApps extends SlickPlugin<typeof meta.settings> {
   }
 
   private appProfileHref(appId: string): string {
-    return `slack://app?id=${appId}&tab=more_info`;
+    return `slack://app?id=${appId}&tab=about`;
   }
+
+  // Web builds have no slack: protocol handler, so Slack's own deep link handling opens the app.
+  private openApp = (event: React.MouseEvent<HTMLAnchorElement>) => {
+    if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+    event.preventDefault();
+    void this.api.redux.dispatchThunk('handleDeepLink', { uri: event.currentTarget.href });
+  };
 
   private InstalledAppsBlock = (props: { userId?: string; profile?: boolean }) => {
     const className = `slick-installed-apps${props.profile ? ' p-r_member_profile_section slick-installed-apps-profile' : ''}`;
@@ -236,6 +217,7 @@ export default class InstalledApps extends SlickPlugin<typeof meta.settings> {
                 key={app.id}
                 className={`slick-installed-apps__item ${isOfficial ? 'slick-installed-apps__item-official' : 'slick-installed-apps__item-internal'}`}
                 href={this.appProfileHref(app.id)}
+                onClick={this.openApp}
                 title={app.description || app.name}
                 rel="noreferrer"
               >
@@ -258,35 +240,7 @@ export default class InstalledApps extends SlickPlugin<typeof meta.settings> {
   private async fetchAppPage(appId: string): Promise<AppPageData> {
     const team = getActiveTeam();
     if (!team?.id || !team.user_id) throw new Error('No active workspace');
-    const html = await this.api.main.call<string>('marketplace', appId, team.id);
-    const doc = new DOMParser().parseFromString(html, 'text/html');
-
-    // helper function
-    const read = <T,>(name: string): T | undefined => {
-      const el = doc.querySelector(`[data-automount-component="${name}"]`);
-      // the parser already decodes HTML entities in attribute values,
-      // so this is plain JSON text at this point
-      const raw = el?.getAttribute('data-automount-props');
-      if (!raw) return undefined;
-      try {
-        return JSON.parse(raw) as T;
-      } catch {
-        return undefined;
-      }
-    };
-
-    const authorizations = read<AppDirectoryAuthorizations>('AppDirectoryAuthorizations');
-    const botUser = read<AppDirectoryBotUser>('AppDirectoryBotUser');
-    if (!authorizations && !botUser) throw new Error('App management requires sign-in');
-    // Persist only what the UI uses, not descriptions, app icons, or page metadata.
-    return {
-      authorizations: (authorizations?.authorizations ?? []).map((auth) => ({
-        userId: auth.encodedUserLink,
-        name: auth.userDisplayName,
-      })),
-      memberships: botUser?.memberships ?? [],
-      otherGroups: botUser?.otherGroups ?? 0,
-    };
+    return this.api.main.call<AppPageData>('marketplace', appId, team.id);
   }
 
   private useAppData(appId: string | undefined) {

@@ -9,5 +9,6 @@ export const USERSCRIPT_PLUGINS = EXTENSION_PLUGINS.filter((id) => !USERSCRIPT_E
 export const USERSCRIPT_MAIN_PLUGINS = [
   'ClearURLs',
   'HcaStatus',
+  'InstalledApps',
   'PrivateChannelMapper',
 ] as const satisfies readonly (typeof USERSCRIPT_PLUGINS)[number][];

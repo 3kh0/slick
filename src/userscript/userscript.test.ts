@@ -139,6 +139,10 @@ test('cross-origin networking uses GM without sending browser cookies and report
   await assert.rejects(failed, /timed out/);
   await assert.rejects(gmFetch(gm, 'file:///etc/passwd'), /Unsupported/);
   await assert.rejects(gmFetch(gm, 'https://example.org/', { body: new Blob(['x']) }), /text/);
+  void gmFetch(gm, 'https://slack.com/marketplace/A1', { credentials: 'include' });
+  assert.equal(request().anonymous, false, 'privileged halves can opt into cookies');
+  void createUserscriptBridge(gm).fetch('https://slack.com/marketplace/A1', { credentials: 'include' });
+  assert.equal(request().anonymous, true, 'renderer api.fetch never sends cookies');
 });
 
 test('recovery survives bypass, safe mode does not erase settings, and the bridge is claimed once', () => {

@@ -179,8 +179,8 @@ export type ExtensionBrowser = {
   declarativeNetRequest?: Dnr;
   userScripts?: UserScripts;
   permissions?: {
-    contains(permissions: { permissions: string[] }): Promise<boolean>;
-    request(permissions: { permissions: string[] }): Promise<boolean>;
+    contains(permissions: { permissions?: string[]; origins?: string[] }): Promise<boolean>;
+    request(permissions: { permissions?: string[]; origins?: string[] }): Promise<boolean>;
     onAdded?: { addListener(cb: () => void): void };
   };
   action?: { setIcon(details: { path: string | null }): Promise<void> };
