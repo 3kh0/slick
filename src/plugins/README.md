@@ -62,7 +62,7 @@ bun run desktop:dev
 
 Sign in, open **Slick → Slick Settings…**, find **Plugins**, enable **Hello Slick**, and select some text. Change the color, then disable the plugin and check that the style disappears. No `stop()` needed here: Slick owns the stylesheet and removes it for you.
 
-Discovery happens automatically, and new plugins ship to the browser extensions and the userscript by default. Run `bun run readme` once to register the new folder in `src/plugins/names.generated.ts` and add its row to the README plugin table; `bun run check` and web builds fail until you do. Rebuild and reload your chosen target using the [browser instructions](../../DEVELOPMENT.md).
+Discovery happens automatically, and new plugins ship to the browser extensions and the userscript by default. Run `bun run typecheck` once to add the new folder to `src/plugins/names.generated.ts`; tests and web builds fail until you do. Rebuild and reload your chosen target using the [browser instructions](../../DEVELOPMENT.md).
 
 ## The files and the junk
 
@@ -318,6 +318,6 @@ Before sending a patch:
 2. Enable it, exercise the feature, change settings, disable it, and enable it again.
 3. Check channels, threads, workspace changes, and pop-outs if your plugin touches them.
 4. Test the browser/userscript version unless you opted out. A desktop build doesn't prove that it works on Firefox.
-5. Run `bun run readme` if you added a plugin, renamed it, changed its description, or changed where it ships.
+5. Run `bun run typecheck` and commit `src/plugins/names.generated.ts` if you added or renamed a plugin.
 
 Keep pure transforms in helper files with `node:test` tests; [ClearURLs](ClearURLs/clean.test.ts), [HumanCount](HumanCount/count.test.ts), and [NotShitMarkdown](NotShitMarkdown/markdown.test.ts) are good starting points. For renderer mocks, copy the approach in a nearby `index.test.ts`. Then actually use the thing for a bit. All green tests don't click buttons for you.

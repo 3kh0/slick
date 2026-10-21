@@ -10,6 +10,8 @@ import { ROOT, SHARED } from './paths.ts';
 import {
   discoverPlugins,
   EXTENSION_PLUGIN_NAMES,
+  PLUGIN_NAMES_FILE,
+  pluginNamesModule,
   rendererRegistryModule,
   rendererRegistryPlugin,
   slickSharedAlias,
@@ -96,4 +98,12 @@ test('custom extension entry installs its bridge before main claims it', async (
 
 test('unknown plugin names fail rather than silently omitting a requested renderer', () => {
   assert.throws(() => rendererRegistryModule({ pluginNames: ['MissingPlugin'] }), /unknown renderer plugin/);
+});
+
+test('generated plugin names match src/plugins', async () => {
+  assert.equal(
+    await readFile(PLUGIN_NAMES_FILE, 'utf8'),
+    pluginNamesModule(),
+    'src/plugins/names.generated.ts is stale; run `bun run typecheck`',
+  );
 });

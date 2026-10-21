@@ -42,57 +42,6 @@ Slick runs Slack's own `app.asar` inside its own Electron (with the handy BYOE a
 
 I encourage you to try other Slack mods, but you will find that Slick is the better choice for most!
 
-## Plugins
-
-Every plugin runs on desktop, and browser builds include every plugin that doesn't need desktop-only APIs.
-
-<!-- begin plugins -->
-
-| Plugin                     | Description                                                                                                                                  | Desktop | Extension | Userscript |
-| -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- | :-----: | :-------: | :--------: |
-| Account Switcher           | Switch between saved accounts from the profile menu                                                                                          |    ✓    |     ✓     |     —      |
-| Admin Backend              | Open profiles in Hack Club admin tools                                                                                                       |    ✓    |     ✓     |     ✓      |
-| Anonymise File Names       | Replace uploaded file names with a random string, keeping the extension                                                                      |    ✓    |     ✓     |     ✓      |
-| bChannel                   | Type @channel or @here and send, no permission hassles, even as a channel manager                                                            |    ✓    |     ✓     |     ✓      |
-| BetterBlock                | Make people disappear locally: messages, reactions, typing, and more. Huddles are untouched.                                                 |    ✓    |     ✓     |     ✓      |
-| Better GIFs                | Enhances Slack’s GIF picker with a better search experience, favorites, and more.                                                            |    ✓    |     —     |     —      |
-| Censorship                 | There is no war in Ba Sing Se.                                                                                                               |    ✓    |     ✓     |     ✓      |
-| Clear URLs                 | Automatically removes tracking elements from URLs you send                                                                                   |    ✓    |     ✓     |     ✓      |
-| Click to Load              | Replaces third-party media embeds with privacy-preserving click-to-load placeholders                                                         |    ✓    |     ✓     |     —      |
-| Copy Reacted               | Copy the list of people who reacted to a message                                                                                             |    ✓    |     ✓     |     ✓      |
-| Custom Fonts               | Use any installed system font or upload your own font file.                                                                                  |    ✓    |     ✓     |     ✓      |
-| Custom Name Recording      | Upload custom audio as your Slack name recording                                                                                             |    ✓    |     ✓     |     ✓      |
-| Custom Slackbot            | Customize the name and avatar used for workspace custom responses                                                                            |    ✓    |     ✓     |     ✓      |
-| Custom Sounds              | Override Slack notification sounds with your own audio file.                                                                                 |    ✓    |     ✓     |     ✓      |
-| Experiments                | Enable Access to Experiments & other dev-only features in Slack!                                                                             |    ✓    |     ✓     |     ✓      |
-| Haiku Warning              | Warn before sending a message that Orpheus would quote back as a haiku                                                                       |    ✓    |     ✓     |     ✓      |
-| HCA Status                 | Flag users who have not completed identity verification. Sends Slack user IDs to auth.hackclub.com for verification and age-category checks. |    ✓    |     ✓     |     ✓      |
-| Huddle Mute Detector       | Show who muted you in a huddle                                                                                                               |    ✓    |     ✓     |     ✓      |
-| Human Count                | Leave bots and apps out of the channel header's member count.                                                                                |    ✓    |     ✓     |     ✓      |
-| Installed Apps             | Show apps people authorized, who authorized an app, and its channel memberships.                                                             |    ✓    |     —     |     —      |
-| Last Seen                  | Show a "last seen" time for other people, based on what your client can observe.                                                             |    ✓    |     ✓     |     ✓      |
-| Message Logger             | Keep deleted and edited messages visible                                                                                                     |    ✓    |     ✓     |     ✓      |
-| Nicknames                  | Set local nicknames for users                                                                                                                |    ✓    |     ✓     |     ✓      |
-| No Track                   | Disable Slack's built-in tracking and telemetry                                                                                              |    ✓    |     ✓     |     ✓      |
-| Not Shit Markdown          | Make the composer use normal Markdown instead of Slack markup                                                                                |    ✓    |     ✓     |     ✓      |
-| Office Hours               | Set schedules for out-of-office and invisible status                                                                                         |    ✓    |     ✓     |     ✓      |
-| oneko                      | cat follow mouse (real)                                                                                                                      |    ✓    |     ✓     |     ✓      |
-| Private Channel Mapper     | Name the private channels you can’t see, and mention the ones you are not in                                                                 |    ✓    |     ✓     |     ✓      |
-| Quick Join                 | Join channels straight from a link to them, without opening each one first                                                                   |    ✓    |     ✓     |     ✓      |
-| Quiet Spotify              | Customize the volume of Spotify embeds so they are not stupidly loud                                                                         |    ✓    |     —     |     —      |
-| Restricted Channel Warning | Warn before posting in channels where only admins can post                                                                                   |    ✓    |     ✓     |     ✓      |
-| Show Real User             | Show who actually sent a message when a relay bot posts on their behalf                                                                      |    ✓    |     ✓     |     ✓      |
-| Show Sending Bot           | Show which bot or app sent a message                                                                                                         |    ✓    |     ✓     |     ✓      |
-| Shut Up Slackbot           | Mark Slackbot slash-command registration DMs as read and silence their notifications.                                                        |    ✓    |     ✓     |     ✓      |
-| Silent Typing              | Never show the "is typing…" indicator to anyone else                                                                                         |    ✓    |     ✓     |     ✓      |
-| Slim Message Box           | ozempic for your message box!                                                                                                                |    ✓    |     ✓     |     ✓      |
-| Snappy                     | Make Slack feel more responsive by disabling animations and other slow features                                                              |    ✓    |     ✓     |     ✓      |
-| Streamer Mode              | Blur private information while others may be able to see your screen                                                                         |    ✓    |     ✓     |     ✓      |
-| User Pronouns              | Display users' pronouns next to their messages                                                                                               |    ✓    |     ✓     |     ✓      |
-| Who Reacted                | Show the avatars of everyone who reacted next to each reaction                                                                               |    ✓    |     ✓     |     ✓      |
-
-<!-- end plugins -->
-
 ## Installation
 
 Slick is widly available on platforms all shapes and sizes. Just scroll down to your platform and follow the instructions.
