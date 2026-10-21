@@ -3,11 +3,12 @@
 // main halves (main.ts) are bundled into the loader, unreachable from the page.
 
 import fs from 'node:fs';
+import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import type { Plugin } from 'esbuild';
 import { USERSCRIPT_PLUGINS } from '../../src/userscript/plugins.ts';
 import { EXTENSION_PLUGINS } from '../../src/extension/plugins.ts';
-import { PLUGINS, SHARED } from './paths.ts';
+import { PLUGINS, ROOT, SHARED, SRC } from './paths.ts';
 
 export type PluginEntry = { name: string; dir: string; renderer: string; main: string | null };
 
@@ -110,5 +111,25 @@ export function mainHalvesModule(): string {
   ];
   return lines.join('\n');
 }
+
+// Repo-relative, `/`-separated: esbuild's metafile keys and the page's __slickHostModules keys!
+export const repoPath = (file: string) => path.relative(ROOT, file).split(path.sep).join('/');
+
+//each src module registers its own namespace so hot plugin bundles can import the live instance
+export const hostModules: Plugin = {
+  name: 'slick-host-modules',
+  setup(builder) {
+    builder.onLoad({ filter: /\.tsx?$/ }, async ({ path: file }) => {
+      if (!file.startsWith(SRC + path.sep)) return;
+      return {
+        contents: `${await readFile(file, 'utf8')}
+import * as __slickHostModule from ${JSON.stringify(`./${path.basename(file)}`)};
+(globalThis.__slickHostModules ??= new Map()).set(${JSON.stringify(repoPath(file))}, __slickHostModule);
+`,
+        loader: file.endsWith('.tsx') ? 'tsx' : 'ts',
+      };
+    });
+  },
+};
 
 export { slickSharedAlias };

@@ -41,7 +41,11 @@ const MONACO_TYPES: Record<string, string> = {
   '.woff2': 'font/woff2',
 };
 
+const HOT_FILE = /^hot\/([A-Za-z0-9_.-]+\.js)$/;
+
 const notFound = () => new Response('Not found', { status: 404 });
+const js = (body: Uint8Array<ArrayBuffer> | string) =>
+  new Response(body, { headers: { 'Content-Type': 'application/javascript' } });
 
 /**
  * `dirs` are searched in order: Slick's own resources (captured before patch.ts
@@ -83,18 +87,24 @@ export function setupSession(dirs: string[]) {
       return notFound();
     }
 
+    const hot = process.env.SLICK_HOT && url.hostname === 'app' && HOT_FILE.exec(file)?.[1];
+    if (hot) {
+      for (const dir of dirs) {
+        try {
+          return js(await readAsset(path.join(dir, 'hot', hot)));
+        } catch {}
+      }
+      return notFound();
+    }
+
     if (file !== 'app/slick.js' && file !== 'slick.js') return notFound();
 
     for (const bundle of candidates) {
       try {
-        return new Response(await readBundle(bundle), {
-          headers: { 'Content-Type': 'application/javascript' },
-        });
+        return js(await readBundle(bundle));
       } catch {}
     }
     console.error(`[slick] slick.js not found in any of: ${candidates.join(', ')}`);
-    return new Response('console.error("[slick] bundle not found")', {
-      headers: { 'Content-Type': 'application/javascript' },
-    });
+    return js('console.error("[slick] bundle not found")');
   });
 }

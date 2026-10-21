@@ -4,6 +4,7 @@ import plugins from 'slick:plugins';
 import { setStyle } from './api/css.ts';
 import type { SlickBridge } from './bridge.ts';
 import { ConfigStore } from './configStore.ts';
+import { installHot } from './hot.ts';
 import { PluginManager } from './pluginManager.ts';
 import { addSettingsTab } from './settings.tsx';
 import { installUpdateButton } from './updateButton.ts';
@@ -34,6 +35,7 @@ export async function bootstrap(bridge: SlickBridge): Promise<void> {
     else console.error(`[slick] could not register plugin: ${name}`);
   }
 
+  installHot(bridge, manager);
   await manager.reconcile();
   await addSettingsTab(manager, config, bridge);
 

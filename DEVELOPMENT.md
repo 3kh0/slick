@@ -29,13 +29,15 @@ bun run desktop:dev
 
 This builds a debug bundle, launches the project's Electron, and keeps a separate profile at `work/dev-profile`. Your first launch needs a Slack sign-in; later launches reuse that dev profile.
 
-There is no HMR in `desktop:dev`, so the reliable loop is:
+Slick has [HMR](https://webpack.js.org/concepts/hot-module-replacement/), so you can leave it running while you edit and have your changes applied instantly. It watches `src/` and `themes/` and picks the cheapest way to apply each save:
 
-1. Edit the source.
-2. Quit the dev app completely.
-3. Run `bun run desktop:dev` again.
+| If you save...                                                                           | Slick will...                                                              |
+| ---------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| A file in `src/plugins/<Name>/` that only that plugin's renderer uses                    | Hot reload: the plugin is stopped and its new code started, no page reload |
+| Any other page code (`src/app`, `src/shared`, themes, a file another plugin imports)     | `slick.js` is rebuilt and Slack reloads                                    |
+| Main or preload code (`src/desktop`, a plugin's `main.ts` or `meta.ts`), or a new plugin | Everything is rebuilt and Electron restarts                                |
 
-For renderer-only edits, you can leave the app open, run `bun run build -- desktop --debug` in another terminal, then use **Slick → Reload**. Changes to desktop/main-process code still need a restart. `bun run build -- app` only writes `dist/app/slick.js`; the desktop app reads the copy in `dist/desktop`, so use the desktop build for this loop.
+A failed build prints the esbuild error and leaves the app alone; fix it and save again. Hot reload only undoes what the old plugin registered through `this.api` (plus its own `stop()`), so anything a plugin's module does at the top level runs again in the new copy. HMR is not bulletproof and may have some edgecases, if you see a plugin not working as intended, give the app a reboot and it should be jazzy again!
 
 Open DevTools with **Slick → Toggle Developer Tools** or `Cmd+Option+I` / `Ctrl+Alt+I`. Renderer messages are prefixed with `[slick]`; main-process logs appear in the launching terminal. `--debug` keeps inline source maps and skips minification.
 

@@ -331,7 +331,7 @@ export class PluginManager {
     return result;
   }
 
-  register(PluginClass: SlickPluginConstructor): string | null {
+  private validId(PluginClass: SlickPluginConstructor): string | null {
     if (typeof PluginClass !== 'function' || !(PluginClass.prototype instanceof SlickPlugin)) {
       console.error('[slick] plugin does not extend SlickPlugin');
       return null;
@@ -342,6 +342,12 @@ export class PluginManager {
       console.error(`[slick] plugin has an invalid id: ${String(id)}`);
       return null;
     }
+    return id;
+  }
+
+  register(PluginClass: SlickPluginConstructor): string | null {
+    const id = this.validId(PluginClass);
+    if (!id) return null;
     if (this.plugins.has(id)) {
       console.error(`[slick] duplicate plugin id: ${id}`);
       return null;
@@ -358,6 +364,21 @@ export class PluginManager {
       workspaceId: null,
     });
     return id;
+  }
+
+  async replace(PluginClass: SlickPluginConstructor): Promise<void> {
+    const id = this.validId(PluginClass);
+    const entry = id ? this.plugins.get(id) : undefined;
+    if (!id || !entry) return;
+    await this.exclusive(id, async () => {
+      if (entry.instance) await this.stop(id, entry);
+      entry.PluginClass = PluginClass;
+      this.config.registerSchema(id, PluginClass.settings ?? {}, PluginClass.defaultEnabled === true);
+      entry.settings = this.config.settingsFor(id);
+      if (this.config.isActive(id)) await this.start(id, entry);
+      else this.notifyStatus();
+    });
+    console.log(`[slick] hot-reloaded ${id}`);
   }
 
   onStatusChange(cb: () => void): () => void {

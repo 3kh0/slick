@@ -3,11 +3,11 @@
 import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { gzipSync } from 'node:zlib';
-import { build, type Plugin } from 'esbuild';
+import { build, type BuildOptions, type Plugin } from 'esbuild';
 import type { ThemeJson } from '../../src/app/theme.ts';
 import { compactDictionary } from '../../src/plugins/HaikuWarning/haiku.ts';
 import { APP, ROOT, SLICK_JS, THEMES } from '../lib/paths.ts';
-import { rendererRegistryPlugin, slickSharedAlias, type RendererRegistryOptions } from '../lib/plugin.ts';
+import { hostModules, rendererRegistryPlugin, slickSharedAlias, type RendererRegistryOptions } from '../lib/plugin.ts';
 import { versions } from '../lib/versions.ts';
 
 const SOURCE_ORIGIN = 'slick:///';
@@ -34,25 +34,19 @@ const haikuDictionary: Plugin = {
 
 export type BuildAppOptions = RendererRegistryOptions & {
   debug?: boolean;
+  hot?: boolean;
   extraPlugins?: Plugin[];
   /** Paths are resolved relative to the repository root. */
   entryPoint?: string;
   outFile?: string;
 };
 
-export async function buildApp({
+export async function pageBuildOptions({
   debug = false,
-  extraPlugins = [],
-  entryPoint = `${APP}/main.ts`,
-  outFile = SLICK_JS,
   targetLoader = 'electron',
-  pluginNames,
-}: BuildAppOptions = {}) {
+}: Pick<BuildAppOptions, 'debug' | 'targetLoader'>) {
   const themes = await bundleThemes();
-  const output = path.resolve(ROOT, outFile);
-
-  const result = await build({
-    entryPoints: [entryPoint],
+  return {
     absWorkingDir: ROOT,
     bundle: true,
     write: false,
@@ -60,12 +54,6 @@ export async function buildApp({
     format: 'iife',
     target: 'es2022',
     minify: !debug,
-    plugins: [
-      rendererRegistryPlugin({ targetLoader, pluginNames }),
-      slickSharedAlias,
-      haikuDictionary,
-      ...extraPlugins,
-    ],
     // Inline assets to preserve offline use without additional requests.
     loader: { '.gif': 'dataurl', '.png': 'dataurl', '.svg': 'dataurl', '.woff2': 'dataurl', '.txt': 'text' },
     sourcemap: debug ? 'inline' : false,
@@ -77,14 +65,40 @@ export async function buildApp({
       process: 'undefined',
       ...(targetLoader === 'userscript' ? { globalThis: 'unsafeWindow', window: 'unsafeWindow' } : {}),
     },
-  });
+  } satisfies BuildOptions;
+}
 
-  let code = result.outputFiles[0].text;
+export const pagePlugins = [slickSharedAlias, haikuDictionary];
+
+export async function writePage(file: string, code: string, label: string, url: string) {
   // Otherwise DevTools shows an anonymous script attributed to app.slack.com.
-  code += `\n//# sourceURL=${SOURCE_ORIGIN}slick.js\n`;
+  code += `\n//# sourceURL=${SOURCE_ORIGIN}${url}\n`;
+  await mkdir(path.dirname(file), { recursive: true });
+  await writeFile(file, code);
+  console.log(`[build:${label}] ${path.basename(file)}  ${(Buffer.byteLength(code) / 1024).toFixed(1)} KB`);
+}
 
-  await mkdir(path.dirname(output), { recursive: true });
-  await writeFile(output, code);
-  console.log(`[build:app] ${path.basename(output)}  ${(Buffer.byteLength(code) / 1024).toFixed(1)} KB`);
-  return output;
+export async function buildApp({
+  debug = false,
+  hot = false,
+  extraPlugins = [],
+  entryPoint = `${APP}/main.ts`,
+  outFile = SLICK_JS,
+  targetLoader = 'electron',
+  pluginNames,
+}: BuildAppOptions = {}) {
+  const output = path.resolve(ROOT, outFile);
+  const { outputFiles, metafile } = await build({
+    ...(await pageBuildOptions({ debug, targetLoader })),
+    entryPoints: [entryPoint],
+    metafile: true,
+    plugins: [
+      rendererRegistryPlugin({ targetLoader, pluginNames }),
+      ...pagePlugins,
+      ...(hot ? [hostModules] : []),
+      ...extraPlugins,
+    ],
+  });
+  await writePage(output, outputFiles[0].text, 'app', 'slick.js');
+  return { output, metafile };
 }

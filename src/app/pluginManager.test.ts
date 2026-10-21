@@ -184,3 +184,34 @@ test('disabling during async start aborts immediately and cannot resurrect a plu
   assert.equal(f.manager.info()[0].running, false);
   assert.equal(f.stops.length, 1);
 });
+
+test('replace swaps a running plugin for the new class and keeps a disabled one stopped', async () => {
+  const f = await fixture();
+  await f.manager.reconcile();
+  const old = f.starts[0];
+  const { SlickPlugin } = f.context.Host;
+  const swapped: any[] = [];
+  class Next extends SlickPlugin {
+    static id = 'Probe';
+    static pluginName = 'Probe v2';
+    static requiredAPIs = [];
+    static defaultEnabled = true;
+    start() {
+      swapped.push(this);
+      this.api.patchComponent('Example', () => {});
+    }
+  }
+  await f.manager.replace(Next);
+  assert.equal(old.api.signal.aborted, true);
+  assert.equal(f.stops.length, 1);
+  assert.equal(swapped.length, 1);
+  assert.equal(f.context.registrations, 1);
+  assert.equal(f.manager.info()[0].name, 'Probe v2');
+  assert.equal(f.manager.info()[0].running, true);
+
+  await f.config.setPluginEnabled('Probe', false);
+  await f.manager.reconcile();
+  await f.manager.replace(Next);
+  assert.equal(swapped.length, 1);
+  assert.equal(f.context.registrations, 0);
+});

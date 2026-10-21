@@ -164,7 +164,7 @@ export async function packageDesktop({
       toolsets: platform === 'linux' ? { appimage: '1.0.3' } : undefined,
 
       directories: { app: DIST_DESKTOP, output: OUTPUT, buildResources: ASSETS },
-      files: ['**/*', '!slick.js', '!monaco{,/**}', '!node_modules{,/**}'],
+      files: ['**/*', '!slick.js', '!monaco{,/**}', '!hot{,/**}', '!node_modules{,/**}'],
       asar: true,
 
       extraResources: [
