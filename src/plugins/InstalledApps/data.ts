@@ -51,3 +51,47 @@ export async function listInstalledApps(
   }
   throw new Error('Installed apps pagination limit reached');
 }
+
+export type AppPageData = {
+  authorizations: { userId: string; name: string }[];
+  memberships: string[];
+  otherGroups: number;
+};
+
+type AppDirectoryAuthorizations = {
+  authorizations?: { userDisplayName: string; encodedUserLink: string }[]; // encodedUserLink is the user's ID
+};
+
+type AppDirectoryBotUser = { memberships?: string[]; otherGroups?: number };
+
+const ATTRS = `(?:[^>"']|"[^"]*"|'[^']*')*`;
+const ENTITIES: Record<string, string> = { amp: '&', quot: '"', apos: "'", lt: '<', gt: '>' };
+const decode = (text: string) =>
+  text.replace(/&(?:#(\d+)|#x([0-9a-f]+)|([a-z]+));/gi, (entity, dec, hex, name) =>
+    dec || hex ? String.fromCodePoint(parseInt(dec ?? hex, dec ? 10 : 16)) : (ENTITIES[name.toLowerCase()] ?? entity),
+  );
+
+/** Reads what the UI uses from slack.com/marketplace: no descriptions, app icons, or page metadata. */
+export function appPageData(html: string): AppPageData {
+  const read = <T>(name: string): T | undefined => {
+    const tag = new RegExp(`<[a-z]+\\s${ATTRS}data-automount-component="${name}"${ATTRS}>`, 'i').exec(html)?.[0];
+    const raw = tag && /\sdata-automount-props="([^"]*)"/.exec(tag)?.[1];
+    if (!raw) return undefined;
+    try {
+      return JSON.parse(decode(raw)) as T;
+    } catch {
+      return undefined;
+    }
+  };
+  const authorizations = read<AppDirectoryAuthorizations>('AppDirectoryAuthorizations');
+  const botUser = read<AppDirectoryBotUser>('AppDirectoryBotUser');
+  if (!authorizations && !botUser) throw new Error('App management requires sign-in');
+  return {
+    authorizations: (authorizations?.authorizations ?? []).map((auth) => ({
+      userId: auth.encodedUserLink,
+      name: auth.userDisplayName,
+    })),
+    memberships: botUser?.memberships ?? [],
+    otherGroups: botUser?.otherGroups ?? 0,
+  };
+}

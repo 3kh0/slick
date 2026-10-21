@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { listInstalledApps } from './data.ts';
+import { appPageData, listInstalledApps } from './data.ts';
 
 test('paginates a person’s authorizations and deduplicates apps', async () => {
   const calls: Record<string, string>[] = [];
@@ -48,4 +48,36 @@ test('projects only display fields and the one icon size the UI needs', async ()
   assert.equal(app?.icon, 'small');
   assert.equal('icons' in app!, false);
   assert.equal('unused_metadata' in app!, false);
+});
+
+test('reads only the user IDs, names and channels from a marketplace page', () => {
+  const props = (value: unknown) =>
+    JSON.stringify(value).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const auth = { encodedUserLink: 'U1', userDisplayName: 'Ana & <Bo> "Cy"', fullDescription: 'x', date: 1 };
+  const page = [
+    '<html><body><script>var s = "<div data-automount-component=\\"AppDirectoryBotUser\\">";</script>',
+    `<div class='a>b' data-automount-props="${props({ authorizations: [auth] })}" data-automount-component="AppDirectoryAuthorizations">`,
+    `<div data-automount-component="AppDirectoryBotUser" data-automount-props="${props({ memberships: ['C1', 'C2'], otherGroups: 3 })}">`,
+    '</div></div></body></html>',
+  ].join('');
+  assert.deepEqual(appPageData(page), {
+    authorizations: [{ userId: 'U1', name: 'Ana & <Bo> "Cy"' }],
+    memberships: ['C1', 'C2'],
+    otherGroups: 3,
+  });
+  assert.deepEqual(
+    appPageData(
+      '<div data-automount-component="AppDirectoryBotUser" data-automount-props="{&#34;memberships&#34;:[&#x22;C9&#x22;]}">',
+    ),
+    {
+      authorizations: [],
+      memberships: ['C9'],
+      otherGroups: 0,
+    },
+  );
+  assert.throws(() => appPageData('<html><body>Sign in to Slack</body></html>'), /requires sign-in/);
+  assert.throws(
+    () => appPageData('<div data-automount-component="AppDirectoryBotUser" data-automount-props="{">'),
+    /requires sign-in/,
+  );
 });

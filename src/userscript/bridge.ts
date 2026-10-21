@@ -98,7 +98,7 @@ export function createUserscriptBridge(gm: GMApi, plugins: BackgroundPlugin[] = 
       );
     },
     blobStore: (id) => createBlobStore(gm, id),
-    fetch: (url, init) => gmFetch(gm, url, init),
+    fetch: (url, init) => gmFetch(gm, url, { ...init, credentials: 'omit' }),
     plugin: (id) => ({
       call: async <T>(method: string, ...args: unknown[]) => {
         await hostReady;

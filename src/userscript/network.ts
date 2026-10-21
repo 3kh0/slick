@@ -10,7 +10,7 @@ export function gmFetch(gm: GMApi, url: string, init: RequestInit = {}): Promise
       method: init.method ?? 'GET',
       headers: Object.fromEntries(new Headers(init.headers).entries()),
       data: init.body as string | undefined,
-      anonymous: true,
+      anonymous: init.credentials !== 'include',
       timeout: 30000,
       onload: (response) => resolve({ status: response.status, body: response.responseText }),
       onerror: () => reject(new Error('Userscript request failed')),

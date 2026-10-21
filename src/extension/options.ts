@@ -1,5 +1,6 @@
 import { extensionBrowser, MAX_TEXT, RENDERERS, record, validMethodResponse, validRequest } from './rpc.ts';
 import type { ExtensionBrowser, Method } from './rpc.ts';
+import { SLACK_ACCESS, SLACK_ACCESS_PLUGINS } from './plugins.ts';
 import { CSS_KEY, SETTINGS_KEY } from './storage.ts';
 import { USER_PLUGINS_KEY, installedPlugins, parsePluginFile, userScripts } from './userPlugins.ts';
 import { importedThemes, isThemeJson, parseThemeJson, type ThemeJson } from '../shared/themes.ts';
@@ -536,7 +537,11 @@ export function mount(api: OptionsBrowser | undefined, data: OptionsData) {
   });
   for (const id of RENDERERS) {
     const input = element<HTMLInputElement>(id);
-    input.addEventListener('change', () => void change({ property: 'plugin', id, value: input.checked }));
+    input.addEventListener('change', () => {
+      if (input.checked && (SLACK_ACCESS_PLUGINS as readonly string[]).includes(id))
+        void api.permissions?.request(SLACK_ACCESS).catch(() => {});
+      void change({ property: 'plugin', id, value: input.checked });
+    });
   }
   for (const { id, key, setting, input } of fields)
     input.addEventListener('change', () => {
