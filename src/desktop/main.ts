@@ -18,6 +18,7 @@ import {
   interceptAccountSignIn,
   accountNavigation,
 } from './pluginHost.js';
+import { watchHotUpdates } from './hot.js';
 import { refreshInstalledIcons } from './iconRefresh.js';
 import { readStoredSettings, watchSettings } from './settingsFile.js';
 import { applyPatches, setMenuHandlers } from './patch.js';
@@ -264,6 +265,7 @@ function startSlack(asar: string) {
 
   app.whenReady().then(async () => {
     setupSession([slickResourcesPath, __dirname]);
+    if (process.env.SLICK_HOT) watchHotUpdates(path.join(__dirname, 'hot'));
     void refreshInstalledIcons(slickResourcesPath, app.isPackaged);
     await readyMainPlugins();
     watchSettings((text, settings) => {

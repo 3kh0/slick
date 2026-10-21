@@ -84,7 +84,7 @@ test('custom extension entry installs its bridge before main claims it', async (
       `import './bridge-setup'; import ${JSON.stringify(path.join(ROOT, 'src/app/main.ts'))};`,
     );
     const outFile = path.join(dir, 'nested/page.js');
-    assert.equal(await buildApp({ debug: true, targetLoader: 'extension', entryPoint, outFile }), outFile);
+    assert.equal((await buildApp({ debug: true, targetLoader: 'extension', entryPoint, outFile })).output, outFile);
     const code = await readFile(outFile, 'utf8');
     const setup = code.indexOf('globalThis.SlickBridge =');
     const claim = code.indexOf('globalThis.SlickBridge?.claim');

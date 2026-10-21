@@ -201,6 +201,12 @@ void (async () => {
       return () => ipcRenderer.removeListener('slick:update-status', handler);
     },
 
+    onHotUpdate(cb: (url: string) => void) {
+      const handler = (_: unknown, url: string) => cb(url);
+      ipcRenderer.on('slick:hot', handler);
+      return () => ipcRenderer.removeListener('slick:hot', handler);
+    },
+
     openFile: (title: string, accept?: string) => call('openFile', [title, accept]),
     openCssEditor: () => call('openCssEditor'),
 
