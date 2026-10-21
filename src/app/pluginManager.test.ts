@@ -16,6 +16,7 @@ const bundle = await build({
   platform: 'node',
   format: 'iife',
   globalName: 'Host',
+  define: { __SLICK_LOADER__: '"electron"' },
   plugins: [
     {
       name: 'slack-discovery',

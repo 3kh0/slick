@@ -385,7 +385,7 @@ export class PluginManager {
   }
 
   get supportsUserPlugins(): boolean {
-    return this.bridge.loader === 'electron';
+    return __SLICK_LOADER__ === 'electron' && this.bridge.loader === 'electron';
   }
 
   private get userPlugins() {

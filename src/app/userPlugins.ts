@@ -7,6 +7,8 @@ import type { SlickPluginConstructor } from '../shared/Plugin.ts';
 const host = { __esModule: true, ...slick };
 
 export function evaluatePlugin(code: string): SlickPluginConstructor {
+  // Compiled out of web builds, whose store reviews reject string evaluation.
+  if (__SLICK_LOADER__ !== 'electron') throw new Error('user plugins need the desktop app');
   const module = { exports: {} as { default?: SlickPluginConstructor } };
   new Function('module', 'exports', 'require', code)(module, module.exports, (name: string) => {
     if (name === '$slick') return host;
