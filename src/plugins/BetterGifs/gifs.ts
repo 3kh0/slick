@@ -209,6 +209,17 @@ export function gifKey(gif: Gif): string {
   return `${gif.provider}:${gif.id}`;
 }
 
+export function parseGifs(value: unknown): Gif[] {
+  if (!Array.isArray(value)) return [];
+  const gifs: Gif[] = [];
+  for (const item of value) {
+    const gif = validateGif(item);
+    if (gif) gifs.push(gif);
+    if (gifs.length === 50) break;
+  }
+  return gifs;
+}
+
 export function parseFavorites(value: unknown): Gif[] {
   const stored = record(value);
   if (stored?.version !== 1 || !Array.isArray(stored.gifs)) return [];

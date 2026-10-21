@@ -7,6 +7,7 @@ export const USERSCRIPT_EXCLUDED: readonly string[] = ['AccountSwitcher', 'Click
 export const USERSCRIPT_PLUGINS = EXTENSION_PLUGINS.filter((id) => !USERSCRIPT_EXCLUDED.includes(id));
 
 export const USERSCRIPT_MAIN_PLUGINS = [
+  'BetterGifs',
   'ClearURLs',
   'HcaStatus',
   'InstalledApps',
