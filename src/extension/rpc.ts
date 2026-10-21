@@ -163,6 +163,7 @@ export type ExtensionBrowser = {
   runtime: {
     id: string;
     getURL(path: string): string;
+    getManifest?(): { optional_permissions?: string[] };
     sendMessage(message: Request): Promise<unknown>;
     onMessage: { addListener(cb: (message: unknown, sender: Sender) => Promise<Response>): void };
   };
@@ -199,6 +200,7 @@ export function extensionBrowser(): ExtensionBrowser | undefined {
     runtime: {
       id: chrome.runtime.id,
       getURL: (path) => chrome.runtime.getURL(path),
+      getManifest: () => chrome.runtime.getManifest!(),
       sendMessage: (message) => chrome.runtime.sendMessage(message),
       onMessage: {
         addListener(listener) {

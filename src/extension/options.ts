@@ -632,6 +632,11 @@ export function mount(api: OptionsBrowser | undefined, data: OptionsData) {
         return row;
       }),
     );
+    if (!browser.runtime.getManifest?.().optional_permissions?.includes('userScripts')) {
+      installPlugin.hidden = true;
+      pluginStatus.textContent = 'User plugins aren’t available in the Firefox Add-ons version of Slick.';
+      return;
+    }
     allowed = (await browser.permissions?.contains(permission)) === true;
     installPlugin.textContent = allowed ? 'Install plugin file…' : 'Allow user plugins';
     if (allowed && !userScripts(browser))

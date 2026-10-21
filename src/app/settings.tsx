@@ -259,7 +259,7 @@ function SlickSettings({
           <div style={{ borderTop: '1px solid rgba(127,127,127,.2)', padding: '14px 0' }}>
             <Hint>
               {bridge.loader === 'extension'
-                ? 'Install plugin files from the Slick toolbar button.'
+                ? 'Install plugin files from the Slick toolbar button (not in the Firefox Add-ons version).'
                 : 'Install a plugin’s .user.js file in your userscript manager.'}
             </Hint>
           </div>

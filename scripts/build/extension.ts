@@ -92,6 +92,8 @@ export async function buildExtension({
   if (browser === 'firefox' && process.env.SLICK_FIREFOX_CHANNEL === 'listed') {
     manifest.version += '.1';
     delete manifest.browser_specific_settings.gecko.update_url;
+    // AMO only allows userScripts in user script managers.
+    manifest.optional_permissions = manifest.optional_permissions.filter((name: string) => name !== 'userScripts');
   }
   const entries: Record<string, Uint8Array> = {
     'manifest.json': Buffer.from(`${JSON.stringify(manifest, null, 2)}\n`),
