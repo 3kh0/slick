@@ -31,6 +31,7 @@ import { downloadLinuxArm64Slack } from './linuxArm64Slack.js';
 import { createCookieLogin } from './windows/cookieLogin.js';
 import { loginWithCookies } from './cookieLogin.js';
 import { openSettings } from './openSettings.js';
+import { configDir } from './paths.js';
 
 const cjsRequire = createRequire(import.meta.url);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -72,7 +73,10 @@ app.on = function (event, listener) {
 } as typeof app.on;
 app.on('second-instance', focusExistingWindow);
 app.on('open-url', focusExistingWindow);
+// The lock lives in userData, which defaults to the installed app's even for an override profile.
+if (process.env.SLICK_HANDOFF_PROFILE) app.setPath('userData', configDir());
 if (!app.requestSingleInstanceLock()) {
+  console.error(`[slick] another Slick is already running with ${app.getPath('userData')}; exiting`);
   app.quit();
   app.exit(0);
 }
