@@ -7,6 +7,7 @@ import {
   gifKey,
   normalizeTenorResponse,
   parseFavorites,
+  parseGifs,
   searchKlipy,
   searchTenor,
   topKlipy,
@@ -671,4 +672,13 @@ test('searchKlipy and topKlipy build keyed urls and surface errors without leaki
     searchKlipy(async () => ({ status: 500, body: '' }), 'secretkey123', 'x'),
     (error: Error) => /HTTP 500/.test(error.message) && !error.message.includes('secretkey123'),
   );
+});
+
+test('bridge results are validated, projected and limited to fifty GIFs', () => {
+  for (const value of [null, {}, '[]', { gifs: [tenor] }]) assert.deepEqual(parseGifs(value), []);
+  assert.deepEqual(
+    parseGifs([null, {}, { ...tenor, url: 'https://evil.test/a.gif' }, { ...tenor, secret: 'discard' }, giphy]),
+    [tenor, giphy],
+  );
+  assert.equal(parseGifs(Array.from({ length: 100 }, () => ({ ...tenor }))).length, 50);
 });

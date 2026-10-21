@@ -1,16 +1,5 @@
 import { SlickPlugin } from '$slick';
-import {
-  Favorites,
-  filterFavorites,
-  fromGiphyProps,
-  gifKey,
-  searchKlipy,
-  searchTenor,
-  topKlipy,
-  topTenor,
-  toSlackPayload,
-  type Gif,
-} from './gifs.ts';
+import { Favorites, filterFavorites, fromGiphyProps, gifKey, parseGifs, toSlackPayload, type Gif } from './gifs.ts';
 import * as meta from './meta.ts';
 
 export type PickerProps = {
@@ -54,27 +43,19 @@ export default class BetterGifs extends SlickPlugin<typeof meta.settings> {
 
   private search(query: string): Promise<Gif[]> {
     const klipy = this.config.provider === 'klipy';
-    const apiKey = String(this.config.klipyApiKey ?? '');
     const text = query.trim().replace(/\s+/g, ' ');
     const key = (klipy ? 'klipy:' : '') + text;
     const cached = this.searches.get(key);
     if (cached && cached.expires > Date.now()) return Promise.resolve(cached.results);
     const pending = this.inflight.get(key);
     if (pending) return pending;
-    // Bridge fetches cannot carry AbortSignals. Bound UI waiting and ignore results
-    // after unmount/teardown; the underlying request may still finish in the host.
     let timer: ReturnType<typeof setTimeout>;
     const timeout = new Promise<never>((_, reject) => {
       timer = setTimeout(() => reject(new Error('GIF search timed out. Try again.')), 12_000);
     });
-    const lookup = klipy
-      ? text
-        ? searchKlipy(this.api.fetch, apiKey, query)
-        : topKlipy(this.api.fetch, apiKey)
-      : text
-        ? searchTenor(this.api.fetch, query)
-        : topTenor(this.api.fetch);
+    const lookup = this.api.main.call('search', klipy ? 'klipy' : 'tenor', text ? query : '');
     const request = Promise.race([lookup, timeout])
+      .then(parseGifs)
       .then((results) => {
         if (!this.api.signal.aborted) {
           this.searches.delete(key);

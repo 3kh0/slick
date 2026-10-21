@@ -4,7 +4,6 @@ import { PLUGINS } from '../plugins/names.generated.ts';
 // halves need no api.fetch and fit their blob quota (see LARGE_STORAGE_PLUGINS);
 // privileged halves run in the background (see BACKGROUND_PLUGINS).
 export const WEB_EXCLUDED = [
-  'BetterGifs', // renderer searches GIF providers through api.fetch, which bridge-setup.ts denies
   'QuietSpotify', // main.ts injects into cross-origin Spotify frames through Electron
 ] as const;
 
@@ -17,6 +16,7 @@ export const EXTENSION_PLUGINS = PLUGINS.filter(
 // Plugins whose privileged half runs in the extension background: browser.ts
 // when present, else main.ts, through extension/mainHost.ts.
 export const BACKGROUND_PLUGINS = [
+  'BetterGifs',
   'ClearURLs',
   'Click2Load',
   'HcaStatus',
