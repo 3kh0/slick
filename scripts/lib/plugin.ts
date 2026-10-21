@@ -5,7 +5,7 @@
 import fs from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
-import type { Plugin } from 'esbuild';
+import type { OnResolveResult, Plugin, PluginBuild } from 'esbuild';
 import { USERSCRIPT_PLUGINS } from '../../src/userscript/plugins.ts';
 import { EXTENSION_PLUGINS } from '../../src/extension/plugins.ts';
 import { PLUGINS, ROOT, SHARED, SRC } from './paths.ts';
@@ -131,5 +131,19 @@ import * as __slickHostModule from ${JSON.stringify(`./${path.basename(file)}`)}
     });
   },
 };
+
+const RESOLVING = Symbol('resolving');
+
+/** Hands imports that leave a plugin's directory for the rest of src/ to `outside`. */
+export function onImportOutside(builder: PluginBuild, dir: string, outside: (file: string) => OnResolveResult) {
+  builder.onResolve({ filter: /.*/ }, async ({ path: p, kind, importer, resolveDir, pluginData }) => {
+    if (pluginData === RESOLVING) return;
+    const r = await builder.resolve(p, { kind, importer, resolveDir, pluginData: RESOLVING });
+    if (r.errors.length) return { errors: r.errors };
+    return r.namespace === 'file' && r.path.startsWith(SRC + path.sep) && !r.path.startsWith(dir + path.sep)
+      ? outside(r.path)
+      : { path: r.path, namespace: r.namespace, external: r.external, sideEffects: r.sideEffects };
+  });
+}
 
 export { slickSharedAlias };

@@ -28,20 +28,19 @@ export async function bootstrap(bridge: SlickBridge): Promise<void> {
     return;
   }
 
-  const registered: string[] = [];
   for (const [name, PluginClass] of Object.entries(plugins)) {
-    const id = manager.register(PluginClass);
-    if (id) registered.push(id);
-    else console.error(`[slick] could not register plugin: ${name}`);
+    if (!manager.register(PluginClass)) console.error(`[slick] could not register plugin: ${name}`);
   }
 
+  await manager.loadUserPlugins();
   installHot(bridge, manager);
   await manager.reconcile();
   await addSettingsTab(manager, config, bridge);
 
-  const running = manager.info().filter((plugin) => plugin.running);
+  const all = manager.info();
+  const running = all.filter((plugin) => plugin.running);
   console.log(
-    `[slick] ${running.length}/${registered.length} plugins running${
+    `[slick] ${running.length}/${all.length} plugins running${
       running.length ? `: ${running.map((plugin) => plugin.id).join(', ')}` : ''
     }`,
   );

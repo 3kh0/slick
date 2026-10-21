@@ -2,7 +2,7 @@
 
 The long awaited plugins docs are here! A plugin is a TypeScript class bundled into Slick. It gets helpers for patching Slack's React components, reading and transforming Redux state, handling messages, saving data, and cleaning up after itself. Desktop plugins can also have a privileged `main.ts` half.
 
-Plugins live in `src/plugins/<PluginId>/`. They're compiled into the app, dropping a loose script into an installed Slick directory won't load it. For building and running your checkout, see [DEVELOPMENT.md](../../DEVELOPMENT.md).
+Plugins live in `src/plugins/<PluginId>/` and are compiled into the app. If you want to share your creation without PRing it in yet, see [Share it as a file](#share-it-as-a-file)! For building and running your checkout, see [DEVELOPMENT.md](../../DEVELOPMENT.md).
 
 ## Your first plugin
 
@@ -291,6 +291,20 @@ Browser support requires actual work because they want to be special little snow
 - [`USERSCRIPT_PLUGINS` / `USERSCRIPT_MAIN_PLUGINS`](../userscript/plugins.ts) select the userscript halves. Userscript privileges come from its GM adapter, not Electron.
 - `main.on` is currently a no-op in both web loaders. The desktop event example above doesn't provide browser event delivery.
 - `this.api.loader` is `'electron'`, `'extension'`, or `'userscript'`. Use it when a feature needs a platform-specific path, and test each target you enable.
+
+## Share it as a file
+
+Testing plugins are quite important and this is the easiest way to share them without a full blown PR. You can build your plugin using the following:
+
+```bash
+bun run build:plugin src/plugins/YourPlugin # or any folder with an index.ts(x)
+```
+
+This will pop out `dist/plugins/YourPlugin.js`, which anyone can install from **Slick Settings > Plugins > Install plugin...** on desktop. If you try to install a newer file with the same `id`, it will just update it in place! **Remove plugin** under its cog uninstalls it and kerblams its data. The folder doesn't have to be in this repo since `$slick` resolves from anywhere.
+
+For the sake of security, user plugins are renderer-only and may only import `$slick` and their own files (plus packages, which get bundled!) Trying to access Slick's internals or shipping a `main.ts` will throw an error.
+
+Web builds can't install install custom plugins yet since Slack's CSP blocks this type of stuff...
 
 ## Debug it before declaring victory
 

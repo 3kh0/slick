@@ -78,6 +78,16 @@ async function fixture() {
   });
   runInContext(bundle.outputFiles[0]!.text, context);
   let saved = '{}';
+  const blobs = new Map<string, Map<string, string>>();
+  const blobStore = (namespace: string) => {
+    const blob = blobs.get(namespace) ?? blobs.set(namespace, new Map()).get(namespace)!;
+    return {
+      readAll: async () => Object.fromEntries(blob),
+      write: async (key: string, value: string) => !!blob.set(key, value),
+      delete: async (key: string) => blob.delete(key),
+      clear: async () => (blob.clear(), true),
+    };
+  };
   const bridge = {
     loader: 'electron',
     fetch: async () => {},
@@ -89,7 +99,7 @@ async function fixture() {
     },
     onSettingsChange: () => () => {},
     onUserCssChange: () => () => {},
-    blobStore: () => ({}),
+    blobStore,
     plugin: () => ({ call: async () => {}, on: () => () => {} }),
   };
   const { ConfigStore, PluginManager, SlickPlugin } = context.Host;
@@ -116,6 +126,8 @@ async function fixture() {
   manager.register(Probe);
   return {
     context,
+    bridge,
+    blobs,
     config,
     manager,
     starts,
@@ -214,4 +226,40 @@ test('replace swaps a running plugin for the new class and keeps a disabled one 
   await f.manager.replace(Next);
   assert.equal(swapped.length, 1);
   assert.equal(f.context.registrations, 0);
+});
+
+const userPlugin = (id: string, version: number) => `
+const { SlickPlugin } = require('$slick');
+module.exports = { default: class extends SlickPlugin {
+  static id = '${id}';
+  static pluginName = '${id} v${version}';
+  static requiredAPIs = [];
+  static defaultEnabled = true;
+  start() { globalThis.userVersion = ${version}; this.api.patchComponent('Example', () => {}); }
+} };`;
+
+test('user plugins install, update in place, reload from storage and remove cleanly', async () => {
+  const f = await fixture();
+  await f.manager.reconcile();
+  assert.equal(await f.manager.installUserPlugin(userPlugin('Mine', 1)), 'Mine v1');
+  assert.equal(f.context.userVersion, 1);
+  assert.equal(await f.manager.installUserPlugin(userPlugin('Mine', 2)), 'Mine v2');
+  assert.equal(f.context.userVersion, 2);
+  assert.equal(f.context.registrations, 2);
+  await assert.rejects(f.manager.installUserPlugin(userPlugin('Probe', 1)), /built into Slick/);
+
+  const reloaded = new f.context.Host.PluginManager(f.bridge, f.config);
+  await reloaded.loadUserPlugins();
+  assert.deepEqual(
+    Array.from(reloaded.info(), (info: any) => [info.id, info.name, info.user]),
+    [['Mine', 'Mine v2', true]],
+  );
+
+  await f.manager.removeUserPlugin('Mine');
+  assert.equal(f.context.registrations, 1);
+  assert.deepEqual(
+    Array.from(f.manager.info(), (info: any) => info.id),
+    ['Probe'],
+  );
+  assert.equal(f.blobs.get('user-plugins')?.size, 0);
 });
