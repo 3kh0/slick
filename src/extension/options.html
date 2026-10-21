@@ -83,6 +83,18 @@
               <div id="plugins"></div>
               <p id="no-results" class="row hint" hidden></p>
             </fieldset>
+            <div id="user-plugins"></div>
+            <div class="actions">
+              <span id="plugin-status" class="hint" role="status"></span>
+              <button id="install-plugin" class="button" type="button">Install plugin file…</button>
+              <input
+                id="plugin-file"
+                type="file"
+                accept=".js,text/javascript"
+                aria-label="Install plugin file"
+                hidden
+              />
+            </div>
             <p class="hint">
               Due to some limitations with the extension APIs, some plugins aren't available in the browser extension.
             </p>
@@ -178,7 +190,8 @@
             </p>
             <p class="hint">
               Permissions: storage saves your preferences; scripting runs Slack recovery controls; request rules block
-              Slack telemetry and gated embeds. Page access is limited to app.slack.com.
+              Slack telemetry and gated embeds; optional user scripts run plugin files you install yourself. Page access
+              is limited to app.slack.com.
             </p>
             <p class="hint">
               <a href="https://github.com/3kh0/slick" target="_blank" rel="noopener">Open source on GitHub</a> (drop a

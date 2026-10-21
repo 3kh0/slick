@@ -1,5 +1,6 @@
 import { createBlobs, type BlobBackend } from './blobs.ts';
-import { RENDERERS, record, validRequest, validResponse } from './rpc.ts';
+import { RENDERERS, bundled, record, validRequest, validResponse } from './rpc.ts';
+import { USER_PLUGINS_KEY, installedPlugins } from './userPlugins.ts';
 import type { Request, Response, StorageArea } from './rpc.ts';
 
 export const SETTINGS_KEY = 'slick:firefox:settings';
@@ -37,6 +38,8 @@ export function createStorage(area: StorageArea, backend: BlobBackend) {
       await area.set({ [SETTINGS_KEY]: next });
       return true;
     }
+    if (!bundled(a[0]) && !Object.hasOwn(installedPlugins(await read(USER_PLUGINS_KEY, {})), a[0].slice(7)))
+      throw new Error('Unknown plugin');
     return blobs({ method, args: a });
   }
   return {

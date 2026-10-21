@@ -31,6 +31,7 @@ import { addSettingsTab, type SettingsTab } from './api/settingsTabs.ts';
 
 import { createAPILoader } from './apiLoader.ts';
 import { createScope, type PluginScope } from './pluginScope.ts';
+import { adoptPlugins, evaluatePlugin } from './userPlugins.ts';
 import { appWideReason } from '../shared/pluginWorkspaces.ts';
 import { currentWorkspaceId, watchWorkspace } from './workspaces.ts';
 
@@ -299,6 +300,7 @@ type Entry = {
   running: boolean;
   startError: string | null;
   workspaceId: string | null;
+  user: boolean;
 };
 
 export class PluginManager {
@@ -345,7 +347,7 @@ export class PluginManager {
     return id;
   }
 
-  register(PluginClass: SlickPluginConstructor): string | null {
+  register(PluginClass: SlickPluginConstructor, user = false): string | null {
     const id = this.validId(PluginClass);
     if (!id) return null;
     if (this.plugins.has(id)) {
@@ -362,6 +364,7 @@ export class PluginManager {
       running: false,
       startError: null,
       workspaceId: null,
+      user,
     });
     return id;
   }
@@ -378,7 +381,62 @@ export class PluginManager {
       if (this.config.isActive(id)) await this.start(id, entry);
       else this.notifyStatus();
     });
-    console.log(`[slick] hot-reloaded ${id}`);
+    console.log(`[slick] reloaded ${id}`);
+  }
+
+  get supportsUserPlugins(): boolean {
+    return __SLICK_LOADER__ === 'electron' && this.bridge.loader === 'electron';
+  }
+
+  private get userPlugins() {
+    return this.bridge.blobStore('user-plugins');
+  }
+
+  async loadUserPlugins(): Promise<void> {
+    if (!this.supportsUserPlugins) return;
+    for (const [key, code] of Object.entries(await this.userPlugins.readAll())) {
+      try {
+        const PluginClass = evaluatePlugin(code);
+        if (PluginClass.id !== key) throw new Error(`stored as ${key} but declares ${String(PluginClass.id)}`);
+        this.register(PluginClass, true);
+      } catch (error) {
+        console.error(`[slick] could not load user plugin ${key}:`, error);
+      }
+    }
+  }
+
+  /** Registers plugins that web user scripts hand to the page. */
+  adoptUserPlugins(): void {
+    let booted = false;
+    adoptPlugins((PluginClass) => {
+      if (this.register(PluginClass, true) && booted) void this.reconcile();
+    });
+    booted = true;
+  }
+
+  /** Installs or updates a user plugin and returns its name. */
+  async installUserPlugin(code: string): Promise<string> {
+    const PluginClass = evaluatePlugin(code);
+    const id = this.validId(PluginClass);
+    if (!id) throw new Error('That file is not a Slick plugin.');
+    const existing = this.plugins.get(id);
+    if (existing && !existing.user) throw new Error(`${id} is built into Slick.`);
+    if (!(await this.userPlugins.write(id, code))) throw new Error('Could not save the plugin.');
+    if (existing) await this.replace(PluginClass);
+    else if (this.register(PluginClass, true)) await this.reconcile();
+    this.notifyStatus();
+    return PluginClass.pluginName || id;
+  }
+
+  async removeUserPlugin(id: string): Promise<void> {
+    const entry = this.plugins.get(id);
+    if (!entry?.user) return;
+    await this.exclusive(id, async () => {
+      if (entry.instance) await this.stop(id, entry);
+      this.plugins.delete(id);
+    });
+    await Promise.all([this.userPlugins.delete(id), this.bridge.blobStore(`plugin:${id}`).clear()]);
+    this.notifyStatus();
   }
 
   onStatusChange(cb: () => void): () => void {
@@ -553,6 +611,7 @@ export class PluginManager {
       workspaceAllowed: this.config.isAllowedInWorkspace(id),
       appWideReason: appWideReason(id),
       startError: entry.startError,
+      user: entry.user,
     }));
   }
 }

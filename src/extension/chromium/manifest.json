@@ -6,7 +6,7 @@
   "homepage_url": "https://github.com/3kh0/slick",
   "permissions": ["storage", "scripting", "declarativeNetRequest"],
   "host_permissions": ["https://app.slack.com/*"],
-  "optional_permissions": ["cookies", "browsingData"],
+  "optional_permissions": ["cookies", "browsingData", "userScripts"],
   "optional_host_permissions": ["https://*.slack.com/*"],
   "background": {
     "service_worker": "background.js"

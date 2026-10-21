@@ -61,6 +61,7 @@ export async function pageBuildOptions({
       __SLICK_VERSION__: JSON.stringify(versions.version),
       __SLICK_BUILD__: JSON.stringify(versions.build),
       __SLICK_THEMES__: JSON.stringify(themes),
+      __SLICK_LOADER__: JSON.stringify(targetLoader),
       // Page bundle: reaching for Node globals is a bug, so fail loudly.
       process: 'undefined',
       ...(targetLoader === 'userscript' ? { globalThis: 'unsafeWindow', window: 'unsafeWindow' } : {}),

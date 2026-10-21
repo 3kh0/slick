@@ -246,11 +246,22 @@ function SlickSettings({
         }
       >
         {plugins.map((info) => (
-          <PluginRow key={info.id} info={info} config={config} bridge={bridge} />
+          <PluginRow key={info.id} info={info} config={config} bridge={bridge} manager={manager} />
         ))}
         {!plugins.length && (
           <div style={{ borderTop: '1px solid rgba(127,127,127,.2)', padding: '14px 0' }}>
             <Hint>No plugins match “{query.trim()}”.</Hint>
+          </div>
+        )}
+        {manager.supportsUserPlugins ? (
+          <InstallPlugin manager={manager} />
+        ) : (
+          <div style={{ borderTop: '1px solid rgba(127,127,127,.2)', padding: '14px 0' }}>
+            <Hint>
+              {bridge.loader === 'extension'
+                ? 'Install plugin files from the Slick toolbar button (not in the Firefox Add-ons version).'
+                : 'Install a plugin’s .user.js file in your userscript manager.'}
+            </Hint>
           </div>
         )}
       </Section>
@@ -279,7 +290,52 @@ function CogIcon() {
   );
 }
 
-function PluginRow({ info, config, bridge }: { info: PluginInfo; config: ConfigStore; bridge: SlickBridge }) {
+function InstallPlugin({ manager }: { manager: PluginManager }) {
+  const picker = React.useRef<HTMLInputElement>(null);
+  const [status, setStatus] = React.useState('');
+  const [installing, setInstalling] = React.useState(false);
+  return (
+    <div style={{ borderTop: '1px solid rgba(127,127,127,.2)', padding: '14px 0' }}>
+      <input
+        ref={picker}
+        type="file"
+        accept=".js,text/javascript"
+        aria-label="Install plugin file"
+        hidden
+        onChange={async (event) => {
+          const file = event.currentTarget.files?.[0];
+          event.currentTarget.value = '';
+          if (!file) return;
+          setInstalling(true);
+          try {
+            setStatus(`Installed ${await manager.installUserPlugin(await file.text())}.`);
+          } catch (error) {
+            setStatus(error instanceof Error ? error.message : 'Could not install the plugin.');
+          } finally {
+            setInstalling(false);
+          }
+        }}
+      />
+      <elements.Button disabled={installing} onClick={() => picker.current?.click()}>
+        Install plugin…
+      </elements.Button>
+      <Hint>A .js file built with bun run build:plugin. It runs with the same access as Slick’s own plugins.</Hint>
+      <div role="status">{status}</div>
+    </div>
+  );
+}
+
+function PluginRow({
+  info,
+  config,
+  bridge,
+  manager,
+}: {
+  info: PluginInfo;
+  config: ConfigStore;
+  bridge: SlickBridge;
+  manager: PluginManager;
+}) {
   const [expanded, setExpanded] = React.useState(false);
   const values = config.settingsFor(info.id);
   const entries = Object.entries(info.settings);
@@ -304,6 +360,7 @@ function PluginRow({ info, config, bridge }: { info: PluginInfo; config: ConfigS
         />
         <label htmlFor={inputId} style={{ flex: '1 1 auto', cursor: 'pointer', margin: 0 }}>
           <span style={{ fontWeight: 700 }}>{info.name}</span>
+          {info.user && <span style={{ fontSize: '12px', opacity: 0.6 }}> · User plugin</span>}
           {info.description && (
             <span style={{ display: 'block', fontWeight: 400, opacity: 0.85 }}>{info.description}</span>
           )}
@@ -350,6 +407,11 @@ function PluginRow({ info, config, bridge }: { info: PluginInfo; config: ConfigS
       {expanded && (
         <div style={{ margin: '14px 0 0 30px' }}>
           <WorkspaceSettings info={info} config={config} />
+          {info.user && manager.supportsUserPlugins && (
+            <elements.Button type="ghost" size="small" onClick={() => void manager.removeUserPlugin(info.id)}>
+              Remove plugin
+            </elements.Button>
+          )}
           {entries.map(([key, setting]) => (
             <SettingRow
               key={key}

@@ -87,7 +87,8 @@ test('one-shot claim, bypass and safe mode without runtime bridge import', async
   await assert.rejects(bridge.openCssEditor(), /toolbar/);
   await assert.rejects(bridge.fetch('https://example.com'));
   await assert.rejects(bridge.plugin('Censorship').call('anything'));
-  assert.throws(() => bridge.blobStore('plugin:Other'));
+  assert.throws(() => bridge.blobStore('plugin:../Other'));
+  assert.throws(() => bridge.blobStore('user-plugins'));
   assert.doesNotThrow(() => bridge.blobStore('plugin:HumanCount'));
 });
 
