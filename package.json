@@ -8,6 +8,7 @@
     "lint": "oxlint",
     "lint:sh": "git ls-files '*.sh' | xargs shellcheck -S warning",
     "render": "scripts/icon/render-icon.sh",
+    "readme": "node scripts/readme.ts",
     "test:app": "node --experimental-strip-types --test \"src/{app,desktop,plugins,shared}/**/*.test.ts\"",
     "test:accounts:electron": "node scripts/test-account-navigation.ts",
     "check:electron": "node scripts/ci/electron-watch.cjs",

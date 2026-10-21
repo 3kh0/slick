@@ -62,7 +62,7 @@ bun run desktop:dev
 
 Sign in, open **Slick → Slick Settings…**, find **Plugins**, enable **Hello Slick**, and select some text. Change the color, then disable the plugin and check that the style disappears. No `stop()` needed here: Slick owns the stylesheet and removes it for you.
 
-Desktop discovery happens automatically. For web platforms, also add `'HelloSlick'` to `EXTENSION_PLUGINS` in [`src/extension/plugins.ts`](../extension/plugins.ts). The userscript list derives from that list, so a renderer-only plugin like this gets included there too. Rebuild and reload your chosen target using the [browser instructions](../../DEVELOPMENT.md).
+Discovery happens automatically, and new plugins ship to the browser extensions and the userscript by default. Run `bun run readme` once to register the new folder in `src/plugins/names.generated.ts` and add its row to the README plugin table; `bun run check` and web builds fail until you do. Rebuild and reload your chosen target using the [browser instructions](../../DEVELOPMENT.md).
 
 ## The files and the junk
 
@@ -286,9 +286,9 @@ Declare capabilities you use: `protocol`, `requests`, `frames`, `notifications`,
 
 Browser support requires actual work because they want to be special little snowflakes.
 
-- [`EXTENSION_PLUGINS`](../extension/plugins.ts) selects renderer plugins. `BACKGROUND_PLUGINS` separately selects privileged halves.
-- Web builds use `browser.ts` when present, otherwise `main.ts`. The [extension host](../extension/mainHost.ts) supports only part of `MainCtx`; Electron APIs don't magically exist in Firefox.
-- [`USERSCRIPT_PLUGINS` / `USERSCRIPT_MAIN_PLUGINS`](../userscript/plugins.ts) select the userscript halves. Userscript privileges come from its GM adapter, not Electron.
+- Every renderer ships to web builds unless it opts out in [`WEB_EXCLUDED`](../extension/plugins.ts) (with a one-line reason) or [`USERSCRIPT_EXCLUDED`](../userscript/plugins.ts). Opt out when the renderer needs `api.fetch` or a privileged half that can't run in a browser.
+- Privileged halves are opt-in: `BACKGROUND_PLUGINS` runs them in the extension background, `USERSCRIPT_MAIN_PLUGINS` in the userscript. A plugin with a `main.ts` that neither runs must be in `RENDERER_ONLY_ON_WEB` (its renderer copes without it) or opt out. [`plugins.test.ts`](../extension/plugins.test.ts) fails when a web plugin uses `api.fetch` or leaves a privileged half unaccounted for.
+- Web builds use `browser.ts` when present, otherwise `main.ts`. The [extension host](../extension/mainHost.ts) supports only part of `MainCtx`; Electron APIs don't magically exist in Firefox. Userscript privileges come from its GM adapter, not Electron.
 - `main.on` is currently a no-op in both web loaders. The desktop event example above doesn't provide browser event delivery.
 - `this.api.loader` is `'electron'`, `'extension'`, or `'userscript'`. Use it when a feature needs a platform-specific path, and test each target you enable.
 
@@ -317,6 +317,7 @@ Before sending a patch:
 1. Run the [local checks](../../DEVELOPMENT.md) and any focused tests for your plugin.
 2. Enable it, exercise the feature, change settings, disable it, and enable it again.
 3. Check channels, threads, workspace changes, and pop-outs if your plugin touches them.
-4. Test the browser/userscript version if you added it to those lists. A desktop build doesn't prove that it works on Firefox.
+4. Test the browser/userscript version unless you opted out. A desktop build doesn't prove that it works on Firefox.
+5. Run `bun run readme` if you added a plugin, renamed it, changed its description, or changed where it ships.
 
 Keep pure transforms in helper files with `node:test` tests; [ClearURLs](ClearURLs/clean.test.ts), [HumanCount](HumanCount/count.test.ts), and [NotShitMarkdown](NotShitMarkdown/markdown.test.ts) are good starting points. For renderer mocks, copy the approach in a nearby `index.test.ts`. Then actually use the thing for a bit. All green tests don't click buttons for you.

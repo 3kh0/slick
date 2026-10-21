@@ -55,7 +55,7 @@ test('desktop statically bundles every renderer with shared class identity and n
   );
 });
 
-test('extension defaults to the explicit small renderer allowlist', async () => {
+test('extension defaults to every renderer that has not opted out', async () => {
   const { names, inputs } = await registry({ targetLoader: 'extension' });
   assert.deepEqual(names, [...EXTENSION_PLUGIN_NAMES].toSorted());
   const pluginInputs = inputs.filter((input) => input.startsWith('src/plugins/'));

@@ -169,6 +169,8 @@ bun run fmt:check
 
 `typecheck` regenerates `src/desktop/mainPlugins.generated.ts`. It's ignored build output; don't edit it by hand.
 
+`bun run readme` regenerates the plugin table in `README.md` and the committed plugin list in `src/plugins/names.generated.ts`, which fixes which plugins the web builds include. Run it after adding, renaming or opting a plugin out of a target; `bun run check` fails while either is stale.
+
 Before submitting changes, also build the affected targets. For changes shared by desktop, extensions and userscripts:
 
 ```sh
@@ -207,7 +209,7 @@ The repo installers (`./install.sh`, `./install-linux.sh`, or `powershell -Execu
 | Node chokes on `.ts` files                            | Check `node --version`; use Node 24 like CI. Installing Bun alone isn't enough.                                                                                                                                                    |
 | Missing Electron binary                               | Check that `ELECTRON_SKIP_BINARY_DOWNLOAD` isn't set. Run `node node_modules/electron/install.js` after dependency installation to download the pinned binary. CI skips that download for non-launch checks; desktop dev needs it. |
 | Build passes, app still shows old code                | Rebuild the right target, then reload/restart it. An installed Slick app doesn't read `dist/desktop` from your checkout.                                                                                                           |
-| Plugin isn't in the browser build                     | Check the allowlists in `src/extension/plugins.ts` and `src/userscript/plugins.ts`, and browser support in the [plugin guide](src/plugins/README.md). Desktop-only APIs don't become browser APIs by wishing harder.               |
+| Plugin isn't in the browser build                     | Plugins ship by default: run `bun run readme` after adding one, then check the opt-outs in `src/extension/plugins.ts` and `src/userscript/plugins.ts`. Desktop-only APIs don't become browser APIs by wishing harder.              |
 | Slack/Electron version mismatch dialog                | Slick's pinned Electron and the installed Slack need compatible majors. Read the dialog and update the out-of-date side; see `package.json` and `src/desktop/slackFinder.ts`.                                                      |
 | Full check fails with `shellcheck: command not found` | Install ShellCheck. `bun install` only installs JavaScript dependencies.                                                                                                                                                           |
 

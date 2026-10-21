@@ -8,6 +8,7 @@ import path from 'node:path';
 import type { OnResolveResult, Plugin, PluginBuild } from 'esbuild';
 import { USERSCRIPT_PLUGINS } from '../../src/userscript/plugins.ts';
 import { EXTENSION_PLUGINS } from '../../src/extension/plugins.ts';
+import { PLUGINS as PLUGIN_NAMES } from '../../src/plugins/names.generated.ts';
 import { PLUGINS, ROOT, SHARED, SRC } from './paths.ts';
 
 export type PluginEntry = { name: string; dir: string; renderer: string; main: string | null };
@@ -54,6 +55,9 @@ export function rendererRegistryModule({
   pluginNames,
 }: RendererRegistryOptions = {}): string {
   const all = discoverPlugins();
+  if (targetLoader !== 'electron' && all.map((entry) => entry.name).join() !== PLUGIN_NAMES.join()) {
+    throw new Error('[build:plugins] src/plugins/names.generated.ts is stale; run `bun run readme`');
+  }
   const names =
     pluginNames ??
     (targetLoader === 'extension' ? EXTENSION_PLUGINS : targetLoader === 'userscript' ? USERSCRIPT_PLUGINS : undefined);
