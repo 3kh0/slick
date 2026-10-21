@@ -12,6 +12,7 @@
 
 import { applyPendingAccountSwitch, PENDING_ACCOUNT_SWITCH_KEY } from '../app/api/accounts.ts';
 import { installCookieSignInButton } from './signInButton.ts';
+import { LITE_ARG } from './liteMode.ts';
 
 const { contextBridge, ipcRenderer } = require('electron');
 const accountDiagnostic = (event: string) => {
@@ -23,7 +24,10 @@ accountDiagnostic('preload.start');
 
 // Started in parallel: all of it blocks the rebuild and Slack's first paint.
 const preloadKey = process.argv.find((arg: string) => arg.startsWith('--slick-preload-key='))?.slice(20) ?? '';
-const originalPreloadPromise = ipcRenderer.invoke('slick:get-original-preload', preloadKey) as Promise<string | null>;
+const lite = process.argv.includes(LITE_ARG);
+const originalPreloadPromise = lite
+  ? Promise.resolve(null)
+  : (ipcRenderer.invoke('slick:get-original-preload', preloadKey) as Promise<string | null>);
 if (location.hostname === 'app.slack.com' && /^\/client(\/|$)/.test(location.pathname)) {
   const pending = ipcRenderer.sendSync('slick:account-handoff');
   if (pending) {
@@ -111,9 +115,12 @@ const evaluateOriginalPreload = (source: string): void => {
 
 void (async () => {
   try {
-    const originalPreload = await originalPreloadPromise;
-    if (!originalPreload) throw new Error('Slack preload source is unavailable');
-    evaluateOriginalPreload(originalPreload);
+    // Lite mode has no Slack preload: the web client runs its browser path.
+    if (!lite) {
+      const originalPreload = await originalPreloadPromise;
+      if (!originalPreload) throw new Error('Slack preload source is unavailable');
+      evaluateOriginalPreload(originalPreload);
+    }
     accountDiagnostic('preload.original-ready');
     if (!isClientPage && (location.hostname === 'slack.com' || location.hostname.endsWith('.slack.com'))) {
       installCookieSignInButton(document, () => ipcRenderer.send('slick:open-cookie-login'));

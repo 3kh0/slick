@@ -31,6 +31,7 @@ import { downloadLinuxArm64Slack } from './linuxArm64Slack.js';
 import { createCookieLogin } from './windows/cookieLogin.js';
 import { loginWithCookies } from './cookieLogin.js';
 import { openSettings } from './openSettings.js';
+import { liteRequested, prepareLite, startLite } from './lite.js';
 
 const cjsRequire = createRequire(import.meta.url);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -87,12 +88,20 @@ const build = typeof __SLICK_BUILD__ === 'number' ? __SLICK_BUILD__ : 0;
 
 // Before findSlackAsar: this can replace the bundle it resolves. Uses the pinned
 // Slack, not always /Applications.
+const lite = liteRequested();
 const slackUpdater = createSlackUpdater({ version, slackApp: macSlackApp() });
-slackUpdater.applyStagedIfAny();
+if (!lite) slackUpdater.applyStagedIfAny();
 
-const slackAsar = findSlackAsar();
+const slackAsar = lite ? null : findSlackAsar();
 
-if (!slackAsar && process.platform === 'linux' && process.arch === 'arm64' && !process.env.SLICK_SLACK_RESOURCES) {
+if (lite) {
+  startLiteMode();
+} else if (
+  !slackAsar &&
+  process.platform === 'linux' &&
+  process.arch === 'arm64' &&
+  !process.env.SLICK_SLACK_RESOURCES
+) {
   app.whenReady().then(async () => {
     try {
       await downloadLinuxArm64Slack();
@@ -210,26 +219,8 @@ function askLaunchAnyway(asar: string, slackElectron: string, mismatch: { ours: 
   });
 }
 
-function startSlack(asar: string) {
-  const slackElectron = slackElectronVersion(asar);
-  const mismatch = electronMajorMismatch(slackElectron);
-  if (mismatch) {
-    askLaunchAnyway(asar, slackElectron, mismatch);
-    return;
-  }
-
-  if (process.platform === 'linux' && process.arch === 'arm64') {
-    prepareLinuxArm64Natives(asar, slickResourcesPath);
-  }
-  if (process.platform === 'win32') {
-    try {
-      if (prepareWindowsNatives(asar)) console.log('[slick] mirrored Slack native modules');
-    } catch (error) {
-      // Slack's own require() reports the failure that matters, if any.
-      console.error('[slick] could not mirror Slack native modules:', error);
-    }
-  }
-
+/** Everything Slick runs in both modes; `slack` is set only when Slack's asar is loaded. */
+function bootSlick(slack?: { asar: string }) {
   // Before app-ready: privileged schemes and switches must register that early.
   registerMainPlugins(mainPlugins, pluginMeta);
   // Null means the file didn't parse: keep defaults rather than obey a damaged file.
@@ -237,7 +228,15 @@ function startSlack(asar: string) {
   if (stored) updateSettings(stored);
   bootMainPlugins();
 
-  applyPatches(asar, path.join(__dirname, 'preload.js'), slickResourcesPath, windowCreated, interceptAccountSignIn);
+  if (slack) {
+    applyPatches(
+      slack.asar,
+      path.join(__dirname, 'preload.js'),
+      slickResourcesPath,
+      windowCreated,
+      interceptAccountSignIn,
+    );
+  }
   setupBridge();
   setupPluginRpc();
 
@@ -261,9 +260,9 @@ function startSlack(asar: string) {
     cookieLogin: () => cookieLogin.open(),
   });
   updater.scheduleUpdateChecks();
-  slackUpdater.scheduleChecks();
+  if (slack) slackUpdater.scheduleChecks();
 
-  app.whenReady().then(async () => {
+  const ready = app.whenReady().then(async () => {
     setupSession([slickResourcesPath, __dirname]);
     if (process.env.SLICK_HOT) watchHotUpdates(path.join(__dirname, 'hot'));
     void refreshInstalledIcons(slickResourcesPath, app.isPackaged);
@@ -276,6 +275,43 @@ function startSlack(asar: string) {
 
   process.on('uncaughtException', (error) => console.error('[slick] uncaught exception:', error));
   process.on('unhandledRejection', (reason) => console.error('[slick] unhandled rejection:', reason));
+  return ready;
+}
+
+function startLiteMode() {
+  prepareLite();
+  const ready = bootSlick();
+  console.log(`[slick] ${version} (Electron ${process.versions.electron}) in lite mode, no Slack asar`);
+  void ready.then(() =>
+    startLite({
+      preload: path.join(__dirname, 'preload.js'),
+      onWindow: windowCreated,
+      onSignIn: interceptAccountSignIn,
+    }),
+  );
+}
+
+function startSlack(asar: string) {
+  const slackElectron = slackElectronVersion(asar);
+  const mismatch = electronMajorMismatch(slackElectron);
+  if (mismatch) {
+    askLaunchAnyway(asar, slackElectron, mismatch);
+    return;
+  }
+
+  if (process.platform === 'linux' && process.arch === 'arm64') {
+    prepareLinuxArm64Natives(asar, slickResourcesPath);
+  }
+  if (process.platform === 'win32') {
+    try {
+      if (prepareWindowsNatives(asar)) console.log('[slick] mirrored Slack native modules');
+    } catch (error) {
+      // Slack's own require() reports the failure that matters, if any.
+      console.error('[slick] could not mirror Slack native modules:', error);
+    }
+  }
+
+  bootSlick({ asar });
 
   console.log(
     `[slick] ${version} (Electron ${process.versions.electron}) loading Slack ${slackVersion(asar) || '?'} (Electron ${slackElectron || '?'}) from ${asar}`,

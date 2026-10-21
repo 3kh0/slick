@@ -47,6 +47,14 @@ If you suspect a plugin broke startup, run in safe mode:
 bun run desktop:dev -- --safe-mode
 ```
 
+### Lite mode
+
+```sh
+bun run desktop:dev -- --lite
+```
+
+`--lite` (or `SLICK_LITE=1`) skips Slack's `app.asar` and opens `app.slack.com/client` in Slick's own window, presenting as plain Chromium so Slack's web client takes its browser path. Slack doesn't need to be installed and the Electron major check doesn't apply. Slick's runtime, plugins and main-process halves run as usual. Anything Slack's desktop bridge provides (its tray, downloads UI, `slack://` handling, OS search indexing) is absent. Lite mode keeps its own Chromium profile under `lite-profile`, so the first launch needs a sign-in.
+
 ### Slack lives somewhere weird
 
 Set `SLICK_SLACK_RESOURCES` to the **directory containing `app.asar`**, not to `app.asar` itself. For example, on macOS:

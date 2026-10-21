@@ -70,7 +70,7 @@ export function setMenuHandlers(handlers: {
   if (handlers.cookieLogin) cookieLogin = handlers.cookieLogin;
 }
 
-function slickMenuTemplate(): Electron.MenuItemConstructorOptions {
+export function slickMenuTemplate(): Electron.MenuItemConstructorOptions {
   const submenu: Electron.MenuItemConstructorOptions[] = [
     { label: 'About Slick', click: () => app.showAboutPanel() },
     { label: 'Slick Settings…', click: () => openSettings?.() },
