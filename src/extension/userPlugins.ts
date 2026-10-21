@@ -3,7 +3,8 @@
 import { record } from '../shared/objects.ts';
 
 export const USER_PLUGINS_KEY = 'slick:extension:user-plugins';
-export const USER_PLUGIN_ID = /^[A-Za-z0-9_.-]{1,100}$/;
+export const userPluginId = (id: unknown): id is string =>
+  typeof id === 'string' && /^[A-Za-z0-9_.-]{1,100}$/.test(id) && !(id in Object.prototype);
 const MAX_CODE = 4 * 1024 * 1024;
 
 export type UserPlugin = {
@@ -32,7 +33,7 @@ export function parsePluginFile(code: string): UserPlugin {
   try {
     meta = JSON.parse(/^\/\/ slick-plugin (.+)\n/.exec(code)?.[1] ?? 'null');
   } catch {}
-  if (!record(meta) || typeof meta.id !== 'string' || !USER_PLUGIN_ID.test(meta.id))
+  if (!record(meta) || !userPluginId(meta.id))
     throw new Error('That file is not a Slick plugin. Build one with bun run build:plugin.');
   if (code.length > MAX_CODE) throw new Error('Plugin files must be smaller than 4 MiB.');
   return {
@@ -47,7 +48,7 @@ export function installedPlugins(value: unknown): Record<string, UserPlugin> {
   if (!record(value)) return {};
   const plugins: Record<string, UserPlugin> = {};
   for (const [id, plugin] of Object.entries(value))
-    if (USER_PLUGIN_ID.test(id) && record(plugin) && plugin.id === id && typeof plugin.code === 'string')
+    if (userPluginId(id) && record(plugin) && plugin.id === id && typeof plugin.code === 'string')
       plugins[id] = {
         id,
         name: text(plugin.name, 200) || id,

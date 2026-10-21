@@ -640,7 +640,8 @@ export function mount(api: OptionsBrowser | undefined, data: OptionsData) {
     allowed = (await browser.permissions?.contains(permission)) === true;
     installPlugin.textContent = allowed ? 'Install plugin file…' : 'Allow user plugins';
     if (allowed && !userScripts(browser))
-      pluginStatus.textContent = 'Turn on “Allow User Scripts” in Slick’s extension details, then reopen this page.';
+      pluginStatus.textContent =
+        'Turn on “Allow User Scripts” in Slick’s extension details (Developer mode in chrome://extensions on Chrome 137 and older), then reopen this page.';
   }
   installPlugin.addEventListener('click', () => {
     if (allowed) return pluginFile.click();

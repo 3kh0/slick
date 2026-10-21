@@ -38,7 +38,7 @@ export function createStorage(area: StorageArea, backend: BlobBackend) {
       await area.set({ [SETTINGS_KEY]: next });
       return true;
     }
-    if (!bundled(a[0]) && !(a[0].slice(7) in installedPlugins(await read(USER_PLUGINS_KEY, {}))))
+    if (!bundled(a[0]) && !Object.hasOwn(installedPlugins(await read(USER_PLUGINS_KEY, {})), a[0].slice(7)))
       throw new Error('Unknown plugin');
     return blobs({ method, args: a });
   }

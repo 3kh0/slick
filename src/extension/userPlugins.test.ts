@@ -7,7 +7,14 @@ const file = (meta: string) => `// slick-plugin ${meta}\n(globalThis.__slickPlug
 test('plugin files are recognised by their build header', () => {
   const code = file('{"id":"Mine","name":"Mine","description":"Does things"}');
   assert.deepEqual(parsePluginFile(code), { id: 'Mine', name: 'Mine', description: 'Does things', code });
-  for (const bad of ['module.exports = {}', file('{"id":"../x"}'), file('not json'), file('{"name":"No id"}')])
+  for (const bad of [
+    'module.exports = {}',
+    file('{"id":"../x"}'),
+    file('{"id":"constructor"}'),
+    file('{"id":"__proto__"}'),
+    file('not json'),
+    file('{"name":"No id"}'),
+  ])
     assert.throws(() => parsePluginFile(bad), /not a Slick plugin/);
 });
 
@@ -17,6 +24,7 @@ test('stored plugins are re-validated and their ids must match their keys', () =
     Mine: ok,
   });
   assert.deepEqual(installedPlugins('nope'), {});
+  assert.deepEqual(installedPlugins(JSON.parse('{"__proto__":{"id":"__proto__","code":"x"}}')), {});
 });
 
 test('sync replaces every registered script with one MAIN-world script per plugin', async () => {

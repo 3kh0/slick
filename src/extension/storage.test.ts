@@ -120,7 +120,14 @@ test('concurrent writes in one namespace cannot race its quota and a failure lea
 test('blobs are namespace allowlisted, bounded and prototype-safe', async () => {
   const area = memoryStorage();
   const store = createStorage(area, memoryBackend());
-  for (const bad of ['Other', 'Censorship', 'plugin:Other'])
+  for (const bad of [
+    'Other',
+    'Censorship',
+    'plugin:Other',
+    'plugin:constructor',
+    'plugin:toString',
+    'plugin:__proto__',
+  ])
     assert.equal((await store.dispatch({ method: 'blob.write', args: [bad, 'x', 'y'] })).ok, false);
   await area.set({ [USER_PLUGINS_KEY]: { Other: { id: 'Other', name: 'Other', description: '', code: '' } } });
   assert.equal((await store.dispatch({ method: 'blob.write', args: ['plugin:Other', 'x', 'y'] })).ok, true);
