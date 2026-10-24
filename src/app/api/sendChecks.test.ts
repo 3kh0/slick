@@ -310,8 +310,12 @@ for (const asynchronous of [false, true]) {
 
 test('a confirmation holds only the sending window when the same thread is also popped out', async () => {
   const main = composer();
+  const sendingWindow = renderWindow;
   const check = deferred();
-  main.addSendCheck(() => check.promise);
+  main.addSendCheck((_blocks: unknown, context: { targetWindow?: object }) => {
+    assert.equal(context.targetWindow, sendingWindow);
+    return check.promise;
+  });
   const popout = composer();
   popout.type('different draft');
   assert.equal(await main.enter('hello'), 'held');

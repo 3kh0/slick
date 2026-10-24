@@ -29,6 +29,7 @@ export type { ComponentReplacer, ComponentType, PatchMatcher } from '../app/slac
 export type { SlackMember } from '../app/slack/members.ts';
 export type { SlackChannel } from '../app/slack/channels.ts';
 export type { Block, FromDeltaOptions } from '../app/slack/blocks.ts';
+export type { SendCheckContext } from '../app/api/sendChecks.tsx';
 export type { Delta, DeltaOp } from './delta.ts';
 export type { MenuTemplateItem, SelectOption } from '../app/api/elements.ts';
 export type { PluginSettings, Setting, SettingsSchema, SettingValue } from './settings.ts';
