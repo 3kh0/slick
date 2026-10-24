@@ -1,16 +1,9 @@
-import { SlickPlugin, type Delta } from '$slick';
+import { SlickPlugin, type Block, type SendCheckContext } from '$slick';
+import { openHaikuDialog } from './dialog.ts';
 import { blocksToSlackText, dictionaryLookup, findHaiku } from './haiku.ts';
 import * as meta from './meta.ts';
 import dictionary from './syllable_counts.txt';
 import { dictionaryLoader } from './dictionary.ts';
-
-type SendArgs = { delta: Delta; channelId?: string; replyToTs?: string; viewContext?: string };
-type SendProps = {
-  prepareAndSendMessage: (args: SendArgs) => Promise<unknown>;
-  channelId?: string;
-};
-type InputProxy = { clear: () => void };
-type GetInputProxy = (key: { viewContext?: string; channelId?: string; threadTs?: string }) => InputProxy | undefined;
 
 // Orpheus skips this channel (notice_poetry.rb).
 const EXCLUDED_CHANNEL = 'C09MATKQM8C';
@@ -19,7 +12,7 @@ const MAX_LENGTH = 300;
 // The pinned Orpheus dictionary is bundled offline; see DICTIONARY-NOTICE.txt.
 
 export default class HaikuWarning extends SlickPlugin<typeof meta.settings> {
-  static readonly requiredAPIs = ['blocks', 'elements', 'modal'] as const;
+  static readonly requiredAPIs = ['addSendCheck'] as const;
   static readonly id = meta.id;
   static readonly pluginName = meta.pluginName;
   static readonly description = meta.description;
@@ -27,18 +20,11 @@ export default class HaikuWarning extends SlickPlugin<typeof meta.settings> {
   static readonly settings = meta.settings;
 
   private prompt: { close: () => void } | null = null;
-  // Set while an approved send runs, so a wrapper further down the same call lets it through.
-  private approved = false;
   private readonly dictionary = dictionaryLoader(dictionary);
 
   start() {
     this.api.signal.addEventListener('abort', () => this.stop(), { once: true });
-    for (const name of ['MessagePaneInput', 'InputContainer'] as const) {
-      this.api.patchComponent<SendProps>(name, (Original) => (props) => {
-        const send = (args: SendArgs) => this.onSend(props, args);
-        return <Original {...props} prepareAndSendMessage={send} />;
-      });
-    }
+    this.api.addSendCheck((blocks, context) => this.check(blocks, context));
   }
 
   stop() {
@@ -46,72 +32,27 @@ export default class HaikuWarning extends SlickPlugin<typeof meta.settings> {
     this.prompt = null;
   }
 
-  private async onSend(props: SendProps, args: SendArgs): Promise<unknown> {
-    if (this.api.signal?.aborted || this.api.isActive?.() === false) return props.prepareAndSendMessage(args);
-    const channelId = args.channelId || props.channelId;
-    if (this.approved || channelId === EXCLUDED_CHANNEL) return props.prepareAndSendMessage(args);
-
-    const haiku = await this.findHaiku(args.delta);
-    if (this.api.signal?.aborted || this.api.isActive?.() === false) return props.prepareAndSendMessage(args);
-    if (!haiku) return props.prepareAndSendMessage(args);
-
-    if (!this.ask(haiku, () => this.sendAnyway(props, args))) return props.prepareAndSendMessage(args);
-    // The composer clears itself before sending and puts the message back when
-    // the send rejects, which is how Slack's own warning dialogs hold a send.
-    throw new Error('HaikuWarning: waiting for confirmation');
-  }
-
-  private ask(haiku: string[], send: () => void) {
-    // A newer send replaces a prompt still open for an older one.
+  private async check(blocks: Block[], context: SendCheckContext): Promise<boolean> {
+    if (context.channelId === EXCLUDED_CHANNEL) return true;
+    const haiku = await this.findHaiku(blocks);
+    if (this.api.signal.aborted || this.api.isActive?.() === false || !haiku) return true;
     this.prompt?.close();
-    const settle = () => {
-      if (this.prompt === handle) this.prompt = null;
-    };
-    const { MrkdwnElement } = this.api.elements;
-    const handle = this.api.modal.openModal({
-      title: <MrkdwnElement text=":orpheus-woah: Found a haiku in your message!" />,
-      submitText: 'Send anyway',
-      cancelText: 'Keep editing',
-      body: (
-        <>
-          <p style={{ marginTop: 0 }}>
-            If Orpheus is in this channel she'll quote it back in the thread, where deleting yours won't remove it.
-          </p>
-          <blockquote style={{ whiteSpace: 'pre-line', margin: 0 }}>{haiku.join('\n')}</blockquote>
-        </>
-      ),
-      onSubmit: () => {
-        settle();
-        if (!this.api.signal.aborted && this.api.isActive?.() !== false) send();
-      },
-      onCancel: settle,
-      onClose: settle,
+    return new Promise((resolve) => {
+      try {
+        const handle = openHaikuDialog(context.targetWindow?.document ?? document, haiku, (approved) => {
+          if (this.prompt === handle) this.prompt = null;
+          resolve(approved && !this.api.signal.aborted && this.api.isActive?.() !== false);
+        });
+        this.prompt = handle;
+      } catch (error) {
+        this.log('could not show warning', error);
+        resolve(true);
+      }
     });
-    this.prompt = handle;
-    return handle !== null;
   }
 
-  private sendAnyway(props: SendProps, args: SendArgs) {
-    // Slack's dialogs clear the restored message the same way before sending it.
-    const getInputProxy = this.api.getExport<GetInputProxy>(
-      (exp: any) => typeof exp === 'function' && exp.name === 'getInputProxy',
-    );
-    getInputProxy?.({ viewContext: args.viewContext, channelId: args.channelId, threadTs: args.replyToTs })?.clear();
-
-    this.approved = true;
+  private async findHaiku(blocks: Block[]): Promise<string[] | null> {
     try {
-      Promise.resolve(props.prepareAndSendMessage(args)).catch((error) => this.log('send failed', error));
-    } catch (error) {
-      this.log('send failed', error);
-    } finally {
-      this.approved = false;
-    }
-  }
-
-  private async findHaiku(delta: Delta): Promise<string[] | null> {
-    try {
-      const blocks = await this.api.blocks.fromDelta(delta);
-
       const text = blocksToSlackText(blocks);
       // Ruby's String#length counts code points, not UTF-16 units.
       if ([...text].length >= MAX_LENGTH) return null;

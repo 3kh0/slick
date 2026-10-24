@@ -11,7 +11,7 @@ import { registrationLabel } from './registrationLabel.ts';
 type PatchComponent = <P>(name: string, replacer: ComponentReplacer<P>) => () => void;
 
 /** Which composer a message is being sent from. */
-export type SendCheckContext = { channelId: string; threadTs?: string };
+export type SendCheckContext = { channelId: string; threadTs?: string; targetWindow?: Window };
 
 /**
  * Return false to keep the message in the composer. May be async, e.g. to ask
@@ -217,7 +217,7 @@ export function setupSendChecks(patchComponent: PatchComponent) {
             const composed = composedDeltas.get(delta) ?? delta;
             if (decided.has(composed)) return send(options);
 
-            const context = { channelId, threadTs: options.replyToTs ?? props.threadTs };
+            const context = { channelId, threadTs: options.replyToTs ?? props.threadTs, targetWindow };
             const input = inputFor(options, context, targetWindow);
             // A held message is only resent while the composer still holds it, which takes getContents.
             const quill = input?.getContents ? input.getContainer?.()?.__quill : undefined;
