@@ -303,10 +303,34 @@ type Entry = {
   user: boolean;
 };
 
+export type UpdateResult = { updated: string[]; failed: number };
+
+const UPDATE_DELAY_MS = 15_000;
+const UPDATE_INTERVAL_MS = 3 * 60 * 60_000;
+const FETCH_TIMEOUT_MS = 20_000;
+
+/** Accepts https (or http on localhost) and turns GitHub file pages into their raw files. */
+export function pluginUrl(input: string): string {
+  let url: URL;
+  try {
+    url = new URL(input.trim());
+  } catch {
+    throw new Error('That is not a valid URL.');
+  }
+  const local = url.hostname === 'localhost' || url.hostname === '127.0.0.1';
+  if (url.protocol !== 'https:' && !(url.protocol === 'http:' && local)) throw new Error('Plugin URLs must use https.');
+  const blob = url.hostname === 'github.com' && /^\/([^/]+)\/([^/]+)\/blob\/(.+)$/.exec(url.pathname);
+  if (blob) return `https://raw.githubusercontent.com/${blob[1]}/${blob[2]}/${blob[3]}${url.search}`;
+  return url.href;
+}
+
 export class PluginManager {
   readonly plugins = new Map<string, Entry>();
   private queues = new Map<string, Promise<unknown>>();
   private statusListeners = new Set<() => void>();
+  private sources = new Map<string, string>();
+  private autoUpdate = true;
+  private updating: Promise<UpdateResult> | null = null;
 
   constructor(
     private bridge: SlickBridge,
@@ -392,8 +416,18 @@ export class PluginManager {
     return this.bridge.blobStore('user-plugins');
   }
 
+  private get userPluginPrefs() {
+    return this.bridge.blobStore('user-plugin-prefs');
+  }
+
+  private get userPluginSources() {
+    return this.bridge.blobStore('user-plugin-sources');
+  }
+
   async loadUserPlugins(): Promise<void> {
     if (!this.supportsUserPlugins) return;
+    this.sources = new Map(Object.entries(await this.userPluginSources.readAll()));
+    this.autoUpdate = (await this.userPluginPrefs.readAll()).autoUpdate !== 'off';
     for (const [key, code] of Object.entries(await this.userPlugins.readAll())) {
       try {
         const PluginClass = evaluatePlugin(code);
@@ -415,13 +449,19 @@ export class PluginManager {
   }
 
   /** Installs or updates a user plugin and returns its name. */
-  async installUserPlugin(code: string): Promise<string> {
+  async installUserPlugin(code: string, source?: string, expectedId?: string): Promise<string> {
     const PluginClass = evaluatePlugin(code);
     const id = this.validId(PluginClass);
     if (!id) throw new Error('That file is not a Slick plugin.');
+    if (expectedId && id !== expectedId) throw new Error(`the file now declares ${id}, not ${expectedId}`);
     const existing = this.plugins.get(id);
     if (existing && !existing.user) throw new Error(`${id} is built into Slick.`);
     if (!(await this.userPlugins.write(id, code))) throw new Error('Could not save the plugin.');
+    if (source) {
+      if (await this.userPluginSources.write(id, source)) this.sources.set(id, source);
+    } else if (this.sources.delete(id)) {
+      await this.userPluginSources.delete(id);
+    }
     if (existing) await this.replace(PluginClass);
     else if (this.register(PluginClass, true)) await this.reconcile();
     this.notifyStatus();
@@ -435,8 +475,89 @@ export class PluginManager {
       if (entry.instance) await this.stop(id, entry);
       this.plugins.delete(id);
     });
-    await Promise.all([this.userPlugins.delete(id), this.bridge.blobStore(`plugin:${id}`).clear()]);
+    this.sources.delete(id);
+    await Promise.all([
+      this.userPlugins.delete(id),
+      this.userPluginSources.delete(id),
+      this.bridge.blobStore(`plugin:${id}`).clear(),
+    ]);
     this.notifyStatus();
+  }
+
+  private async fetchPluginCode(url: string): Promise<string> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      const response = await Promise.race([
+        this.bridge.fetch(url),
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(() => reject(new Error('the request timed out')), FETCH_TIMEOUT_MS);
+        }),
+      ]);
+      if (response.status !== 200) throw new Error(`the server answered ${response.status}`);
+      return response.body;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  /** Installs a plugin from a URL and remembers it so it keeps updating. */
+  async installUserPluginFromUrl(input: string): Promise<string> {
+    const url = pluginUrl(input);
+    let code: string;
+    try {
+      code = await this.fetchPluginCode(url);
+    } catch (error) {
+      throw new Error(`Could not download the plugin: ${error instanceof Error ? error.message : String(error)}`, {
+        cause: error,
+      });
+    }
+    return this.installUserPlugin(code, url);
+  }
+
+  /** Re-downloads every URL-installed plugin and installs the ones that changed. */
+  updateUserPlugins(): Promise<UpdateResult> {
+    return (this.updating ??= this.runUpdates().finally(() => (this.updating = null)));
+  }
+
+  private async runUpdates(): Promise<UpdateResult> {
+    const result: UpdateResult = { updated: [], failed: 0 };
+    if (!this.supportsUserPlugins) return result;
+    const stored = await this.userPlugins.readAll();
+    for (const [id, url] of this.sources) {
+      try {
+        const code = await this.fetchPluginCode(url);
+        if (code === stored[id]) continue;
+        result.updated.push(await this.installUserPlugin(code, url, id));
+        console.log(`[slick] updated ${id} from ${url}`);
+      } catch (error) {
+        result.failed++;
+        console.warn(`[slick] could not update ${id}:`, error);
+      }
+    }
+    return result;
+  }
+
+  get autoUpdatesEnabled(): boolean {
+    return this.autoUpdate;
+  }
+
+  async setAutoUpdate(enabled: boolean): Promise<void> {
+    const saved = enabled
+      ? await this.userPluginPrefs.delete('autoUpdate')
+      : await this.userPluginPrefs.write('autoUpdate', 'off');
+    if (!saved) throw new Error('Could not save the setting.');
+    this.autoUpdate = enabled;
+    this.notifyStatus();
+  }
+
+  /** Checks for plugin updates shortly after boot, then every few hours. */
+  startAutoUpdate(): void {
+    if (!this.supportsUserPlugins) return;
+    const check = () => {
+      if (this.autoUpdate) void this.updateUserPlugins();
+    };
+    setTimeout(check, UPDATE_DELAY_MS);
+    setInterval(check, UPDATE_INTERVAL_MS);
   }
 
   onStatusChange(cb: () => void): () => void {
@@ -612,6 +733,7 @@ export class PluginManager {
       appWideReason: appWideReason(id),
       startError: entry.startError,
       user: entry.user,
+      source: this.sources.get(id) ?? null,
     }));
   }
 }
