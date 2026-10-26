@@ -113,11 +113,11 @@ nix run github:3kh0/slick
 
 Choose one of the following AUR packages:
 
-* [slick-mod](https://aur.archlinux.org/packages/slick-mod) - Uses the system Electron runtime and depends on the `slack-desktop` package. Install with:
+- [slick-mod](https://aur.archlinux.org/packages/slick-mod) - Uses the system Electron runtime and depends on the `slack-desktop` package. Install with:
   ```bash
   yay -S slick-mod
   ```
-* [slick-mod-bundled](https://aur.archlinux.org/packages/slick-mod-bundled) - Uses Slick's bundled Electron runtime, also depends on the `slack-desktop` package. Install with:
+- [slick-mod-bundled](https://aur.archlinux.org/packages/slick-mod-bundled) - Uses Slick's bundled Electron runtime, also depends on the `slack-desktop` package. Install with:
   ```bash
   yay -S slick-mod-bundled
   ```
