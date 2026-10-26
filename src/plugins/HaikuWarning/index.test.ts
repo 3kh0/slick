@@ -13,6 +13,17 @@ const bundle = await build({
   platform: 'node',
   format: 'esm',
   loader: { '.txt': 'text' },
+  plugins: [
+    {
+      name: 'dialog-harness',
+      setup(builder) {
+        builder.onLoad({ filter: /\/dialog\.ts$/ }, () => ({
+          contents: 'export const openHaikuDialog = (...args) => globalThis.openTestDialog(...args);',
+          loader: 'js',
+        }));
+      },
+    },
+  ],
 });
 const { default: HaikuWarning } = await import(
   `data:text/javascript;base64,${Buffer.from(bundle.outputFiles[0]!.text).toString('base64')}`
@@ -36,64 +47,64 @@ test('compacted dictionary gives every word the same count', () => {
   }
 });
 
-test('offline warning holds a haiku, permits editing and sends only after approval', async () => {
-  const previousReact = (globalThis as any).React;
-  (globalThis as any).React = { createElement: (...args: unknown[]) => args, Fragment: 'fragment' };
+test('send check waits for a visible warning, supports cancel and approval, and cleans up', async () => {
+  const globals = globalThis as any;
+  const previous = globals.openTestDialog;
+  const owner = {};
+  const prompts: { settle: (approved: boolean) => void; close: () => void }[] = [];
+  const controller = new AbortController();
+  let check: any;
+  globals.openTestDialog = (doc: unknown, haiku: string[], settle: (approved: boolean) => void) => {
+    assert.equal(doc, owner);
+    assert.equal(haiku.length, 3);
+    const prompt = { settle, close: () => settle(false) };
+    prompts.push(prompt);
+    return prompt;
+  };
+  const plugin = new HaikuWarning(
+    {
+      signal: controller.signal,
+      addSendCheck: (fn: any) => {
+        check = fn;
+      },
+    },
+    {},
+  );
+  const context = { channelId: 'CTEST', targetWindow: { document: owner } };
+  const blocks = [{ type: 'text', text: 'An old silent pond, a frog jumps into the pond — splash, silence again.' }];
+  const untilPrompt = async (count: number) => {
+    for (let i = 0; i < 50 && prompts.length < count; i++) await new Promise((r) => setTimeout(r, 10));
+    assert.equal(prompts.length, count);
+  };
   try {
-    let modal: any;
-    let sends = 0;
-    let clears = 0;
-    let closes = 0;
-    const patches: string[] = [];
-    const controller = new AbortController();
-    const plugin = new HaikuWarning(
-      {
-        signal: controller.signal,
-        // Deliberately no fetch/storage: extension and offline desktop must work without them.
-        patchComponent: (name: string) => patches.push(name),
-        blocks: { fromDelta: async (delta: any) => [{ type: 'text', text: delta.ops[0].insert }] },
-        elements: { MrkdwnElement: () => null },
-        modal: {
-          openModal: (options: any) => {
-            modal = options;
-            return { close: () => closes++ };
-          },
-        },
-        getExport: () => () => ({ clear: () => clears++ }),
-      },
-      {},
-    );
     plugin.start();
-    assert.deepEqual(patches, ['MessagePaneInput', 'InputContainer']);
-    const props = {
-      prepareAndSendMessage: async () => {
-        sends++;
-      },
-    };
-    const args = {
-      channelId: 'CTEST',
-      delta: { ops: [{ insert: 'An old silent pond, a frog jumps into the pond — splash, silence again.' }] },
-    };
-    await assert.rejects(plugin.onSend(props, args), /waiting for confirmation/);
-    assert.equal(sends, 0);
-    assert.equal(modal.cancelText, 'Keep editing');
-    modal.onCancel();
-    assert.equal(sends, 0);
-    await assert.rejects(plugin.onSend(props, args), /waiting for confirmation/);
-    modal.onSubmit();
-    assert.equal(sends, 1);
-    assert.equal(clears, 1);
-    await plugin.onSend(props, { ...args, delta: { ops: [{ insert: 'hello' }] } });
-    await plugin.onSend(props, { ...args, channelId: 'C09MATKQM8C' });
-    assert.equal(sends, 3);
-    await assert.rejects(plugin.onSend(props, args), /waiting for confirmation/);
-    plugin.stop();
-    assert.equal(closes, 1);
+    let settled = false;
+    const first = check(blocks, context).then((value: boolean) => {
+      settled = true;
+      return value;
+    });
+    await untilPrompt(1);
+    assert.equal(settled, false);
+    prompts[0]!.settle(false);
+    assert.equal(await first, false);
+    const second = check(blocks, context);
+    await untilPrompt(2);
+    prompts[1]!.settle(true);
+    assert.equal(await second, true);
+    assert.equal(await check([{ type: 'text', text: 'hello' }], context), true);
+    assert.equal(await check(blocks, { ...context, channelId: 'C09MATKQM8C' }), true);
+    const third = check(blocks, context);
+    await untilPrompt(3);
+    const fourth = check(blocks, context);
+    await untilPrompt(4);
+    assert.equal(await third, false);
     controller.abort();
-    modal.onSubmit();
-    assert.equal(sends, 3);
+    assert.equal(await fourth, false);
+    prompts[3]!.settle(true);
+    assert.equal(prompts.length, 4);
   } finally {
-    (globalThis as any).React = previousReact;
+    plugin.stop();
+    globals.openTestDialog = previous;
   }
 });
 
@@ -118,61 +129,46 @@ test('reported quoted message produces the exact haiku Orpheus posted', async ()
   );
 });
 
-test('dictionary decoding is skipped for excluded or long messages and failures do not block sending', async () => {
+test('excluded and long messages skip decoding; detection and dialog failures permit sending', async () => {
+  const globals = globalThis as any;
+  const previous = globals.openTestDialog;
   let decodes = 0;
-  let sends = 0;
   let failures = 0;
-  const plugin = new HaikuWarning(
-    {
-      blocks: { fromDelta: async (delta: any) => [{ type: 'text', text: delta.ops[0].insert }] },
-    },
-    {},
-  );
+  const plugin = new HaikuWarning({ signal: new AbortController().signal }, {});
   plugin.dictionary = async () => {
     decodes++;
     throw new Error('invalid dictionary');
   };
   plugin.log = () => failures++;
-  const props = { prepareAndSendMessage: async () => sends++ };
-  await plugin.onSend(props, { channelId: 'C09MATKQM8C', delta: { ops: [{ insert: 'hello' }] } });
-  await plugin.onSend(props, { delta: { ops: [{ insert: 'x'.repeat(300) }] } });
+  const context = { channelId: 'CTEST', targetWindow: { document: {} } };
+  assert.equal(await plugin.check([{ type: 'text', text: 'hello' }], { ...context, channelId: 'C09MATKQM8C' }), true);
+  assert.equal(await plugin.check([{ type: 'text', text: 'x'.repeat(300) }], context), true);
   assert.equal(decodes, 0);
-  await plugin.onSend(props, { delta: { ops: [{ insert: 'hello' }] } });
+  assert.equal(await plugin.check([{ type: 'text', text: 'hello' }], context), true);
   assert.equal(decodes, 1);
   assert.equal(failures, 1);
-  assert.equal(sends, 3);
+  plugin.findHaiku = async () => ['five', 'seven', 'five'];
+  globals.openTestDialog = () => {
+    throw new Error('dialog unavailable');
+  };
+  try {
+    assert.equal(await plugin.check([], context), true);
+    assert.equal(failures, 2);
+  } finally {
+    globals.openTestDialog = previous;
+  }
 });
 
-test('deactivation during detection and unavailable modals never hold a send', async () => {
-  let active = true;
+test('deactivation during detection never opens a warning', async () => {
   let release!: (value: string[]) => void;
-  let sends = 0;
-  let prompts = 0;
   const controller = new AbortController();
-  const plugin = new HaikuWarning({ signal: controller.signal, isActive: () => active }, {});
+  const plugin = new HaikuWarning({ signal: controller.signal }, {});
   plugin.findHaiku = () =>
     new Promise((resolve) => {
       release = resolve;
     });
-  plugin.ask = () => {
-    prompts++;
-    return false;
-  };
-  const props = { prepareAndSendMessage: async () => sends++ };
-  const args = { delta: { ops: [{ insert: 'haiku' }] } };
-  const pending = plugin.onSend(props, args);
-  active = false;
-  release(['five', 'seven', 'five']);
-  await pending;
-  assert.equal(sends, 1);
-  assert.equal(prompts, 0);
-  active = true;
-  plugin.findHaiku = async () => ['five', 'seven', 'five'];
-  await plugin.onSend(props, args);
-  assert.equal(prompts, 1);
-  assert.equal(sends, 2);
+  const pending = plugin.check([], { channelId: 'CTEST' });
   controller.abort();
-  await plugin.onSend(props, args);
-  assert.equal(prompts, 1);
-  assert.equal(sends, 3);
+  release(['five', 'seven', 'five']);
+  assert.equal(await pending, true);
 });

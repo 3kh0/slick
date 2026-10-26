@@ -8,6 +8,7 @@ import {
   filterReactions,
   filterThreadActivity,
   filterTyping,
+  hasBlockedReplies,
   hidesActivity,
   hidesMessage,
   isBlocked,
@@ -15,6 +16,7 @@ import {
   keep,
   projectSuggestions,
   record,
+  threadReplies,
   type Data,
 } from './filter.ts';
 import * as meta from './meta.ts';
@@ -44,6 +46,7 @@ export default class BetterBlock extends SlickPlugin<typeof meta.settings> {
   private typers = new WeakMap<object, Data>();
   private activities = new WeakMap<object, { messages: unknown; result: Data }>();
   private activitySources = new WeakMap<object, Data>();
+  private fetchedThreads = new Map<string, unknown>();
   private readonly ProfileContext = React.createContext<string | null>(null);
 
   private syncBlocked = () => {
@@ -96,7 +99,12 @@ export default class BetterBlock extends SlickPlugin<typeof meta.settings> {
 
     this.api.redux.patchSlice('messages', (_channel, bucket) => {
       if (!bucket || !this.blocked.size) return bucket;
-      return this.api.redux.mapEntries<SlackMessage>(bucket, (_ts, message) => message && this.filtered(message));
+      let threads: Map<string, Data[]> | undefined;
+      return this.api.redux.mapEntries<SlackMessage>(bucket, (ts, message) => {
+        if (!message || !hasBlockedReplies(message, this.blocked)) return message && this.filtered(message);
+        const replies = (threads ??= threadReplies(bucket)).get(ts);
+        return replies ? filterMessage(message, this.blocked, replies) : this.filtered(message);
+      });
     });
     this.api.redux.patchSlice('reactions', (_key, reactions) =>
       Array.isArray(reactions) && this.blocked.size ? filterReactions(reactions, this.blocked) : reactions,
@@ -196,8 +204,31 @@ export default class BetterBlock extends SlickPlugin<typeof meta.settings> {
     this.api.patchComponent<RowProps>('ThreadReplies', (Original) => (props) => {
       this.api.redux.usePatchVersion();
       const message = this.currentMessage(props.msg, props.channelId);
+      const channelId = message?.channel ?? props.channelId;
+      React.useEffect(() => {
+        if (channelId && message?.ts) this.loadReplies(channelId, message.ts);
+      }, [channelId, message?.ts, message?.reply_count]);
       return <Original {...props} msg={message && this.filtered(message)} />;
     });
+  }
+
+  private loadReplies(channelId: string, threadTs: string) {
+    const bucket = this.api.redux.getRawState()?.messages?.[channelId];
+    const root = bucket?.[threadTs];
+    if (!root?.reply_count || root.reply_count >= 1000 || !hasBlockedReplies(root, this.blocked)) return;
+    const key = `${channelId}-${threadTs}`;
+    if (this.fetchedThreads.get(key) === root.latest_reply) return;
+    if ((threadReplies(bucket).get(threadTs)?.length ?? 0) >= root.reply_count) return;
+    this.fetchedThreads.set(key, root.latest_reply);
+    this.api.redux
+      .dispatchThunk('requestReplies', {
+        channelId,
+        threadTs,
+        limit: root.reply_count + 1,
+        reason: 'betterblock',
+        skipSubscriptionUpdate: true,
+      })
+      .catch((error) => this.log('Could not load thread replies', error));
   }
 
   // connect() retains projected props; re-read so unblocking restores their contents.

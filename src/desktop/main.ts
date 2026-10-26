@@ -32,6 +32,7 @@ import { createCookieLogin } from './windows/cookieLogin.js';
 import { loginWithCookies } from './cookieLogin.js';
 import { openSettings } from './openSettings.js';
 import { configDir } from './paths.js';
+import { clearStaleProfileLock } from './profileLock.ts';
 
 const cjsRequire = createRequire(import.meta.url);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -53,6 +54,7 @@ const focusExistingWindow = () => {
   for (const window of BrowserWindow.getAllWindows()) {
     if (window.isDestroyed()) continue;
     if (window.isMinimized()) window.restore();
+    window.show();
     window.focus();
     return;
   }
@@ -75,6 +77,7 @@ app.on('second-instance', focusExistingWindow);
 app.on('open-url', focusExistingWindow);
 // The lock lives in userData, which defaults to the installed app's even for an override profile.
 if (process.env.SLICK_HANDOFF_PROFILE) app.setPath('userData', configDir());
+clearStaleProfileLock(app.getPath('userData'));
 if (!app.requestSingleInstanceLock()) {
   console.error(`[slick] another Slick is already running with ${app.getPath('userData')}; exiting`);
   app.quit();

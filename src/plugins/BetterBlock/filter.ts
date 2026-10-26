@@ -73,7 +73,7 @@ export function filterContent(value: unknown, blocked: Blocked): any {
   return out;
 }
 
-export function filterMessage<T extends SlackMessage>(message: T, blocked: Blocked): T {
+export function filterMessage<T extends SlackMessage>(message: T, blocked: Blocked, loaded: Data[] = []): T {
   if (!blocked.size || isHuddle(message)) return message;
   let out = message;
   const set = (key: string, value: unknown) => {
@@ -115,15 +115,39 @@ export function filterMessage<T extends SlackMessage>(message: T, blocked: Block
       set('latest_reply', undefined);
     }
   }
-  if (Array.isArray(message.replies)) {
-    const replies = keep(message.replies, (reply) => !hidesMessage(reply, blocked));
-    set('replies', replies);
-    if (replies !== message.replies && out.reply_count !== 0 && typeof message.reply_count === 'number')
-      set('reply_count', Math.max(0, message.reply_count - (message.replies.length - replies.length)));
-    if (message.replies.some((reply) => reply.ts === message.latest_reply && hidesMessage(reply, blocked)))
-      set('latest_reply', replies.at(-1)?.ts);
+  if (Array.isArray(message.replies))
+    set(
+      'replies',
+      keep(message.replies, (reply) => !hidesMessage(reply, blocked)),
+    );
+  const known = new Map<unknown, Data>();
+  for (const reply of [...(Array.isArray(message.replies) ? message.replies : []), ...loaded])
+    if (record(reply)) known.set(reply.ts ?? reply, reply);
+  const hidden = [...known.values()].filter((reply) => hidesMessage(reply, blocked));
+  if (hidden.length && out.reply_count !== 0 && typeof message.reply_count === 'number')
+    set('reply_count', Math.max(0, message.reply_count - hidden.length));
+  if (hidden.some((reply) => reply.ts === message.latest_reply)) {
+    let latest: string | undefined;
+    for (const reply of known.values())
+      if (!hidesMessage(reply, blocked) && (!latest || Number(reply.ts) > Number(latest))) latest = reply.ts;
+    set('latest_reply', latest);
   }
   return out;
+}
+
+export const hasBlockedReplies = (message: Data | undefined, blocked: Blocked): boolean =>
+  Array.isArray(message?.reply_users) && message.reply_users.some((id: unknown) => isBlocked(id, blocked));
+
+export function threadReplies(messages: Data): Map<string, Data[]> {
+  const threads = new Map<string, Data[]>();
+  for (const ts in messages) {
+    const message = messages[ts];
+    if (!message?.thread_ts || message.thread_ts === ts) continue;
+    const replies = threads.get(message.thread_ts);
+    if (replies) replies.push(message);
+    else threads.set(message.thread_ts, [message]);
+  }
+  return threads;
 }
 
 export function filterHistory(history: ChannelHistory, messages: Data | undefined, blocked: Blocked): ChannelHistory {
