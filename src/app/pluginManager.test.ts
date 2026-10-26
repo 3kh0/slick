@@ -84,6 +84,7 @@ async function fixture() {
   const blobStore = (namespace: string) => {
     const blob = blobs.get(namespace) ?? blobs.set(namespace, new Map()).get(namespace)!;
     return {
+      read: async (key: string) => blob.get(key) ?? null,
       readAll: async () => Object.fromEntries(blob),
       write: async (key: string, value: string) => !!blob.set(key, value),
       delete: async (key: string) => (blob.delete(key), true),
@@ -307,6 +308,30 @@ test('plugins installed from a URL update themselves when the file changes', asy
   assert.equal(f.manager.info().find((i: any) => i.id === 'Mine').source, null);
   await f.manager.removeUserPlugin('Mine');
   assert.equal(f.blobs.get('user-plugin-sources')?.size, 0);
+});
+
+test('a plugin removed while its update downloads stays removed', async () => {
+  const f = await fixture();
+  await f.manager.reconcile();
+  const url = 'https://example.com/Gone.js';
+  f.remote.set(url, { status: 200, body: userPlugin('Gone', 1) });
+  await f.manager.installUserPluginFromUrl(url);
+  let started!: () => void;
+  let release!: () => void;
+  const fetching = new Promise<void>((resolve) => (started = resolve));
+  f.bridge.fetch = async () => {
+    started();
+    await new Promise<void>((resolve) => (release = resolve));
+    return { status: 200, body: userPlugin('Gone', 2) };
+  };
+  const pending = f.manager.updateUserPlugins();
+  await fetching;
+  await f.manager.removeUserPlugin('Gone');
+  release();
+  assert.equal((await pending).updated.length, 0);
+  assert.equal(f.manager.plugins.has('Gone'), false);
+  assert.equal(f.blobs.get('user-plugins')?.has('Gone'), false);
+  assert.equal(f.blobs.get('user-plugin-sources')?.has('Gone'), false);
 });
 
 test('plugin URLs must be https and GitHub file pages map to raw files', async () => {

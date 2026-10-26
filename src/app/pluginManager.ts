@@ -426,9 +426,14 @@ export class PluginManager {
 
   async loadUserPlugins(): Promise<void> {
     if (!this.supportsUserPlugins) return;
-    this.sources = new Map(Object.entries(await this.userPluginSources.readAll()));
-    this.autoUpdate = (await this.userPluginPrefs.readAll()).autoUpdate !== 'off';
-    for (const [key, code] of Object.entries(await this.userPlugins.readAll())) {
+    const [sources, autoUpdate, stored] = await Promise.all([
+      this.userPluginSources.readAll(),
+      this.userPluginPrefs.read('autoUpdate'),
+      this.userPlugins.readAll(),
+    ]);
+    this.sources = new Map(Object.entries(sources));
+    this.autoUpdate = autoUpdate !== 'off';
+    for (const [key, code] of Object.entries(stored)) {
       try {
         const PluginClass = evaluatePlugin(code);
         if (PluginClass.id !== key) throw new Error(`stored as ${key} but declares ${String(PluginClass.id)}`);
@@ -458,7 +463,9 @@ export class PluginManager {
     if (existing && !existing.user) throw new Error(`${id} is built into Slick.`);
     if (!(await this.userPlugins.write(id, code))) throw new Error('Could not save the plugin.');
     if (source) {
-      if (await this.userPluginSources.write(id, source)) this.sources.set(id, source);
+      if (this.sources.get(id) !== source && (await this.userPluginSources.write(id, source))) {
+        this.sources.set(id, source);
+      }
     } else if (this.sources.delete(id)) {
       await this.userPluginSources.delete(id);
     }
@@ -522,18 +529,20 @@ export class PluginManager {
   private async runUpdates(): Promise<UpdateResult> {
     const result: UpdateResult = { updated: [], failed: 0 };
     if (!this.supportsUserPlugins) return result;
-    const stored = await this.userPlugins.readAll();
-    for (const [id, url] of this.sources) {
-      try {
-        const code = await this.fetchPluginCode(url);
-        if (code === stored[id]) continue;
-        result.updated.push(await this.installUserPlugin(code, url, id));
-        console.log(`[slick] updated ${id} from ${url}`);
-      } catch (error) {
-        result.failed++;
-        console.warn(`[slick] could not update ${id}:`, error);
-      }
-    }
+    await Promise.all(
+      [...this.sources].map(async ([id, url]) => {
+        try {
+          const code = await this.fetchPluginCode(url);
+          // Removed or reinstalled from elsewhere while the download ran.
+          if (this.sources.get(id) !== url || code === (await this.userPlugins.read(id))) return;
+          result.updated.push(await this.installUserPlugin(code, url, id));
+          console.log(`[slick] updated ${id} from ${url}`);
+        } catch (error) {
+          result.failed++;
+          console.warn(`[slick] could not update ${id}:`, error);
+        }
+      }),
+    );
     return result;
   }
 
