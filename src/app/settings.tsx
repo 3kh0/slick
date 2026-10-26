@@ -294,6 +294,29 @@ function InstallPlugin({ manager }: { manager: PluginManager }) {
   const picker = React.useRef<HTMLInputElement>(null);
   const [status, setStatus] = React.useState('');
   const [installing, setInstalling] = React.useState(false);
+  const [url, setUrl] = React.useState('');
+  const run = async (task: () => Promise<string>) => {
+    setInstalling(true);
+    try {
+      setStatus(await task());
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : 'Could not install the plugin.');
+    } finally {
+      setInstalling(false);
+    }
+  };
+  const installUrl = () =>
+    run(async () => {
+      const name = await manager.installUserPluginFromUrl(url);
+      setUrl('');
+      return `Installed ${name}. It will keep itself up to date.`;
+    });
+  const checkUpdates = () =>
+    run(async () => {
+      const { updated, failed } = await manager.updateUserPlugins();
+      const failures = failed ? ` ${failed} could not be checked.` : '';
+      return (updated.length ? `Updated ${updated.join(', ')}.` : 'Everything is up to date.') + failures;
+    });
   return (
     <div style={{ borderTop: '1px solid rgba(127,127,127,.2)', padding: '14px 0' }}>
       <input
@@ -319,7 +342,40 @@ function InstallPlugin({ manager }: { manager: PluginManager }) {
       <elements.Button disabled={installing} onClick={() => picker.current?.click()}>
         Install plugin…
       </elements.Button>
-      <Hint>A .js file built with bun run build:plugin. It runs with the same access as Slick’s own plugins.</Hint>
+      <div style={{ display: 'flex', gap: '8px', alignItems: 'center', margin: '10px 0' }}>
+        <input
+          className="c-input_text"
+          type="url"
+          placeholder="https://example.com/MyPlugin.js"
+          aria-label="Plugin URL"
+          value={url}
+          disabled={installing}
+          onChange={(event) => setUrl(event.currentTarget.value)}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter' && url.trim()) void installUrl();
+          }}
+          style={{ ...TEXT_STYLE, flex: '1 1 auto' }}
+        />
+        <elements.Button disabled={installing || !url.trim()} onClick={() => void installUrl()}>
+          Install from URL
+        </elements.Button>
+        <elements.Button type="outline" disabled={installing} onClick={() => void checkUpdates()}>
+          Check for updates
+        </elements.Button>
+      </div>
+      <label style={{ display: 'flex', gap: '8px', alignItems: 'center', margin: '6px 0' }}>
+        <input
+          type="checkbox"
+          checked={manager.autoUpdatesEnabled}
+          onChange={(event) => void manager.setAutoUpdate(event.currentTarget.checked).catch(() => {})}
+        />
+        Update URL-installed plugins automatically
+      </label>
+      <Hint>
+        A .js file built with bun run build:plugin. It runs with the same access as Slick’s own plugins. Plugins
+        installed from a URL are re-downloaded in the background and updated when the file changes, unless you turn that
+        off.
+      </Hint>
       <div role="status">{status}</div>
     </div>
   );
@@ -407,6 +463,7 @@ function PluginRow({
       {expanded && (
         <div style={{ margin: '14px 0 0 30px' }}>
           <WorkspaceSettings info={info} config={config} />
+          {info.source && <Hint>Updates from {info.source}</Hint>}
           {info.user && manager.supportsUserPlugins && (
             <elements.Button type="ghost" size="small" onClick={() => void manager.removeUserPlugin(info.id)}>
               Remove plugin
