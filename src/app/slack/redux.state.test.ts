@@ -24,6 +24,7 @@ function fixture() {
     Event,
     setTimeout,
     queueMicrotask,
+    requestAnimationFrame: (callback: () => void) => setTimeout(callback, 0),
     document: { querySelector: () => null },
   });
   runInContext(bundle.outputFiles[0]!.text, context);
@@ -50,7 +51,7 @@ function fixture() {
   ]);
   const module: any = { exports: {} };
   context.rspackChunkGantryV2[0][1].stores(module, module.exports, () => ({}));
-  return { redux, createStore: module.exports.createStore as typeof createStore };
+  return { redux, webpack, context, createStore: module.exports.createStore as typeof createStore };
 }
 
 test('state patches memoize per store, invalidate all stores on refresh and never mutate raw state', () => {
@@ -106,4 +107,48 @@ test('stores sharing one raw state keep separate patch results and handle undefi
   assert.equal(empty.getState(), empty.getState());
   remove();
   assert.equal(empty.getState(), undefined);
+});
+
+test('legacy_createStore stores are patched before Slack copies them and refresh reaches batched listeners', async () => {
+  const { redux, context } = fixture();
+  const raw = { count: 1 };
+  const batched = new Set<() => void>();
+  function legacy_createStore() {
+    return {
+      getState: () => raw,
+      dispatch: (action: any) => action,
+      subscribe(listener: () => void) {
+        batched.add(listener);
+        return () => batched.delete(listener);
+      },
+      subscribeImmediate: () => () => {},
+    };
+  }
+  context.rspackChunkGantryV2.push([
+    [2],
+    {
+      redux(module: any) {
+        module.exports = { Yl: legacy_createStore };
+      },
+    },
+  ]);
+  const module: any = { exports: {} };
+  context.rspackChunkGantryV2[1][1].redux(module, module.exports, () => ({}));
+  const store = module.exports.Yl();
+  const copy = { ...store };
+
+  let calls = 0;
+  const unsubscribe = copy.subscribe(() => calls++);
+  assert.equal(batched.size, 1);
+  const remove = redux.patchState((state: any) => ({ ...state, count: state.count + 1 }));
+  assert.equal(copy.getState().count, 2);
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  assert.equal(calls, 1);
+
+  unsubscribe();
+  assert.equal(batched.size, 0);
+  remove();
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  assert.equal(calls, 1);
+  assert.equal(copy.getState(), raw);
 });

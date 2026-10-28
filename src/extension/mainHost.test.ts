@@ -157,6 +157,7 @@ test('settings reach running halves; storage is per plugin and bounded', async (
   const host = createMainHost(area, undefined, [{ plugin, schema, defaultEnabled: false }]);
   await host.update({ plugins: { ClearURLs: { enabled: true } } });
   await host.update({ plugins: { ClearURLs: { enabled: true, flag: true } } });
+  await host.update({ plugins: { ClearURLs: { enabled: true, flag: true }, NoTrack: { enabled: true } } });
   assert.deepEqual(seen, [true]);
 
   assert.equal(await storage.write('rules.json', 'x'.repeat(200_000)), true);

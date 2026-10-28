@@ -144,3 +144,27 @@ test('Chromium owned UI accepts only this extension origin', async () => {
   assert.deepEqual(opened, [root + 'options.html']);
   assert.equal(toolbarIconPath('{"toolbarIcon":"white"}', true), 'icons/white.png');
 });
+test('a settings write reaches background halves before storage.onChanged does', async () => {
+  const data: Record<string, unknown> = {};
+  const area = {
+    get: async (key: string) => (key in data ? { [key]: data[key] } : {}),
+    set: async (items: Record<string, unknown>) => void Object.assign(data, items),
+  };
+  const api = {
+    runtime: { id: 'slick@test', getURL: (path: string) => 'moz-extension://own/' + path },
+    storage: { local: area, onChanged: { addListener() {} } },
+    tabs: {},
+  } as unknown as ExtensionBrowser;
+  const plugin = { id: 'ClearURLs', capabilities: [], rpc: { rules: () => 'ok' } };
+  const dispatch = createBackground(api, [{ plugin, schema: {}, defaultEnabled: false }], {} as never);
+  const sender = { id: 'slick@test', url: 'moz-extension://own/options.html' };
+  const call = () => dispatch({ method: 'plugin.call', args: ['ClearURLs', 'rules', '[]'] }, sender);
+  assert.equal((await call()).ok, false);
+  const prior = (await dispatch({ method: 'readSettings', args: [] }, sender)) as { value: string };
+  const next = JSON.stringify({ plugins: { ClearURLs: { enabled: true } } });
+  assert.deepEqual(await dispatch({ method: 'compareAndSwapSettings', args: [prior.value, next] }, sender), {
+    ok: true,
+    value: true,
+  });
+  assert.deepEqual(await call(), { ok: true, value: '"ok"' });
+});

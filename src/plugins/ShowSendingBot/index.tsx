@@ -260,6 +260,7 @@ export default class ShowSendingBot extends SlickPlugin<typeof meta.settings> {
 
     this.provideMessage('ProgressiveDisclosureSuccessCoachmarkWrapper', (props) => props.msg);
     this.provideMessage('MessageAvatar', (props) => props.msg);
+    this.provideMessage('BaseMessageAvatar', (props) => props.msg);
     this.provideMessage('SearchResult', (props) => props);
     this.provideMessage('MessageAttachment', (props: MessageAttachmentProps) => {
       const stored =

@@ -428,48 +428,50 @@ export default class BetterBlock extends SlickPlugin<typeof meta.settings> {
   }
 
   private patchProfilePopups() {
-    this.api.patchComponent<Data>('MemberProfileHoverCard', (Original) => (props) => {
-      this.api.redux.usePatchVersion();
-      if (!isBlocked(props.memberId, this.blocked)) return <Original {...props} />;
-      return (
-        <div
-          className="slick-betterblock-profile"
-          style={{
-            position: 'relative',
-            overflow: 'hidden',
-            borderRadius: 12,
-            background: 'rgb(var(--sk_primary_background, 255, 255, 255))',
-            boxShadow: '0 0 0 1px rgba(0, 0, 0, 0.12), 0 8px 24px rgba(0, 0, 0, 0.16)',
-          }}
-        >
+    for (const name of ['MemberProfileHoverCard', 'ProfileHoverCard']) {
+      this.api.patchComponent<Data>(name, (Original) => (props) => {
+        this.api.redux.usePatchVersion();
+        if (!isBlocked(props.memberId, this.blocked)) return <Original {...props} />;
+        return (
           <div
-            aria-hidden="true"
-            inert
-            style={{ filter: 'blur(8px)', opacity: 0.65, pointerEvents: 'none', userSelect: 'none' }}
-          >
-            <Original {...props} />
-          </div>
-          <div
-            role="status"
+            className="slick-betterblock-profile"
             style={{
-              position: 'absolute',
-              inset: 0,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              padding: 24,
-              background: 'rgba(var(--sk_primary_background, 255, 255, 255), 0.3)',
-              fontSize: 16,
-              fontWeight: 700,
-              textAlign: 'center',
-              color: 'rgb(var(--sk_primary_foreground, 29, 28, 29))',
+              position: 'relative',
+              overflow: 'hidden',
+              borderRadius: 12,
+              background: 'rgb(var(--sk_primary_background, 255, 255, 255))',
+              boxShadow: '0 0 0 1px rgba(0, 0, 0, 0.12), 0 8px 24px rgba(0, 0, 0, 0.16)',
             }}
           >
-            You blocked this person
+            <div
+              aria-hidden="true"
+              inert
+              style={{ filter: 'blur(8px)', opacity: 0.65, pointerEvents: 'none', userSelect: 'none' }}
+            >
+              <Original {...props} />
+            </div>
+            <div
+              role="status"
+              style={{
+                position: 'absolute',
+                inset: 0,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                padding: 24,
+                background: 'rgba(var(--sk_primary_background, 255, 255, 255), 0.3)',
+                fontSize: 16,
+                fontWeight: 700,
+                textAlign: 'center',
+                color: 'rgb(var(--sk_primary_foreground, 29, 28, 29))',
+              }}
+            >
+              You blocked this person
+            </div>
           </div>
-        </div>
-      );
-    });
+        );
+      });
+    }
   }
 
   private patchNotifications() {

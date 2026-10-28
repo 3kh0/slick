@@ -112,3 +112,23 @@ test('censorMessage: identity is preserved when there is no matcher', () => {
   const msg = { text: 'job' };
   assert.equal(censorMessage(msg, matcher), msg);
 });
+
+test('censorMessage: search highlight extracts are masked too', () => {
+  const matcher = compile(defaults);
+  const highlighted = [
+    { type: 'rich_text', elements: [{ type: 'text', text: 'job', style: { client_highlight: true } }] },
+  ];
+  const out = censorMessage(
+    {
+      text: 'job',
+      extracts: [{ text: 'a job board' }],
+      blocks_extracts: highlighted,
+      blocks_extracts_typed: highlighted,
+    },
+    matcher,
+  )!;
+  assert.deepEqual(out.extracts, [{ text: 'a *** board' }]);
+  assert.equal(out.blocks_extracts[0].elements[0].text, '***');
+  assert.equal(out.blocks_extracts_typed[0].elements[0].text, '***');
+  assert.equal(highlighted[0].elements[0].text, 'job');
+});

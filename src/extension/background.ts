@@ -48,6 +48,7 @@ export function allowedSender(sender: Sender, id: string, extensionRoot: string)
     return false;
   }
 }
+const settingsWrites = new Set(['writeSettings', 'compareAndSwapSettings']);
 const parse = (text: unknown) => {
   try {
     return JSON.parse(String(text));
@@ -200,6 +201,10 @@ export function createBackground(
         return { ok: false, error: String((error as Error)?.message ?? error).slice(0, 200) };
       }
     }
-    return storage.dispatch(message);
+    const response = await storage.dispatch(message);
+    // The page starts plugins once this resolves, before storage.onChanged arrives.
+    if (response.ok && response.value === true && settingsWrites.has(message.method))
+      void hostReady.then(() => host.update(parse(message.args.at(-1))));
+    return response;
   };
 }

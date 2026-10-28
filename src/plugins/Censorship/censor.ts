@@ -22,7 +22,15 @@ const MASK_CHARS: Record<Exclude<CensorStyle, 'custom'>, string> = {
 };
 
 /** Fields Slack draws from; ids, types and timestamps are left alone. */
-const TEXT_FIELDS = ['text', 'blocks', 'blocksProcessed', 'attachments'] as const;
+const TEXT_FIELDS = [
+  'text',
+  'blocks',
+  'blocksProcessed',
+  'attachments',
+  'extracts',
+  'blocks_extracts',
+  'blocks_extracts_typed',
+] as const;
 const TEXT_KEYS = new Set(['text', 'fallback', 'title', 'pretext', 'footer']);
 const WORD_CHAR = /[\p{L}\p{N}_]/u;
 const META = /[.*+?^${}()|[\]\\]/g;
