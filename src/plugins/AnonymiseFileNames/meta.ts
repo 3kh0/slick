@@ -1,8 +1,9 @@
-import type { SettingsSchema } from '../../shared/settings.ts';
+import type { PluginCategory, SettingsSchema } from '../../shared/settings.ts';
 
 export const id = 'AnonymiseFileNames';
 export const pluginName = 'Anonymise File Names';
 export const description = 'Replace uploaded file names with a random string, keeping the extension';
+export const category: PluginCategory = 'privacy';
 export const defaultEnabled = false;
 
 export const settings = {

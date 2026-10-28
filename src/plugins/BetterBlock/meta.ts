@@ -1,9 +1,10 @@
-import type { SettingsSchema } from '$slick';
+import type { PluginCategory, SettingsSchema } from '$slick';
 
 export const id = 'BetterBlock';
 export const pluginName = 'BetterBlock';
 export const description =
   'Make people disappear locally: messages, reactions, typing, and more. Huddles are untouched.';
+export const category: PluginCategory = 'people';
 export const defaultEnabled = false;
 
 export const settings = {

@@ -20,6 +20,7 @@ export default class HcaStatus extends SlickPlugin<typeof meta.settings> {
   static readonly id = meta.id;
   static readonly pluginName = meta.pluginName;
   static readonly description = meta.description;
+  static readonly category = meta.category;
   static readonly defaultEnabled = meta.defaultEnabled;
   static readonly settings = meta.settings;
   static readonly liveSettings = ['unverifiedColor', 'over18Color'];

@@ -1,9 +1,10 @@
-import type { SettingsSchema } from '../../shared/settings.ts';
+import type { PluginCategory, SettingsSchema } from '../../shared/settings.ts';
 
 export const id = 'DeArrow';
 export const pluginName = 'DeArrow';
 export const description =
   'Replace clickbait YouTube titles and thumbnails with crowdsourced ones. Sends the IDs of YouTube videos you see to DeArrow (sponsor.ajay.app).';
+export const category: PluginCategory = 'messages';
 export const defaultEnabled = false;
 
 export const settings = {

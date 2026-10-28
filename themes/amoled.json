@@ -1,6 +1,6 @@
 {
   "name": "AMOLED",
-  "description": "True-black theme for OLED.",
+  "description": "True-black theme for those on the dark side",
   "palette": {
     "aubergine": { "0": "0,0,0", "10": "0,0,0" }
   },

@@ -1,7 +1,7 @@
 // Plugin base class. Import as `$slick` (see tsconfig paths).
 
 import type { SlickAPI } from '../app/pluginManager.ts';
-import type { PluginSettings, SettingsSchema } from './settings.ts';
+import type { PluginCategory, PluginSettings, SettingsSchema } from './settings.ts';
 
 export const PLUGIN_APIS = [
   'redux',
@@ -32,7 +32,7 @@ export type { Block, FromDeltaOptions } from '../app/slack/blocks.ts';
 export type { SendCheckContext } from '../app/api/sendChecks.tsx';
 export type { Delta, DeltaOp } from './delta.ts';
 export type { MenuTemplateItem, SelectOption } from '../app/api/elements.ts';
-export type { PluginSettings, Setting, SettingsSchema, SettingValue } from './settings.ts';
+export type { PluginCategory, PluginSettings, Setting, SettingsSchema, SettingValue } from './settings.ts';
 export type { Capability, MainCtx, SlickMainPlugin } from './main.ts';
 
 export abstract class SlickPlugin<Schema extends SettingsSchema = SettingsSchema> {
@@ -41,6 +41,8 @@ export abstract class SlickPlugin<Schema extends SettingsSchema = SettingsSchema
   /** Shown in Preferences. */
   static readonly pluginName: string;
   static readonly description: string;
+  /** Groups the plugin in Preferences; user plugins without one are listed on their own. */
+  static readonly category?: PluginCategory;
   /** Slack user IDs, `<@U…>` style. */
   static readonly authors: string = '';
   static readonly defaultEnabled: boolean = false;
@@ -86,6 +88,7 @@ export interface SlickPluginConstructor {
   readonly id: string;
   readonly pluginName: string;
   readonly description: string;
+  readonly category?: PluginCategory;
   readonly authors: string;
   readonly defaultEnabled: boolean;
   readonly settings: SettingsSchema;

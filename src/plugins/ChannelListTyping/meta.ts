@@ -1,8 +1,9 @@
-import type { SettingsSchema } from '../../shared/settings.ts';
+import type { PluginCategory, SettingsSchema } from '../../shared/settings.ts';
 
 export const id = 'ChannelListTyping';
 export const pluginName = 'Channel List Typing';
 export const description = 'Show who’s typing next to each channel and DM in the sidebar';
+export const category: PluginCategory = 'channels';
 export const defaultEnabled = false;
 
 export const settings = {

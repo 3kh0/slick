@@ -1,8 +1,9 @@
-import type { SettingsSchema } from '../../shared/settings.ts';
+import type { PluginCategory, SettingsSchema } from '../../shared/settings.ts';
 
 export const id = 'OnlineCount';
 export const pluginName = 'Online Count';
 export const description = "Show how many of a channel's members are online, next to its member count";
+export const category: PluginCategory = 'channels';
 export const defaultEnabled = false;
 
 export const settings = {

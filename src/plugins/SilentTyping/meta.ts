@@ -1,8 +1,9 @@
-import type { SettingsSchema } from '../../shared/settings.ts';
+import type { PluginCategory, SettingsSchema } from '../../shared/settings.ts';
 
 export const id = 'SilentTyping';
 export const pluginName = 'Silent Typing';
 export const description = 'Never show the "is typing…" indicator to anyone else';
+export const category: PluginCategory = 'privacy';
 export const defaultEnabled = false;
 
 export const settings = {

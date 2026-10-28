@@ -1,8 +1,9 @@
-import type { SettingsSchema } from '../../shared/settings.ts';
+import type { PluginCategory, SettingsSchema } from '../../shared/settings.ts';
 
 export const id = 'CallTimer';
 export const pluginName = 'Call Timer';
 export const description = 'Show how long you’ve been in a huddle';
+export const category: PluginCategory = 'sounds';
 export const defaultEnabled = false;
 
 export const settings = {

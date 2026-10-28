@@ -1,8 +1,9 @@
-import type { SettingsSchema } from '../../shared/settings.ts';
+import type { PluginCategory, SettingsSchema } from '../../shared/settings.ts';
 
 export const id = 'MentionProfiles';
 export const pluginName = 'Mention Profiles';
 export const description = 'Show profile pictures inside @mentions';
+export const category: PluginCategory = 'messages';
 export const defaultEnabled = false;
 
 export const settings = {

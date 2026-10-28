@@ -1,8 +1,9 @@
-import type { SettingsSchema } from '../../shared/settings.ts';
+import type { PluginCategory, SettingsSchema } from '../../shared/settings.ts';
 
 export const id = 'HumanCount';
 export const pluginName = 'Human Count';
 export const description = "Leave bots and apps out of the channel header's member count.";
+export const category: PluginCategory = 'channels';
 export const defaultEnabled = false;
 
 export const settings = {

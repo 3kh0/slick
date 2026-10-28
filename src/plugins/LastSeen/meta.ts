@@ -1,8 +1,9 @@
-import type { SettingsSchema } from '../../shared/settings.ts';
+import type { PluginCategory, SettingsSchema } from '../../shared/settings.ts';
 
 export const id = 'LastSeen';
 export const pluginName = 'Last Seen';
 export const description = 'Show a "last seen" time for other people, based on what your client can observe.';
+export const category: PluginCategory = 'people';
 export const defaultEnabled = false;
 
 export const settings = {

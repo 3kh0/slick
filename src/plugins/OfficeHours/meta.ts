@@ -1,8 +1,9 @@
-import type { SettingsSchema } from '../../shared/settings.ts';
+import type { PluginCategory, SettingsSchema } from '../../shared/settings.ts';
 
 export const id = 'OfficeHours';
 export const pluginName = 'Office Hours';
 export const description = 'Set schedules for out-of-office and invisible status';
+export const category: PluginCategory = 'app';
 export const defaultEnabled = false;
 
 export const settings = {

@@ -1,8 +1,9 @@
-import type { SettingsSchema } from '../../shared/settings.ts';
+import type { PluginCategory, SettingsSchema } from '../../shared/settings.ts';
 
 export const id = 'Click2Load';
 export const pluginName = 'Click to Load';
 export const description = 'Replaces third-party media embeds with privacy-preserving click-to-load placeholders';
+export const category: PluginCategory = 'privacy';
 export const defaultEnabled = false;
 
 const allow = (label: string, hint: string) => ({ type: 'boolean', label, description: hint, default: false }) as const;
