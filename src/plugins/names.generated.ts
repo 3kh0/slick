@@ -10,6 +10,7 @@ export const PLUGINS = [
   'CallTimer',
   'Censorship',
   'ChannelListTyping',
+  'CharacterCounter',
   'ClearURLs',
   'Click2Load',
   'CopyReacted',
