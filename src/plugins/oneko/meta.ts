@@ -1,8 +1,9 @@
-import type { SettingsSchema } from '../../shared/settings.ts';
+import type { PluginCategory, SettingsSchema } from '../../shared/settings.ts';
 
 export const id = 'oneko';
 export const pluginName = 'oneko';
 export const description = 'cat follow mouse (real)';
+export const category: PluginCategory = 'appearance';
 export const defaultEnabled = false;
 
 export const settings = {

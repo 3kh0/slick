@@ -29,7 +29,7 @@ export function editorHtml(): string {
   </style>
 </head>
 <body>
-  <p id="help">Write raw CSS here. To load a JSON theme file, use Import theme JSON in Slick Preferences → Appearance.</p>
+  <p id="help">Write raw CSS here. To load a JSON theme file, use Import theme JSON in Slick Preferences &gt; Appearance.</p>
   <div id="editor"></div><div id="status" role="status" aria-live="polite"></div>
   <script src="${baseUrl}/loader.js"></script>
   <script>

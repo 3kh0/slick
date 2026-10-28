@@ -1,8 +1,9 @@
-import type { SettingsSchema } from '../../shared/settings.ts';
+import type { PluginCategory, SettingsSchema } from '../../shared/settings.ts';
 
 export const id = 'NotShitMarkdown';
 export const pluginName = 'Not Shit Markdown';
 export const description = 'Make the composer use normal Markdown instead of Slack markup';
+export const category: PluginCategory = 'composer';
 export const defaultEnabled = false;
 
 export const settings = {

@@ -1,6 +1,6 @@
 {
   "name": "Catppuccin Mocha",
-  "description": "Soothing pastel theme, from catppuccin.com.",
+  "description": "Soothing pastel theme",
   "palette": {
     "aubergine": { "0": "17,17,27", "10": "17,17,27" }
   },

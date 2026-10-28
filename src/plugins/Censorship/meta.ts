@@ -1,8 +1,9 @@
-import type { SettingsSchema } from '../../shared/settings.ts';
+import type { PluginCategory, SettingsSchema } from '../../shared/settings.ts';
 
 export const id = 'Censorship';
 export const pluginName = 'Censorship';
 export const description = 'There is no war in Ba Sing Se.';
+export const category: PluginCategory = 'messages';
 export const defaultEnabled = false;
 
 export const settings = {

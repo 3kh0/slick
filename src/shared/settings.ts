@@ -3,6 +3,19 @@
 // reach a plugin as the wrong type.
 import { record } from './objects.ts';
 
+export const PLUGIN_CATEGORIES = {
+  messages: 'Messages',
+  composer: 'Composer',
+  people: 'People',
+  channels: 'Channels',
+  sounds: 'Huddles & sounds',
+  privacy: 'Privacy',
+  appearance: 'Look & feel',
+  app: 'App',
+  hackclub: 'Hack Club Specialities',
+} as const;
+export type PluginCategory = keyof typeof PLUGIN_CATEGORIES;
+
 export type SettingType = 'boolean' | 'number' | 'text' | 'select' | 'color' | 'file' | 'names' | 'schedule';
 
 export type SelectOption = { value: string; label: string };

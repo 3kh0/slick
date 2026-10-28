@@ -1,8 +1,9 @@
-import type { SettingsSchema } from '../../shared/settings.ts';
+import type { PluginCategory, SettingsSchema } from '../../shared/settings.ts';
 
 export const id = 'AdminBackend';
 export const pluginName = 'Admin Backend';
 export const description = 'Open profiles in Hack Club admin tools';
+export const category: PluginCategory = 'hackclub';
 export const defaultEnabled = false;
 
 export const settings = {

@@ -1,8 +1,9 @@
-import type { SettingsSchema } from '../../shared/settings.ts';
+import type { PluginCategory, SettingsSchema } from '../../shared/settings.ts';
 
 export const id = 'Nicknames';
 export const pluginName = 'Nicknames';
 export const description = 'Set local nicknames for users';
+export const category: PluginCategory = 'people';
 export const defaultEnabled = true;
 
 export const settings = {

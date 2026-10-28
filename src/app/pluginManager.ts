@@ -732,6 +732,8 @@ export class PluginManager {
       id,
       name: entry.PluginClass.pluginName,
       description: entry.PluginClass.description,
+      category: entry.PluginClass.category,
+      defaultEnabled: entry.PluginClass.defaultEnabled,
       authors: entry.PluginClass.authors,
       settings: entry.PluginClass.settings,
       relaunchSettings: entry.PluginClass.relaunchSettings,

@@ -1,8 +1,9 @@
-import type { SettingsSchema } from '../../shared/settings.ts';
+import type { PluginCategory, SettingsSchema } from '../../shared/settings.ts';
 
 export const id = 'MessageLogger';
 export const pluginName = 'Message Logger';
 export const description = 'Keep deleted and edited messages visible';
+export const category: PluginCategory = 'messages';
 export const defaultEnabled = false;
 
 export const settings = {

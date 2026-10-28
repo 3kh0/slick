@@ -1,8 +1,9 @@
-import type { SettingsSchema } from '../../shared/settings.ts';
+import type { PluginCategory, SettingsSchema } from '../../shared/settings.ts';
 
 export const id = 'ShowSendingBot';
 export const pluginName = 'Show Sending Bot';
 export const description = 'Show which bot or app sent a message';
+export const category: PluginCategory = 'messages';
 export const defaultEnabled = true;
 
 export const settings = {
