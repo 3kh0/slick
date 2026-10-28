@@ -26,6 +26,7 @@ export const PLUGINS = [
   'HumanCount',
   'InstalledApps',
   'LastSeen',
+  'MentionProfiles',
   'MessageLogger',
   'Nicknames',
   'NoTrack',
