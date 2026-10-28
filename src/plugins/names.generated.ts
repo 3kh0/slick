@@ -33,6 +33,7 @@ export const PLUGINS = [
   'NotShitMarkdown',
   'OfficeHours',
   'oneko',
+  'OnlineCount',
   'PrivateChannelMapper',
   'QuickJoin',
   'QuietSpotify',
