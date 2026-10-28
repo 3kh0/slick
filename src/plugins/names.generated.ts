@@ -7,6 +7,7 @@ export const PLUGINS = [
   'BetterBlock',
   'BetterGifs',
   'BetterTypingIndicator',
+  'CallTimer',
   'Censorship',
   'ChannelListTyping',
   'ClearURLs',
