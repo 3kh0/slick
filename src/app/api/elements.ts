@@ -162,6 +162,12 @@ export type ProfileHoverTriggerProps = {
   children?: React.ReactNode;
 };
 
+export type MemberLinkProps = {
+  id: string;
+  className?: string;
+  children?: React.ReactNode;
+};
+
 export type MenuFromTemplateProps = { template?: MenuTemplateItem[] };
 
 export type MenuTriggerProps = {
@@ -199,6 +205,7 @@ export const elementsReady = (async () => {
     SvgIcon: lazyComponent<SvgIconProps>('SvgIcon'),
     Avatar: lazyComponent<AvatarProps>('ConnectedBaseAvatar'),
     ProfileHoverTrigger: lazyComponent<ProfileHoverTriggerProps>('ProfileHoverTrigger'),
+    MemberLink: lazyComponent<MemberLinkProps>('MemberLink'),
     MrkdwnElement: lazyComponent<MrkdwnElementProps>('MrkdwnElement'),
     Button: lazyComponent<ButtonProps>('Button'),
     Tooltip: lazyComponent<TooltipProps>('Tooltip'),
