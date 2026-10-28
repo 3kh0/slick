@@ -18,6 +18,7 @@ export const PLUGINS = [
   'CustomNameRecording',
   'CustomSlackbot',
   'CustomSounds',
+  'DeArrow',
   'Experiments',
   'HaikuWarning',
   'HcaStatus',

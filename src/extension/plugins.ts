@@ -19,6 +19,7 @@ export const BACKGROUND_PLUGINS = [
   'BetterGifs',
   'ClearURLs',
   'Click2Load',
+  'DeArrow',
   'HcaStatus',
   'InstalledApps',
   'NoTrack',

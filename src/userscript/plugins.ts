@@ -9,6 +9,7 @@ export const USERSCRIPT_PLUGINS = EXTENSION_PLUGINS.filter((id) => !USERSCRIPT_E
 export const USERSCRIPT_MAIN_PLUGINS = [
   'BetterGifs',
   'ClearURLs',
+  'DeArrow',
   'HcaStatus',
   'InstalledApps',
   'PrivateChannelMapper',
