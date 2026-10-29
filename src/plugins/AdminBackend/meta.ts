@@ -25,6 +25,12 @@ export const settings = {
     description: 'Show the Fire Engine backend',
     default: true,
   },
+  attend: {
+    type: 'boolean',
+    label: 'Attend',
+    description: 'Show the Attend backend',
+    default: true,
+  },
 } as const satisfies SettingsSchema;
 
 export const TOOLS = [
@@ -42,6 +48,11 @@ export const TOOLS = [
     id: 'fire_engine',
     label: 'Open in Fire Engine',
     url: (member: string) => `https://nemo.hackclub.com/fd/members/${encodeURIComponent(member)}`,
+  },
+  {
+    id: 'attend',
+    label: 'Open in Attend',
+    url: (member: string) => `https://attend.hackclub.com/admin/users?search=${encodeURIComponent(member)}`,
   },
 ] as const;
 
