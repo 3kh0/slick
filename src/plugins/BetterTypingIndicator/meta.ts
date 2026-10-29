@@ -14,4 +14,14 @@ export const settings = {
     description: 'Show each typing person’s profile picture next to their name',
     default: true,
   },
+  names: {
+    type: 'select',
+    label: 'Names',
+    default: 'slack',
+    options: [
+      { value: 'slack', label: 'Follow Slack’s preference' },
+      { value: 'display', label: 'Display names' },
+      { value: 'full', label: 'Full names' },
+    ],
+  },
 } as const satisfies SettingsSchema;

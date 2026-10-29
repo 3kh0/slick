@@ -14,7 +14,8 @@ type TypingNamesProps = {
   secondTyper?: React.ReactNode;
   severalPeopleAreTyping?: boolean;
 };
-type NameOf = (state: unknown, member: unknown) => string;
+type Member = { real_name?: string; profile?: { display_name?: string; real_name?: string } };
+type NameOf = (state: unknown, member: Member | undefined) => string;
 type I18nClass = new (namespace: string) => { t: (text: string, values?: Record<string, unknown>) => string };
 type Typer = { id: string; name: string };
 
@@ -42,6 +43,7 @@ export default class BetterTypingIndicator extends SlickPlugin<typeof meta.setti
   start() {
     const { Avatar, MemberLink, Tooltip } = this.api.elements;
     const showAvatars = this.config.showAvatars !== false;
+    const nameFormat = this.config.names;
 
     void this.api.waitForExport<NameOf>(named('getPrefCompliantMemberName')).then(this.nameOf.set);
     void this.api
@@ -63,16 +65,16 @@ export default class BetterTypingIndicator extends SlickPlugin<typeof meta.setti
         visibility: hidden;
         pointer-events: none;
       }
-      .slick-typing-indicator__member {
+      .slick-typing-indicator .slick-typing-indicator__member {
+        align-items: baseline;
         color: inherit;
         letter-spacing: inherit;
       }
       .slick-typing-indicator__avatar {
-        display: inline-block;
+        align-self: center;
         width: ${AVATAR_SIZE}px;
         height: ${AVATAR_SIZE}px;
         margin-right: ${AVATAR_GAP}px;
-        vertical-align: -3px;
         line-height: 0;
       }
     `);
@@ -101,7 +103,7 @@ export default class BetterTypingIndicator extends SlickPlugin<typeof meta.setti
           (threadTs ?? undefined) === conversation.threadTs &&
           !memberIsSelf &&
           memberId
-            ? [{ id: memberId, name: nameOf(state, state.members?.[memberId]) }]
+            ? [{ id: memberId, name: nameFor(nameFormat, nameOf, state, state.members?.[memberId]) }]
             : [],
         );
         return typers.length ? JSON.stringify(typers) : '';
@@ -247,6 +249,16 @@ function phrasesFrom(I18n: I18nClass): Phrases {
       return label;
     },
   };
+}
+
+function nameFor(format: string, nameOf: NameOf, state: unknown, member: Member | undefined): string {
+  const name =
+    format === 'display'
+      ? member?.profile?.display_name
+      : format === 'full'
+        ? member?.profile?.real_name || member?.real_name
+        : undefined;
+  return name || nameOf(state, member);
 }
 
 function join(nodes: React.ReactNode[]): React.ReactNode {
