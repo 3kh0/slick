@@ -48,7 +48,7 @@ export const settings = {
     type: 'select',
     label: 'Ignore anchors',
     description: 'Skip deletions of bot-sent (anchored) messages',
-    default: 'off',
+    default: 'strict',
     options: [
       { value: 'off', label: 'Off' },
       {
