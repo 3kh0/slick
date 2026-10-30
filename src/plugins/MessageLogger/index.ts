@@ -109,7 +109,7 @@ export default class MessageLogger extends SlickPlugin<typeof meta.settings> {
   static readonly category = meta.category;
   static readonly defaultEnabled = meta.defaultEnabled;
   static readonly settings = meta.settings;
-  static readonly liveSettings = ['deletedStyle', 'retentionDays', 'ignoreEditsFrom'];
+  static readonly liveSettings = ['deletedStyle', 'retentionDays', 'ignoreEditsFrom', 'allowBotEditsFrom'];
 
   private readonly entries = new Map<string, LogEntry>();
   private readonly legacyEntries = new Map<string, LogEntry>();
@@ -321,23 +321,38 @@ export default class MessageLogger extends SlickPlugin<typeof meta.settings> {
   }
 
   private skipIgnored(...messages: (SlackMessage | undefined)[]): boolean {
-    const ignored = new Set(
-      (this.config.ignoreEditsFrom ?? '')
+    const ignored = this.senderIds(this.config.ignoreEditsFrom);
+    if (!ignored.size) return false;
+    return messages.some((msg) => this.senderIdsIn(msg).some((id) => ignored.has(id)));
+  }
+
+  private senderIds(value: string | undefined): Set<string> {
+    return new Set(
+      (value ?? '')
         .split(',')
         .map((id: string) => id.trim())
         .filter(Boolean),
     );
-    if (!ignored.size) return false;
-    return messages.some((msg) =>
-      [
-        msg?.user,
-        msg?.app_id,
-        msg?.bot_id,
-        msg?.bot_profile?.app_id,
-        msg?.bot_profile?.user_id,
-        msg?.bot_profile?.id,
-      ].some((id) => !!id && ignored.has(id)),
+  }
+
+  private senderIdsIn(msg: SlackMessage | undefined): string[] {
+    return [
+      msg?.user,
+      msg?.app_id,
+      msg?.bot_id,
+      msg?.bot_profile?.app_id,
+      msg?.bot_profile?.user_id,
+      msg?.bot_profile?.id,
+    ].filter((id): id is string => !!id);
+  }
+
+  private skipBotEdit(...messages: (SlackMessage | undefined)[]): boolean {
+    const botMessages = messages.filter(
+      (msg) => !!(msg?.bot_id || msg?.bot_profile || msg?.app_id || msg?.display_as_bot),
     );
+    if (!botMessages.length) return false;
+    const allowed = this.senderIds(this.config.allowBotEditsFrom);
+    return botMessages.some((msg) => !this.senderIdsIn(msg).some((id) => allowed.has(id)));
   }
 
   private recordDelete(event: RtmEvent) {
@@ -407,6 +422,7 @@ export default class MessageLogger extends SlickPlugin<typeof meta.settings> {
       });
     if (this.skipSelf(user)) return;
     if (this.skipIgnored(next, original, event as SlackMessage)) return;
+    if (this.skipBotEdit(next, original, previous)) return;
     const oldText = messageText(original);
     const newText = messageText(next);
     const existing = this.entries.get(this.key(channel, ts));
