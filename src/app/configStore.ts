@@ -19,6 +19,8 @@ export type StoredConfig = {
   importedThemes?: Record<string, ThemeJson>;
   plugins?: Record<string, Record<string, unknown>>;
   pluginWorkspaces?: PluginWorkspaces;
+  /** Proxy for desktop update downloads, e.g. http://host:3128; empty means direct. */
+  downloadProxy?: string;
 };
 
 type SchemaEntry = { schema: SettingsSchema; defaultEnabled: boolean };
@@ -112,6 +114,10 @@ export class ConfigStore {
   get theme(): string {
     const theme = typeof this.stored.theme === 'string' ? this.stored.theme : '';
     return RENAMED_THEMES[theme] ?? theme;
+  }
+
+  get downloadProxy(): string {
+    return typeof this.stored.downloadProxy === 'string' ? this.stored.downloadProxy : '';
   }
 
   getUserCss(): string {
@@ -252,6 +258,13 @@ export class ConfigStore {
           included ? [...selected, workspaceId] : selected.filter((selectedId) => selectedId !== workspaceId),
         ),
       };
+    });
+  }
+
+  setDownloadProxy(proxy: string) {
+    return this.update((config) => {
+      if (proxy) config.downloadProxy = proxy;
+      else delete config.downloadProxy;
     });
   }
 
