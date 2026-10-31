@@ -1,6 +1,7 @@
 {
   "name": "AMOLED",
   "description": "True-black theme for those on the dark side",
+  "mode": "dark",
   "palette": {
     "aubergine": { "0": "0,0,0", "10": "0,0,0" }
   },

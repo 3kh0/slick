@@ -1,6 +1,7 @@
 {
   "name": "Catppuccin Frapp\u00e9",
   "description": "Soothing pastel theme",
+  "mode": "dark",
   "palette": {
     "aubergine": {
       "0": "35,38,52",
