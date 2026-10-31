@@ -44,6 +44,13 @@ export const settings = {
     description: 'Skip edits and deletes from these comma-separated app, user, or bot IDs (e.g. A08GT3TM7A4)',
     default: '',
   },
+  allowBotEditsFrom: {
+    type: 'text',
+    label: 'Show bot edits from',
+    description:
+      'Log edits from these comma-separated bot or app IDs (e.g. A08GT3TM7A4). Bot edits are hidden by default.',
+    default: '',
+  },
   ignoreAnchors: {
     type: 'select',
     label: 'Ignore anchors',

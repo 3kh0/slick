@@ -166,6 +166,7 @@ test('sender exclusions match IDs across message payloads and skip edits and del
     ignoreSelf: false,
     ignoreAnchors: 'off',
     ignoreEditsFrom: ' , A08GT3TM7A4, UIGNORED, BIGNORED, ',
+    allowBotEditsFrom: 'A08GT3TM7A4OTHER',
   };
   const plugin = new MessageLogger(
     {
@@ -215,6 +216,7 @@ test('sender exclusions match IDs across message payloads and skip edits and del
   assert.deepEqual(values.get('entry:C:allowed').edits, [{ oldText: 'before', newText: 'after' }]);
 
   config.ignoreEditsFrom = '';
+  config.allowBotEditsFrom = 'A08GT3TM7A4';
   edit('app', { text: 'after' }, { text: 'again', app_id: 'A08GT3TM7A4' });
   plugin.flush();
   await drain();
@@ -256,6 +258,77 @@ test('sender exclusions match IDs across message payloads and skip edits and del
     [...values.keys()].filter((key) => key.startsWith('entry:C:del-')),
     ['entry:C:del-other'],
   );
+});
+
+test('bot edits are hidden by default, whitelisted bots show edits, and blacklist suppresses deletes', async (t) => {
+  const previousReact = Object.getOwnPropertyDescriptor(globalThis, 'React');
+  Object.defineProperty(globalThis, 'React', { configurable: true, value: { createContext: () => ({}) } });
+  t.after(() => {
+    if (previousReact) Object.defineProperty(globalThis, 'React', previousReact);
+    else Reflect.deleteProperty(globalThis, 'React');
+  });
+  const values = new Map<string, any>();
+  const config = {
+    saveImages: false,
+    retentionDays: 30,
+    ignoreSelf: false,
+    ignoreAnchors: 'off',
+    ignoreEditsFrom: 'BBLOCKED',
+    allowBotEditsFrom: 'BOK, AOK',
+  };
+  const plugin = new MessageLogger(
+    {
+      storage: {
+        async set(key: string, value: unknown) {
+          values.set(key, value);
+          return true;
+        },
+        async delete(key: string) {
+          return values.delete(key);
+        },
+      },
+      messages: { getRawMessage: () => undefined, getMessageBotId: (msg: any) => msg?.bot_id },
+      redux: { getRawState: () => ({}), refresh() {} },
+    },
+    config,
+  );
+  t.after(() => plugin.stop());
+  const edit = (ts: string, before: any, after: any) =>
+    plugin.record({
+      type: 'message',
+      subtype: 'message_changed',
+      channel: 'C',
+      previous_message: { ts, text: 'before', ...before },
+      message: { ts, text: 'after', ...after },
+    });
+  const deletion = (ts: string, message: any) =>
+    plugin.record({
+      type: 'message',
+      subtype: 'message_deleted',
+      channel: 'C',
+      deleted_ts: ts,
+      previous_message: { ts, text: 'body', ...message },
+    });
+
+  edit('hidden', {}, { bot_id: 'BHIDDEN' });
+  edit('allowed', {}, { bot_id: 'BOK' });
+  edit('app-hidden', {}, { app_id: 'AAPP' });
+  edit('app-allowed', { bot_id: 'BAPP' }, { bot_id: 'BAPP', app_id: 'AOK' });
+  plugin.flush();
+  await drain();
+  assert.equal(values.has('entry:C:hidden'), false);
+  assert.deepEqual(values.get('entry:C:allowed').edits, [{ oldText: 'before', newText: 'after' }]);
+  assert.equal(values.has('entry:C:app-hidden'), false);
+  assert.deepEqual(values.get('entry:C:app-allowed').edits, [{ oldText: 'before', newText: 'after' }]);
+
+  deletion('allowed-delete', { bot_id: 'BOK' });
+  deletion('blocked-delete', { bot_id: 'BBLOCKED' });
+  deletion('human-delete', { user: 'U1' });
+  plugin.flush();
+  await drain();
+  assert.equal(values.get('entry:C:allowed-delete').deleted, true);
+  assert.equal(values.has('entry:C:blocked-delete'), false);
+  assert.equal(values.get('entry:C:human-delete').deleted, true);
 });
 
 test('admin-hidden threads restore parent and replies as deletions, not edits', async (t) => {
