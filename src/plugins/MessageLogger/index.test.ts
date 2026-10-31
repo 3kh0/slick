@@ -274,7 +274,7 @@ test('bot edits are hidden by default, whitelisted bots show edits, and blacklis
     ignoreSelf: false,
     ignoreAnchors: 'off',
     ignoreEditsFrom: 'BBLOCKED',
-    allowBotEditsFrom: 'BOK',
+    allowBotEditsFrom: 'BOK, AOK',
   };
   const plugin = new MessageLogger(
     {
@@ -313,11 +313,13 @@ test('bot edits are hidden by default, whitelisted bots show edits, and blacklis
   edit('hidden', {}, { bot_id: 'BHIDDEN' });
   edit('allowed', {}, { bot_id: 'BOK' });
   edit('app-hidden', {}, { app_id: 'AAPP' });
+  edit('app-allowed', { bot_id: 'BAPP' }, { bot_id: 'BAPP', app_id: 'AOK' });
   plugin.flush();
   await drain();
   assert.equal(values.has('entry:C:hidden'), false);
   assert.deepEqual(values.get('entry:C:allowed').edits, [{ oldText: 'before', newText: 'after' }]);
   assert.equal(values.has('entry:C:app-hidden'), false);
+  assert.deepEqual(values.get('entry:C:app-allowed').edits, [{ oldText: 'before', newText: 'after' }]);
 
   deletion('allowed-delete', { bot_id: 'BOK' });
   deletion('blocked-delete', { bot_id: 'BBLOCKED' });

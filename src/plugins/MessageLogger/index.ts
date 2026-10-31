@@ -347,12 +347,10 @@ export default class MessageLogger extends SlickPlugin<typeof meta.settings> {
   }
 
   private skipBotEdit(...messages: (SlackMessage | undefined)[]): boolean {
-    const botMessages = messages.filter(
-      (msg) => !!(msg?.bot_id || msg?.bot_profile || msg?.app_id || msg?.display_as_bot),
-    );
-    if (!botMessages.length) return false;
+    if (!messages.some((msg) => !!(msg?.bot_id || msg?.bot_profile || msg?.app_id || msg?.display_as_bot)))
+      return false;
     const allowed = this.senderIds(this.config.allowBotEditsFrom);
-    return botMessages.some((msg) => !this.senderIdsIn(msg).some((id) => allowed.has(id)));
+    return !messages.some((msg) => this.senderIdsIn(msg).some((id) => allowed.has(id)));
   }
 
   private recordDelete(event: RtmEvent) {
