@@ -50,6 +50,16 @@ export function readStoredSettings(text = readSettingsText()): StoredSettings | 
   }
 }
 
+/** The raw `downloadProxy` string, or '' when unset or the file is unreadable. */
+export function readDownloadProxy(text = readSettingsText()): string {
+  try {
+    const value = JSON.parse(text)?.downloadProxy;
+    return typeof value === 'string' ? value : '';
+  } catch {
+    return '';
+  }
+}
+
 export function watchSettings(onChange: (text: string, settings: StoredSettings) => void): () => void {
   const dir = settingsDir();
   fs.mkdirSync(dir, { recursive: true });

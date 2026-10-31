@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
+import { randomBytes } from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -59,7 +60,7 @@ await build({
 });
 const { createUpdater } = await import(bundle);
 
-function fixture(blocked = false) {
+function fixture(blocked = false, downloadProxy = '') {
   const dir = fs.mkdtempSync(path.join(temp, 'case-'));
   const f = {
     dir,
@@ -70,7 +71,12 @@ function fixture(blocked = false) {
     quits: 0,
     exits: 0,
     downloads: 0,
-    get(url: string, _options: unknown, callback: (res: any) => void) {
+    payload: null as Buffer | null,
+    dropOnce: false,
+    dropped: false,
+    ranges: [] as number[][],
+    archives: [] as Buffer[],
+    get(url: string, options: any, callback: (res: any) => void) {
       const request = new EventEmitter() as any;
       request.setTimeout = () => request;
       request.destroy = (error: Error) => request.emit('error', error);
@@ -92,20 +98,39 @@ function fixture(blocked = false) {
           res.end(JSON.stringify({ attestations: [{ bundle: {} }] }));
         } else {
           f.downloads++;
-          res.headers['content-length'] = '4';
-          res.end('test');
+          const range = /^bytes=(\d+)-(\d+)$/.exec(options?.headers?.Range ?? '');
+          if (f.payload && range) {
+            const start = Number(range[1]);
+            const end = Math.min(Number(range[2]), f.payload.length - 1);
+            f.ranges.push([start, end]);
+            res.statusCode = 206;
+            res.headers['content-range'] = `bytes ${start}-${end}/${f.payload.length}`;
+            res.headers['content-length'] = String(end - start + 1);
+            const body = f.payload.subarray(start, end + 1);
+            if (f.dropOnce && start > 0 && !f.dropped) {
+              f.dropped = true;
+              res.write(body.subarray(0, 10));
+              res.destroy();
+            } else {
+              res.end(body);
+            }
+          } else {
+            res.headers['content-length'] = '4';
+            res.end('test');
+          }
         }
       });
       return request;
     },
     extract(_cmd: string, args: string[], callback: (error?: Error) => void) {
+      f.archives.push(fs.readFileSync(args[2]));
       const destination = args.at(-1)!;
       fs.mkdirSync(path.join(destination, 'Slick.app', 'Contents', 'MacOS'), { recursive: true });
       callback();
     },
   };
   (globalThis as any).__updaterFixture = f;
-  return { f, updater: createUpdater({ version: '2.0.116', build: 116 }) };
+  return { f, updater: createUpdater({ version: '2.0.116', build: 116, downloadProxy: () => downloadProxy }) };
 }
 
 test(
@@ -157,6 +182,49 @@ test(
     f.blocked = false;
     await updater.activate();
     assert.equal(updater.getStatus().state, 'ready');
+  },
+);
+
+const CHUNK = 2 * 1024 * 1024;
+
+test(
+  'downloads Range chunks in parallel and reassembles the file',
+  { skip: process.platform !== 'darwin' },
+  async () => {
+    const { f, updater } = fixture();
+    f.payload = randomBytes(2 * CHUNK + 12345);
+    await updater.manualCheckForUpdates();
+    await updater.activate();
+    assert.equal(updater.getStatus().state, 'ready');
+    assert.ok(f.archives[0].equals(f.payload));
+    assert.deepEqual(
+      f.ranges.map(([start]) => start).toSorted((a, b) => a - b),
+      [0, CHUNK, 2 * CHUNK],
+    );
+  },
+);
+
+test('retries a chunk whose connection drops', { skip: process.platform !== 'darwin' }, async () => {
+  const { f, updater } = fixture();
+  f.payload = randomBytes(2 * CHUNK);
+  f.dropOnce = true;
+  await updater.manualCheckForUpdates();
+  await updater.activate();
+  assert.equal(updater.getStatus().state, 'ready');
+  assert.ok(f.archives[0].equals(f.payload));
+  assert.equal(f.ranges.length, 3);
+});
+
+test(
+  'an invalid download proxy fails the update instead of going direct',
+  { skip: process.platform !== 'darwin' },
+  async () => {
+    const { f, updater } = fixture(false, 'socks5://proxy.example:1080');
+    await updater.manualCheckForUpdates();
+    await updater.activate();
+    assert.equal(updater.getStatus().state, 'error');
+    assert.match(updater.getStatus().detail, /http:\/\/host:port/);
+    assert.equal(f.downloads, 0);
   },
 );
 

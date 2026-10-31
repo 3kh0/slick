@@ -14,6 +14,7 @@ import { Store } from './store.ts';
 import type { ThemeJson } from './theme.ts';
 import { parseThemeJson } from '../shared/themes.ts';
 import { currentWorkspaceId, knownWorkspaces } from './workspaces.ts';
+import { parseDownloadProxy } from '../shared/downloadProxy.ts';
 import { HACK_CLUB_PATH } from '../shared/icons.ts';
 import slickMark from '../../assets/desktop.svg';
 
@@ -824,6 +825,11 @@ function OverviewPanel({
           <span className="slick-settings__value">{bridge.loaderVersion}</span>
         </Field>
       </Card>
+      {bridge.loader === 'electron' && (
+        <Card title="Updates">
+          <DownloadProxy config={config} />
+        </Card>
+      )}
       <Card title="Links">
         <Field label="Source code" description="Slick is open source. Drop a star if you like it!">
           <elements.Button type="outline" size="small" onClick={() => openLink('https://github.com/3kh0/slick')}>
@@ -837,6 +843,51 @@ function OverviewPanel({
         </Field>
       </Card>
     </div>
+  );
+}
+
+function DownloadProxy({ config }: { config: ConfigStore }) {
+  const saved = config.downloadProxy;
+  const [text, setText] = React.useState(saved);
+  const [error, setError] = React.useState('');
+  React.useEffect(() => setText(saved), [saved]);
+  const save = () => {
+    try {
+      parseDownloadProxy(text);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+      return;
+    }
+    setError('');
+    if (text.trim() !== saved) queueConfigWrite(config, () => config.setDownloadProxy(text.trim()));
+  };
+  return (
+    <Field
+      stacked
+      label="Download proxy"
+      htmlFor="slick-download-proxy"
+      description="Send Slick's own update downloads through an HTTP or HTTPS proxy. Leave empty to connect directly. Saved as plain text in your settings file."
+    >
+      <input
+        id="slick-download-proxy"
+        className="c-input_text"
+        type="text"
+        spellCheck={false}
+        autoComplete="off"
+        placeholder="http://127.0.0.1:3128"
+        value={text}
+        onChange={(event) => setText(event.currentTarget.value)}
+        onBlur={save}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter') save();
+        }}
+      />
+      {error && (
+        <div role="alert" className="slick-settings__hint">
+          {error}
+        </div>
+      )}
+    </Field>
   );
 }
 
