@@ -157,13 +157,14 @@ Slick updates itself every few hours, and checks every download against its GitH
 
 ## Themes
 
-Import a `.json` theme from **Slick Preferences → Appearance → Import theme JSON** (or Appearance in the Firefox toolbar popup). Imported themes are saved, selected immediately, and can be picked again from the theme list or removed with **Remove imported theme**. Match Slack’s native Light or Dark mode to the theme.
+Import a `.json` theme from **Slick Preferences → Appearance → Import theme JSON** (or Appearance in the Firefox toolbar popup). Imported themes are saved, selected immediately, and can be picked again from the theme list or removed with **Remove imported theme**. A theme with `"mode"` only applies while Slack is in that color mode, so the built-in dark themes step aside in Light mode.
 
 The `themes/` folder in the source repository contains built-in themes bundled at build time. Adding files there won't load them into an installed app; use the import button instead. Theme JSON uses this format:
 
 ```jsonc
 {
   "name": "Super cool epic theme",
+  "mode": "dark", // optional: "dark" or "light"; omit to apply in both
   "palette": { "highlight1": { "100": "139,92,246" } }, // --dt_color-plt-<ramp>-<shade>, raw "r,g,b"
   "sidebar": { "nav-bg": "#1A1525" }, // --p-team_sidebar__<key>
   "vars": { "--any-css-var": "value" }, // overrides
