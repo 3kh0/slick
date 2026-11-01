@@ -69,7 +69,7 @@ export type PluginSettings = Record<string, SettingValue> & { enabled: boolean }
 const MAX_TEXT = 4000;
 const MAX_NAMES = 2000;
 const MAX_RULES = 50;
-const USER_ID = /^[UW][A-Z0-9]{6,}$/;
+const NAME_ID = /^[UWA][A-Z0-9]{6,}$/;
 const TIME = /^([01]\d|2[0-3]):[0-5]\d$/;
 
 function coerceNames(value: unknown, fallback: Record<string, string>): Record<string, string> {
@@ -79,7 +79,7 @@ function coerceNames(value: unknown, fallback: Record<string, string>): Record<s
   let count = 0;
   for (const [id, name] of Object.entries(value)) {
     if (count >= MAX_NAMES) break;
-    if (!USER_ID.test(id)) continue;
+    if (!NAME_ID.test(id)) continue;
     if (typeof name !== 'string' || !name || name.length > 100) continue;
     names[id] = name;
     count++;

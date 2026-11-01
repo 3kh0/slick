@@ -1804,6 +1804,9 @@ function isDark(color: string): boolean {
   return r * 0.299 + g * 0.587 + b * 0.114 < 140;
 }
 
+const themeDescription = (theme: ThemeJson, description?: string) =>
+  theme.mode ? [description, `Only in ${theme.mode} mode`].filter(Boolean).join(' · ') : description;
+
 function themePreview(theme: ThemeJson): ThemePreview {
   const pick = (source: Record<string, unknown> | undefined, ...keys: string[]) => {
     for (const key of keys) if (typeof source?.[key] === 'string') return source[key] as string;
@@ -1953,7 +1956,7 @@ function ThemesPanel({ config, bridge }: { config: ConfigStore; bridge: SlickBri
             <ThemeCard
               key={id}
               name={theme.name || id}
-              description={theme.description}
+              description={themeDescription(theme, theme.description)}
               preview={themePreview(theme)}
               selected={current === id}
               onSelect={() => select(id)}
@@ -1963,7 +1966,7 @@ function ThemesPanel({ config, bridge }: { config: ConfigStore; bridge: SlickBri
             <ThemeCard
               key={id}
               name={theme.name || id}
-              description={theme.description || 'Imported'}
+              description={themeDescription(theme, theme.description || 'Imported')}
               preview={themePreview(theme)}
               selected={current === id}
               onSelect={() => select(id)}

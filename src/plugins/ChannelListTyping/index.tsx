@@ -1,8 +1,7 @@
 import { SlickPlugin } from '$slick';
-import { typersIn, typingSentence, type TypingRecord } from './typers.ts';
+import { showTypingIn, typersIn, typingSentence, type Row, type TypingRecord } from './typers.ts';
 import * as meta from './meta.ts';
 
-type Row = { isMuted?: boolean; isSelected?: boolean };
 type ChannelProps = Row & { id?: string };
 type SuffixProps = { channelId?: string };
 type NameOf = (state: unknown, member: unknown) => string;
@@ -89,8 +88,8 @@ export default class ChannelListTyping extends SlickPlugin<typeof meta.settings>
     this.api.patchComponent<ChannelProps>(
       { displayName: 'Channel', filter: isSidebarChannel },
       (Original) => (props) => {
-        const { isMuted, isSelected } = props;
-        const value = React.useMemo(() => ({ isMuted, isSelected }), [isMuted, isSelected]);
+        const { isMuted, isSelected, isTyping } = props;
+        const value = React.useMemo(() => ({ isMuted, isSelected, isTyping }), [isMuted, isSelected, isTyping]);
         return (
           <this.RowContext.Provider value={value}>
             <Original {...props} />
@@ -137,7 +136,7 @@ export default class ChannelListTyping extends SlickPlugin<typeof meta.settings>
 
     this.api.patchComponent<SuffixProps>('BaseChannelSuffix', (Original) => (props) => {
       const row = React.useContext(this.RowContext);
-      const shown = !!props.channelId && !!row && (includeCurrent || !row.isSelected) && (includeMuted || !row.isMuted);
+      const shown = !!props.channelId && showTypingIn(row, includeCurrent, includeMuted);
       return (
         <>
           {shown && <Typing channelId={props.channelId!} />}

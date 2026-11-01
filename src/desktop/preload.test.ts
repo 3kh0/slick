@@ -30,6 +30,12 @@ function fixture(initial: Promise<unknown>, safeMode: unknown = false, originalP
   const writes: string[] = [];
   const lifecycle: string[] = [];
   const exposedValues = new Map<string, unknown>();
+  const events: string[] = [];
+  const listenerTarget = (name: string) => ({
+    addEventListener(type: string) {
+      events.push(`${name}:${type}`);
+    },
+  });
   const recovery = new Map<string, string>();
   let reloads = 0;
   const timers = new Map<number, { callback: () => void; delay: number }>();
@@ -116,10 +122,15 @@ function fixture(initial: Promise<unknown>, safeMode: unknown = false, originalP
       removeItem: (key: string) => recovery.delete(key),
       setItem: (key: string, value: string) => recovery.set(key, value),
     },
+    window: listenerTarget('window'),
     document: {
-      open() {},
+      ...listenerTarget('document'),
+      open() {
+        events.push('open');
+      },
       close() {},
       write(value: string) {
+        events.push('write');
         writes.push(value);
       },
     },
@@ -136,6 +147,7 @@ function fixture(initial: Promise<unknown>, safeMode: unknown = false, originalP
   });
   return {
     calls,
+    events,
     writes,
     lifecycle,
     exposedValues,
@@ -188,6 +200,26 @@ test('original preload retains its bindings and runs before the bridge is expose
   assert.ok(f.lifecycle.indexOf('expose:OriginalPreload') < f.lifecycle.indexOf('preload.original-ready'));
   assert.ok(f.lifecycle.indexOf('preload.original-ready') < f.lifecycle.indexOf('expose:SlickBridge'));
   assert.equal(f.writes.length, 2);
+});
+
+test('listeners the original preload adds survive the rebuild', async () => {
+  const f = fixture(
+    Promise.resolve('{}'),
+    false,
+    `window.addEventListener('focus', () => {}); document.addEventListener('visibilitychange', () => {});`,
+  );
+  f.resolveHtml();
+  await f.ready;
+  assert.deepEqual(f.events, [
+    'open',
+    'write',
+    'window:focus',
+    'document:visibilitychange',
+    'open',
+    'window:focus',
+    'document:visibilitychange',
+    'write',
+  ]);
 });
 
 test('an original preload failure still reloads stock Slack before exposing the bridge', async () => {

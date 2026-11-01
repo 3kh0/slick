@@ -14,6 +14,13 @@ export function typersIn(records: TypingRecord[], channelId: string, includeThre
   return [...ids];
 }
 
+export type Row = { isMuted?: boolean; isSelected?: boolean; isTyping?: boolean };
+
+/** Rows where Slack already animates typing itself (1:1 DMs) are left to Slack. */
+export function showTypingIn(row: Row | null, includeCurrent: boolean, includeMuted: boolean): boolean {
+  return !!row && !row.isTyping && (includeCurrent || !row.isSelected) && (includeMuted || !row.isMuted);
+}
+
 type Translate = (text: string, values?: Record<string, unknown>) => string;
 
 /** Slack's own "A and B are typing" sentence, folding the rest into "N others" past `max` names. */

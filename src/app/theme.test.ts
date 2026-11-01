@@ -64,6 +64,7 @@ test('theme imports reject malformed field shapes before CSS conversion', () => 
     { css: null },
     { css: {}, name: 42 },
     { vars: {}, description: false },
+    { vars: {}, mode: 'sepia' },
   ]) {
     assert.throws(() => parseThemeJson(JSON.stringify(value), 'invalid.json'), /Expected a Slick theme/);
   }
@@ -91,6 +92,7 @@ test('selected imported themes install, switch, and remove their stylesheet', ()
         return style;
       },
       head: { appendChild: (style: { textContent: string }) => styles.add(style) },
+      body: { classList: { contains: () => false } },
     },
   });
   Object.defineProperty(globalThis, '__SLICK_THEMES__', {
@@ -124,5 +126,81 @@ test('selected imported themes install, switch, and remove their stylesheet', ()
     else Reflect.deleteProperty(globalThis, 'document');
     if (oldThemes) Object.defineProperty(globalThis, '__SLICK_THEMES__', oldThemes);
     else Reflect.deleteProperty(globalThis, '__SLICK_THEMES__');
+  }
+});
+
+test('mode-scoped themes follow Slack color mode and unscoped themes always apply', () => {
+  const oldDocument = Object.getOwnPropertyDescriptor(globalThis, 'document');
+  const oldObserver = Object.getOwnPropertyDescriptor(globalThis, 'MutationObserver');
+  const oldThemes = Object.getOwnPropertyDescriptor(globalThis, '__SLICK_THEMES__');
+  const styles = new Set<{ textContent: string }>();
+  let dark = false;
+  let observers = 0;
+  let onMutation: (() => void) | undefined;
+  Object.defineProperty(globalThis, 'document', {
+    configurable: true,
+    value: {
+      createElement: () => {
+        const style = { dataset: {}, textContent: '', remove: () => styles.delete(style) };
+        return style;
+      },
+      head: { appendChild: (style: { textContent: string }) => styles.add(style) },
+      body: { classList: { contains: (name: string) => dark && name === 'sk-client-theme--dark' } },
+    },
+  });
+  Object.defineProperty(globalThis, 'MutationObserver', {
+    configurable: true,
+    value: class {
+      constructor(callback: () => void) {
+        onMutation = callback;
+      }
+      observe() {
+        observers++;
+      }
+      disconnect() {
+        observers--;
+      }
+    },
+  });
+  Object.defineProperty(globalThis, '__SLICK_THEMES__', {
+    configurable: true,
+    value: { night: { mode: 'dark', css: 'body{color:white}' }, always: { css: 'body{color:red}' } },
+  });
+  let apply!: () => void;
+  const config = {
+    theme: 'night',
+    importedThemes: {},
+    onConfigChange: (listener: () => void) => {
+      apply = listener;
+      return () => {};
+    },
+  };
+  const css = () => [...styles].map((style) => style.textContent);
+  try {
+    const stop = installTheme(config as unknown as ConfigStore);
+    assert.deepEqual(css(), []);
+    assert.equal(observers, 1);
+    dark = true;
+    onMutation?.();
+    assert.deepEqual(css(), ['body{color:white}']);
+    dark = false;
+    onMutation?.();
+    assert.deepEqual(css(), []);
+    config.theme = 'always';
+    apply();
+    assert.deepEqual(css(), ['body{color:red}']);
+    assert.equal(observers, 0);
+    stop();
+  } finally {
+    config.theme = '';
+    apply?.();
+    for (const [key, old] of [
+      ['document', oldDocument],
+      ['MutationObserver', oldObserver],
+      ['__SLICK_THEMES__', oldThemes],
+    ] as const) {
+      if (old) Object.defineProperty(globalThis, key, old);
+      else Reflect.deleteProperty(globalThis, key);
+    }
   }
 });

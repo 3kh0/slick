@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { typersIn, typingSentence } from './typers.ts';
+import { showTypingIn, typersIn, typingSentence } from './typers.ts';
 
 test('typersIn skips you, other channels and duplicate thread records', () => {
   const records = [
@@ -23,4 +23,13 @@ test('typingSentence uses Slack’s sentences and folds the rest into "N others"
   assert.equal(typingSentence(['Ada', 'Bob'], fill, today), 'Ada and Bob are typing');
   assert.equal(typingSentence(['Ada', 'Bob', 'Cy', 'Dee'], fill, today), 'Ada, Bob, Cy and Dee are typing');
   assert.equal(typingSentence(['Ada', 'Bob', 'Cy', 'Dee', 'Eve'], fill, today), 'Ada, Bob, Cy and 2 others are typing');
+});
+
+test('showTypingIn leaves rows Slack already marks as typing to Slack', () => {
+  assert.equal(showTypingIn({}, true, false), true);
+  assert.equal(showTypingIn({ isTyping: true }, true, true), false);
+  assert.equal(showTypingIn({ isSelected: true }, false, false), false);
+  assert.equal(showTypingIn({ isMuted: true }, true, false), false);
+  assert.equal(showTypingIn({ isMuted: true }, true, true), true);
+  assert.equal(showTypingIn(null, true, true), false);
 });
