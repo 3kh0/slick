@@ -211,15 +211,50 @@ export default class LetMeSee extends SlickPlugin<typeof meta.settings> {
     svg.setAttribute('viewBox', '0 0 20 20');
     svg.setAttribute('aria-hidden', 'true');
     svg.style.cssText = 'display:block;color:inherit;';
-    // rotated 90 degrees around the centre of the 20x20 box, scaled to 85% around the centre of the box
-    const brush = `<g transform="translate(10 10) scale(0.85) translate(-10 -10)"><path fill="currentColor" fill-rule="evenodd" clip-rule="evenodd" transform="rotate(90 10 10)" d="${BRUSH_PATH}"/></g>`;
+    const element = (tag: string, attributes: Record<string, string>) => {
+      const node = document.createElementNS('http://www.w3.org/2000/svg', tag);
+      for (const [name, value] of Object.entries(attributes)) node.setAttribute(name, value);
+      return node;
+    };
+    const brush = element('g', { transform: 'translate(10 10) scale(0.85) translate(-10 -10)' });
+    brush.append(
+      element('path', {
+        fill: 'currentColor',
+        'fill-rule': 'evenodd',
+        'clip-rule': 'evenodd',
+        transform: 'rotate(90 10 10)',
+        d: BRUSH_PATH,
+      }),
+    );
     // while hidden, the brush is cut away along the strike with a gap (a buffer), like Slack's pencil strike
     // the strike takes Slack's own slash colour, read from its slash icon whenever the Draw button shows one
     const slash = this.hintRoot?.querySelector<HTMLElement>('.p-huddle_mini_panel__icon--slash');
     if (slash) this.strikeColor = getComputedStyle(slash).color || this.strikeColor;
-    svg.innerHTML = hidden
-      ? `<defs><mask id="letmesee-gap" maskUnits="userSpaceOnUse" x="0" y="0" width="20" height="20"><rect width="20" height="20" fill="white"/><path d="${STRIKE}" stroke="black" stroke-width="5.5" stroke-linecap="round"/></mask></defs><g mask="url(#letmesee-gap)">${brush}</g><path d="${STRIKE}" stroke="${this.strikeColor}" stroke-width="1.8" stroke-linecap="round"/>`
-      : brush;
+    if (hidden) {
+      const defs = element('defs', {});
+      const mask = element('mask', {
+        id: 'letmesee-gap',
+        maskUnits: 'userSpaceOnUse',
+        x: '0',
+        y: '0',
+        width: '20',
+        height: '20',
+      });
+      mask.append(
+        element('rect', { width: '20', height: '20', fill: 'white' }),
+        element('path', { d: STRIKE, stroke: 'black', 'stroke-width': '5.5', 'stroke-linecap': 'round' }),
+      );
+      defs.append(mask);
+      const maskedBrush = element('g', { mask: 'url(#letmesee-gap)' });
+      maskedBrush.append(brush);
+      svg.append(
+        defs,
+        maskedBrush,
+        element('path', { d: STRIKE, stroke: this.strikeColor, 'stroke-width': '1.8', 'stroke-linecap': 'round' }),
+      );
+    } else {
+      svg.append(brush);
+    }
     box.append(svg);
     button.replaceChildren(box);
   }
