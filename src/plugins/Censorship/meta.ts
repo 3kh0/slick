@@ -7,10 +7,16 @@ export const category: PluginCategory = 'messages';
 export const defaultEnabled = false;
 
 export const settings = {
+  filterProfanity: {
+    type: 'boolean',
+    label: 'Filter common English profanity',
+    description: 'Use a built-in list of common English swear words to your blocked terms. Matches whole words only.',
+    default: false,
+  },
   terms: {
     type: 'text',
     label: 'Blocked terms',
-    description: 'Comma-separated terms to censor',
+    description: 'Custom terms to censor, separated by commas or newlines',
     default: 'job, employment',
   },
   style: {

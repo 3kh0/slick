@@ -12,7 +12,7 @@ type SearchProps = {
   result?: { messages?: SlackMessage[] };
 };
 
-const LIVE = ['terms', 'style', 'replacement', 'keepFirstLetter', 'keepLastLetter'] as const;
+const LIVE = ['filterProfanity', 'terms', 'style', 'replacement', 'keepFirstLetter', 'keepLastLetter'] as const;
 
 export default class Censorship extends SlickPlugin<typeof meta.settings> {
   static readonly requiredAPIs = ['react', 'redux'] as const;
