@@ -2,7 +2,7 @@
   lib,
   stdenvNoCC,
   bun,
-  nodejs,
+  nodejs_24,
   pkgs,
   # Must share Slack's Electron major; defaults to what nixpkgs' Slack bundles.
   electron ? null,
@@ -44,7 +44,7 @@ in
 stdenvNoCC.mkDerivation {
   pname = "slick";
   inherit version src;
-  nativeBuildInputs = [ nodejs makeWrapper ];
+  nativeBuildInputs = [ nodejs_24 makeWrapper ];
   dontConfigure = true;
 
   SLICK_BUILD = build;
