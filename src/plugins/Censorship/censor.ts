@@ -1,8 +1,11 @@
 // Pure masking helpers. Kept off `$slick` so Node can test them without Slack.
 
+import { PROFANITY_TERMS } from './profanity.ts';
+
 export type CensorStyle = 'stars' | 'hashtags' | 'blocks' | 'custom';
 
 export type CensorConfig = {
+  filterProfanity?: unknown;
   terms: unknown;
   style: unknown;
   replacement: unknown;
@@ -45,8 +48,7 @@ function splitTerms(value: unknown): string[] {
   return String(value ?? '')
     .split(/[\n,]/)
     .map((term) => term.trim())
-    .filter(Boolean)
-    .toSorted((a, b) => b.length - a.length);
+    .filter(Boolean);
 }
 
 function termPattern(term: string): string {
@@ -81,7 +83,9 @@ function repeated(match: string, char: string, keepFirst: boolean, keepLast: boo
 }
 
 export function compile(config: CensorConfig): Matcher {
-  const terms = splitTerms(config.terms);
+  const terms = [
+    ...new Set([...splitTerms(config.terms), ...(config.filterProfanity === true ? PROFANITY_TERMS : [])]),
+  ].toSorted((a, b) => b.length - a.length);
   const style = asStyle(config.style);
   const replacement = String(config.replacement ?? '') || 'uwu';
   const keepFirst = config.keepFirstLetter === true;

@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { censorDeep, censorMessage, censorString, compile, type CensorConfig } from './censor.ts';
+import { PROFANITY_TERMS } from './profanity.ts';
+import { settings } from './meta.ts';
 
 const defaults: CensorConfig = {
   terms: 'job, employment',
@@ -9,6 +11,52 @@ const defaults: CensorConfig = {
   keepFirstLetter: false,
   keepLastLetter: false,
 };
+
+test('built-in profanity filtering is opt-in, including existing configurations', () => {
+  assert.equal(settings.filterProfanity.default, false);
+  for (const filterProfanity of [undefined, false, 'true']) {
+    const matcher = compile({ ...defaults, filterProfanity });
+    assert.equal(censorString('shit job', matcher), 'shit ***');
+  }
+});
+
+test('built-in profanity works without custom terms and ignores case', () => {
+  const matcher = compile({ ...defaults, terms: '', filterProfanity: true });
+  for (const term of PROFANITY_TERMS) {
+    assert.equal(censorString(term.toUpperCase(), matcher), '*'.repeat(term.length), term);
+  }
+  assert.equal(censorString('Oh, shit! Fucking hell.', matcher), 'Oh, ****! ******* hell.');
+});
+
+test('built-in profanity respects Unicode word boundaries and leaves innocent substrings alone', () => {
+  const matcher = compile({ ...defaults, terms: '', filterProfanity: true });
+  const text = 'class assignment Scunthorpe cocktail dickens crapshoot shitake éshit shité shit_1';
+  assert.equal(censorString(text, matcher), text);
+});
+
+test('built-in and custom terms combine, with longer custom phrases first', () => {
+  const matcher = compile({ ...defaults, terms: 'shit happens, job, shit', filterProfanity: true, style: 'custom' });
+  assert.equal(censorString('shit happens at this job', matcher), 'uwu at this uwu');
+});
+
+test('built-in terms use the selected mask and letter preservation settings', () => {
+  for (const [style, expected] of [
+    ['stars', 's**t'],
+    ['hashtags', 's##t'],
+    ['blocks', 's██t'],
+    ['custom', 'redacted'],
+  ]) {
+    const matcher = compile({
+      ...defaults,
+      filterProfanity: true,
+      style,
+      replacement: 'redacted',
+      keepFirstLetter: true,
+      keepLastLetter: true,
+    });
+    assert.equal(censorString('shit', matcher), expected);
+  }
+});
 
 test('compile: empty terms yield a null pattern', () => {
   const matcher = compile({ ...defaults, terms: '  , \n' });
