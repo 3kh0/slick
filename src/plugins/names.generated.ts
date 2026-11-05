@@ -11,6 +11,7 @@ export const PLUGINS = [
   'Censorship',
   'ChannelListTyping',
   'CharacterCounter',
+  'ChatTabs',
   'ClearURLs',
   'Click2Load',
   'CopyReacted',

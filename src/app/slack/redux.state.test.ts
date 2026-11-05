@@ -23,6 +23,7 @@ function fixture() {
     EventTarget,
     Event,
     setTimeout,
+    clearTimeout,
     queueMicrotask,
     requestAnimationFrame: (callback: () => void) => setTimeout(callback, 0),
     document: { querySelector: () => null },
@@ -151,4 +152,54 @@ test('legacy_createStore stores are patched before Slack copies them and refresh
   await new Promise((resolve) => setTimeout(resolve, 5));
   assert.equal(calls, 1);
   assert.equal(copy.getState(), raw);
+});
+
+test('late-injected clients discover existing named thunks, cache them and apply patches once', () => {
+  const { redux, context } = fixture();
+  let reads = 0;
+  const creator = Object.assign((value: string) => value, { meta: { name: 'lateNavigate' } });
+  context.rspackChunkGantryV2.push([
+    [2],
+    {
+      late(module: any) {
+        module.exports = Object.defineProperty({}, 'minified', {
+          enumerable: true,
+          get() {
+            reads++;
+            return creator;
+          },
+        });
+      },
+    },
+  ]);
+  const module: any = { exports: {} };
+  context.rspackChunkGantryV2[1][1].late(module, module.exports, () => ({}));
+  const remove = redux.patchThunk('lateNavigate', (original: any) => (value: string) => original(value + '!'));
+  const found = redux.getThunkCreator('lateNavigate');
+  assert.equal(found('thread'), 'thread!');
+  const afterLookup = reads;
+  assert.equal(redux.getThunkCreator('lateNavigate'), found);
+  assert.equal(reads, afterLookup);
+  remove();
+  assert.equal(found('thread'), 'thread');
+});
+
+test('discovering late metadata resolves a caller already waiting for its thunk', async () => {
+  const { redux, context } = fixture();
+  const creator: any = () => 'ready';
+  context.rspackChunkGantryV2.push([
+    [2],
+    {
+      late(module: any) {
+        module.exports = { creator };
+      },
+    },
+  ]);
+  const module: any = { exports: {} };
+  context.rspackChunkGantryV2[1][1].late(module, module.exports, () => ({}));
+  const waiting = redux.waitForThunkCreator('lateMetadata');
+  creator.meta = { name: 'lateMetadata' };
+  const found = redux.getThunkCreator('lateMetadata');
+  assert.equal(await waiting, found);
+  assert.equal(found(), 'ready');
 });

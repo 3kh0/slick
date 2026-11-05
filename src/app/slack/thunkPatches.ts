@@ -9,6 +9,7 @@ export function createThunkPatches() {
   const predicates = new Set<Patch>();
   const plans = new Map<string, Patch[]>();
   let generic: Patch[] = [];
+  const wrappedCreators = new WeakMap<ThunkCreator, ThunkCreator>();
   let nextOrder = 0;
   let version = 0;
 
@@ -92,7 +93,12 @@ export function createThunkPatches() {
   };
 
   function wrapCreator(original: ThunkCreator): ThunkCreator {
-    return new Proxy(original, handler);
+    const known = wrappedCreators.get(original);
+    if (known) return known;
+    const wrapped = new Proxy(original, handler);
+    wrappedCreators.set(original, wrapped);
+    wrappedCreators.set(wrapped, wrapped);
+    return wrapped;
   }
 
   return { patch, wrapCreator };

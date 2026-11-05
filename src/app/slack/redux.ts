@@ -3,7 +3,7 @@
 // restores the truth immediately.
 
 import { getFiberFromNode, reactReady } from './react.tsx';
-import { patchExportFunction, patchModuleExports } from './webpack.ts';
+import { getExport, patchExportFunction, patchModuleExports } from './webpack.ts';
 import { createThunkPatches } from './thunkPatches.ts';
 
 export type SlackStore = {
@@ -500,21 +500,22 @@ type ThunkWaiter = { resolve: (creator: ThunkCreator) => void; timer: ReturnType
 const waitingForThunk = new Map<string, Set<ThunkWaiter>>();
 const THUNK_WAIT_MS = 30_000;
 
+function rememberCreator(name: string, creator: ThunkCreator): void {
+  thunkCreators.set(name, creator);
+  const waiting = waitingForThunk.get(name);
+  if (!waiting) return;
+  waitingForThunk.delete(name);
+  for (const waiter of waiting) {
+    clearTimeout(waiter.timer);
+    waiter.resolve(creator);
+  }
+}
+
 function registerCreator(creator: ThunkCreator): void {
-  // The defining module assigns `meta` on the statement *after* createThunk
-  // returns, so the name is not readable until the current task yields.
+  // The defining module assigns meta after createThunk returns.
   queueMicrotask(() => {
     const name = (creator as any).meta?.name;
-    if (typeof name !== 'string') return;
-    thunkCreators.set(name, creator);
-
-    const waiting = waitingForThunk.get(name);
-    if (!waiting) return;
-    waitingForThunk.delete(name);
-    for (const waiter of waiting) {
-      clearTimeout(waiter.timer);
-      waiter.resolve(creator);
-    }
+    if (typeof name === 'string') rememberCreator(name, creator);
   });
 }
 
@@ -556,11 +557,20 @@ patchModuleExports((exports) => {
 });
 
 export function getThunkCreator(name: string): ThunkCreator | undefined {
-  return thunkCreators.get(name);
+  const known = thunkCreators.get(name);
+  if (known) return known;
+  // Late injection can miss creators that predate the factory hook.
+  const existing = getExport<ThunkCreator>(
+    (value): value is ThunkCreator => typeof value === 'function' && (value as any).meta?.name === name,
+  );
+  if (!existing) return;
+  const wrapped = thunkPatches.wrapCreator(existing);
+  rememberCreator(name, wrapped);
+  return wrapped;
 }
 
 export function waitForThunkCreator(name: string): Promise<ThunkCreator> {
-  const known = thunkCreators.get(name);
+  const known = getThunkCreator(name);
   if (known) return Promise.resolve(known);
 
   return new Promise((resolve, reject) => {
