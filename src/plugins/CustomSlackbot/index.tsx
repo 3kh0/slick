@@ -5,7 +5,7 @@ const CUSTOM_RESPONSE = '.c-message_kit__background--labels--custom_response';
 
 const cssString = (value: unknown): string => JSON.stringify(String(value));
 
-type ReplyBarAvatarProps = { userId?: string; channelId?: string; threadTs?: string };
+type ReplyBarAvatarProps = { userId?: string; channelId?: string; threadTs?: string; additionalOverlay?: number };
 type HasCustomResponse = (state: SlackStore, channelId: string, threadTs: string, userId: string) => boolean;
 
 export default class CustomSlackbot extends SlickPlugin<typeof meta.settings> {
@@ -23,11 +23,8 @@ export default class CustomSlackbot extends SlickPlugin<typeof meta.settings> {
     const avatar = String(this.config.url ?? '').trim();
 
     const rules = [
-      '.slick-custom-slackbot-reply-avatar { display: contents; }',
       avatar &&
-        `.slick-custom-slackbot-reply-avatar > .c-message__reply_bar_avatar { background-image: url(${cssString(avatar)}) !important; background-size: cover; }`,
-      avatar &&
-        '.slick-custom-slackbot-reply-avatar > .c-message__reply_bar_avatar > :not(.c-avatar__additional_overlay) { visibility: hidden; }',
+        `.slick-custom-slackbot-reply-avatar { display: inline-block; position: relative; flex-shrink: 0; width: 24px; height: 24px; border-radius: var(--sk_avatar-border-radius, 4px); background-image: url(${cssString(avatar)}); background-size: cover; background-position: center; }`,
       avatar && `${CUSTOM_RESPONSE} .c-message_kit__avatar { background-image: url(${cssString(avatar)}) !important; }`,
       // font-size 0 rather than display:none keeps the button's hit area.
       name && `${CUSTOM_RESPONSE} .c-message__sender_button { font-size: 0 !important; }`,
@@ -50,13 +47,23 @@ export default class CustomSlackbot extends SlickPlugin<typeof meta.settings> {
             ? hasCustomResponse?.(state, props.channelId, props.threadTs, props.userId)
             : false,
         );
-        const avatar = <Original {...props} />;
-        return customResponse ? <span className="slick-custom-slackbot-reply-avatar">{avatar}</span> : avatar;
+        this.api.redux.usePatchVersion();
+        if (!customResponse || !String(this.config.url ?? '').trim()) return <Original {...props} />;
+        return (
+          <span className="c-avatar c-message__reply_bar_avatar slick-custom-slackbot-reply-avatar">
+            {props.additionalOverlay ? (
+              <div className="c-avatar__additional_overlay">
+                {props.additionalOverlay > 9 ? '9+' : `+${props.additionalOverlay}`}
+              </div>
+            ) : null}
+          </span>
+        );
       };
     });
   }
 
   onSettingsChange() {
     this.apply();
+    this.api.redux.refresh();
   }
 }
