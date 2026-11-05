@@ -25,6 +25,7 @@ export const PLUGINS = [
   'HcaStatus',
   'HuddleMuteDetector',
   'HumanCount',
+  'IgnoreTime',
   'InstalledApps',
   'LastSeen',
   'LetMeSee',
