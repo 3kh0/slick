@@ -271,6 +271,7 @@ jobs:
           HOMEBREW_GITHUB_API_TOKEN: ${{ github.token }}
         run: |
           brew tap 3kh0/tap "file://$GITHUB_WORKSPACE/homebrew-tap"
+          brew trust --tap 3kh0/tap
           # The local clone above must include the uncommitted cask update.
           cp homebrew-tap/Casks/slick.rb "$(brew --repository 3kh0/tap)/Casks/slick.rb"
           brew style --cask 3kh0/tap/slick
