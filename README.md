@@ -38,7 +38,7 @@ Slick runs Slack's own `app.asar` inside its own Electron (with the handy BYOE a
 | Auto updates                 | **Client and Slack update together**       | Slack version is pinned                            | Manual updating required                 |
 | Supported platforms          | **Desktop + Browsers**                     | **Desktop + Browsers**                             | Browser only                             |
 | Browser stores               | **Chrome Web Store + Firefox Add-ons**     | No                                                 | No                                       |
-| Privacy                      | **Zero tolerance for all telemetry**       | Blocks Slack's telemetry, sends its own daily ping | Does not block telemetry                 |
+| Privacy                      | **Blocks all telemetry**                   | Blocks Slack's telemetry, sends its own daily ping | Does not block telemetry                 |
 | Code sourcing                | **Bundled in the app**                     | Fetched from a remote server                       | **Bundled in the userscript**            |
 
 ## Installation
