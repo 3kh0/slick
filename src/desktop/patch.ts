@@ -10,6 +10,7 @@ import { profileDir } from './paths.js';
 import { trayDir, wrapTray } from './trayIcons.js';
 import { wrapMacNotifications } from './macNotificationSounds.js';
 import { createPreloadSources } from './preloadSources.ts';
+import { relabelAppMenu } from './menuLabels.ts';
 
 const cjsRequire = createRequire(import.meta.url);
 const NodeModule = cjsRequire('module') as any;
@@ -95,6 +96,7 @@ const isHelp = (item: AnyItem) => item.role === 'help' || labelled(item, 'Help')
 
 function injectSlickMenu(items: AnyItem[]) {
   const out = [...items];
+  relabelAppMenu(out);
   if (out.some((item) => item.label === 'Slick')) return out;
   const helpIndex = out.findIndex(isHelp);
   if (helpIndex === -1) out.push(slickMenuTemplate());
@@ -243,8 +245,11 @@ export function applyPatches(
   const origPopup = Menu.prototype.popup;
   Menu.prototype.popup = function (this: Electron.Menu, options?: Electron.PopupOptions) {
     const items = this.items;
-    if (items.some((item) => labelled(item, 'File')) && items.some(isHelp) && !items.some((i) => i.label === 'Slick')) {
-      this.insert(items.findIndex(isHelp), new MenuItem(slickMenuTemplate()));
+    if (items.some((item) => labelled(item, 'File')) && items.some(isHelp)) {
+      relabelAppMenu(items);
+      if (!items.some((i) => i.label === 'Slick')) {
+        this.insert(items.findIndex(isHelp), new MenuItem(slickMenuTemplate()));
+      }
     }
     return origPopup.call(this, options);
   };
