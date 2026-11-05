@@ -49,10 +49,13 @@ function state(): unknown {
 }
 
 let convertNow: ConvertDeltaToBlocks | undefined;
+let DeltaNow: DeltaConstructor | undefined;
 
 /** `fromDelta` without waiting, for code that has to answer before Slack moves on. */
-export function fromDeltaNow(delta: Delta): Block[] {
-  if (!convertNow) throw new Error('[slick] Block Kit: convertDeltaToBlocks has not loaded');
+export function fromDeltaNow(content: Delta | unknown[]): Block[] {
+  if (!convertNow || (Array.isArray(content) && !DeltaNow))
+    throw new Error('[slick] Block Kit: convertDeltaToBlocks has not loaded');
+  const delta = Array.isArray(content) ? new DeltaNow!(content) : content;
   return convertNow({ delta, state: state() })?.blocks ?? [];
 }
 
@@ -62,6 +65,7 @@ export const blocksReady = (async () => {
   const blocksToMarkdown = waitForExport<ConvertBlocksToText>(named('convertBlocksToMarkdown'));
   const deltaClass = waitForExport<DeltaConstructor>(isDelta);
   void deltaToBlocks.then((convert) => (convertNow = convert));
+  void deltaClass.then((DeltaClass) => (DeltaNow = DeltaClass));
 
   /** Build a real Delta from raw ops, e.g. the `ops` array on a stored draft. */
   async function makeDelta(ops: unknown[]): Promise<Delta> {

@@ -37,6 +37,7 @@ export async function bootstrap(bridge: SlickBridge): Promise<void> {
   installHot(bridge, manager);
   await manager.reconcile();
   await addSettingsTab(manager, config, bridge);
+  manager.startAutoUpdate();
 
   const all = manager.info();
   const running = all.filter((plugin) => plugin.running);

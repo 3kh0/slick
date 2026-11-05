@@ -1,8 +1,9 @@
-import type { SettingsSchema } from '../../shared/settings.ts';
+import type { PluginCategory, SettingsSchema } from '../../shared/settings.ts';
 
 export const id = 'WhoReacted';
 export const pluginName = 'Who Reacted';
 export const description = 'Show the avatars of everyone who reacted next to each reaction';
+export const category: PluginCategory = 'messages';
 export const defaultEnabled = false;
 
 export const settings = {

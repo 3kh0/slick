@@ -1,8 +1,9 @@
-import type { SettingsSchema } from '../../shared/settings.ts';
+import type { PluginCategory, SettingsSchema } from '../../shared/settings.ts';
 
 export const id = 'CopyReacted';
 export const pluginName = 'Copy Reacted';
 export const description = 'Copy the list of people who reacted to a message';
+export const category: PluginCategory = 'messages';
 export const defaultEnabled = false;
 
 export const settings = {

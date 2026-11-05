@@ -1,8 +1,9 @@
-import type { SettingsSchema } from '../../shared/settings.ts';
+import type { PluginCategory, SettingsSchema } from '../../shared/settings.ts';
 
 export const id = 'BetterGifs';
 export const pluginName = 'Better GIFs';
 export const description = 'Enhances Slack’s GIF picker with a better search experience, favorites, and more.';
+export const category: PluginCategory = 'composer';
 export const defaultEnabled = false;
 
 export const settings = {

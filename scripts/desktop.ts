@@ -4,16 +4,16 @@
 // `node scripts/desktop.ts [--safe-mode]`
 
 import { type ChildProcess, spawn } from 'node:child_process';
-import { existsSync, readlinkSync, rmSync, watch } from 'node:fs';
+import { existsSync, watch } from 'node:fs';
 import { rename, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
-import os from 'node:os';
 import path from 'node:path';
 import type { Metafile } from 'esbuild';
 import { buildDesktop, stageApp } from './build/desktop.ts';
 import { buildHotPlugin, HOT_DIR } from './build/hot.ts';
 import { DIST_DESKTOP, ROOT, SRC, THEMES } from './lib/paths.ts';
 import { repoPath } from './lib/plugin.ts';
+import { clearStaleProfileLock } from '../src/desktop/profileLock.ts';
 
 // Same Electron that gets packaged; the package's main export is its binary path.
 const electron = String(createRequire(import.meta.url)('electron'));
@@ -40,33 +40,10 @@ await buildAll();
 const profile = process.env.SLICK_HANDOFF_PROFILE || path.join(ROOT, 'work', 'dev-profile');
 console.log(`[dev] profile: ${profile}`);
 
-const alive = (pid: number) => {
-  try {
-    return process.kill(pid, 0);
-  } catch (error) {
-    return (error as NodeJS.ErrnoException).code === 'EPERM';
-  }
-};
-
-// Chromium refuses a lock left under another hostname (macOS .local names change) and Electron quits silently.
-function clearStaleLock(dir: string) {
-  let owner: string;
-  try {
-    owner = readlinkSync(path.join(dir, 'SingletonLock'));
-  } catch {
-    return;
-  }
-  const split = owner.lastIndexOf('-');
-  if (owner.slice(0, split) === os.hostname() && alive(Number(owner.slice(split + 1)))) return;
-  for (const name of ['SingletonLock', 'SingletonCookie', 'SingletonSocket'])
-    rmSync(path.join(dir, name), { force: true });
-  console.log(`[dev] cleared a stale profile lock (${owner})`);
-}
-
 let child: ChildProcess;
 let restarting = false;
 function launch() {
-  clearStaleLock(profile);
+  clearStaleProfileLock(profile);
   child = spawn(electron, [DIST_DESKTOP, ...process.argv.slice(2)], {
     stdio: 'inherit',
     env: { ...process.env, ELECTRON_ENABLE_LOGGING: '1', SLICK_HANDOFF_PROFILE: profile, SLICK_HOT: '1' },

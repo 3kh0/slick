@@ -3,6 +3,7 @@ import { record } from './objects.ts';
 export type ThemeJson = {
   name?: string;
   description?: string;
+  mode?: 'dark' | 'light';
   palette?: Record<string, Record<string, unknown>>;
   sidebar?: Record<string, unknown>;
   vars?: Record<string, unknown>;
@@ -18,6 +19,7 @@ export function isThemeJson(value: unknown): value is ThemeJson {
   if (!record(value)) return false;
   if (value.name !== undefined && typeof value.name !== 'string') return false;
   if (value.description !== undefined && typeof value.description !== 'string') return false;
+  if (value.mode !== undefined && value.mode !== 'dark' && value.mode !== 'light') return false;
   if (value.palette !== undefined && (!record(value.palette) || !Object.values(value.palette).every(variables)))
     return false;
   if (value.sidebar !== undefined && !variables(value.sidebar)) return false;

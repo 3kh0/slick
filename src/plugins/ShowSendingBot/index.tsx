@@ -48,6 +48,7 @@ export default class ShowSendingBot extends SlickPlugin<typeof meta.settings> {
   static readonly id = meta.id;
   static readonly pluginName = meta.pluginName;
   static readonly description = meta.description;
+  static readonly category = meta.category;
   static readonly defaultEnabled = meta.defaultEnabled;
   static readonly settings = meta.settings;
 
@@ -260,6 +261,7 @@ export default class ShowSendingBot extends SlickPlugin<typeof meta.settings> {
 
     this.provideMessage('ProgressiveDisclosureSuccessCoachmarkWrapper', (props) => props.msg);
     this.provideMessage('MessageAvatar', (props) => props.msg);
+    this.provideMessage('BaseMessageAvatar', (props) => props.msg);
     this.provideMessage('SearchResult', (props) => props);
     this.provideMessage('MessageAttachment', (props: MessageAttachmentProps) => {
       const stored =

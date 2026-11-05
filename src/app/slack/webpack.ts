@@ -127,11 +127,13 @@ export function patchModuleExports(patcher: ModuleExportsPatcher): () => void {
 }
 
 export function patchExportFunction(
-  name: string,
+  name: string | readonly string[],
   wrap: (original: (...args: any[]) => any) => (...args: any[]) => any,
 ): () => void {
+  const names = typeof name === 'string' ? [name] : name;
   return patchModuleExports((exports) => {
     if (!exports || typeof exports !== 'object') return;
+    let descriptors: PropertyDescriptorMap | undefined;
     for (const key of Object.keys(exports)) {
       let value: any;
       try {
@@ -139,14 +141,14 @@ export function patchExportFunction(
       } catch {
         continue;
       }
-      if (typeof value !== 'function' || value.name !== name) continue;
+      if (typeof value !== 'function' || !names.includes(value.name)) continue;
 
       // Webpack defines namespace exports as non-configurable getters, so the
       // property cannot be reassigned; the exports object has to be rebuilt.
-      const descriptors = Object.getOwnPropertyDescriptors(exports);
+      descriptors ??= Object.getOwnPropertyDescriptors(exports);
       descriptors[key] = { value: wrap(value), enumerable: true, configurable: true, writable: true };
-      return Object.create(Object.getPrototypeOf(exports), descriptors);
     }
+    if (descriptors) return Object.create(Object.getPrototypeOf(exports), descriptors);
   });
 }
 

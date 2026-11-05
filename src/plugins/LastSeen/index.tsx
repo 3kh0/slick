@@ -23,11 +23,13 @@ export default class LastSeen extends SlickPlugin<typeof meta.settings> {
   static readonly id = meta.id;
   static readonly pluginName = meta.pluginName;
   static readonly description = meta.description;
+  static readonly category = meta.category;
   static readonly defaultEnabled = meta.defaultEnabled;
   static readonly settings = meta.settings;
 
   /** userId -> last sighting, ms. */
   private seen = new Map<string, number>();
+  private watched = new Set<string>();
   private dirty = false;
   private flushTimer: ReturnType<typeof setInterval> | null = null;
 
@@ -70,6 +72,9 @@ export default class LastSeen extends SlickPlugin<typeof meta.settings> {
     if (this.flushTimer) clearInterval(this.flushTimer);
     this.flushTimer = null;
     this.flush();
+    for (const userId of this.watched)
+      void this.api.redux.dispatchThunk('removeMemberFromPresenceSubscription', userId).catch(() => {});
+    this.watched.clear();
   }
 
   private flush() {
@@ -97,11 +102,13 @@ export default class LastSeen extends SlickPlugin<typeof meta.settings> {
       </this.Surface.Provider>
     ));
 
-    this.api.patchComponent<HoverCardProps>('MemberProfileHoverCard', (Original) => (props) => (
-      <this.Surface.Provider value={{ userId: props.memberId, card: true }}>
-        <Original {...props} />
-      </this.Surface.Provider>
-    ));
+    for (const name of ['MemberProfileHoverCard', 'ProfileHoverCard']) {
+      this.api.patchComponent<HoverCardProps>(name, (Original) => (props) => (
+        <this.Surface.Provider value={{ userId: props.memberId, card: true }}>
+          <Original {...props} />
+        </this.Surface.Provider>
+      ));
+    }
 
     this.api.patchComponent<PresenceProps>('Presence', (Original) => (props) => {
       const surface = React.useContext(this.Surface);
@@ -176,9 +183,9 @@ export default class LastSeen extends SlickPlugin<typeof meta.settings> {
 
   /** Off by default: a presence subscription per opened profile is extra websocket traffic. */
   private watch(userId: string) {
-    void this.api.redux
-      .dispatchThunk('subscribeToPresence', { memberIds: [userId], reason: 'slick-last-seen' })
-      .catch(() => {});
+    if (this.watched.has(userId)) return;
+    this.watched.add(userId);
+    void this.api.redux.dispatchThunk('addMemberToPresenceSubscription', userId).catch(() => {});
   }
 
   private lastMessageOf(userId: string): Promise<number | null> {

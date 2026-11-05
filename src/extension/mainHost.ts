@@ -295,10 +295,11 @@ export function createMainHost(
       globallyEnabled = config.enabled !== false;
       for (const entry of entries.values()) {
         const own = saved[entry.plugin.id];
+        const previous = JSON.stringify(entry.settings);
         entry.settings = resolveSettings(entry.schema, entry.defaultEnabled, record(own) ? own : undefined);
         // Compared with what's running, not the last settings: nothing runs before the first update.
         if (active(entry) !== entry.running) void reconcile(entry);
-        else if (active(entry) && entry.running)
+        else if (active(entry) && entry.running && JSON.stringify(entry.settings) !== previous)
           for (const listener of entry.listeners) {
             try {
               listener(entry.settings);

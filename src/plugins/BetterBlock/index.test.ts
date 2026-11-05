@@ -23,6 +23,7 @@ function fixture(t: TestContext, storeInitiallyAvailable = true) {
     }),
     useMemo: (factory: () => unknown) => factory(),
     useLayoutEffect: (effect: () => void) => effects.push(effect),
+    useEffect: (effect: () => void) => effects.push(effect),
   };
   const effects: (() => void)[] = [];
   const controller = new AbortController();
@@ -32,6 +33,7 @@ function fixture(t: TestContext, storeInitiallyAvailable = true) {
   const statePatches: ((state: any) => any)[] = [];
   const thunks = new Map<string, (original: any) => any>();
   const components = new Map<string, (original: any) => any>();
+  const dispatched: { name: string; args: any }[] = [];
   let subscriber: (() => void) | undefined;
   let refreshes = 0;
   let unsubscribed = false;
@@ -56,6 +58,7 @@ function fixture(t: TestContext, storeInitiallyAvailable = true) {
         patchSlice: (name: string, transform: any) => slices.set(name, transform),
         patchState: (patch: (state: any) => any) => statePatches.push(patch),
         patchThunk: (name: string, transform: any) => thunks.set(name, transform),
+        dispatchThunk: async (name: string, args: any) => dispatched.push({ name, args }),
         usePatchVersion: () => refreshes,
         useReduxState: (selector: (state: any) => unknown) => selector(state),
         refresh: () => {
@@ -91,6 +94,7 @@ function fixture(t: TestContext, storeInitiallyAvailable = true) {
     projectState: (raw: any) => statePatches.reduce((projected, patch) => patch(projected), raw),
     thunks,
     components,
+    dispatched,
     flushEffects: () => effects.splice(0).forEach((effect) => effect()),
     controller,
     change: () => subscriber?.(),
@@ -359,4 +363,33 @@ test('unblocking restores content when Slack connect retains previously filtered
   const bar = f.components.get('ReactionBar')!('Original')({ reactionKey: 'reaction', reactions: [] });
   assert.equal(bar.props.reactions.length, 1);
   assert.deepEqual(bar.props.reactions[0].users, ['UBLOCKED']);
+});
+
+test('thread bars with blocked repliers load the thread once so blocked replies leave the count', (t) => {
+  const f = fixture(t);
+  const root = { channel: 'C1', ts: '1', reply_count: 2, reply_users: ['UBLOCKED', 'UOTHER'], latest_reply: '3' };
+  (f.state.messages as any).C1 = { '1': root };
+  const render = () => {
+    f.components.get('ThreadReplies')!('Original')({ msg: root, channelId: 'C1' });
+    f.flushEffects();
+  };
+  render();
+  render();
+  assert.deepEqual(f.dispatched, [
+    {
+      name: 'requestReplies',
+      args: { channelId: 'C1', threadTs: '1', limit: 3, reason: 'betterblock', skipSubscriptionUpdate: true },
+    },
+  ]);
+  (f.state.messages as any).C1 = {
+    '1': { ...root, reply_count: 3, latest_reply: '4' },
+    '2': { ts: '2', thread_ts: '1', user: 'UBLOCKED' },
+    '3': { ts: '3', thread_ts: '1', user: 'UOTHER' },
+    '4': { ts: '4', thread_ts: '1', user: 'UOTHER' },
+  };
+  render();
+  (f.state.messages as any).C1 = { '5': { ...root, ts: '5', reply_users: ['UOTHER'] } };
+  f.components.get('ThreadReplies')!('Original')({ msg: { ...root, ts: '5' }, channelId: 'C1' });
+  f.flushEffects();
+  assert.equal(f.dispatched.length, 1);
 });

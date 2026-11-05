@@ -32,7 +32,7 @@ Slick runs Slack's own `app.asar` inside its own Electron (with the handy BYOE a
 | ---------------------------- | ----------------------------------------- | ------------------------------------------- | ---------------------------------------- |
 | Actively updated             | **Yes**                                   | **Yes**                                     | No                                       |
 | Theme support                | **2 Built in themes + Monaco CSS editor** | CSS editor                                  | No                                       |
-| Plugins                      | **39**                                    | 33                                          | 8                                        |
+| Plugins                      | **47**                                    | 39                                          | 8                                        |
 | Desktop sign in with cookies | **Yes**                                   | No                                          | N/A                                      |
 | Message Logger               | **Deletions + Edit history**              | Out of scope                                | No                                       |
 | Auto updates                 | **Client and Slack update together**      | Slack version is pinned                     | Manual updating required                 |
@@ -109,15 +109,20 @@ Open Slick from your app menu, or run `flatpak run dev.slick.Slick`.
 nix run github:3kh0/slick
 ```
 
-**Arch** (x86_64), using the AUR package [slick-mod](https://aur.archlinux.org/packages/slick-mod):
+**Arch** (x86_64):
 
-Uses the system Electron runtime and depends on the slack-desktop package.
+Choose one of the following AUR packages:
 
-```bash
-yay -S slick-mod
-```
+- [slick-mod](https://aur.archlinux.org/packages/slick-mod) - Uses the system Electron runtime and depends on the `slack-desktop` package. Install with:
+  ```bash
+  yay -S slick-mod
+  ```
+- [slick-mod-bundled](https://aur.archlinux.org/packages/slick-mod-bundled) - Uses Slick's bundled Electron runtime, also depends on the `slack-desktop` package. Install with:
+  ```bash
+  yay -S slick-mod-bundled
+  ```
 
-_(Maintained by [@Hash-AK](https://github.com/hash-ak))_
+_(Both AUR packages maintained by [@Hash-AK](https://github.com/hash-ak))_
 
 **Other distros:** grab an AppImage, `.deb` or `.rpm` from the [latest release](https://github.com/3kh0/slick/releases/latest). For an AppImage, make it executable in its file properties and open it.
 
@@ -152,13 +157,14 @@ Slick updates itself every few hours, and checks every download against its GitH
 
 ## Themes
 
-Import a `.json` theme from **Slick Preferences → Appearance → Import theme JSON** (or Appearance in the Firefox toolbar popup). Imported themes are saved, selected immediately, and can be picked again from the theme list or removed with **Remove imported theme**. Match Slack’s native Light or Dark mode to the theme.
+Import a `.json` theme from **Slick Preferences → Appearance → Import theme JSON** (or Appearance in the Firefox toolbar popup). Imported themes are saved, selected immediately, and can be picked again from the theme list or removed with **Remove imported theme**. A theme with `"mode"` only applies while Slack is in that color mode, so the built-in dark themes step aside in Light mode.
 
 The `themes/` folder in the source repository contains built-in themes bundled at build time. Adding files there won't load them into an installed app; use the import button instead. Theme JSON uses this format:
 
 ```jsonc
 {
   "name": "Super cool epic theme",
+  "mode": "dark", // optional: "dark" or "light"; omit to apply in both
   "palette": { "highlight1": { "100": "139,92,246" } }, // --dt_color-plt-<ramp>-<shade>, raw "r,g,b"
   "sidebar": { "nav-bg": "#1A1525" }, // --p-team_sidebar__<key>
   "vars": { "--any-css-var": "value" }, // overrides

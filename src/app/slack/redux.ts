@@ -3,13 +3,14 @@
 // restores the truth immediately.
 
 import { getFiberFromNode, reactReady } from './react.tsx';
-import { patchExportFunction, patchModuleExports } from './webpack.ts';
+import { getExport, patchExportFunction, patchModuleExports } from './webpack.ts';
 import { createThunkPatches } from './thunkPatches.ts';
 
 export type SlackStore = {
   getState(): any;
   dispatch(action: any): any;
   subscribe(cb: () => void): () => void;
+  subscribeImmediate?(cb: () => void): () => void;
 };
 
 export type StatePatch = (state: any) => any;
@@ -58,11 +59,48 @@ function wrapGetState(store: SlackStore): void {
   store.getState = wrapped;
 }
 
-// Catch stores at creation, so patches are in place before Slack reads state.
-patchExportFunction('createStore', (originalCreateStore) => (...args: any[]) => {
+const batchedListeners = new Set<() => void>();
+let batchedNotify: number | undefined;
+
+type WrappedSubscribe = SlackStore['subscribe'] & { __slickWrapped?: true };
+
+// Slack batches `subscribe` and skips it when the raw state is unchanged, so
+// refresh calls those listeners itself.
+function wrapSubscribe(store: SlackStore): void {
+  const subscribe = store.subscribe as WrappedSubscribe;
+  if (subscribe.__slickWrapped || !store.subscribeImmediate || store.subscribeImmediate === subscribe) return;
+  const wrapped: WrappedSubscribe = (listener) => {
+    const entry = () => listener();
+    batchedListeners.add(entry);
+    const unsubscribe = subscribe(listener);
+    return () => {
+      batchedListeners.delete(entry);
+      unsubscribe();
+    };
+  };
+  wrapped.__slickWrapped = true;
+  store.subscribe = wrapped;
+}
+
+function notifyBatchedListeners(): void {
+  if (batchedNotify !== undefined || !batchedListeners.size) return;
+  batchedNotify = requestAnimationFrame(() => {
+    batchedNotify = undefined;
+    for (const listener of batchedListeners) {
+      try {
+        listener();
+      } catch {}
+    }
+  });
+}
+
+// Catch stores at creation, before Slack copies them, so every copy reads
+// patched state.
+patchExportFunction(['createStore', 'legacy_createStore'], (originalCreateStore) => (...args: any[]) => {
   const store = originalCreateStore(...args);
   try {
     wrapGetState(store);
+    wrapSubscribe(store);
   } catch {}
   // A new store may be about to replace the Provider's; look again next time.
   cachedStore = null;
@@ -77,17 +115,36 @@ export function getStore(): SlackStore | null {
   const start = document.querySelector('.p-client_container')?.firstElementChild;
   if (!start) return null;
 
+  const stores = providedStores(start);
+  const store = stores[0];
+  if (!store) return null;
+  // Userscripts can discover a Provider whose store predates injection, and a
+  // renamed createStore misses the hook; wrap every copy Slack renders from.
+  if (!(store.getState as WrappedGetState).__slickWrapped) {
+    console.warn('[slick] store was created before Slick saw it; wrapping its rendered copies');
+    for (const copy of stores) {
+      wrapGetState(copy);
+      wrapSubscribe(copy);
+    }
+  }
+  cachedStore = store;
+  return store;
+}
+
+function providedStores(start: Element): SlackStore[] {
+  const stores: SlackStore[] = [];
   for (let fiber = getFiberFromNode(start); fiber; fiber = fiber.return) {
     const value = fiber.memoizedProps?.value;
     const store = value?.store ?? value;
-    if (store && typeof store.getState === 'function' && typeof store.subscribe === 'function') {
-      // Userscripts can discover a Provider whose store predates injection.
-      wrapGetState(store);
-      cachedStore = store;
-      return store;
-    }
+    if (
+      store &&
+      typeof store.getState === 'function' &&
+      typeof store.subscribe === 'function' &&
+      !stores.includes(store)
+    )
+      stores.push(store);
   }
-  return null;
+  return stores;
 }
 
 const storeListeners = new Set<() => void>();
@@ -145,6 +202,7 @@ export function refresh(): void {
   try {
     getStore()?.dispatch({ type: '@@slick/PATCH_STATE' });
   } catch {}
+  notifyBatchedListeners();
   for (const notify of patchListeners) {
     try {
       notify();
@@ -442,21 +500,22 @@ type ThunkWaiter = { resolve: (creator: ThunkCreator) => void; timer: ReturnType
 const waitingForThunk = new Map<string, Set<ThunkWaiter>>();
 const THUNK_WAIT_MS = 30_000;
 
+function rememberCreator(name: string, creator: ThunkCreator): void {
+  thunkCreators.set(name, creator);
+  const waiting = waitingForThunk.get(name);
+  if (!waiting) return;
+  waitingForThunk.delete(name);
+  for (const waiter of waiting) {
+    clearTimeout(waiter.timer);
+    waiter.resolve(creator);
+  }
+}
+
 function registerCreator(creator: ThunkCreator): void {
-  // The defining module assigns `meta` on the statement *after* createThunk
-  // returns, so the name is not readable until the current task yields.
+  // The defining module assigns meta after createThunk returns.
   queueMicrotask(() => {
     const name = (creator as any).meta?.name;
-    if (typeof name !== 'string') return;
-    thunkCreators.set(name, creator);
-
-    const waiting = waitingForThunk.get(name);
-    if (!waiting) return;
-    waitingForThunk.delete(name);
-    for (const waiter of waiting) {
-      clearTimeout(waiter.timer);
-      waiter.resolve(creator);
-    }
+    if (typeof name === 'string') rememberCreator(name, creator);
   });
 }
 
@@ -498,11 +557,20 @@ patchModuleExports((exports) => {
 });
 
 export function getThunkCreator(name: string): ThunkCreator | undefined {
-  return thunkCreators.get(name);
+  const known = thunkCreators.get(name);
+  if (known) return known;
+  // Late injection can miss creators that predate the factory hook.
+  const existing = getExport<ThunkCreator>(
+    (value): value is ThunkCreator => typeof value === 'function' && (value as any).meta?.name === name,
+  );
+  if (!existing) return;
+  const wrapped = thunkPatches.wrapCreator(existing);
+  rememberCreator(name, wrapped);
+  return wrapped;
 }
 
 export function waitForThunkCreator(name: string): Promise<ThunkCreator> {
-  const known = thunkCreators.get(name);
+  const known = getThunkCreator(name);
   if (known) return Promise.resolve(known);
 
   return new Promise((resolve, reject) => {

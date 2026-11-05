@@ -201,3 +201,13 @@ test('the first named hook registered by a predicate takes effect in the same in
   assert.equal(wrapped(), 'patched');
   assert.equal(metadataReads, 2);
 });
+
+test('wrapping a discovered creator again preserves identity and runs each patch once', () => {
+  const patches = createThunkPatches();
+  const creator = Object.assign((value: string) => value, { meta: { name: 'navigate' } });
+  patches.patch('navigate', (original) => (value: string) => original(value + '!'));
+  const wrapped = patches.wrapCreator(creator);
+  assert.equal(patches.wrapCreator(creator), wrapped);
+  assert.equal(patches.wrapCreator(wrapped), wrapped);
+  assert.equal(wrapped('thread'), 'thread!');
+});

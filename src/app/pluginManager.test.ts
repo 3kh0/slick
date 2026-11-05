@@ -69,6 +69,7 @@ async function fixture() {
     Event,
     EventTarget,
     structuredClone,
+    URL,
     setTimeout,
     clearTimeout,
     setInterval: () => 1,
@@ -83,15 +84,17 @@ async function fixture() {
   const blobStore = (namespace: string) => {
     const blob = blobs.get(namespace) ?? blobs.set(namespace, new Map()).get(namespace)!;
     return {
+      read: async (key: string) => blob.get(key) ?? null,
       readAll: async () => Object.fromEntries(blob),
       write: async (key: string, value: string) => !!blob.set(key, value),
-      delete: async (key: string) => blob.delete(key),
+      delete: async (key: string) => (blob.delete(key), true),
       clear: async () => (blob.clear(), true),
     };
   };
+  const remote = new Map<string, { status: number; body: string }>();
   const bridge = {
     loader: 'electron',
-    fetch: async () => {},
+    fetch: async (url: string) => remote.get(url) ?? { status: 404, body: '' },
     readSettings: async () => saved,
     readUserCss: async () => '',
     writeSettings: async (text: string) => {
@@ -129,6 +132,7 @@ async function fixture() {
     context,
     bridge,
     blobs,
+    remote,
     config,
     manager,
     starts,
@@ -265,6 +269,77 @@ test('user plugins install, update in place, reload from storage and remove clea
     ['Probe'],
   );
   assert.equal(f.blobs.get('user-plugins')?.size, 0);
+});
+
+test('plugins installed from a URL update themselves when the file changes', async () => {
+  const f = await fixture();
+  await f.manager.reconcile();
+  const url = 'https://example.com/Mine.js';
+  f.remote.set(url, { status: 200, body: userPlugin('Mine', 1) });
+  assert.equal(await f.manager.installUserPluginFromUrl(url), 'Mine v1');
+  assert.equal(f.manager.info().find((i: any) => i.id === 'Mine').source, url);
+
+  const idle = await f.manager.updateUserPlugins();
+  assert.equal(idle.updated.length, 0);
+  assert.equal(idle.failed, 0);
+
+  f.remote.set(url, { status: 200, body: userPlugin('Mine', 2) });
+  assert.deepEqual(Array.from((await f.manager.updateUserPlugins()).updated), ['Mine v2']);
+  assert.equal(f.context.userVersion, 2);
+
+  f.remote.set(url, { status: 500, body: '' });
+  assert.equal((await f.manager.updateUserPlugins()).failed, 1);
+  f.remote.set(url, { status: 200, body: userPlugin('Other', 3) });
+  assert.equal((await f.manager.updateUserPlugins()).failed, 1);
+  assert.equal(f.context.userVersion, 2);
+
+  const reloaded = new f.context.Host.PluginManager(f.bridge, f.config);
+  await reloaded.loadUserPlugins();
+  assert.equal(reloaded.info()[0].source, url);
+
+  assert.equal(f.manager.autoUpdatesEnabled, true);
+  await f.manager.setAutoUpdate(false);
+  const off = new f.context.Host.PluginManager(f.bridge, f.config);
+  await off.loadUserPlugins();
+  assert.equal(off.autoUpdatesEnabled, false);
+  await f.manager.setAutoUpdate(true);
+
+  assert.equal(await f.manager.installUserPlugin(userPlugin('Mine', 4)), 'Mine v4');
+  assert.equal(f.manager.info().find((i: any) => i.id === 'Mine').source, null);
+  await f.manager.removeUserPlugin('Mine');
+  assert.equal(f.blobs.get('user-plugin-sources')?.size, 0);
+});
+
+test('a plugin removed while its update downloads stays removed', async () => {
+  const f = await fixture();
+  await f.manager.reconcile();
+  const url = 'https://example.com/Gone.js';
+  f.remote.set(url, { status: 200, body: userPlugin('Gone', 1) });
+  await f.manager.installUserPluginFromUrl(url);
+  let started!: () => void;
+  let release!: () => void;
+  const fetching = new Promise<void>((resolve) => (started = resolve));
+  f.bridge.fetch = async () => {
+    started();
+    await new Promise<void>((resolve) => (release = resolve));
+    return { status: 200, body: userPlugin('Gone', 2) };
+  };
+  const pending = f.manager.updateUserPlugins();
+  await fetching;
+  await f.manager.removeUserPlugin('Gone');
+  release();
+  assert.equal((await pending).updated.length, 0);
+  assert.equal(f.manager.plugins.has('Gone'), false);
+  assert.equal(f.blobs.get('user-plugins')?.has('Gone'), false);
+  assert.equal(f.blobs.get('user-plugin-sources')?.has('Gone'), false);
+});
+
+test('plugin URLs must be https and GitHub file pages map to raw files', async () => {
+  const f = await fixture();
+  await assert.rejects(f.manager.installUserPluginFromUrl('http://example.com/a.js'), /https/);
+  await assert.rejects(f.manager.installUserPluginFromUrl('nope'), /valid URL/);
+  f.remote.set('https://raw.githubusercontent.com/o/r/main/p/A.js', { status: 200, body: userPlugin('Gh', 1) });
+  assert.equal(await f.manager.installUserPluginFromUrl('https://github.com/o/r/blob/main/p/A.js'), 'Gh v1');
 });
 
 test('plugins that web user scripts queue before or after boot are registered and started', async () => {

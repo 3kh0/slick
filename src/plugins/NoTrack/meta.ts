@@ -1,11 +1,12 @@
 // Separate file so the renderer, main-process half and build can each import
 // it without pulling in the others.
 
-import type { SettingsSchema } from '../../shared/settings.ts';
+import type { PluginCategory, SettingsSchema } from '../../shared/settings.ts';
 
 export const id = 'NoTrack';
 export const pluginName = 'No Track';
 export const description = "Disable Slack's built-in tracking and telemetry";
+export const category: PluginCategory = 'privacy';
 export const defaultEnabled = true;
 
 export const settings = {

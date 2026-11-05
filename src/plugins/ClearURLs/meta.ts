@@ -1,8 +1,9 @@
-import type { SettingsSchema } from '../../shared/settings.ts';
+import type { PluginCategory, SettingsSchema } from '../../shared/settings.ts';
 
 export const id = 'ClearURLs';
 export const pluginName = 'Clear URLs';
 export const description = 'Automatically removes tracking elements from URLs you send';
+export const category: PluginCategory = 'privacy';
 export const defaultEnabled = false;
 
 export const settings = {

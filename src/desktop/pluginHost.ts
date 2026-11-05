@@ -484,11 +484,12 @@ export function updateSettings(stored: { enabled?: boolean; plugins?: Record<str
   globallyEnabled = stored.enabled !== false;
   for (const entry of registered.values()) {
     const wasActive = previousGlobal && entry.settings.enabled === true;
+    const previous = JSON.stringify(entry.settings);
     entry.settings = resolveSettings(entry.schema, entry.defaultEnabled, stored.plugins?.[entry.plugin.id]);
     const active = isActive(entry);
     if (booted && wasActive !== active) {
       void reconcile(entry);
-    } else if (active) {
+    } else if (active && JSON.stringify(entry.settings) !== previous) {
       for (const listener of entry.settingsListeners) {
         try {
           listener(entry.settings);

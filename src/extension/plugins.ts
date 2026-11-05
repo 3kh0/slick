@@ -19,6 +19,7 @@ export const BACKGROUND_PLUGINS = [
   'BetterGifs',
   'ClearURLs',
   'Click2Load',
+  'DeArrow',
   'HcaStatus',
   'InstalledApps',
   'NoTrack',
@@ -33,6 +34,7 @@ export const SLACK_ACCESS_PLUGINS = ['InstalledApps'] as const satisfies readonl
 export const RENDERER_ONLY_ON_WEB = [
   'AccountSwitcher',
   'AdminBackend',
+  'ChatTabs', // Native close-tab keyboard shortcuts are desktop-only.
   'CustomFonts',
   'CustomSounds',
   'NoTrack',

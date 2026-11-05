@@ -1,9 +1,10 @@
-import type { SettingsSchema } from '../../shared/settings.ts';
+import type { PluginCategory, SettingsSchema } from '../../shared/settings.ts';
 
 export const id = 'HcaStatus';
 export const pluginName = 'HCA Status';
 export const description =
   'Flag users who have not completed identity verification. Sends Slack user IDs to auth.hackclub.com for verification and age-category checks.';
+export const category: PluginCategory = 'hackclub';
 export const defaultEnabled = false;
 
 export const settings = {

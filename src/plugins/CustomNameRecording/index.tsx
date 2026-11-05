@@ -55,6 +55,7 @@ export default class CustomNameRecording extends SlickPlugin<typeof meta.setting
   static readonly id = meta.id;
   static readonly pluginName = meta.pluginName;
   static readonly description = meta.description;
+  static readonly category = meta.category;
   static readonly defaultEnabled = meta.defaultEnabled;
   static readonly settings = meta.settings;
 

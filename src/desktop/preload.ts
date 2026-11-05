@@ -109,11 +109,35 @@ const evaluateOriginalPreload = (source: string): void => {
   eval(source);
 };
 
+// document.open() erases every listener on the window and document, including
+// the ones Slack's preload registers (e.g. system light/dark tracking). Record
+// them while it runs so the final rebuild can put them back.
+type RecordedListener = [EventTarget, Parameters<EventTarget['addEventListener']>];
+const originalPreloadListeners: RecordedListener[] = [];
+function recordListeners<T>(run: () => T): T {
+  const targets: EventTarget[] = [window, document];
+  const originals = targets.map((target) => target.addEventListener);
+  targets.forEach((target) => {
+    const add = target.addEventListener;
+    target.addEventListener = function (this: EventTarget, ...args: Parameters<EventTarget['addEventListener']>) {
+      originalPreloadListeners.push([target, args]);
+      return add.apply(this, args);
+    } as typeof target.addEventListener;
+  });
+  try {
+    return run();
+  } finally {
+    targets.forEach((target, i) => {
+      target.addEventListener = originals[i];
+    });
+  }
+}
+
 void (async () => {
   try {
     const originalPreload = await originalPreloadPromise;
     if (!originalPreload) throw new Error('Slack preload source is unavailable');
-    evaluateOriginalPreload(originalPreload);
+    recordListeners(() => evaluateOriginalPreload(originalPreload));
     accountDiagnostic('preload.original-ready');
     if (!isClientPage && (location.hostname === 'slack.com' || location.hostname.endsWith('.slack.com'))) {
       installCookieSignInButton(document, () => ipcRenderer.send('slick:open-cookie-login'));
@@ -278,6 +302,7 @@ void (async () => {
 
   try {
     document.open();
+    for (const [target, args] of originalPreloadListeners) target.addEventListener(...args);
     document.write(`<!DOCTYPE html>${doc.documentElement.outerHTML}`);
     document.close();
     accountDiagnostic('preload.ready');

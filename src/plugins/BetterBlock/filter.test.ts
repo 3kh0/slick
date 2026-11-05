@@ -9,10 +9,12 @@ import {
   filterReactions,
   filterThreadActivity,
   filterTyping,
+  hasBlockedReplies,
   hidesActivity,
   hidesMessage,
   hidesSuggestion,
   projectSuggestions,
+  threadReplies,
 } from './filter.ts';
 
 const blocked = new Set(['UBLOCKED']);
@@ -230,6 +232,26 @@ test('thread counts use known replies and preserve incomplete author lists', () 
     filterMessage({ reply_count: 8, reply_users_count: 4, reply_users: ['UBLOCKED'] }, blocked).reply_count,
     8,
   );
+});
+
+test('thread counts subtract blocked replies loaded into the channel bucket', () => {
+  const bucket = Object.create({
+    '1': { ts: '1', user: 'UOTHER', reply_count: 3, reply_users: ['UBLOCKED', 'UOTHER'], latest_reply: '4' },
+    '2': { ts: '2', thread_ts: '1', user: 'UBLOCKED' },
+    '3': { ts: '3', thread_ts: '1', user: 'UOTHER' },
+    '4': { ts: '4', thread_ts: '1', user: 'UBLOCKED' },
+    '5': { ts: '5', thread_ts: '5', user: 'UOTHER' },
+  });
+  const threads = threadReplies(bucket);
+  assert.deepEqual([...threads.keys()], ['1']);
+  assert.equal(hasBlockedReplies(bucket['1'], blocked), true);
+  assert.equal(hasBlockedReplies(bucket['5'], blocked), false);
+  const next = filterMessage(bucket['1'], blocked, threads.get('1'));
+  assert.equal(next.reply_count, 1);
+  assert.equal(next.latest_reply, '3');
+  assert.equal(filterMessage(next, blocked), next);
+  const duplicate = filterMessage({ ...bucket['1'], replies: [bucket['2']] }, blocked, threads.get('1'));
+  assert.equal(duplicate.reply_count, 1);
 });
 
 test('filters virtual history with inherited message keys and preserves pagination boundaries', () => {

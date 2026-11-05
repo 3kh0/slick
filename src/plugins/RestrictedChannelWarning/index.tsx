@@ -9,6 +9,7 @@ export default class RestrictedChannelWarning extends SlickPlugin<typeof meta.se
   static readonly id = meta.id;
   static readonly pluginName = meta.pluginName;
   static readonly description = meta.description;
+  static readonly category = meta.category;
   static readonly defaultEnabled = meta.defaultEnabled;
   static readonly settings = meta.settings;
 

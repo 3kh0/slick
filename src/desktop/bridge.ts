@@ -5,10 +5,10 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { dialog, ipcMain, webContents } from 'electron';
 import { configDir, profileDir, settingsDir } from './paths.js';
-import { setupBlobRpc } from './pluginHost.js';
+import { setupBlobRpc, updateSettings } from './pluginHost.js';
 import type { Updater } from './updater.js';
 import { appUrl } from './session.js';
-import { readBootSettings } from './settingsFile.js';
+import { readBootSettings, readStoredSettings } from './settingsFile.js';
 import { createCssEditor } from './windows/cssEditor.js';
 
 const SETTINGS_FILE = 'settings.json';
@@ -85,7 +85,14 @@ export function broadcast(channel: string, ...args: unknown[]) {
 const methods: Record<string, (args: any[]) => unknown> = {
   readBootSettings: () => readBootSettings(),
   readSettings: () => readFile(SETTINGS_FILE, '{}'),
-  writeSettings: ([text]) => writeFile(SETTINGS_FILE, String(text ?? '')),
+  writeSettings: async ([text]) => {
+    const value = String(text ?? '');
+    const ok = await writeFile(SETTINGS_FILE, value);
+    // The renderer starts plugins once this resolves, before the settings watcher fires.
+    const settings = ok ? readStoredSettings(value) : null;
+    if (settings) updateSettings(settings);
+    return ok;
+  },
   readUserCss: () => readFile(USER_CSS_FILE, ''),
   writeUserCss: async ([css]) => {
     const text = String(css ?? '');

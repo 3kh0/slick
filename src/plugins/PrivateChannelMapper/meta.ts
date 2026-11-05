@@ -1,8 +1,9 @@
-import type { SettingsSchema } from '../../shared/settings.ts';
+import type { PluginCategory, SettingsSchema } from '../../shared/settings.ts';
 
 export const id = 'PrivateChannelMapper';
 export const pluginName = 'Private Channel Mapper';
 export const description = 'Name the private channels you can’t see, and mention the ones you are not in';
+export const category: PluginCategory = 'channels';
 export const defaultEnabled = false;
 
 export const settings = {

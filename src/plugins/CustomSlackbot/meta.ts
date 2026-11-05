@@ -1,8 +1,9 @@
-import type { SettingsSchema } from '../../shared/settings.ts';
+import type { PluginCategory, SettingsSchema } from '../../shared/settings.ts';
 
 export const id = 'CustomSlackbot';
 export const pluginName = 'Custom Slackbot';
 export const description = 'Customize the name and avatar used for workspace custom responses';
+export const category: PluginCategory = 'messages';
 export const defaultEnabled = false;
 
 export const settings = {

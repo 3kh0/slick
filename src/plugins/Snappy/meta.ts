@@ -1,8 +1,9 @@
-import type { SettingsSchema } from '../../shared/settings.ts';
+import type { PluginCategory, SettingsSchema } from '../../shared/settings.ts';
 
 export const id = 'Snappy';
 export const pluginName = 'Snappy';
 export const description = 'Make Slack feel more responsive by disabling animations and other slow features';
+export const category: PluginCategory = 'app';
 export const defaultEnabled = true;
 
 export const settings = {
