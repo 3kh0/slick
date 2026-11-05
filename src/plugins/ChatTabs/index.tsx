@@ -2,6 +2,7 @@ import { SlickPlugin, type MenuTemplateItem } from '$slick';
 import { getActiveTeam, readLocalConfig } from '../../app/slack/localConfig.ts';
 import {
   closeTab,
+  adjacentTab,
   currentTab,
   dragScrollSpeed,
   moveTab,
@@ -28,6 +29,15 @@ export default class ChatTabs extends SlickPlugin<typeof meta.settings> {
   static readonly category = meta.category;
   static readonly defaultEnabled = meta.defaultEnabled;
   static readonly settings = meta.settings;
+  static readonly liveSettings = [
+    'threadView',
+    'autoThreadTabs',
+    'showSingleTab',
+    'wrapTabSwitching',
+    'closeTabSelection',
+    'middleClickCloses',
+    'dragToSplit',
+  ] as const;
   static readonly requiredAPIs = ['redux', 'elements'] as const;
 
   private MenuTarget = React.createContext<string | null>(null);
@@ -41,6 +51,7 @@ export default class ChatTabs extends SlickPlugin<typeof meta.settings> {
   private openChat?: (tab: ChatTab) => Promise<boolean | undefined>;
   private displayName?: DisplayName;
   private active = new this.api.Store(false);
+  private settingsVersion = new this.api.Store(0);
   private writes = Promise.resolve();
 
   start() {
@@ -219,6 +230,10 @@ export default class ChatTabs extends SlickPlugin<typeof meta.settings> {
     this.active.set(false);
   }
 
+  onSettingsChange() {
+    this.settingsVersion.set(this.settingsVersion.get() + 1);
+  }
+
   private NewTabButton = () => {
     const trigger = this.pickerTrigger.use();
     const open = this.pickerOpen.use();
@@ -254,6 +269,7 @@ export default class ChatTabs extends SlickPlugin<typeof meta.settings> {
   }
 
   private SplitDropTarget = () => {
+    this.settingsVersion.use();
     const tab = this.draggedTab.use();
     const [over, setOver] = React.useState(false);
     const [top, setTop] = React.useState(0);
@@ -265,7 +281,7 @@ export default class ChatTabs extends SlickPlugin<typeof meta.settings> {
       window.addEventListener('resize', measure);
       return () => window.removeEventListener('resize', measure);
     }, [tab]);
-    if (!tab) return null;
+    if (!tab || !this.config.dragToSplit) return null;
     return (
       <div
         className="slick-chat-tabs__split-drop"
@@ -373,6 +389,7 @@ export default class ChatTabs extends SlickPlugin<typeof meta.settings> {
   };
 
   private TabBar = () => {
+    this.settingsVersion.use();
     const splitError = this.splitError.use();
     const [route, setRoute] = React.useState(() => location.pathname + location.search);
     const team = getActiveTeam();
@@ -392,7 +409,13 @@ export default class ChatTabs extends SlickPlugin<typeof meta.settings> {
     const addButton = React.useRef<HTMLButtonElement>(null);
     const pickerRef = React.useRef<HTMLDivElement>(null);
     const activeKey = this.api.redux.useReduxState((state) => {
-      const tab = currentTab(route, state, this.config.autoThreadTabs);
+      const candidate = currentTab(route, state, true);
+      const savedThread =
+        this.config.threadView === 'channel' &&
+        candidate?.thread &&
+        saved?.scope === scope &&
+        saved.tabs.some((tab) => tabKey(tab) === tabKey(candidate));
+      const tab = currentTab(route, state, this.config.autoThreadTabs || !!savedThread);
       return tab ? tabKey(tab) : undefined;
     });
     const [channel, thread] = activeKey?.split(':') ?? [];
@@ -529,23 +552,37 @@ export default class ChatTabs extends SlickPlugin<typeof meta.settings> {
       setNotice('');
       this.splitError.set('');
       try {
-        const result = tab.thread
-          ? await this.api.redux.dispatchThunk('navigate', {
-              ...splitProps(tab),
-              options: { forceRenderInPrimary: true, forceBackStack: true },
-            })
-          : await this.api.redux.dispatchThunk('handleDeepLink', {
-              uri: tabUri(teamId, tab),
-              dangerouslyOverrideRouting: true,
-            });
-        if (result === false) throw new Error('Navigation rejected');
+        const besideChannel = !!tab.thread && this.config.threadView === 'channel';
+        const before = this.api.redux.getStore()?.getState();
+        const primary = before?.view?.[`v2::main::${before?.window?.main?.activeTab}::primary`];
+        const sameChannel = !tab.thread && primary?.viewType === 'Channel' && primary.id === tab.channel;
+        const result = sameChannel
+          ? true
+          : tab.thread && !besideChannel
+            ? await this.api.redux.dispatchThunk('navigate', {
+                ...splitProps(tab),
+                options: { forceRenderInPrimary: true, forceBackStack: true },
+              })
+            : await this.api.redux.dispatchThunk('handleDeepLink', {
+                uri: tabUri(teamId, tab),
+                dangerouslyOverrideRouting: true,
+              });
+        if (result === false) {
+          const destination = currentTab(
+            location.pathname + location.search,
+            this.api.redux.getStore()?.getState(),
+            !!tab.thread,
+          );
+          if (!destination || tabKey(destination) !== tabKey(tab)) throw new Error('Navigation rejected');
+        }
         {
           const state = this.api.redux.getStore()?.getState();
           const activeTab = state?.window?.main?.activeTab;
-          if (state?.view?.[`v2::main::${activeTab}::secondary`]?.viewType === 'Thread') {
+          if (!besideChannel && state?.view?.[`v2::main::${activeTab}::secondary`]?.viewType === 'Thread') {
             await this.api.redux.dispatchThunk('closeFlexpane', { shouldTransitionFocus: false });
           }
         }
+        setSaved((value) => (value?.scope === scope ? { scope, tabs: visitTab(value.tabs, tab) } : value));
         setRoute(location.pathname + location.search);
         setPicker(false);
         return true;
@@ -565,7 +602,7 @@ export default class ChatTabs extends SlickPlugin<typeof meta.settings> {
     }, [teamId, scope]);
 
     const close = async (tab: ChatTab) => {
-      const result = closeTab(tabs, tabKey(tab), activeKey);
+      const result = closeTab(tabs, tabKey(tab), activeKey, this.config.closeTabSelection);
       if (result.next && !(await open(result.next))) return;
       setSaved((value) =>
         value?.scope === scope
@@ -598,15 +635,13 @@ export default class ChatTabs extends SlickPlugin<typeof meta.settings> {
       const handler = (event: KeyboardEvent) => {
         const direction = tabSwitchDirection(event);
         if (!direction || tabs.length < 2) return;
-        const index = tabs.findIndex((tab) => tabKey(tab) === activeKey);
-        const next = tabs[(index + direction + tabs.length) % tabs.length];
-        if (!next) return;
+        const next = adjacentTab(tabs, activeKey, direction, this.config.wrapTabSwitching);
         event.preventDefault();
         event.stopImmediatePropagation();
-        void open(next);
+        if (next) void open(next);
       };
-      document.addEventListener('keydown', handler, true);
-      return () => document.removeEventListener('keydown', handler, true);
+      window.addEventListener('keydown', handler, true);
+      return () => window.removeEventListener('keydown', handler, true);
     }, [tabs, activeKey, teamId]);
 
     React.useEffect(() => {
@@ -624,10 +659,10 @@ export default class ChatTabs extends SlickPlugin<typeof meta.settings> {
       <div
         className="slick-chat-tabs"
         aria-label="Chat tabs"
-        data-collapsed={tabs.length <= 1}
+        data-collapsed={tabs.length <= 1 && !this.config.showSingleTab}
         data-tab-count={tabs.length}
       >
-        {tabs.length > 1 && (
+        {(tabs.length > 1 || this.config.showSingleTab) && (
           <div className="slick-chat-tabs__row">
             <div
               className="slick-chat-tabs__list"
@@ -703,7 +738,7 @@ export default class ChatTabs extends SlickPlugin<typeof meta.settings> {
                     setDrop(null);
                   }}
                   onAuxClick={(event) => {
-                    if (event.button === 1 && tabs.length > 1) {
+                    if (event.button === 1 && this.config.middleClickCloses && tabs.length > 1) {
                       event.preventDefault();
                       void close(tab);
                     }
@@ -739,13 +774,19 @@ export default class ChatTabs extends SlickPlugin<typeof meta.settings> {
                         if (tabs.length > 1) void close(tab);
                         return;
                       }
-                      const index = tabs.indexOf(tab);
-                      const next =
+                      const destination =
                         event.key === 'Home'
-                          ? 0
+                          ? tabs[0]
                           : event.key === 'End'
-                            ? tabs.length - 1
-                            : (index + (event.key === 'ArrowRight' ? 1 : -1) + tabs.length) % tabs.length;
+                            ? tabs.at(-1)
+                            : adjacentTab(
+                                tabs,
+                                tabKey(tab),
+                                event.key === 'ArrowRight' ? 1 : -1,
+                                this.config.wrapTabSwitching,
+                              );
+                      if (!destination) return;
+                      const next = tabs.indexOf(destination);
                       const buttons = event.currentTarget
                         .closest('[role=tablist]')
                         ?.querySelectorAll<HTMLButtonElement>('[role=tab]');
@@ -760,7 +801,7 @@ export default class ChatTabs extends SlickPlugin<typeof meta.settings> {
                       type="button"
                       className="slick-chat-tabs__close"
                       aria-label={`Close tab ${tabs.indexOf(tab) + 1}`}
-                      title="Close tab (or middle-click)"
+                      title={this.config.middleClickCloses ? 'Close tab (or middle-click)' : 'Close tab'}
                       onClick={() => void close(tab)}
                     >
                       ×

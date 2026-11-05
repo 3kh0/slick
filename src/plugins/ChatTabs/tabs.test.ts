@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
   closeTab,
+  adjacentTab,
   currentThread,
   currentTab,
   dragScrollSpeed,
@@ -63,6 +64,20 @@ test('closing selects the adjacent tab and never closes the final tab', () => {
   assert.equal(closeTab(tabs, 'C1:', 'C3:').next, undefined);
   assert.equal(closeTab(tabs, 'missing', 'C3:').tabs, tabs);
   assert.equal(closeTab([tabs[0]!], tabKey(tabs[0]!), 'C1:').tabs.length, 1);
+  assert.deepEqual(closeTab(tabs, 'C2:', 'C2:', 'left').next, tabs[0]);
+  assert.deepEqual(closeTab(tabs, 'C1:', 'C1:', 'left').next, tabs[1]);
+  assert.equal(closeTab(tabs, 'C2:', 'C1:', 'left').next, undefined);
+});
+
+test('keyboard switching can wrap or stop at the edges without losing the selection', () => {
+  const tabs = [{ channel: 'C1' }, { channel: 'D2' }, { channel: 'C3' }];
+  assert.equal(adjacentTab(tabs, 'C1:', -1), tabs[2]);
+  assert.equal(adjacentTab(tabs, 'C3:', 1), tabs[0]);
+  assert.equal(adjacentTab(tabs, 'C1:', -1, false), undefined);
+  assert.equal(adjacentTab(tabs, 'C3:', 1, false), undefined);
+  assert.equal(adjacentTab(tabs, 'D2:', -1, false), tabs[0]);
+  assert.equal(adjacentTab(tabs, 'missing', 1), undefined);
+  assert.equal(adjacentTab([], undefined, 1), undefined);
 });
 
 test('thread selection follows the active workspace view even when the URL stays on the channel', () => {

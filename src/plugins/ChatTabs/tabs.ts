@@ -46,11 +46,19 @@ export function visitTab(tabs: ChatTab[], tab: ChatTab): ChatTab[] {
   return [...tabs.slice(-(MAX_TABS - 1)), tab];
 }
 
-export function closeTab(tabs: ChatTab[], key: string, active: string | undefined) {
+export function closeTab(tabs: ChatTab[], key: string, active: string | undefined, selection = 'right') {
   const index = tabs.findIndex((tab) => tabKey(tab) === key);
   if (index < 0 || tabs.length === 1) return { tabs, next: undefined };
   const remaining = tabs.filter((tab) => tabKey(tab) !== key);
-  return { tabs: remaining, next: key === active ? remaining[Math.min(index, remaining.length - 1)] : undefined };
+  const neighbor = selection === 'left' ? Math.max(0, index - 1) : Math.min(index, remaining.length - 1);
+  return { tabs: remaining, next: key === active ? remaining[neighbor] : undefined };
+}
+
+export function adjacentTab(tabs: ChatTab[], active: string | undefined, direction: number, wrap = true) {
+  const index = tabs.findIndex((tab) => tabKey(tab) === active);
+  if (index < 0 || !direction) return;
+  const next = index + direction;
+  return tabs[wrap ? (next + tabs.length) % tabs.length : next];
 }
 
 export function tabUri(team: string, tab: ChatTab): string {

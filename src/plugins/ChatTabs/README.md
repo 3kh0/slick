@@ -20,4 +20,8 @@ Tab destinations and order are saved per account and workspace. Only conversatio
 
 Opening a thread normally keeps it in Slack’s side pane without creating a tab. Turn on **Automatically create tabs for threads** in the plugin settings to add side-pane threads to the tab strip too.
 
+Set **Open thread tabs in** to **Channel and thread pane** to keep the channel visible when selecting a thread tab. **Thread only** opens the thread in the main pane.
+
+The plugin settings also let you keep the bar visible with one tab, stop keyboard switching at either end, choose the left or right neighbor after closing a tab, disable middle-click closing, and disable dragging to split view while retaining drag-to-reorder. Preferences take effect immediately and apply to saved tabs too.
+
 Works in desktop Slick, Chromium/Firefox extensions and the userscript. Pop-out windows keep Slack’s normal layout.
