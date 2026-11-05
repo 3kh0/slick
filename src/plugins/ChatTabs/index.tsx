@@ -17,6 +17,7 @@ import * as meta from './meta.ts';
 import { addTabMenuItem, addThreadTabAction, THREAD_TAB_ACTION, type MessageAction } from './menu.ts';
 import { chatLabel, chatMemberIds, memberName } from './people.ts';
 import { recentPlaces, searchPlaces, type PickerPlace } from './picker.ts';
+import { tabSwitchDirection } from './shortcut.ts';
 
 type DisplayName = (state: any, channel: any, options: Record<string, boolean>) => string;
 
@@ -391,7 +392,7 @@ export default class ChatTabs extends SlickPlugin<typeof meta.settings> {
     const addButton = React.useRef<HTMLButtonElement>(null);
     const pickerRef = React.useRef<HTMLDivElement>(null);
     const activeKey = this.api.redux.useReduxState((state) => {
-      const tab = currentTab(route, state);
+      const tab = currentTab(route, state, this.config.autoThreadTabs);
       return tab ? tabKey(tab) : undefined;
     });
     const [channel, thread] = activeKey?.split(':') ?? [];
@@ -595,17 +596,10 @@ export default class ChatTabs extends SlickPlugin<typeof meta.settings> {
 
     React.useEffect(() => {
       const handler = (event: KeyboardEvent) => {
-        if (
-          !event.altKey ||
-          !event.shiftKey ||
-          event.ctrlKey ||
-          event.metaKey ||
-          !['ArrowLeft', 'ArrowRight'].includes(event.key) ||
-          tabs.length < 2
-        )
-          return;
+        const direction = tabSwitchDirection(event);
+        if (!direction || tabs.length < 2) return;
         const index = tabs.findIndex((tab) => tabKey(tab) === activeKey);
-        const next = tabs[(index + (event.key === 'ArrowRight' ? 1 : -1) + tabs.length) % tabs.length];
+        const next = tabs[(index + direction + tabs.length) % tabs.length];
         if (!next) return;
         event.preventDefault();
         event.stopImmediatePropagation();
@@ -719,6 +713,8 @@ export default class ChatTabs extends SlickPlugin<typeof meta.settings> {
                     type="button"
                     role="tab"
                     aria-selected={tabKey(tab) === activeKey}
+                    aria-keyshortcuts="Control+Tab Control+Shift+Tab Alt+Shift+ArrowLeft Alt+Shift+ArrowRight"
+                    title="Switch tabs: Ctrl+Tab / Ctrl+Shift+Tab or Alt+Shift+Left/Right"
                     className="slick-chat-tabs__select"
                     onClick={() => void open(tab)}
                     onKeyDown={(event) => {

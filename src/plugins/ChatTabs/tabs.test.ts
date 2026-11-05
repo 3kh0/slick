@@ -107,6 +107,20 @@ test('full-page thread tabs remain selected when Slack removes the channel from 
   assert.deepEqual(currentTab('/client/E1/D1', {}), { channel: 'D1' });
 });
 
+test('ordinary side-pane threads keep the channel selected unless automatic thread tabs are enabled', () => {
+  const state = {
+    window: { main: { activeTab: 'home' } },
+    view: Object.create({
+      'v2::main::home::primary': { viewType: 'Channel', id: 'C1' },
+      'v2::main::home::secondary': { viewType: 'Thread', params: { threadId: 'C1-1770000000.123456' } },
+    }),
+  };
+  const route = '/client/E1/C1?thread_ts=1770000000.123456';
+  assert.deepEqual(currentTab(route, state), { channel: 'C1' });
+  assert.deepEqual(currentTab(route, state, true), { channel: 'C1', thread: '1770000000.123456' });
+  assert.deepEqual(currentTab(route, {}), { channel: 'C1' });
+});
+
 test('reply menu targets resolve to the root thread and reject invalid destinations', () => {
   const state = {
     messages: Object.create({ C1: Object.create({ '1770000001.123456': { thread_ts: '1770000000.123456' } }) }),

@@ -3,9 +3,24 @@ import { EventEmitter } from 'node:events';
 import { test } from 'node:test';
 import type { MainCtx } from '../../shared/main.ts';
 import plugin from './main.ts';
-import { isCloseTabInput } from './shortcut.ts';
+import { isCloseTabInput, tabSwitchDirection } from './shortcut.ts';
 
 const key = { type: 'keyDown', key: 'w', meta: true, control: false, shift: false, alt: false } as Electron.Input;
+
+test('tab switching supports forward and backward cycling without capturing unrelated editing shortcuts', () => {
+  const input = { key: 'Tab', ctrlKey: true, altKey: false, metaKey: false, shiftKey: false };
+  assert.equal(tabSwitchDirection(input), 1);
+  assert.equal(tabSwitchDirection({ ...input, shiftKey: true }), -1);
+  assert.equal(tabSwitchDirection({ ...input, ctrlKey: false }), 0);
+  assert.equal(tabSwitchDirection({ ...input, altKey: true }), 0);
+  assert.equal(tabSwitchDirection({ ...input, metaKey: true }), 0);
+  assert.equal(tabSwitchDirection({ ...input, key: 'ArrowLeft' }), 0);
+  for (const [arrow, direction] of [
+    ['ArrowLeft', -1],
+    ['ArrowRight', 1],
+  ] as const)
+    assert.equal(tabSwitchDirection({ ...input, key: arrow, ctrlKey: false, altKey: true, shiftKey: true }), direction);
+});
 
 test('close-tab shortcut accepts the platform modifier and ignores unrelated shortcuts', () => {
   assert.equal(isCloseTabInput(key, 'darwin'), true);

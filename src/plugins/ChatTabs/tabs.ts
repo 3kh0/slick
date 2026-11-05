@@ -75,7 +75,7 @@ export function splitProps(tab: ChatTab) {
     : { id: tab.channel, viewType: 'Channel' };
 }
 
-export function currentTab(path: string, state: any): ChatTab | null {
+export function currentTab(path: string, state: any, includeSecondary = false): ChatTab | null {
   const active = state?.window?.main?.activeTab;
   const primary = typeof active === 'string' ? state.view?.[`v2::main::${active}::primary`] : undefined;
   if (primary?.viewType === 'Thread') {
@@ -87,6 +87,7 @@ export function currentTab(path: string, state: any): ChatTab | null {
       ? { channel: primary.id as string }
       : readTab(path);
   if (!routed) return null;
+  if (!includeSecondary) return { channel: routed.channel };
   const thread = currentThread(state, routed.channel);
   return thread ? { ...routed, thread } : routed;
 }
