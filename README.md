@@ -41,8 +41,6 @@ Slick runs Slack's own `app.asar` inside its own Electron (with the handy BYOE a
 | Privacy                      | **Zero tolerance for all telemetry**       | Blocks Slack's telemetry, sends its own daily ping | Does not block telemetry                 |
 | Code sourcing                | **Bundled in the app**                     | Fetched from a remote server                       | **Bundled in the userscript**            |
 
-You can try other Slack mods, but you will find that Slick will dominate them all.
-
 ## Installation
 
 Slick is widly available on platforms all shapes and sizes. Just scroll down to your platform and follow the instructions.
