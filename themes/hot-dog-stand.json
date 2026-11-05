@@ -147,16 +147,15 @@
     "--dt_color-theme-content-inv-imp-sec": "#aa0000"
   },
   "sidebar": {
-    "nav-bg": "#cc0000",
-    "text-color": "#ffff00",
-    "badge": "#ffff00",
-    "badge-text-color": "#aa0000"
+    "nav-bg": "#ffff00",
+    "text-color": "#aa0000",
+    "badge": "#aa0000",
+    "badge-text-color": "#ffff00"
   },
   "css": [
     "body::before{content:'';position:fixed;inset:0;z-index:0;background:#ff0000;pointer-events:none;}",
     ".p-theme_background{background:#ff0000 !important;}",
     ".p-theme_background:after{backdrop-filter:none !important;background:#ff0000 !important;}",
-    ".p-view_contents--sidebar{background:#cc0000 !important;}",
     ".sk-client-theme--dark .c-message_list__unread_divider--unread_threads .c-message_list__unread_divider__label,.p-thread_separator_row_generic--dark .p-threads_flexpane__unread_divider__label,.p-thread_separator_row_generic--dark .p-threads_flexpane__read_divider__label{color:#ffff00 !important;}",
     ".c-tabs__tab_menu--vertical .c-tabs__tab.c-tabs__tab--active,.c-tabs__tab_menu--vertical .c-tabs__tab:active{background-color:#cccc00 !important;color:#ff0000 !important;}",
     "input[type=checkbox],input[type=radio],progress{accent-color:#cccc00;}",
@@ -186,11 +185,15 @@
     ".c-base_inline_entity--highlight-dark,.c-base_list_entity--highlight-dark,.c-select_options_list__option--active,.c-date_picker_calendar__date--is_selected,.c-date_range_picker_calendar__date--select_range_start,.c-date_range_picker_calendar__date--select_range_end,.c-texty_autocomplete__result--selected,.c-search_autocomplete__suggestion_item--selected,.c-search_autocomplete__guided_search_item--hover:hover,.c-search_autocomplete__guided_search_item--selected,.c-search_autocomplete__quick_message_item--selected{background-color:var(--dt_color-base-inv-hgl-1) !important;color:#fff !important;}",
     ".p-new_threads_banner,.p-threads_view [class^=banner__],.p-threads_view [class^=dismiss__],.p-message_pane__unread_banner,.p-message_pane__unread_banner__banner:hover,.p-message_pane__unread_banner__close--detached,.p-archives_banner,.p-archives_banner:hover{background:var(--dt_color-base-inv-hgl-1) !important;color:#fff !important;}",
     ".c-button--primary,.c-icon_button--primary{background:#ffff00 !important;color:#aa0000 !important;}",
-    ".p-view_header,.p-outbox_page__tab-menu{background:#cc0000 !important;}",
-    ".p-channel_sidebar__channel,.p-channel_sidebar__link{color:#ffff00 !important;}",
     ".c-wysiwyg_container,.p-message_input__input_container_unstyled{background:#cc0000 !important;border:1px solid #cccc00 !important;}",
     ".c-mrkdwn a,.c-link{color:#ffff00 !important;}",
     "::selection{background:#ffff00;color:#aa0000;}",
-    ".p-channel_sidebar__channel--selected,.p-channel_sidebar__link--selected{background:#ffff00 !important;color:#aa0000 !important;}"
+    ".p-view_contents--sidebar,.p-view_header,.p-outbox_page__tab-menu{--dt_color-content-pry:#aa0000 !important;--dt_color-content-sec:#cc0000 !important;--dt_color-content-ter:#cc0000 !important;--dt_color-theme-content-pry:#aa0000 !important;--dt_color-theme-content-sec:#cc0000 !important;--dt_color-theme-content-ter:#aa0000 !important;--dt_color-theme-content-inv-ter:#cc0000 !important;--dt_color-theme-content-inv-pry:#aa0000 !important;--dt_color-theme-content-inv-sec:#cc0000 !important;--dt_color-theme-base-inv-pry:#ffff00 !important;--dt_color-theme-base-inv-sec:#eeee00 !important;--sk_primary_foreground:170,0,0 !important;background:#ffff00 !important;color:#aa0000 !important;}",
+    ".p-channel_sidebar__channel,.p-channel_sidebar__link{color:#aa0000 !important;}",
+    ".p-channel_sidebar__channel--selected,.p-channel_sidebar__link--selected{background:#aa0000 !important;color:#ffff00 !important;}",
+    ".p-view_header_star_action_button_filled{background:#aa0000 !important;color:#ffff00 !important;stroke:#ffff00 !important;}",
+    ".p-channel_sidebar__section_heading,.p-channel_sidebar__section_heading_label{color:#aa0000 !important;}",
+    ".p-top_nav__search{background:#ffff00 !important;color:#aa0000 !important;}",
+    ".p-view_header__actions,.p-view_header_notifications_action_button{background:#ffff00 !important;color:#aa0000 !important;}"
   ]
 }
