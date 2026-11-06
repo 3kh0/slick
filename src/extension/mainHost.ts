@@ -58,7 +58,7 @@ export type Dnr = {
   updateSessionRules(options: { addRules?: Rule[]; removeRuleIds?: number[] }): Promise<void>;
 };
 
-/** `*://*.host/path*` → a urlFilter. `||host` already covers subdomains. */
+/** `*://*.host/path*` > a urlFilter. `||host` already covers subdomains. */
 export function patternToFilter(pattern: string): string {
   const match = /^(?:\*|https?):\/\/(?:\*\.)?([a-z0-9.-]+)(\/[^*]*)\*$/i.exec(pattern);
   if (!match) throw new Error(`unsupported match pattern: ${pattern}`);

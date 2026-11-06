@@ -48,7 +48,7 @@ function objectRecord(value: unknown): Record<string, unknown> | undefined {
 
 /**
  * Autocomplete and component patch structure adapted from Taut's MIT-licensed
- * PrivateChannel plugin by Jeremy Stanley.
+ * PrivateChannel plugin by Jeremy Woolley https://github.com/jeremy46231/taut/blob/main/plugins/PrivateChannel.tsx
  */
 export default class PrivateChannelMapper extends SlickPlugin<typeof meta.settings> {
   static readonly requiredAPIs = ['channels', 'elements', 'redux'] as const;

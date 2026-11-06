@@ -60,7 +60,7 @@ bun run typecheck
 bun run desktop:dev
 ```
 
-Sign in, open **Slick → Slick Settings…**, find **Plugins**, enable **Hello Slick**, and select some text. Change the color, then disable the plugin and check that the style disappears. No `stop()` needed here: Slick owns the stylesheet and removes it for you.
+Sign in, open **Slick > Slick Settings…**, find **Plugins**, enable **Hello Slick**, and select some text. Change the color, then disable the plugin and check that the style disappears. No `stop()` needed here: Slick owns the stylesheet and removes it for you.
 
 Discovery happens automatically, and new plugins ship to the browser extensions and the userscript by default. Run `bun run typecheck` once to add the new folder to `src/plugins/names.generated.ts`; tests and web builds fail until you do. Rebuild and reload your chosen target using the [browser instructions](../../DEVELOPMENT.md).
 
