@@ -14,32 +14,17 @@
 
 ![screenshot](https://github.com/user-attachments/assets/a5cc6152-cd94-4894-9bc0-cd7c605c291c)
 
-Slick runs Slack's own `app.asar` inside its own Electron (with the handy BYOE acronym, bring your own electron). Slick's code runs before Slack's bundle and patches Slack from the inside, through its module system, React, and Redux, rather than by poking at the page afterwards. Slack's files are never altered, both apps keep updating, and there's no open debug port or resident watcher. This means we are able to patch Slack in a performant and safe way, while still keeping Slack's own updates and security intact.
+Slick runs Slack's own `app.asar` inside its own Electron (with the handy BYOE acronym, bring your own electron). Slick's code runs before Slack's bundle and patches Slack from the inside, through its module system, React, and Redux. Slack's files are never altered, both apps keep updating, and there's no open debug port or resident watcher. This means we are able to patch Slack in a fast and safe way, while still keeping Slack's own updates and security intact.
 
 ## Features
 
-- **Kick ass plugins**: Slick has the most plugins of any Slack mod, and you can write your own in JavaScript or TypeScript.
+- **Kick ass plugins**: Slick has tons of plugins, and you can easily write your own in JavaScript or TypeScript.
 - **Desktop sign in with cookies**: Slick can sign you in to Slack without opening a browser if you provide it your `d` cookie! Great for sandboxed installs.
-- **Themes**: pick from a few built-in themes, or write your own CSS with Monaco.
+- **Themes**: pick from a collection of built-in themes, or write your own CSS with Monaco.
 - **Updates**: Slick handles all the updates for itself and Slack automatically, so you don't have to worry about it.
 - **Cross-platform**: Slick works on macOS, Windows, and Linux and browsers through extensions or Violentmonkey.
 - **Open source**: Slick is free and open source under the GPLv3 license. You can inspect the code, contribute, or fork it to your heart's content.
 - **Fully private**: Slick does not collect any of its own and disables Slack's spyware.
-
-## Compare
-
-| Feature                      | **Slick**                                  | [Taut](https://github.com/jeremy46231/taut)        | [Rope](https://github.com/anirudhb/rope) |
-| ---------------------------- | ------------------------------------------ | -------------------------------------------------- | ---------------------------------------- |
-| Actively updated             | **Yes**                                    | **Yes**                                            | Rarely                                   |
-| Theme support                | **10 built-in themes + Monaco CSS editor** | Basic CSS editor                                   | No                                       |
-| Plugins                      | **50**                                     | 39                                                 | 8                                        |
-| Desktop sign in with cookies | **Yes**                                    | No                                                 | N/A                                      |
-| Message Logger               | **Deletions + Edit history**               | No                                                 | No                                       |
-| Auto updates                 | **Client and Slack update together**       | Slack version is pinned                            | Manual updating required                 |
-| Supported platforms          | **Desktop + Browsers**                     | **Desktop + Browsers**                             | Browser only                             |
-| Browser stores               | **Chrome Web Store + Firefox Add-ons**     | No                                                 | No                                       |
-| Privacy                      | **Blocks all telemetry**                   | Blocks Slack's telemetry, sends its own daily ping | Does not block telemetry                 |
-| Code sourcing                | **Bundled in the app**                     | Fetched from a remote server                       | **Bundled in the userscript**            |
 
 ## Installation
 
@@ -153,13 +138,13 @@ The Windows and Linux scripts keep your sign-in and settings unless you add `-Pu
 
 ## Updates
 
-Slick updates itself every few hours, and checks every download against its GitHub build attestation before installing it. To check by hand, use **Slick > Check for Updates…**. On macOS and standalone Windows it also keeps Slack itself up to date. On Linux arm64, Slick pins the downloaded Slack bundle to its release and downloads a new pin when Slick updates. The Microsoft Store, the deb and rpm packages, Flatpak and Nix update through their own package managers instead. Running through the installer again will also get you the latest version if it somehow breaks.
+Slick will try to update itself every few hours. If you want to check by hand, use **Slick > Check for Updates...**. On macOS and standalone Windows it also keeps Slack itself up to date. On Linux arm64, Slick pins the downloaded Slack bundle to its release and downloads a new pin when Slick updates. The Microsoft Store, the deb and rpm packages, Flatpak and Nix update through their own package managers instead. Running through the installer again will also get you the latest version if it somehow breaks.
 
 ## Themes
 
-Import a `.json` theme from **Slick Preferences → Appearance → Import theme JSON** (or Appearance in the Firefox toolbar popup). Imported themes are saved, selected immediately, and can be picked again from the theme list or removed with **Remove imported theme**. A theme with `"mode"` only applies while Slack is in that color mode, so the built-in dark themes step aside in Light mode.
+Import a `.json` theme from **Slick Preferences > Appearance > Import theme JSON** (or Appearance in the Firefox toolbar popup). Imported themes are saved, selected immediately, and can be picked again from the theme list or removed with **Remove imported theme**. A theme with `"mode"` only applies while Slack is in that color mode, so the built-in dark themes step aside in Light mode to prevent any weird looking colors.
 
-The `themes/` folder in the source repository contains built-in themes bundled at build time. Adding files there won't load them into an installed app; use the import button instead. Theme JSON uses this format:
+The `themes/` folder has all of the built-in themes. Adding files there won't load them into an installed app, so you will want to use the import button instead. Please use use this format:
 
 ```jsonc
 {
@@ -172,17 +157,16 @@ The `themes/` folder in the source repository contains built-in themes bundled a
 }
 ```
 
-Some people like how Slack looks by default, but you can pick one from the Slick tab in Preferences. `themes/amoled.json` (true black) and `themes/catppuccin-mocha.json` ([Catppuccin](https://catppuccin.com) Mocha) are working examples.
-
 Prefer to write your own CSS instead? Open the CSS editor in Slick Preferences (or the Custom CSS field in Firefox). It accepts raw CSS, which applies on top of your selected theme. JSON theme files belong in **Import theme JSON**, not the CSS editor. Choose **Custom CSS only** to use your CSS without a theme.
 
 ## Credits
 
+- [Taut](https://github.com/jeremy46231/taut) by [@jeremy46231](https://github.com/jeremy46231) and [its contributors](https://github.com/jeremy46231/taut/graphs/contributors). Slick owes much of its foundation to Taut's injection and patching model, settings integration and other innovations.
+- [Slick's contributors](https://github.com/3kh0/slick/graphs/contributors?all=1) for code, fixes and themes, and everyone who has shared ideas and bug reports.
 - [Slack](https://slack.com/) for the original app and its delightful internals.
 - [Electron](https://www.electronjs.org/) for the runtime and APIs.
 - [@ImShyMike](https://github.com/ImShyMike) for advice on breaking into Slack.
 - [Vencord](https://github.com/vencord) for plugin inspiration.
-- [Taut](https://github.com/jeremy46231/taut) (MIT) by [@jeremy46231](https://github.com/jeremy46231), which has a lovely injection and patching model Slick is built on.
 - Claude for cleaning up the code and generally being a good assistant.
 
 ## Legal

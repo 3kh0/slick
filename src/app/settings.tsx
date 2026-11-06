@@ -130,6 +130,14 @@ const PREFERENCES_CSS = `
   font-size: 14px;
   color: var(--dt_color-content-sec);
 }
+.slick-settings__ppl {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  margin: 8px 0;
+  padding: 0;
+  list-style: none;
+}
 .slick-settings__section {
   margin-bottom: 24px;
 }
@@ -783,6 +791,57 @@ function scrollParent(node: HTMLElement | null): HTMLElement | null {
   return null;
 }
 
+// try to keep this up to date
+const CONTRIBUTORS = [
+  'BittuBarnwal7479',
+  'IzieStratt',
+  'jeremy46231',
+  'Hash-AK',
+  'deployor',
+  'KavyanshKhaitan2',
+  '0xDracula',
+  'Vendicated',
+  'CyrilSLi',
+  'kanokid',
+  'sadeshmukh',
+  'christianwell',
+  'MatthiasLubbertsen',
+  'SmartSparkCoding',
+  'hanaeatsplanes',
+  'leowilkin',
+  'SSoggyTacoMan',
+  'hippogriff101',
+  's-ajay-2010',
+  'code2344 ',
+  'part-avocado',
+  'Ghostboo124',
+  'MilesWK',
+  'astra-the-boop',
+  'ItsFelix5',
+  'matmanna',
+  'Lordseriouspig',
+  'mpcallahan',
+  'bomberfish',
+  'csd4ni3l',
+  'cloudglides',
+  'EwoudVV',
+  'thirtyseventh-xyz',
+  'ImShyMike',
+  'TheTridentGuy',
+  'alf1e',
+  'RezThePerson',
+  'Fantamomo',
+  'LowPolyPhosphorus',
+];
+
+function LX({ href, children }: { href: string; children: React.ReactNode }) {
+  return (
+    <a href={href} target="_blank" rel="noopener noreferrer">
+      {children}
+    </a>
+  );
+}
+
 function OverviewPanel({
   manager,
   config,
@@ -823,6 +882,36 @@ function OverviewPanel({
         <Field label={loaders[bridge.loader] ?? bridge.loader} description="How Slick is loaded into Slack">
           <span className="slick-settings__value">{bridge.loaderVersion}</span>
         </Field>
+      </Card>
+      <Card title="Credits">
+        <Field
+          label="Slick contributors"
+          description={
+            <>
+              Slick is not a one man act, but a effort by tons of epic people. Thank you to everyone who has helped
+              Slick with code, ideas, testing or support.
+              <ul className="slick-settings__ppl" aria-label="Slick contributors">
+                {CONTRIBUTORS.map((x) => (
+                  <li key={x}>
+                    <LX href={`https://github.com/${x}`}>@{x}</LX>
+                  </li>
+                ))}
+              </ul>
+              <LX href="https://github.com/3kh0/slick/graphs/contributors">See all contributors on GitHub</LX>
+            </>
+          }
+        />
+        <Field
+          label="Built on Taut"
+          description={
+            <>
+              Slick owes much of its foundation to <LX href="https://github.com/jeremy46231/taut">Taut</LX> by{' '}
+              <LX href="https://github.com/jeremy46231">@jeremy46231</LX> and{' '}
+              <LX href="https://github.com/jeremy46231/taut/graphs/contributors?all=1">its contributors</LX>. Its
+              injection and patching model, settings integration and other innovations helped make Slick amazing.
+            </>
+          }
+        />
       </Card>
       <Card title="Links">
         <Field label="Source code" description="Slick is open source. Drop a star if you like it!">
