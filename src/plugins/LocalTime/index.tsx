@@ -15,7 +15,7 @@ type ThreadHeaderProps = {
 };
 type ProfileProps = { member?: { id?: string } };
 type HoverCardProps = { memberId?: string };
-type Surface = { userId?: string };
+type Surface = { userId?: string; hoverCard?: boolean };
 
 const USER_ID = /^[UW][A-Z0-9]+$/;
 
@@ -47,7 +47,7 @@ const subscribe = (listener: () => void) => {
 };
 
 export default class LocalTime extends SlickPlugin<typeof meta.settings> {
-  static readonly requiredAPIs = ['members'] as const;
+  static readonly requiredAPIs = ['members', 'elements'] as const;
   static readonly id = meta.id;
   static readonly pluginName = meta.pluginName;
   static readonly description = meta.description;
@@ -97,6 +97,18 @@ export default class LocalTime extends SlickPlugin<typeof meta.settings> {
         font-size: 13px;
         color: rgba(var(--sk_foreground_high_solid, 134, 134, 134), 1);
       }
+      .slick-local-time__card--hover {
+        margin-top: 0;
+        padding: 0 16px 12px;
+      }
+      .slick-local-time__card--profile {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-top: 8px;
+        font-size: inherit;
+        color: inherit;
+      }
     `);
 
     if (this.config.showInMessages !== false) this.patchMessages();
@@ -141,26 +153,31 @@ export default class LocalTime extends SlickPlugin<typeof meta.settings> {
   }
 
   private patchProfiles() {
-    this.api.patchComponent<ProfileProps>('RimetoProfilePresence', (Original) => (props) => {
+    this.api.patchComponent<ProfileProps>('LocalTimeRow', (Original) => (props) => {
       const userId = props.member?.id;
       return (
-        <>
-          <this.Surfaces.Provider value={{ userId }}>
-            <Original {...props} />
-          </this.Surfaces.Provider>
+        <this.Surfaces.Provider value={{ userId }}>
           {userId ? <this.CardLine userId={userId} /> : null}
-        </>
+          <Original {...props} />
+        </this.Surfaces.Provider>
       );
     });
 
     this.api.patchComponent<HoverCardProps>('MemberProfileHoverCard', (Original) => (props) => {
       const userId = props.memberId;
       return (
+        <this.Surfaces.Provider value={{ userId, hoverCard: true }}>
+          <Original {...props} />
+        </this.Surfaces.Provider>
+      );
+    });
+
+    this.api.patchComponent<HoverCardProps>('MemberProfileBaseEntity', (Original) => (props) => {
+      const surface = React.useContext(this.Surfaces);
+      return (
         <>
-          <this.Surfaces.Provider value={{ userId }}>
-            <Original {...props} />
-          </this.Surfaces.Provider>
-          {userId ? <this.CardLine userId={userId} /> : null}
+          <Original {...props} />
+          {surface?.hoverCard && surface.userId ? <this.CardLine userId={surface.userId} hoverCard /> : null}
         </>
       );
     });
@@ -173,7 +190,7 @@ export default class LocalTime extends SlickPlugin<typeof meta.settings> {
     });
   }
 
-  private readonly CardLine = ({ userId }: { userId: string }) => {
+  private readonly CardLine = ({ userId, hoverCard }: { userId: string; hoverCard?: boolean }) => {
     const member = this.api.members.useMember(userId);
     const now = React.useSyncExternalStore(
       subscribe,
@@ -182,6 +199,11 @@ export default class LocalTime extends SlickPlugin<typeof meta.settings> {
     );
     const text = localTime(member?.tz, this.config.use12Hour !== false, now * 60_000);
     if (!text) return null;
-    return <span className="slick-local-time__card">{`Local time ${text}`}</span>;
+    return (
+      <span className={`slick-local-time__card slick-local-time__card--${hoverCard ? 'hover' : 'profile'}`}>
+        {hoverCard ? null : <this.api.elements.SvgIcon name="clock" size={20} />}
+        <span>{`${text} local time`}</span>
+      </span>
+    );
   };
 }
