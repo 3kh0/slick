@@ -168,7 +168,7 @@ export default class ChatTabs extends SlickPlugin<typeof meta.settings> {
       .slick-chat-tabs-layout .p-view_contents--primary { flex:1; min-height:0; }
       .slick-chat-tabs { flex:none; position:relative; background:var(--dt_color-base-pry, #fff); color:var(--dt_color-content-pry, #1d1c1d); border-bottom:1px solid var(--dt_color-otl-ter, #8885); }
       .slick-chat-tabs[hidden] { display:none; }
-      .slick-chat-tabs__menu { position:fixed; inset:unset; margin:0; min-width:200px; padding:4px; border:1px solid var(--dt_color-otl-ter, #8885); border-radius:6px; background:var(--dt_color-surf-pry, #fff); color:var(--dt_color-content-pry, #1d1c1d); box-shadow:0 4px 16px #0003; }
+      .slick-chat-tabs__menu { position:fixed; inset:unset; margin:0; min-width:200px; padding:4px; border:1px solid var(--dt_color-otl-ter, #8885); border-radius:6px; background:var(--dt_color-base-pry, #fff); color:var(--dt_color-content-pry, #1d1c1d); box-shadow:0 4px 16px #0003; }
       .slick-chat-tabs__menu button { display:block; width:100%; padding:6px 12px; border:0; border-radius:3px; text-align:left; background:transparent; color:inherit; }
       .slick-chat-tabs__menu button:disabled { opacity:.4; }
       .slick-chat-tabs__menu button:enabled:is(:hover,:focus-visible) { background:var(--dt_color-base-hgl-1, #8882); outline:none; }
