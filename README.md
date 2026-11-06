@@ -161,11 +161,12 @@ Prefer to write your own CSS instead? Open the CSS editor in Slick Preferences (
 
 ## Credits
 
+- [Taut](https://github.com/jeremy46231/taut) by [@jeremy46231](https://github.com/jeremy46231) and [its contributors](https://github.com/jeremy46231/taut/graphs/contributors). Slick owes much of its foundation to Taut's injection and patching model, settings integration and other innovations.
+- [Slick's contributors](https://github.com/3kh0/slick/graphs/contributors?all=1) for code, fixes and themes, and everyone who has shared ideas and bug reports.
 - [Slack](https://slack.com/) for the original app and its delightful internals.
 - [Electron](https://www.electronjs.org/) for the runtime and APIs.
 - [@ImShyMike](https://github.com/ImShyMike) for advice on breaking into Slack.
 - [Vencord](https://github.com/vencord) for plugin inspiration.
-- [Taut](https://github.com/jeremy46231/taut) (MIT) by [@jeremy46231](https://github.com/jeremy46231), which has a lovely injection and patching model Slick is built on.
 - Claude for cleaning up the code and generally being a good assistant.
 
 ## Legal
