@@ -16,7 +16,7 @@ import {
 } from './tabs.ts';
 import * as meta from './meta.ts';
 import { addTabMenuItem, addThreadTabAction, THREAD_TAB_ACTION, type MessageAction } from './menu.ts';
-import { chatLabel, chatMemberIds, memberName } from './people.ts';
+import { chatLabel, chatMemberIds, chatType, memberName } from './people.ts';
 import { recentPlaces, searchPlaces, type PickerPlace } from './picker.ts';
 import { tabSwitchDirection } from './shortcut.ts';
 
@@ -363,7 +363,7 @@ export default class ChatTabs extends SlickPlugin<typeof meta.settings> {
       );
     const members = chatMemberIds(channel, selfId);
     return (
-      <span className="slick-chat-tabs__avatars" aria-hidden="true">
+      <span className="slick-chat-tabs__avatars" data-chat-type="dm" aria-hidden="true">
         {members.slice(0, 3).map((id) => (
           <this.Avatar key={id} userId={id} />
         ))}
@@ -377,10 +377,11 @@ export default class ChatTabs extends SlickPlugin<typeof meta.settings> {
 
   private TabLabel = ({ tab, selfId }: { tab: ChatTab; selfId?: string }) => {
     const label = this.api.redux.useReduxState((state) => this.label(state, tab.channel, selfId)) ?? tab.channel;
+    const type = this.api.redux.useReduxState((state) => chatType(state.channels?.[tab.channel]));
     return (
       <>
         <this.TabAvatars channelId={tab.channel} selfId={selfId} />
-        <span className="slick-chat-tabs__name" title={label}>
+        <span className="slick-chat-tabs__name" data-chat-type={type}>
           {label}
           {tab.thread ? ' · Thread' : ''}
         </span>
@@ -933,7 +934,12 @@ export default class ChatTabs extends SlickPlugin<typeof meta.settings> {
               onClick={() => open(place.tab)}
             >
               <this.TabAvatars channelId={place.tab.channel} selfId={selfId} />
-              <span className="slick-chat-tabs__picker-name">{place.label}</span>
+              <span
+                className="slick-chat-tabs__picker-name"
+                data-chat-type={chatType(state?.channels?.[place.tab.channel])}
+              >
+                {place.label}
+              </span>
             </button>
           ))}
           {!results.length && <div role="status">No conversations found. Try another name.</div>}

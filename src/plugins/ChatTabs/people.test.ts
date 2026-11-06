@@ -1,6 +1,15 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { chatLabel, chatMemberIds } from './people.ts';
+import { chatLabel, chatMemberIds, chatType } from './people.ts';
+
+test('chat privacy distinguishes private channels and DMs, including legacy groups', () => {
+  assert.equal(chatType({ is_private: true }), 'private');
+  assert.equal(chatType({ is_group: true }), 'private');
+  assert.equal(chatType({ is_im: true }), 'dm');
+  assert.equal(chatType({ is_mpim: true, is_private: true }), 'dm');
+  assert.equal(chatType({ is_channel: true }), 'public');
+  assert.equal(chatType(undefined), 'public');
+});
 
 test('DM avatars include the peer, including a DM to yourself', () => {
   assert.deepEqual(chatMemberIds({ is_im: true, user: 'U1' }, 'U1'), ['U1']);
