@@ -11,6 +11,7 @@ import { trayDir, wrapTray } from './trayIcons.js';
 import { wrapMacNotifications } from './macNotificationSounds.js';
 import { createPreloadSources } from './preloadSources.ts';
 import { relabelAppMenu } from './menuLabels.ts';
+import { popupOptions } from './popupOptions.ts';
 
 const cjsRequire = createRequire(import.meta.url);
 const NodeModule = cjsRequire('module') as any;
@@ -223,7 +224,11 @@ export function applyPatches(
         }
         return {
           ...result,
-          overrideBrowserWindowOptions: { ...result.overrideBrowserWindowOptions, webPreferences },
+          overrideBrowserWindowOptions: {
+            ...result.overrideBrowserWindowOptions,
+            ...popupOptions(details, process.platform),
+            webPreferences,
+          },
         };
       });
   });
