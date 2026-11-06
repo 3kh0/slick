@@ -71,6 +71,7 @@ function hookRenderer(t: TestContext) {
   const frames = new Map<string, Frame>();
   const fragment = Symbol('Fragment');
   let active: Frame | undefined;
+  let focused: string | undefined;
   let jobs: (() => void)[] = [];
   function slot() {
     assert.ok(active, 'Hooks must run inside a component');
@@ -142,6 +143,9 @@ function hookRenderer(t: TestContext) {
         }
         return visit(output, `${path}/output`);
       }
+      if (value.type === 'input' && value.props.ref) {
+        value.props.ref.current = { focus: () => (focused = value.props['aria-label']) };
+      }
       return { ...value, props: { ...value.props, children: visit(value.props.children, `${path}/children`) } };
     }
     const tree = visit(element, 'root');
@@ -159,7 +163,7 @@ function hookRenderer(t: TestContext) {
     if (previous) Object.defineProperty(globalThis, 'React', previous);
     else Reflect.deleteProperty(globalThis, 'React');
   });
-  return { render };
+  return { render, focused: () => focused, blur: () => (focused = undefined) };
 }
 
 function nodes(tree: any): Element[] {
@@ -188,17 +192,24 @@ function fixture(
   t: TestContext,
   initial: unknown = { version: 1, gifs: [] },
   preferences = { provider: 'tenor', defaultView: 'search' },
+  focusHookAvailable = true,
 ) {
   const renderer = hookRenderer(t);
   const controller = new AbortController();
   const patches: { matcher: any; replace: (original: any) => (props: any) => Element }[] = [];
   const writes: { key: string; value: unknown }[] = [];
-  const fetches: string[] = [];
+  const calls: [string, string, string][] = [];
   const settingWrites: [string, string][] = [];
+  const focusListeners = new Map<string, () => void>();
+  function useFocusTransitionListener(key: string, listener: () => void) {
+    (globalThis as any).React.useEffect(() => {
+      focusListeners.set(key, listener);
+      return () => focusListeners.delete(key);
+    }, [key, listener]);
+  }
   let saved = initial;
   let write: (value: unknown) => Promise<boolean> = async () => true;
-  let fetch: (url: string) => Promise<{ status: number; body: string }> = async () =>
-    assert.fail('Unexpected bridge fetch');
+  let call: (provider: string, query: string) => Promise<unknown> = async () => assert.fail('Unexpected main call');
   class Store<T> {
     value: T;
     constructor(value: T) {
@@ -228,11 +239,20 @@ function fixture(
           return success;
         },
       },
-      fetch(url: string) {
-        fetches.push(url);
-        return fetch(url);
+      fetch() {
+        assert.fail('The renderer must never use api.fetch');
+      },
+      main: {
+        call(method: string, provider: string, query: string) {
+          assert.equal(method, 'search');
+          calls.push([method, provider, query]);
+          return call(provider, query);
+        },
       },
       elements: { SvgIcon: 'slack-svg-icon' },
+      getExport(filter: (value: unknown) => boolean) {
+        return focusHookAvailable && filter(useFocusTransitionListener) ? useFocusTransitionListener : undefined;
+      },
       setStyle() {},
       patchComponent(matcher: any, replace: (original: any) => (props: any) => Element) {
         patches.push({ matcher, replace });
@@ -266,12 +286,15 @@ function fixture(
     config,
     patches,
     writes,
-    fetches,
+    calls,
     settingWrites,
     controller,
     render: renderer.render,
-    fetchWith(implementation: typeof fetch) {
-      fetch = implementation;
+    focused: renderer.focused,
+    blur: renderer.blur,
+    focusListeners,
+    callWith(implementation: typeof call) {
+      call = implementation;
     },
     writeWith(implementation: typeof write) {
       write = implementation;
@@ -300,7 +323,7 @@ function clickEvent() {
 }
 
 const callbacks = () => ({ onClosed() {}, onGifSelected() {} });
-const response = (results: unknown[] = [tenorResult]) => ({ status: 200, body: JSON.stringify({ results }) });
+const response = (results: unknown[] = [tenorGif]) => results;
 
 test('isGifPicker matches anonymous stable implementation source, not hosts or exported wrappers', () => {
   assert.equal(anonymousPicker.name, '');
@@ -331,7 +354,7 @@ test('start registers the source-filter matcher and native GifListItem patch', a
   assert.equal(sourcePatch.matcher.filter(anonymousPicker), true);
   assert.equal(sourcePatch.matcher.filter('div'), false);
   assert.ok(f.patches.some((entry) => entry.matcher === 'GifListItem'));
-  assert.deepEqual(f.fetches, []);
+  assert.deepEqual(f.calls, []);
 });
 
 test('Tenor replacement renders its own picker without mounting Original or fetching Giphy', (t) => {
@@ -345,7 +368,7 @@ test('Tenor replacement renders its own picker without mounting Original or fetc
   assert.equal(originals, 0);
   assert.equal(providerSelect(tree).props.value, 'tenor');
   assert.ok(nodes(tree).some((node) => node.type === 'input' && node.props.type === 'search'));
-  assert.deepEqual(f.fetches, []);
+  assert.deepEqual(f.calls, []);
 });
 
 test('missing selection or close callbacks gracefully render Original with unchanged props', (t) => {
@@ -359,14 +382,44 @@ test('missing selection or close callbacks gracefully render Original with uncha
     const tree = f.render(f.picker(Original, props));
     assert.equal(tree.type, 'native-picker');
     assert.deepEqual(received, props);
-    assert.deepEqual(f.fetches, []);
+    assert.deepEqual(f.calls, []);
   }
+});
+
+for (const provider of ['tenor', 'klipy', 'giphy']) {
+  for (const defaultView of ['search', 'favorites']) {
+    test(`${provider} ${defaultView} handles the delayed /gif focus transition only for the custom picker`, (t) => {
+      const f = fixture(t, undefined, { provider, defaultView });
+      const element = f.picker(() => ({ type: 'native-picker', props: {} }), callbacks());
+      const tree = f.render(element);
+      f.blur(); // Opening the picker can restore composer focus before Slack's delayed transition.
+      if (provider === 'giphy' && defaultView === 'search') {
+        assert.equal(f.focusListeners.size, 0, 'Native Giphy owns its focus listener');
+        return;
+      }
+      assert.equal(f.focusListeners.size, 1);
+      f.focusListeners.get('gif-picker-input')!();
+      const input = find(tree, (node) => node.type === 'input');
+      assert.equal(f.focused(), input.props['aria-label']);
+      input.props.onChange({ target: { value: 'cats' } });
+      assert.equal(find(f.render(element), (node) => node.type === 'input').props.value, 'cats');
+      f.render(null);
+      assert.equal(f.focusListeners.size, 0, 'Closing the picker removes its focus listener');
+    });
+  }
+}
+
+test('custom picker retains mount focus when Slack focus hook is unavailable', (t) => {
+  const f = fixture(t, undefined, undefined, false);
+  f.render(f.picker(() => assert.fail('Custom picker should still render'), callbacks()));
+  assert.equal(f.focused(), 'Search GIFs on Tenor');
+  assert.equal(f.focusListeners.size, 0);
 });
 
 test('Tenor selection uses validated search results, closes before updating the draft, and never sends', async (t) => {
   t.mock.timers.enable({ apis: ['setTimeout', 'Date'], now: 1000 });
   const f = fixture(t);
-  f.fetchWith(async () => response([tenorResult, { ...tenorResult, id: '2', gif: 'https://evil.test/cat.gif' }]));
+  f.callWith(async () => response([tenorGif, { ...tenorGif, id: '2', url: 'https://evil.test/cat.gif' }]));
   const calls: any[] = [];
   let originals = 0;
   const click = clickEvent();
@@ -387,7 +440,7 @@ test('Tenor selection uses validated search results, closes before updating the 
   );
   f.render(element);
   t.mock.timers.tick(349);
-  assert.equal(f.fetches.length, 0);
+  assert.equal(f.calls.length, 0);
   t.mock.timers.tick(1);
   await flush();
   const tree = f.render(element);
@@ -404,7 +457,7 @@ test('Tenor selection uses validated search results, closes before updating the 
   ]);
   assert.equal(click.stopped(), 1);
   assert.equal(originals, 0);
-  assert.equal(f.fetches.length, 1);
+  assert.equal(f.calls.length, 1);
   assert.deepEqual(f.writes, []);
 });
 
@@ -540,7 +593,7 @@ test('provider settings update live without restarting, and favorites still repl
     ['provider', 'giphy'],
     ['provider', 'tenor'],
   ]);
-  assert.deepEqual(f.fetches, []);
+  assert.deepEqual(f.calls, []);
 });
 
 test('cards animate without hovering, preserve aspect ratios, and offer reduced-motion previews', async (t) => {
@@ -578,7 +631,7 @@ test('cards animate without hovering, preserve aspect ratios, and offer reduced-
   tree = f.render(element);
   assert.equal(nodes(tree).filter((node) => node.type === 'img').length, 2);
   assert.equal(find(tree, (node) => node.props.className === 'slick-bg__fallback').props.children, 'Happy cat');
-  assert.deepEqual(f.fetches, []);
+  assert.deepEqual(f.calls, []);
 });
 
 test('masonry columns distribute GIFs in result order without forcing shared row heights', async (t) => {
@@ -652,8 +705,8 @@ test('arrow keys navigate masonry by tile position rather than assuming square r
 test('search skeletons cover debounce and fetch, then clear on results and errors and reload top on empty query', async (t) => {
   t.mock.timers.enable({ apis: ['setTimeout', 'Date'], now: 1000 });
   const f = fixture(t);
-  const pending = deferred<{ status: number; body: string }>();
-  f.fetchWith(async () => pending.promise);
+  const pending = deferred<unknown[]>();
+  f.callWith(async () => pending.promise);
   const element = f.picker(() => assert.fail('Tenor must not mount Original'), {
     ...callbacks(),
     emojiSearchQuery: 'cat',
@@ -665,7 +718,7 @@ test('search skeletons cover debounce and fetch, then clear on results and error
   assert.equal(find(tree, (node) => node.props.role === 'status').props.className, 'sr-only');
   assert.equal(find(tree, (node) => node.props.className === 'slick-bg__content').props['aria-busy'], true);
   t.mock.timers.tick(349);
-  assert.equal(f.fetches.length, 0);
+  assert.equal(f.calls.length, 0);
   t.mock.timers.tick(1);
   assert.equal(skeletons(f.render(element)).length, 9);
   pending.resolve(response());
@@ -675,7 +728,7 @@ test('search skeletons cover debounce and fetch, then clear on results and error
   assert.equal(find(tree, (node) => node.props.className === 'slick-bg__content').props['aria-busy'], false);
   assert.equal(find(tree, (node) => node.type === 'img').props.src, tenorGif.url);
   find(tree, (node) => node.type === 'input').props.onChange({ target: { value: 'fail' } });
-  f.fetchWith(async () => {
+  f.callWith(async () => {
     throw new Error('Offline');
   });
   tree = f.render(element);
@@ -693,33 +746,33 @@ test('search skeletons cover debounce and fetch, then clear on results and error
   tree = f.render(element);
   assert.equal(skeletons(tree).length, 9);
   assert.equal(find(tree, (node) => node.props.role === 'status').props.children, 'Loading top GIFs…');
-  f.fetchWith(async () => response());
+  f.callWith(async () => response());
   t.mock.timers.tick(1);
   await flush();
-  assert.equal(f.fetches.at(-1), 'https://tenor-proxy.vercel.app/api/top?limit=50');
+  assert.deepEqual(f.calls.at(-1), ['search', 'tenor', '']);
   assert.equal(skeletons(f.render(element)).length, 0);
-  assert.equal(f.fetches.length, 3);
+  assert.equal(f.calls.length, 3);
 });
 
 test('empty Tenor search loads and caches homepage GIFs immediately and ignores stale top results', async (t) => {
   t.mock.timers.enable({ apis: ['setTimeout', 'Date'], now: 1000 });
   const f = fixture(t);
-  const top = deferred<{ status: number; body: string }>();
-  f.fetchWith(async (url) =>
-    new URL(url).pathname === '/api/top' ? top.promise : response([{ ...tenorResult, title: 'Search cat' }]),
+  const top = deferred<unknown[]>();
+  f.callWith(async (_provider, query) =>
+    query === '' ? top.promise : response([{ ...tenorGif, name: 'Search cat' }]),
   );
   const element = f.picker(() => assert.fail('Tenor must replace Original'), callbacks());
   let tree = f.render(element);
   assert.equal(find(tree, (node) => node.props.role === 'status').props.children, 'Loading top GIFs…');
   t.mock.timers.tick(1);
-  assert.deepEqual(f.fetches, ['https://tenor-proxy.vercel.app/api/top?limit=50']);
+  assert.deepEqual(f.calls, [['search', 'tenor', '']]);
   find(tree, (node) => node.type === 'input').props.onChange({ target: { value: 'cat' } });
   f.render(element);
   t.mock.timers.tick(350);
   await flush();
   tree = f.render(element);
   assert.equal(find(tree, (node) => node.props['data-bg-select']).props.title, 'Search cat');
-  top.resolve(response([{ ...tenorResult, title: 'Homepage cat' }]));
+  top.resolve(response([{ ...tenorGif, name: 'Homepage cat' }]));
   await flush();
   tree = f.render(element);
   assert.equal(find(tree, (node) => node.props['data-bg-select']).props.title, 'Search cat');
@@ -729,7 +782,7 @@ test('empty Tenor search loads and caches homepage GIFs immediately and ignores 
   await flush();
   tree = f.render(element);
   assert.equal(find(tree, (node) => node.props['data-bg-select']).props.title, 'Homepage cat');
-  assert.equal(f.fetches.length, 2, 'Top results reused from cache');
+  assert.equal(f.calls.length, 2, 'Top results reused from cache');
 });
 
 test('default favorites tab searches locally across providers and retains separate queries', async (t) => {
@@ -740,7 +793,7 @@ test('default favorites tab searches locally across providers and retains separa
     { provider: 'tenor', defaultView: 'favorites' },
   );
   await f.plugin.favorites.load();
-  f.fetchWith(async () => response());
+  f.callWith(async () => response());
   const element = f.picker(() => null, { ...callbacks(), emojiSearchQuery: 'cat' });
   let tree = f.render(element);
   const input = () => find(tree, (node) => node.type === 'input');
@@ -758,7 +811,7 @@ test('default favorites tab searches locally across providers and retains separa
   tree = f.render(element);
   assert.equal(find(tree, (node) => node.props.role === 'status').props.children, 'No favorites match your search.');
   t.mock.timers.tick(350);
-  assert.deepEqual(f.fetches, []);
+  assert.deepEqual(f.calls, []);
   const tabs = () => nodes(tree).filter((node) => node.props.className === 'c-button-unstyled slick-bg__tab');
   tabs()[0].props.onClick();
   tree = f.render(element);
@@ -769,7 +822,7 @@ test('default favorites tab searches locally across providers and retains separa
   tabs()[1].props.onClick();
   tree = f.render(element);
   assert.equal(input().props.value, 'not found');
-  assert.equal(f.fetches.length, 1);
+  assert.equal(f.calls.length, 1);
   assert.equal(f.plugin.favorites.current().length, 2);
 });
 
@@ -786,24 +839,24 @@ test('default view applies on reopening, not by overriding a currently chosen ta
   f.render(null);
   tree = f.render(f.picker(original, callbacks()));
   assert.equal(find(tree, (node) => node.type === 'input').props['aria-label'], 'Search favorite GIFs');
-  assert.deepEqual(f.fetches, []);
+  assert.deepEqual(f.calls, []);
 });
 
 test('search deduplicates normalized in-flight queries and caches only completed responses', async (t) => {
   const f = fixture(t);
-  const bridge = deferred<{ status: number; body: string }>();
-  f.fetchWith(async () => bridge.promise);
+  const bridge = deferred<unknown[]>();
+  f.callWith(async () => bridge.promise);
   const first = f.plugin.search('  happy   cats ');
   const second = f.plugin.search('happy cats');
   assert.equal(first, second);
-  assert.equal(f.fetches.length, 1);
+  assert.equal(f.calls.length, 1);
   assert.equal(f.plugin.searches.size, 0);
   bridge.resolve(response());
   const results = await first;
   assert.deepEqual(results, [tenorGif]);
   assert.equal(await second, results);
   assert.equal(await f.plugin.search('happy   cats'), results);
-  assert.equal(f.fetches.length, 1);
+  assert.equal(f.calls.length, 1);
   assert.equal(f.plugin.inflight.size, 0);
 });
 
@@ -811,7 +864,7 @@ test('expired search cache is refreshed and fresh results replace stale entries'
   t.mock.timers.enable({ apis: ['Date'], now: 1000 });
   const f = fixture(t);
   let requests = 0;
-  f.fetchWith(async () => response([{ ...tenorResult, id: String(++requests) }]));
+  f.callWith(async () => response([{ ...tenorGif, id: String(++requests) }]));
   const first = await f.plugin.search('cat');
   t.mock.timers.tick(10 * 60_000 - 1);
   assert.equal(await f.plugin.search('cat'), first);
@@ -826,27 +879,27 @@ test('expired search cache is refreshed and fresh results replace stale entries'
 
 test('failed searches clear in-flight state, are not cached, and can be retried', async (t) => {
   const f = fixture(t);
-  f.fetchWith(async () => {
+  f.callWith(async () => {
     throw new Error('Bridge unavailable');
   });
   const first = f.plugin.search('cat');
   assert.equal(f.plugin.search('cat'), first);
-  await assert.rejects(first, /network request failed/);
+  await assert.rejects(first, /Bridge unavailable/);
   assert.equal(f.plugin.inflight.size, 0);
   assert.equal(f.plugin.searches.size, 0);
-  f.fetchWith(async () => response());
+  f.callWith(async () => response());
   assert.deepEqual(await f.plugin.search('cat'), [tenorGif]);
-  assert.equal(f.fetches.length, 2);
+  assert.equal(f.calls.length, 2);
 });
 
 test('search cache stays bounded, and aborted/stopped plugins do not retain late results', async (t) => {
   const f = fixture(t);
-  f.fetchWith(async () => response());
+  f.callWith(async () => response());
   for (let index = 0; index < 21; index++) await f.plugin.search(`cat ${index}`);
   assert.equal(f.plugin.searches.size, 20);
   assert.equal(f.plugin.searches.has('cat 0'), false);
-  const late = deferred<{ status: number; body: string }>();
-  f.fetchWith(async () => late.promise);
+  const late = deferred<unknown[]>();
+  f.callWith(async () => late.promise);
   const pending = f.plugin.search('late');
   f.controller.abort();
   f.plugin.stop();
@@ -859,9 +912,9 @@ test('search cache stays bounded, and aborted/stopped plugins do not retain late
 test('debounced searches ignore an older completion after the query changes', async (t) => {
   t.mock.timers.enable({ apis: ['setTimeout', 'Date'], now: 1000 });
   const f = fixture(t);
-  const old = deferred<{ status: number; body: string }>();
-  const current = deferred<{ status: number; body: string }>();
-  f.fetchWith(async (url) => (new URL(url).searchParams.get('q') === 'old' ? old.promise : current.promise));
+  const old = deferred<unknown[]>();
+  const current = deferred<unknown[]>();
+  f.callWith(async (_provider, query) => (query === 'old' ? old.promise : current.promise));
   const element = f.picker(() => assert.fail('Tenor must not mount Original'), {
     ...callbacks(),
     emojiSearchQuery: 'old',
@@ -871,13 +924,43 @@ test('debounced searches ignore an older completion after the query changes', as
   find(tree, (node) => node.type === 'input').props.onChange({ target: { value: 'new' } });
   f.render(element);
   t.mock.timers.tick(350);
-  current.resolve(response([{ ...tenorResult, id: '2', title: 'New cat' }]));
+  current.resolve(response([{ ...tenorGif, id: '2', name: 'New cat' }]));
   await flush();
   tree = f.render(element);
   assert.equal(find(tree, (node) => node.props['data-bg-select'] === 'true').props.title, 'New cat');
-  old.resolve(response([{ ...tenorResult, id: '1', title: 'Old cat' }]));
+  old.resolve(response([{ ...tenorGif, id: '1', name: 'Old cat' }]));
   await flush();
   tree = f.render(element);
   assert.equal(find(tree, (node) => node.props['data-bg-select'] === 'true').props.title, 'New cat');
-  assert.equal(f.fetches.length, 2);
+  assert.equal(f.calls.length, 2);
+});
+
+test('search passes the live provider without the API key over RPC', async (t) => {
+  const f = fixture(t);
+  f.callWith(async () => response());
+  await f.plugin.search('cat');
+  f.config.provider = 'klipy';
+  f.plugin.onSettingsChange(['provider']);
+  await f.plugin.search('cat');
+  assert.deepEqual(f.calls, [
+    ['search', 'tenor', 'cat'],
+    ['search', 'klipy', 'cat'],
+  ]);
+});
+
+test('timed out RPCs can be retried and late completions never populate the cache', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const f = fixture(t);
+  const late = deferred<unknown[]>();
+  f.callWith(async () => late.promise);
+  const pending = f.plugin.search('cat');
+  const rejected = assert.rejects(pending, /GIF search timed out/);
+  t.mock.timers.tick(12_000);
+  await rejected;
+  assert.equal(f.plugin.inflight.size, 0);
+  late.resolve(response());
+  await flush();
+  assert.equal(f.plugin.searches.size, 0);
+  f.callWith(async () => response());
+  assert.deepEqual(await f.plugin.search('cat'), [tenorGif]);
 });

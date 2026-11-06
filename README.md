@@ -14,101 +14,142 @@
 
 ![screenshot](https://github.com/user-attachments/assets/a5cc6152-cd94-4894-9bc0-cd7c605c291c)
 
-Slick runs Slack's own `app.asar` inside its own Electron (with the handy BYOE acronym, bring your own electron). Slick's code runs before Slack's bundle and patches Slack from the inside, through its module system, React, and Redux, rather than by poking at the page afterwards. Slack's files are never altered, both apps keep updating, and there's no open debug port or resident watcher. This means we are able to patch Slack in a performant and safe way, while still keeping Slack's own updates and security intact.
+Slick runs Slack's own `app.asar` inside its own Electron (with the handy BYOE acronym, bring your own electron). Slick's code runs before Slack's bundle and patches Slack from the inside, through its module system, React, and Redux. Slack's files are never altered, both apps keep updating, and there's no open debug port or resident watcher. This means we are able to patch Slack in a fast and safe way, while still keeping Slack's own updates and security intact.
 
 ## Features
 
-- **Kick ass plugins**: Slick has the most plugins of any Slack mod, and you can write your own in JavaScript or TypeScript.
+- **Kick ass plugins**: Slick has tons of plugins, and you can easily write your own in JavaScript or TypeScript.
 - **Desktop sign in with cookies**: Slick can sign you in to Slack without opening a browser if you provide it your `d` cookie! Great for sandboxed installs.
-- **Themes**: pick from a few built-in themes, or write your own CSS with Monaco.
+- **Themes**: pick from a collection of built-in themes, or write your own CSS with Monaco.
 - **Updates**: Slick handles all the updates for itself and Slack automatically, so you don't have to worry about it.
-- **Cross-platform**: Slick works on macOS, Windows, and Linux with browsers coming soon.
+- **Cross-platform**: Slick works on macOS, Windows, and Linux and browsers through extensions or Violentmonkey.
 - **Open source**: Slick is free and open source under the GPLv3 license. You can inspect the code, contribute, or fork it to your heart's content.
 - **Fully private**: Slick does not collect any of its own and disables Slack's spyware.
 
-## Compare
-
-| Feature                      | **Slick**                                 | [Taut](https://github.com/jeremy46231/taut) | [Rope](https://github.com/anirudhb/rope) |
-| ---------------------------- | ----------------------------------------- | ------------------------------------------- | ---------------------------------------- |
-| Actively updated             | **Yes**                                   | **Yes**                                     | No                                       |
-| Theme support                | **4 Built in themes + Monaco CSS editor** | CSS editor                                  | No                                       |
-| Plugins                      | **36**                                    | 33                                          | 8                                        |
-| Desktop sign in with cookies | **Yes**                                   | No                                          | N/A                                      |
-| Message Logger               | **Deletions + Edit history**              | Out of scope                                | No                                       |
-| Auto updates                 | **Client and Slack update together**      | Slack version is pinned                     | Manual updating required                 |
-| Supported platforms          | All desktop platforms                     | **Desktop + Browsers**                      | Browser only                             |
-| Privacy                      | **Blocks all telemetry**                  | Replaces Slack's telemetry with its own     | Does not block telemetry                 |
-| Code sourcing                | **Bundled in the app**                    | Fetched from a remote server                | **Bundled in the userscript**            |
-
-I encourage you to try other Slack mods, but you will find that Slick is the better choice for most!
-
 ## Installation
 
-Slick runs Slack's own code. Install the official Slack app first on macOS, Windows, and x86_64 Linux; on arm64 Linux Slick downloads a pinned copy on first launch. Then:
+Slick is widly available on platforms all shapes and sizes. Just scroll down to your platform and follow the instructions.
 
-**macOS** (the [official Slack](https://slack.com/downloads/mac) at `/Applications/Slack.app`, not the App Store version):
+### Web
+
+- **Firefox:** add Slick from [Firefox Add-ons](https://addons.mozilla.org/en-US/firefox/addon/slickclient/).
+  - User plugins aren't in the Add-ons version. For them, open `slick-firefox-*.xpi` from the [latest release](https://github.com/3kh0/slick/releases/latest) with Firefox and approve the install.
+- **Chrome / Chromium:** add Slick from the [Chrome Web Store](https://chromewebstore.google.com/detail/slick-for-slack/alfaoldilkoklnfaonfigknfkpkpanca). Works in Chrome, Helium and most other Chromium browsers.
+  - To load it unpacked instead, download and extract [`slick-chromium.zip`](https://github.com/3kh0/slick/releases/latest/download/slick-chromium.zip). Open `chrome://extensions`, enable **Developer mode**, click **Load unpacked** and select the extracted folder.
+- **Userscript:** install [Violentmonkey](https://violentmonkey.github.io/) or any other userscript manager, then open [`slick.user.js`](https://github.com/3kh0/slick/releases/latest/download/slick.user.js) and install it.
+
+Reload Slack in your browser after installing for the changes to take effect.
+
+### macOS
+
+With [Homebrew](https://brew.sh/) (macOS 13+, Apple Silicon or Intel):
+
+```bash
+brew install --cask 3kh0/tap/slick
+```
+
+If you already have Slack installed or do not want to use Homebrew, you can also install Slick via this one-liner:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/3kh0/slick/main/install.sh | bash
 ```
 
-Got Slack running somewhere else? Add `-s -- --slack-app "/path/to/Slack.app"` after `bash`. You can also grab the `.dmg` or `.zip` from the [releases page](https://github.com/3kh0/slick/releases/latest): `mac-arm64` for Apple Silicon, `mac-x64` for Intel.
+For Slack elsewhere, add `-s -- --slack-app "/path/to/Slack.app"` after `bash`. You can also download the `.dmg` from the [latest release](https://github.com/3kh0/slick/releases/latest) and drag Slick to Applications. From the files, pick `mac-arm64` for Apple Silicon and `mac-x64` for Intel based Macs.
 
-**Windows** (the standalone and Microsoft Store versions of Slack both work), in PowerShell:
+If you are not using the homebrew tap, you'll also need [Slack from slack.com](https://slack.com/downloads/mac) in `/Applications/Slack.app`. **The App Store version won't work!!**
+
+### Windows
+
+Install [Slack](https://slack.com/downloads/windows) first (the Microsoft Store version works too), then paste this into PowerShell:
 
 ```powershell
 irm "https://raw.githubusercontent.com/3kh0/slick/main/install.ps1" | iex
 ```
 
-Slick is built for x64. ARM PCs run x64 Slack through emulation, so it works there, just a little slower.
+The installer picks the build that matches your Slack install and sets everything up for you nicely.
 
-**Linux** (x86_64 or arm64): grab the AppImage, `.deb` or `.rpm` from the [releases page](https://github.com/3kh0/slick/releases/latest), run `nix run github:3kh0/slick`, install the Flatpak, or use the installer below. Whatever floats your penguin loving boat.
+### Linux
+
+On x86_64, install [Slack](https://slack.com/downloads/linux) first. The ARM64 AppImage and Flatpak download their own Slack bundle on first launch.
+
+**Fedora** (x86_64), using [COPR](https://copr.fedorainfracloud.org/coprs/echolive/slick/). Install Slack's `.rpm` from [slack.com](https://slack.com/downloads/linux) first (Fedora's repos don't carry Slack):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/3kh0/slick/main/install-linux.sh | bash
+sudo dnf install ./slack-*.x86_64.rpm
+sudo dnf copr enable echolive/slick
+sudo dnf install slick
 ```
 
-On arm64, the AppImage downloads a pinned Slack Linux bundle on first launch, then loads arm64 native addons. This approach is based on [Taut](https://github.com/jeremy46231/taut) (MIT); see [its license notice](./packaging/linux/TAUT-LICENSE.txt). Nix and AUR remain x64-only: arm64 needs separate Slack resources, native addons and platform-specific packaging/pins for each. The arm64 Flatpak downloads the pinned Slack bundle on first launch; the x64 Flatpak still requires installed Slack.
-
-The Flatpak uses a signed Slick repo, so it can update normally via `flatpak update`:
+**Flatpak** (x86_64 or ARM64):
 
 ```bash
 flatpak install --user https://3kh0.github.io/slick/dev.slick.Slick.flatpakref
 ```
 
-Launch with `flatpak run dev.slick.Slick` if your desktop menu has not refreshed for some reason. If the browser sign in points elsewhere, run `xdg-mime default dev.slick.Slick.desktop x-scheme-handler/slack` so it takes the slack handler.
+Open Slick from your app menu, or run `flatpak run dev.slick.Slick`.
 
-To remove the Flatpak, run `flatpak uninstall --user dev.slick.Slick` (use `--system` instead if installed system-wide)
+**Nix** (x86_64 only):
 
-### Uninstalling
+```bash
+nix run github:3kh0/slick
+```
 
-- **Windows:** `& ([scriptblock]::Create((irm https://raw.githubusercontent.com/3kh0/slick/main/install.ps1))) -Uninstall`
-- **Linux:** `curl -fsSL https://raw.githubusercontent.com/3kh0/slick/main/install-linux.sh | bash -s -- --uninstall`
-- **macOS:** Drag the Slick app to the Trash or run `./scripts/uninstall.sh` from a clone.
+**Arch** (x86_64):
 
-On Windows and Linux your sign-in and settings are kept unless you add `-Purge` / `--purge`. To hand `slack://` links back to the official app without uninstalling, pass `-RestoreHandler` / `--restore-handler` to the installer.
+Choose one of the following AUR packages:
 
-### Build from source
+- [slick-mod](https://aur.archlinux.org/packages/slick-mod) - Uses the system Electron runtime and depends on the `slack-desktop` package. Install with:
+  ```bash
+  yay -S slick-mod
+  ```
+- [slick-mod-bundled](https://aur.archlinux.org/packages/slick-mod-bundled) - Uses Slick's bundled Electron runtime, also depends on the `slack-desktop` package. Install with:
+  ```bash
+  yay -S slick-mod-bundled
+  ```
 
-Clone the repo and run `./install.sh` (macOS), `./install-linux.sh` (Linux) or `powershell -ExecutionPolicy Bypass -File install.ps1` (Windows). They build Slick from your checkout instead of downloading a release. Plugins live in `src/plugins/<Name>/`, one folder each.
+_(Both AUR packages maintained by [@Hash-AK](https://github.com/hash-ak))_
 
-### Firefox Extension (experimental)
+**Other distros:** grab an AppImage, `.deb` or `.rpm` from the [latest release](https://github.com/3kh0/slick/releases/latest). For an AppImage, make it executable in its file properties and open it.
 
-Slick can also run in the Slack web client as a Firefox extension. Download `slick-firefox-*.xpi` from the [latest release](https://github.com/3kh0/slick/releases/latest) and open it in Firefox.
+<details>
+<summary>Other installers, uninstalling and building from source</summary>
 
-The extension includes themes, custom CSS and page-side plugins only. Plugins that need the desktop app or network access (AccountSwitcher, CustomFonts, CustomSounds and the like) are not in the Firefox build. Settings, custom CSS and recovery controls live behind the Slick toolbar button. **Bypass Slick** reloads the current tab without Slick if Slack ever breaks. Slack's Content Security Policy stays on; nothing is removed or loaded remotely.
+**Linux installer** (x86_64, with Slack installed):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/3kh0/slick/main/install-linux.sh | bash
+```
+
+**Uninstall:** use your package manager (`brew uninstall --cask slick`, `sudo dnf remove slick`, or `flatpak uninstall --user dev.slick.Slick`). For manual macOS installs, drag Slick to the Trash. For the Windows and Linux scripts:
+
+```powershell
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/3kh0/slick/main/install.ps1))) -Uninstall
+```
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/3kh0/slick/main/install-linux.sh | bash -s -- --uninstall
+```
+
+The Windows and Linux scripts keep your sign-in and settings unless you add `-Purge` / `--purge`. To return `slack://` links to Slack, use `-RestoreHandler` / `--restore-handler`. For Flatpak, use `xdg-mime default dev.slick.Slick.desktop x-scheme-handler/slack` if browser sign-in opens the wrong app.
+
+**Build from source:** clone this repo and run `./install.sh` (macOS), `./install-linux.sh` (Linux), or `powershell -ExecutionPolicy Bypass -File install.ps1` (Windows). Plugins live in `src/plugins/<Name>/`.
+
+</details>
 
 ## Updates
 
-Slick updates itself every few hours, and checks every download against its GitHub build attestation before installing it. To check by hand, use **Slick > Check for Updates…**. On macOS and standalone Windows it also keeps Slack itself up to date. On Linux arm64, Slick pins the downloaded Slack bundle to its release and downloads a new pin when Slick updates. The Microsoft Store, the deb and rpm packages, Flatpak and Nix update through their own package managers instead. Running through the installer again will also get you the latest version if it somehow breaks.
+Slick will try to update itself every few hours. If you want to check by hand, use **Slick > Check for Updates...**. On macOS and standalone Windows it also keeps Slack itself up to date. On Linux arm64, Slick pins the downloaded Slack bundle to its release and downloads a new pin when Slick updates. The Microsoft Store, the deb and rpm packages, Flatpak and Nix update through their own package managers instead. Running through the installer again will also get you the latest version if it somehow breaks.
 
 ## Themes
 
-Themes are defined in the `themes/` folder as JSON files exporting the following:
+Import a `.json` theme from **Slick Preferences > Appearance > Import theme JSON** (or Appearance in the Firefox toolbar popup). Imported themes are saved, selected immediately, and can be picked again from the theme list or removed with **Remove imported theme**. A theme with `"mode"` only applies while Slack is in that color mode, so the built-in dark themes step aside in Light mode to prevent any weird looking colors.
+
+The `themes/` folder has all of the built-in themes. Adding files there won't load them into an installed app, so you will want to use the import button instead. Please use use this format:
 
 ```jsonc
 {
   "name": "Super cool epic theme",
+  "mode": "dark", // optional: "dark" or "light"; omit to apply in both
   "palette": { "highlight1": { "100": "139,92,246" } }, // --dt_color-plt-<ramp>-<shade>, raw "r,g,b"
   "sidebar": { "nav-bg": "#1A1525" }, // --p-team_sidebar__<key>
   "vars": { "--any-css-var": "value" }, // overrides
@@ -116,19 +157,36 @@ Themes are defined in the `themes/` folder as JSON files exporting the following
 }
 ```
 
-Some people like how Slack looks by default, but you can pick one from the Slick tab in Preferences. `themes/amoled.json` (true black) and `themes/catppuccin-mocha.json` ([Catppuccin](https://catppuccin.com) Mocha) are working examples.
-
-Prefer to write your own CSS instead? Slick also has a "Custom CSS" option powered by Monaco at the top of the theme list.
+Prefer to write your own CSS instead? Open the CSS editor in Slick Preferences (or the Custom CSS field in Firefox). It accepts raw CSS, which applies on top of your selected theme. JSON theme files belong in **Import theme JSON**, not the CSS editor. Choose **Custom CSS only** to use your CSS without a theme.
 
 ## Credits
 
+- [Taut](https://github.com/jeremy46231/taut) by [@jeremy46231](https://github.com/jeremy46231) and [its contributors](https://github.com/jeremy46231/taut/graphs/contributors). Slick owes much of its foundation to Taut's injection and patching model, settings integration and other innovations.
+- [Slick's contributors](https://github.com/3kh0/slick/graphs/contributors?all=1) for code, fixes and themes, and everyone who has shared ideas and bug reports.
 - [Slack](https://slack.com/) for the original app and its delightful internals.
 - [Electron](https://www.electronjs.org/) for the runtime and APIs.
 - [@ImShyMike](https://github.com/ImShyMike) for advice on breaking into Slack.
 - [Vencord](https://github.com/vencord) for plugin inspiration.
-- [Taut](https://github.com/jeremy46231/taut) (MIT) by [@jeremy46231](https://github.com/jeremy46231), which has a lovely injection and patching model Slick is built on.
 - Claude for cleaning up the code and generally being a good assistant.
 
 ## Legal
 
+### Licensing
+
 This is under the GNU General Public License v3.0. See the [LICENSE](LICENSE) file for the legal mumbo jumbo. In short: just don't be a dick. If you're not sure what that means, see [choosealicense.com/licenses/gpl-3.0](https://choosealicense.com/licenses/gpl-3.0/). This code is provided to you for free, use at your own risk. I am not responsible for any harms due to the code here. Don't sue me.
+
+### Privacy
+
+Slick uses data only to provide the plugins, themes and settings you choose. Slick does not run an analytics service, sell data, use data for advertising, or send Slack messages to the Slick developers.
+
+The extension reads the Slack client to customize its interface. Depending on enabled plugins, it processes messages, profile information, user/channel identifiers and activity. MessageLogger keeps bounded local message deletion/edit history; LastSeen keeps local activity records. Settings, CSS, imported themes and plugin records stay in the browser profile. CustomFonts and CustomSounds store files you select locally. Disabling a plugin stops its activity but does not automatically erase its saved data. Plugin controls can clear history where provided; uninstalling the extension removes its extension storage. Plugin logs and ordinary preferences are not encrypted by Slick; access depends on your browser and operating system protections. AccountSwitcher stores session cookies and workspace tokens in a separate extension-private IndexedDB vault encrypted with AES-GCM and a non-extractable key. The key stays in the same browser profile; this is not password or operating-system keychain protection. Credentials are not synced, exported or exposed to the Slack-page bridge.
+
+AccountSwitcher requests optional `cookies`, `browsingData` and `https://*.slack.com/*` access only when you enable session access in its account manager. It verifies sessions with Slack’s `auth.test` endpoint and never sends credentials to Slick servers. A switch pauses normal Slack tabs, replaces the profile’s Slack session cookies and clears cached client data, including unsent drafts. Saved accounts can be removed in the manager; disabling the plugin does not delete them. Private windows and Firefox containers are not switched.
+
+InstalledApps requests optional `https://*.slack.com/*` access when you turn it on in the extension's Plugins tab. It uses that access only to read an app's `slack.com/marketplace` page with your Slack session, and keeps just the user IDs, names and channel IDs it shows.
+
+User plugins are opt-in and left out of the Firefox Add-ons version. The extension requests the optional `userScripts` permission only when you click **Allow user plugins** in its Plugins tab (Chromium also needs **Allow User Scripts** turned on in the extension's details). Plugin files you choose stay in the extension's local storage and run only on `app.slack.com`; Slick never downloads plugins or sends them anywhere. The Plugins tab lists every installed plugin and removes it along with its saved data.
+
+Optional external services: BetterGifs sends GIF search queries to `tenor-proxy.vercel.app` (Tenor) or `api.klipy.com` (KLIPY, with your own API key), and GIF images load from the provider’s media hosts; ClearURLs downloads JSON tracking-parameter rules from `raw.githubusercontent.com`; HCA Status sends Slack user IDs to `auth.hackclub.com` and reads verification/age-category results; Private Channel Mapper sends channel IDs or exact channel names to `flaron.halceon.dev` when its external-lookup settings are enabled. These services receive ordinary request metadata such as your IP address and follow their own privacy practices. Slack continues to handle your normal Slack traffic under its own policies. CSS you enter can also request resources you reference in it.
+
+For privacy questions, use the project's [issues page](https://github.com/3kh0/slick/issues); do not include private Slack messages, credentials or local browser-profile data in public reports.

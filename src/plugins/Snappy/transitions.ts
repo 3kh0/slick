@@ -13,6 +13,7 @@ const RESCAN_MS = 5_000;
 const FIRST_SCAN_MS = 3_000;
 const SETTLE_MS = 1_000;
 const WORKSPACE = '.p-client_workspace, .p-workspace__primary_view';
+const SLICE_MS = 4;
 
 function hasDuration(style: CSSStyleDeclaration): boolean {
   const duration = style.getPropertyValue('transition-duration');
@@ -21,25 +22,26 @@ function hasDuration(style: CSSStyleDeclaration): boolean {
   return style.getPropertyValue('transition').includes('var(');
 }
 
-function collect(rules: CSSRuleList, into: Set<string>, onRule?: (rule: CSSStyleRule) => void) {
+function* collect(rules: CSSRuleList): Generator<CSSStyleRule> {
   for (const rule of rules) {
     if (rule instanceof CSSStyleRule) {
-      onRule?.(rule);
-      if (hasDuration(rule.style)) into.add(rule.selectorText);
+      yield rule;
     }
     // @media, @supports, @layer and nested rules all carry cssRules.
     const nested = (rule as CSSGroupingRule).cssRules;
-    if (nested) collect(nested, into, onRule);
+    if (nested) yield* collect(nested);
   }
 }
 
 export type TransitionOverride = { stop(): void };
 
+export type RuleRewriter = { visit(rule: CSSStyleRule): string; flush(): void; discard?(): void };
+
 // Each batch gets its own key, so later batches add a sheet instead of
 // re-parsing earlier ones.
 export function overrideTransitions(
   emit: (css: string, key: string) => void,
-  onRule?: (rule: CSSStyleRule) => void,
+  rewriter?: RuleRewriter,
 ): TransitionOverride {
   const known = new Set<string>();
   /** Rule count per sheet at its last scan; a change means Slack inserted rules. */
@@ -47,10 +49,13 @@ export function overrideTransitions(
   let batch = 0;
   let scans = 0;
   let timer: ReturnType<typeof setTimeout> | undefined;
+  let idle: number | undefined;
+  let work: Generator<void> | undefined;
   let stopped = false;
 
-  const scan = () => {
+  const scan = function* (): Generator<void> {
     const found = new Set<string>();
+    const visited = new Map<CSSStyleSheet, number>();
     for (const sheet of document.styleSheets) {
       const owner = sheet.ownerNode as HTMLElement | null;
       if (owner?.dataset?.slickStyle !== undefined) continue;
@@ -61,9 +66,18 @@ export function overrideTransitions(
         continue; // cross-origin without CORS
       }
       if (scanned.get(sheet) === rules.length) continue;
-      scanned.set(sheet, rules.length);
-      collect(rules, found, onRule);
+      const count = rules.length;
+      for (const rule of collect(rules)) {
+        const selector = rewriter?.visit(rule);
+        if (hasDuration(rule.style)) found.add(selector ?? rule.selectorText);
+        yield;
+      }
+      visited.set(sheet, count);
     }
+    rewriter?.flush();
+    // An interrupted scan emits nothing. Only cache completed scans so sheets
+    // visited before an interruption still get their transition overrides.
+    for (const [sheet, count] of visited) scanned.set(sheet, count);
 
     const fresh = [...found].filter((selector) => !known.has(selector));
     if (!fresh.length) return;
@@ -74,32 +88,80 @@ export function overrideTransitions(
     emit(css.join('\n'), `transitions:${batch++}`);
   };
 
-  const loop = () => {
-    if (stopped) return;
+  const scheduleIdle = () => {
+    timer = undefined;
+    if (stopped || document.hidden) return;
+    idle = requestIdleCallback(loop, { timeout: SETTLE_MS });
+  };
+  const loop = (deadline: IdleDeadline) => {
+    idle = undefined;
+    if (stopped || document.hidden) return;
+    work ??= scan();
+    let done = false;
+    const start = performance.now();
     try {
-      scan();
+      // A timeout can fire while Slack is busy. Still cap our own work instead
+      // of turning one idle callback into a scan of 80,000+ rules.
+      do {
+        done = work.next().done === true;
+      } while (!done && performance.now() - start < SLICE_MS && deadline.timeRemaining() > 1);
     } catch (error) {
       console.error('[slick] [Snappy] transition scan failed:', error);
+      done = true;
     }
+    if (!done) {
+      scheduleIdle();
+      return;
+    }
+    work = undefined;
     // Fast while Slack loads its stylesheets, then rarely; idle time only.
     const delay = ++scans < 10 ? 1_000 : RESCAN_MS;
-    timer = setTimeout(() => requestIdleCallback(loop, { timeout: delay }), delay);
+    timer = setTimeout(scheduleIdle, delay);
   };
   // Rewriting selectors rebuilds Slack's rule index; keep that out of first paint.
   const waitForWorkspace = () => {
-    if (stopped) return;
+    timer = undefined;
+    if (stopped || document.hidden) return;
     if (!document.querySelector(WORKSPACE)) {
       timer = setTimeout(waitForWorkspace, 250);
       return;
     }
-    timer = setTimeout(() => requestIdleCallback(loop, { timeout: FIRST_SCAN_MS }), SETTLE_MS);
+    timer = setTimeout(() => {
+      timer = undefined;
+      if (stopped || document.hidden) return;
+      idle = requestIdleCallback(loop, { timeout: FIRST_SCAN_MS });
+    }, SETTLE_MS);
   };
+  const cancelPending = () => {
+    clearTimeout(timer);
+    timer = undefined;
+    if (idle !== undefined) cancelIdleCallback(idle);
+    idle = undefined;
+  };
+  const onVisibilityChange = () => {
+    cancelPending();
+    if (stopped) return;
+    if (document.hidden) {
+      // CSSRuleList is live: resuming its old iterator after hidden mutations
+      // can skip rules. Restart without applying an unfinished rewrite batch.
+      work = undefined;
+      rewriter?.discard?.();
+      return;
+    }
+    // Let the returning workspace settle before restarting idle work.
+    if (scans) timer = setTimeout(scheduleIdle, scans < 10 ? SETTLE_MS : RESCAN_MS);
+    else waitForWorkspace();
+  };
+  document.addEventListener('visibilitychange', onVisibilityChange);
   waitForWorkspace();
 
   return {
     stop() {
       stopped = true;
-      clearTimeout(timer);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+      cancelPending();
+      work = undefined;
+      rewriter?.discard?.();
     },
   };
 }

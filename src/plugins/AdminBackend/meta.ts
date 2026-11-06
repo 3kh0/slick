@@ -1,8 +1,9 @@
-import type { SettingsSchema } from '../../shared/settings.ts';
+import type { PluginCategory, SettingsSchema } from '../../shared/settings.ts';
 
 export const id = 'AdminBackend';
 export const pluginName = 'Admin Backend';
 export const description = 'Open profiles in Hack Club admin tools';
+export const category: PluginCategory = 'hackclub';
 export const defaultEnabled = false;
 
 export const settings = {
@@ -10,12 +11,6 @@ export const settings = {
     type: 'boolean',
     label: 'Identity',
     description: 'Show the Identity backend',
-    default: true,
-  },
-  joe: {
-    type: 'boolean',
-    label: 'Joe',
-    description: 'Show the Joe fraud backend',
     default: true,
   },
   telescreen: {
@@ -30,19 +25,19 @@ export const settings = {
     description: 'Show the Fire Engine backend',
     default: true,
   },
+  attend: {
+    type: 'boolean',
+    label: 'Attend',
+    description: 'Show the Attend backend',
+    default: true,
+  },
 } as const satisfies SettingsSchema;
 
-/** The tools offered, in menu order, each with the one URL it may open. */
 export const TOOLS = [
   {
     id: 'identity',
     label: 'Open in Identity',
     url: (member: string) => `https://auth.hackclub.com/backend/identities?search=${encodeURIComponent(member)}`,
-  },
-  {
-    id: 'joe',
-    label: 'Open in Joe',
-    url: (member: string) => `https://joe.fraud.hackclub.com/profile/${encodeURIComponent(member)}`,
   },
   {
     id: 'telescreen',
@@ -53,6 +48,11 @@ export const TOOLS = [
     id: 'fire_engine',
     label: 'Open in Fire Engine',
     url: (member: string) => `https://nemo.hackclub.com/fd/members/${encodeURIComponent(member)}`,
+  },
+  {
+    id: 'attend',
+    label: 'Open in Attend',
+    url: (member: string) => `https://attend.hackclub.com/admin/users?search=${encodeURIComponent(member)}`,
   },
 ] as const;
 

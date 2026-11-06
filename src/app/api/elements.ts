@@ -1,8 +1,9 @@
 // Slack's own React components by name, each a `lazyComponent` (renders
 // nothing until its chunk loads). Only Button, Tooltip, Label, MenuTrigger,
-// ConfirmationModal and ConnectedBaseAvatar have been observed rendering; the other names and all
-// prop shapes are unverified Slack-private contracts, so don't put UI whose
-// silent loss breaks a feature on them.
+// ConfirmationModal, ConnectedBaseAvatar, SvgIcon and BasicSelect have been
+// observed rendering; the other names and all prop shapes are unverified
+// Slack-private contracts, so don't put UI whose silent loss breaks a feature
+// on them.
 
 import { lazyComponent, reactReady } from '../slack/react.tsx';
 
@@ -117,8 +118,11 @@ export type BasicSelectProps = {
   options: SelectOption[];
   selectedOption?: SelectOption;
   onSelectionChange: (option: SelectOption) => void;
-  width?: number;
+  width?: number | string;
+  size?: 'small' | 'medium' | 'large';
   ariaLabel?: string;
+  ariaDescribedBy?: string;
+  maxListHeight?: number;
   selectDataQa?: string;
   isDisabled?: boolean;
 };
@@ -162,6 +166,12 @@ export type ProfileHoverTriggerProps = {
   children?: React.ReactNode;
 };
 
+export type MemberLinkProps = {
+  id: string;
+  className?: string;
+  children?: React.ReactNode;
+};
+
 export type MenuFromTemplateProps = { template?: MenuTemplateItem[] };
 
 export type MenuTriggerProps = {
@@ -199,6 +209,7 @@ export const elementsReady = (async () => {
     SvgIcon: lazyComponent<SvgIconProps>('SvgIcon'),
     Avatar: lazyComponent<AvatarProps>('ConnectedBaseAvatar'),
     ProfileHoverTrigger: lazyComponent<ProfileHoverTriggerProps>('ProfileHoverTrigger'),
+    MemberLink: lazyComponent<MemberLinkProps>('MemberLink'),
     MrkdwnElement: lazyComponent<MrkdwnElementProps>('MrkdwnElement'),
     Button: lazyComponent<ButtonProps>('Button'),
     Tooltip: lazyComponent<TooltipProps>('Tooltip'),

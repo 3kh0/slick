@@ -1,9 +1,10 @@
 // Serves the embedded slick.js (and the CSS editor) over slick://.
 // SLICK_APP_URL is a dev-only override for `npm run dev`.
 
-import { readFileSync, statSync } from 'node:fs';
+import { statSync } from 'node:fs';
 import path from 'node:path';
-import { session } from 'electron';
+import { app, session } from 'electron';
+import { createAssetReader } from './assetReader.ts';
 import { editorHtml, MONACO_URL_PREFIX } from './windows/cssEditor.ts';
 
 export const SLICK_SCHEME = 'slick';
@@ -40,7 +41,11 @@ const MONACO_TYPES: Record<string, string> = {
   '.woff2': 'font/woff2',
 };
 
+const HOT_FILE = /^hot\/([A-Za-z0-9_.-]+\.js)$/;
+
 const notFound = () => new Response('Not found', { status: 404 });
+const js = (body: Uint8Array<ArrayBuffer> | string) =>
+  new Response(body, { headers: { 'Content-Type': 'application/javascript' } });
 
 /**
  * `dirs` are searched in order: Slick's own resources (captured before patch.ts
@@ -50,8 +55,11 @@ export function setupSession(dirs: string[]) {
   const candidates = dirs.map((dir) => path.join(dir, 'slick.js'));
   bundleCandidates = candidates;
   const monacoDirs = dirs.map((dir) => path.join(dir, 'monaco'));
+  // Packaged bundles are immutable for the process lifetime; dev rebuilds must stay fresh.
+  const readBundle = createAssetReader(app.isPackaged && !process.env.SLICK_RESOURCES_PATH);
+  const readAsset = createAssetReader(false);
 
-  session.defaultSession.protocol.handle(SLICK_SCHEME, (request) => {
+  session.defaultSession.protocol.handle(SLICK_SCHEME, async (request) => {
     const url = new URL(request.url);
     const file = url.pathname.replace(/^\//, '');
 
@@ -73,7 +81,17 @@ export function setupSession(dirs: string[]) {
         const target = path.resolve(root, 'vs', relative);
         if (target !== path.resolve(root, 'vs') && !target.startsWith(path.resolve(root, 'vs') + path.sep)) continue;
         try {
-          return new Response(readFileSync(target), { headers: { 'Content-Type': type } });
+          return new Response(await readAsset(target), { headers: { 'Content-Type': type } });
+        } catch {}
+      }
+      return notFound();
+    }
+
+    const hot = process.env.SLICK_HOT && url.hostname === 'app' && HOT_FILE.exec(file)?.[1];
+    if (hot) {
+      for (const dir of dirs) {
+        try {
+          return js(await readAsset(path.join(dir, 'hot', hot)));
         } catch {}
       }
       return notFound();
@@ -83,14 +101,10 @@ export function setupSession(dirs: string[]) {
 
     for (const bundle of candidates) {
       try {
-        return new Response(readFileSync(bundle), {
-          headers: { 'Content-Type': 'application/javascript' },
-        });
+        return js(await readBundle(bundle));
       } catch {}
     }
     console.error(`[slick] slick.js not found in any of: ${candidates.join(', ')}`);
-    return new Response('console.error("[slick] bundle not found")', {
-      headers: { 'Content-Type': 'application/javascript' },
-    });
+    return js('console.error("[slick] bundle not found")');
   });
 }

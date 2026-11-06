@@ -58,6 +58,20 @@ export function waitForExport(matcher: SimpleMatcher): Promise<any> {
   const existing = getExport(matcher);
   if (existing !== undefined) return Promise.resolve(existing);
 
+  return waitForFutureExport(matcher);
+}
+
+type ExportLookup<T> = { found: true; value: T } | { found: false; promise: Promise<T> };
+
+/** One scan, with a synchronous hit for callers that must render immediately. */
+export function getExportOrWait<T>(matcher: ExportMatcher<T>): ExportLookup<T>;
+export function getExportOrWait<T>(matcher: SimpleMatcher): ExportLookup<T>;
+export function getExportOrWait(matcher: SimpleMatcher): ExportLookup<any> {
+  const value = getExport(matcher);
+  return value !== undefined ? { found: true, value } : { found: false, promise: waitForFutureExport(matcher) };
+}
+
+function waitForFutureExport(matcher: SimpleMatcher): Promise<any> {
   return new Promise((resolve) => {
     const id = Symbol();
     pendingMatchers.set(id, {
@@ -113,11 +127,13 @@ export function patchModuleExports(patcher: ModuleExportsPatcher): () => void {
 }
 
 export function patchExportFunction(
-  name: string,
+  name: string | readonly string[],
   wrap: (original: (...args: any[]) => any) => (...args: any[]) => any,
 ): () => void {
+  const names = typeof name === 'string' ? [name] : name;
   return patchModuleExports((exports) => {
     if (!exports || typeof exports !== 'object') return;
+    let descriptors: PropertyDescriptorMap | undefined;
     for (const key of Object.keys(exports)) {
       let value: any;
       try {
@@ -125,15 +141,41 @@ export function patchExportFunction(
       } catch {
         continue;
       }
-      if (typeof value !== 'function' || value.name !== name) continue;
+      if (typeof value !== 'function' || !names.includes(value.name)) continue;
 
       // Webpack defines namespace exports as non-configurable getters, so the
       // property cannot be reassigned; the exports object has to be rebuilt.
-      const descriptors = Object.getOwnPropertyDescriptors(exports);
+      descriptors ??= Object.getOwnPropertyDescriptors(exports);
       descriptors[key] = { value: wrap(value), enumerable: true, configurable: true, writable: true };
-      return Object.create(Object.getPrototypeOf(exports), descriptors);
     }
+    if (descriptors) return Object.create(Object.getPrototypeOf(exports), descriptors);
   });
+}
+
+/** Discover initialized modules without evaluating any factory again. */
+function registerModule(moduleId: PropertyKey, module: WebpackModule): void {
+  let moduleExports = module.exports;
+  for (const patcher of moduleExportsPatchers) {
+    try {
+      const replaced = patcher(moduleExports, String(moduleId));
+      if (replaced !== undefined && replaced !== moduleExports) {
+        module.exports = replaced;
+        moduleExports = replaced;
+      }
+    } catch (error) {
+      console.error('[slick] module exports patcher threw:', error);
+    }
+  }
+
+  moduleRegistry.set(moduleId, moduleExports);
+  checkPendingMatchers(moduleExports);
+  for (const cb of moduleLoadCallbacks) {
+    try {
+      cb(moduleExports);
+    } catch (error) {
+      console.error('[slick] module load callback threw:', error);
+    }
+  }
 }
 
 function wrapModuleFactory(moduleId: PropertyKey, factory: ModuleFactory): ModuleFactory {
@@ -144,28 +186,7 @@ function wrapModuleFactory(moduleId: PropertyKey, factory: ModuleFactory): Modul
   const wrapped = function slickModuleFactory(module: WebpackModule, exports: Exports, require: WebpackRequire): any {
     const result = factory.call(exports, module, exports, require);
 
-    let moduleExports = module.exports;
-    for (const patcher of moduleExportsPatchers) {
-      try {
-        const replaced = patcher(moduleExports, String(moduleId));
-        if (replaced !== undefined && replaced !== moduleExports) {
-          module.exports = replaced;
-          moduleExports = replaced;
-        }
-      } catch (error) {
-        console.error('[slick] module exports patcher threw:', error);
-      }
-    }
-
-    moduleRegistry.set(moduleId, moduleExports);
-    checkPendingMatchers(moduleExports);
-    for (const cb of moduleLoadCallbacks) {
-      try {
-        cb(moduleExports);
-      } catch (error) {
-        console.error('[slick] module load callback threw:', error);
-      }
-    }
+    registerModule(moduleId, module);
 
     return result;
   };
@@ -209,7 +230,8 @@ function wrapPush(originalPush: PushFn): PushFn {
 // globals are hooked because which one is live depends on the build being served.
 export const CHUNK_GLOBALS = ['webpackChunkwebapp', 'rspackChunkwebapp', 'rspackChunkGantryV2'];
 
-function installHook(globalName: string) {
+function installHook(globalName: string, allowExisting: boolean) {
+  const existingQueue = allowExisting && Array.isArray(global[globalName]) ? (global[globalName] as Chunk[]) : [];
   const wrappedPushes = new WeakMap<PushFn, PushFn>();
   const proxies = new WeakMap<Chunk[], Chunk[]>();
   const wrapArray = (array: Chunk[]): Chunk[] => {
@@ -242,7 +264,7 @@ function installHook(globalName: string) {
     proxies.set(queue, queue);
     return queue;
   };
-  let backing = wrapArray([]);
+  let backing = wrapArray(existingQueue);
 
   Object.defineProperty(global, globalName, {
     configurable: true,
@@ -258,7 +280,7 @@ function installHook(globalName: string) {
   });
 }
 
-export function installWebpackHooks() {
+export function installWebpackHooks({ allowExisting = false } = {}) {
   const descriptors = new Map(CHUNK_GLOBALS.map((name) => [name, Object.getOwnPropertyDescriptor(global, name)]));
   for (const [name, descriptor] of descriptors) {
     if (descriptor && !descriptor.configurable) throw new Error(`[slick] ${name} cannot be intercepted`);
@@ -267,8 +289,29 @@ export function installWebpackHooks() {
   const installed: string[] = [];
   try {
     for (const name of CHUNK_GLOBALS) {
-      installHook(name);
+      installHook(name, allowExisting);
       installed.push(name);
+      const queue = global[name] as Chunk[];
+      // Violentmonkey may arrive after the shell runtime. An empty chunk only
+      // captures its require function; existing modules are never re-executed.
+      if (allowExisting && queue.push !== Array.prototype.push) {
+        queue.push([
+          [`slick-userscript-capture:${name}`],
+          {},
+          (require) => {
+            if (!webpackRequire) {
+              webpackRequire = require;
+              global.__slickWebpackRequire = require;
+            }
+            for (const [id, factory] of Object.entries(require.m ?? {})) {
+              if (typeof factory === 'function') require.m[id] = wrapModuleFactory(id, factory);
+            }
+            for (const [id, module] of Object.entries(require.c ?? {}) as [string, WebpackModule][]) {
+              if (module && 'exports' in module) registerModule(id, module);
+            }
+          },
+        ]);
+      }
     }
   } catch (error) {
     for (const name of installed) {
@@ -284,27 +327,36 @@ export function getExport<T>(matcher: ExportMatcher<T>): T | undefined;
 export function getExport<T>(matcher: SimpleMatcher): T | undefined;
 export function getExport<T>(matcher: SimpleMatcher, all: true): T[];
 export function getExport(matcher: SimpleMatcher, all = false) {
-  const results = new Set<any>();
+  const results = all ? new Set<any>() : undefined;
 
   for (const exports of moduleRegistry.values()) {
-    const candidates = [exports];
+    // Most lookups need one result. Avoid a candidate array for every module
+    // and do not invoke namespace getters when the namespace itself matches.
+    let matched = false;
+    try {
+      matched = matcher(exports);
+    } catch {}
+    if (matched) {
+      if (!results) return exports;
+      results.add(exports);
+    }
+    // Primitive exports are values, not namespaces. Enumerating a string
+    // boxes it and offers every character as a spurious export candidate.
+    if (!isIndexable(exports)) continue;
     for (const key in exports) {
       if (!Object.hasOwn(exports, key)) continue;
+      let candidate: any;
       try {
-        candidates.push(exports[key]);
-      } catch {}
-    }
-    for (const candidate of candidates) {
-      try {
+        candidate = exports[key];
         if (!matcher(candidate)) continue;
       } catch {
         continue;
       }
-      if (!all) return candidate;
+      if (!results) return candidate;
       results.add(candidate);
     }
   }
-  return all ? [...results] : undefined;
+  return results ? [...results] : undefined;
 }
 
 export function getByProps<T>(props: string[]): T | undefined;

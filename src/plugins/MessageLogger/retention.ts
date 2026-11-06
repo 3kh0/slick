@@ -2,6 +2,7 @@
 // produced ~1000 entries/day, and single entries reached 127 KB.
 
 import type { SlackMessage } from '$slick';
+import { blocksText } from './content.ts';
 
 export const MAX_ENTRIES = 1000;
 export const MAX_EDITS_PER_MESSAGE = 20;
@@ -28,6 +29,7 @@ export function trim(message: SlackMessage): SlackMessage {
   if (weigh(message) <= MAX_MESSAGE_BYTES) return message;
   for (const field of HEAVY_FIELDS) {
     if (!(field in message)) continue;
+    if (field === 'blocks') message.text = blocksText(message) ?? message.text;
     delete (message as Record<string, unknown>)[field];
     if (weigh(message) <= MAX_MESSAGE_BYTES) return message;
   }
@@ -96,6 +98,7 @@ type Mergeable = {
   at: number;
   user?: string;
   deleted?: boolean;
+  evaded?: boolean;
   message?: SlackMessage;
   edits?: { oldText: string; newText: string }[];
 };
@@ -107,6 +110,7 @@ export function mergeEntry<T extends Mergeable>(stored: T, live: T): T {
     ...live,
     user: live.user || stored.user,
     deleted: live.deleted || stored.deleted,
+    ...(live.evaded || stored.evaded ? { evaded: true } : {}),
     message: live.message ?? stored.message,
     edits: edits.length ? edits : undefined,
     at: live.deleted && !stored.deleted ? live.at : Math.min(stored.at, live.at),

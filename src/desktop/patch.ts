@@ -3,14 +3,15 @@
 // find its assets.
 
 import { EventEmitter } from 'node:events';
-import crypto from 'node:crypto';
-import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import { app, ipcMain, Menu, MenuItem, shell } from 'electron';
 import { profileDir } from './paths.js';
 import { trayDir, wrapTray } from './trayIcons.js';
 import { wrapMacNotifications } from './macNotificationSounds.js';
+import { createPreloadSources } from './preloadSources.ts';
+import { relabelAppMenu } from './menuLabels.ts';
+import { popupOptions } from './popupOptions.ts';
 
 const cjsRequire = createRequire(import.meta.url);
 const NodeModule = cjsRequire('module') as any;
@@ -84,7 +85,7 @@ function slickMenuTemplate(): Electron.MenuItemConstructorOptions {
     { role: 'reload' },
     { role: 'forceReload' },
     { type: 'separator' },
-    { role: 'quit' },
+    { role: 'quit', label: 'Quit Slick' },
   );
   return { label: 'Slick', submenu };
 }
@@ -96,6 +97,7 @@ const isHelp = (item: AnyItem) => item.role === 'help' || labelled(item, 'Help')
 
 function injectSlickMenu(items: AnyItem[]) {
   const out = [...items];
+  relabelAppMenu(out);
   if (out.some((item) => item.label === 'Slick')) return out;
   const helpIndex = out.findIndex(isHelp);
   if (helpIndex === -1) out.push(slickMenuTemplate());
@@ -144,8 +146,8 @@ export function applyPatches(
   }
 
   // Our preload evals Slack's original (see preload.ts).
-  const originalPreloads = new Map<string, string>();
-  ipcMain.handle('slick:get-original-preload', (_event, key: string) => originalPreloads.get(key) ?? null);
+  const originalPreloads = createPreloadSources();
+  ipcMain.handle('slick:get-original-preload', (_event, key: string) => originalPreloads.get(key));
 
   /**
    * Swap Slack's preload for ours, keeping its source fetchable by key. If it
@@ -154,17 +156,14 @@ export function applyPatches(
    */
   function substitutePreload(webPreferences: any = {}): { webPreferences: any; preloadKey: string } {
     const slackPreload: string | undefined = webPreferences?.preload;
-    let originalPreload: string | null = null;
+    let preloadKey = '';
     if (slackPreload) {
       try {
-        originalPreload = readFileSync(slackPreload, 'utf8');
-        if (!originalPreload.trim()) throw new Error('preload is empty');
+        preloadKey = originalPreloads.register(slackPreload);
       } catch (error) {
         console.error('[slick] could not read Slack preload:', error);
       }
     }
-    const preloadKey = originalPreload ? crypto.randomUUID() : '';
-    if (preloadKey) originalPreloads.set(preloadKey, originalPreload as string);
     return {
       preloadKey,
       webPreferences: {
@@ -183,7 +182,7 @@ export function applyPatches(
     construct(Target: any, [opts = {}]: any[]) {
       const { webPreferences, preloadKey } = substitutePreload(opts.webPreferences);
       const window = new Target({ ...opts, webPreferences });
-      if (preloadKey) window.once('closed', () => originalPreloads.delete(preloadKey));
+      if (preloadKey) window.once('closed', () => originalPreloads.release(preloadKey));
       try {
         onWindow?.(window);
       } catch (error) {
@@ -215,7 +214,7 @@ export function applyPatches(
         if (preloadKey) {
           // The next window this contents creates is the one just allowed.
           contents.once('did-create-window', (window: Electron.BrowserWindow) => {
-            window.once('closed', () => originalPreloads.delete(preloadKey));
+            window.once('closed', () => originalPreloads.release(preloadKey));
             try {
               onWindow?.(window);
             } catch (error) {
@@ -225,7 +224,11 @@ export function applyPatches(
         }
         return {
           ...result,
-          overrideBrowserWindowOptions: { ...result.overrideBrowserWindowOptions, webPreferences },
+          overrideBrowserWindowOptions: {
+            ...result.overrideBrowserWindowOptions,
+            ...popupOptions(details, process.platform),
+            webPreferences,
+          },
         };
       });
   });
@@ -247,8 +250,11 @@ export function applyPatches(
   const origPopup = Menu.prototype.popup;
   Menu.prototype.popup = function (this: Electron.Menu, options?: Electron.PopupOptions) {
     const items = this.items;
-    if (items.some((item) => labelled(item, 'File')) && items.some(isHelp) && !items.some((i) => i.label === 'Slick')) {
-      this.insert(items.findIndex(isHelp), new MenuItem(slickMenuTemplate()));
+    if (items.some((item) => labelled(item, 'File')) && items.some(isHelp)) {
+      relabelAppMenu(items);
+      if (!items.some((i) => i.label === 'Slick')) {
+        this.insert(items.findIndex(isHelp), new MenuItem(slickMenuTemplate()));
+      }
     }
     return origPopup.call(this, options);
   };

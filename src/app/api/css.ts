@@ -17,12 +17,19 @@ const extraDocuments = new Set<Document>();
 const documentListeners = new Set<(doc: Document) => void>();
 
 function liveDocuments(): Document[] {
-  return [document, ...[...extraDocuments].filter((doc) => doc.defaultView && !doc.defaultView.closed)];
+  for (const doc of extraDocuments) {
+    if (!doc.defaultView || doc.defaultView.closed) extraDocuments.delete(doc);
+  }
+  return [document, ...extraDocuments];
 }
 
 export function registerDocument(doc: Document) {
   if (doc === document || extraDocuments.has(doc)) return;
   extraDocuments.add(doc);
+  doc.defaultView?.addEventListener('pagehide', (event) => {
+    // A cached page can return with the same document; keep its styles in sync.
+    if (!event.persisted) extraDocuments.delete(doc);
+  });
   for (const sheet of sheets) render(sheet, doc);
   for (const listener of documentListeners) notify(listener, doc);
 }

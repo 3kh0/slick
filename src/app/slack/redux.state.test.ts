@@ -1,0 +1,205 @@
+import assert from 'node:assert/strict';
+import { test } from 'node:test';
+import { createContext, runInContext } from 'node:vm';
+import { build } from 'esbuild';
+
+const bundle = await build({
+  stdin: {
+    contents:
+      "export * as webpack from './src/app/slack/webpack.ts'; export * as redux from './src/app/slack/redux.ts';",
+    resolveDir: process.cwd(),
+    loader: 'ts',
+  },
+  bundle: true,
+  write: false,
+  platform: 'node',
+  format: 'iife',
+  globalName: 'Patching',
+});
+
+function fixture() {
+  const context = createContext({
+    console,
+    EventTarget,
+    Event,
+    setTimeout,
+    clearTimeout,
+    queueMicrotask,
+    requestAnimationFrame: (callback: () => void) => setTimeout(callback, 0),
+    document: { querySelector: () => null },
+  });
+  runInContext(bundle.outputFiles[0]!.text, context);
+  const { redux, webpack } = context.Patching;
+  webpack.installWebpackHooks();
+  function createStore(initialState: any) {
+    let state = initialState;
+    return {
+      getState: () => state,
+      dispatch(action: any) {
+        if (action.type === 'replace') state = action.value;
+        return action;
+      },
+      subscribe: () => () => {},
+    };
+  }
+  context.rspackChunkGantryV2.push([
+    [1],
+    {
+      stores(module: any) {
+        module.exports = { createStore };
+      },
+    },
+  ]);
+  const module: any = { exports: {} };
+  context.rspackChunkGantryV2[0][1].stores(module, module.exports, () => ({}));
+  return { redux, webpack, context, createStore: module.exports.createStore as typeof createStore };
+}
+
+test('state patches memoize per store, invalidate all stores on refresh and never mutate raw state', () => {
+  const { redux, createStore } = fixture();
+  const rawA = { count: 1 };
+  const rawB = { count: 2 };
+  const a = createStore(rawA);
+  const b = createStore(rawB);
+  let calls = 0;
+  let increment = 10;
+  const remove = redux.patchState((state: any) => {
+    calls++;
+    return { ...state, count: state.count + increment };
+  });
+  const patchedA = a.getState();
+  const patchedB = b.getState();
+  assert.equal(a.getState(), patchedA);
+  assert.equal(b.getState(), patchedB);
+  assert.equal(calls, 2);
+
+  increment = 20;
+  redux.refresh();
+  const refreshedA = a.getState();
+  const refreshedB = b.getState();
+  assert.notEqual(refreshedA, patchedA);
+  assert.notEqual(refreshedB, patchedB);
+  assert.equal(refreshedA.count, 21);
+  assert.equal(refreshedB.count, 22);
+  assert.equal(calls, 4);
+  assert.deepEqual(rawA, { count: 1 });
+  assert.deepEqual(rawB, { count: 2 });
+
+  const replacement = { count: 3 };
+  a.dispatch({ type: 'replace', value: replacement });
+  assert.equal(a.getState().count, 23);
+  assert.equal(b.getState(), refreshedB);
+  assert.equal(calls, 5);
+  remove();
+  assert.equal(a.getState(), replacement);
+  assert.equal(b.getState(), rawB);
+  assert.equal(calls, 5);
+});
+
+test('stores sharing one raw state keep separate patch results and handle undefined states', () => {
+  const { redux, createStore } = fixture();
+  const shared = {};
+  const a = createStore(shared);
+  const b = createStore(shared);
+  const empty = createStore(undefined);
+  const remove = redux.patchState((raw: unknown) => ({ raw }));
+  assert.notEqual(a.getState(), b.getState());
+  assert.equal(empty.getState().raw, undefined);
+  assert.equal(empty.getState(), empty.getState());
+  remove();
+  assert.equal(empty.getState(), undefined);
+});
+
+test('legacy_createStore stores are patched before Slack copies them and refresh reaches batched listeners', async () => {
+  const { redux, context } = fixture();
+  const raw = { count: 1 };
+  const batched = new Set<() => void>();
+  function legacy_createStore() {
+    return {
+      getState: () => raw,
+      dispatch: (action: any) => action,
+      subscribe(listener: () => void) {
+        batched.add(listener);
+        return () => batched.delete(listener);
+      },
+      subscribeImmediate: () => () => {},
+    };
+  }
+  context.rspackChunkGantryV2.push([
+    [2],
+    {
+      redux(module: any) {
+        module.exports = { Yl: legacy_createStore };
+      },
+    },
+  ]);
+  const module: any = { exports: {} };
+  context.rspackChunkGantryV2[1][1].redux(module, module.exports, () => ({}));
+  const store = module.exports.Yl();
+  const copy = { ...store };
+
+  let calls = 0;
+  const unsubscribe = copy.subscribe(() => calls++);
+  assert.equal(batched.size, 1);
+  const remove = redux.patchState((state: any) => ({ ...state, count: state.count + 1 }));
+  assert.equal(copy.getState().count, 2);
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  assert.equal(calls, 1);
+
+  unsubscribe();
+  assert.equal(batched.size, 0);
+  remove();
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  assert.equal(calls, 1);
+  assert.equal(copy.getState(), raw);
+});
+
+test('late-injected clients discover existing named thunks, cache them and apply patches once', () => {
+  const { redux, context } = fixture();
+  let reads = 0;
+  const creator = Object.assign((value: string) => value, { meta: { name: 'lateNavigate' } });
+  context.rspackChunkGantryV2.push([
+    [2],
+    {
+      late(module: any) {
+        module.exports = Object.defineProperty({}, 'minified', {
+          enumerable: true,
+          get() {
+            reads++;
+            return creator;
+          },
+        });
+      },
+    },
+  ]);
+  const module: any = { exports: {} };
+  context.rspackChunkGantryV2[1][1].late(module, module.exports, () => ({}));
+  const remove = redux.patchThunk('lateNavigate', (original: any) => (value: string) => original(value + '!'));
+  const found = redux.getThunkCreator('lateNavigate');
+  assert.equal(found('thread'), 'thread!');
+  const afterLookup = reads;
+  assert.equal(redux.getThunkCreator('lateNavigate'), found);
+  assert.equal(reads, afterLookup);
+  remove();
+  assert.equal(found('thread'), 'thread');
+});
+
+test('discovering late metadata resolves a caller already waiting for its thunk', async () => {
+  const { redux, context } = fixture();
+  const creator: any = () => 'ready';
+  context.rspackChunkGantryV2.push([
+    [2],
+    {
+      late(module: any) {
+        module.exports = { creator };
+      },
+    },
+  ]);
+  const module: any = { exports: {} };
+  context.rspackChunkGantryV2[1][1].late(module, module.exports, () => ({}));
+  const waiting = redux.waitForThunkCreator('lateMetadata');
+  creator.meta = { name: 'lateMetadata' };
+  const found = redux.getThunkCreator('lateMetadata');
+  assert.equal(await waiting, found);
+  assert.equal(found(), 'ready');
+});

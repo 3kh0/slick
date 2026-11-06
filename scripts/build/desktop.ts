@@ -2,11 +2,12 @@
 
 import { copyFile, mkdir, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { build } from 'esbuild';
+import { build, type Metafile } from 'esbuild';
 import { mainHalvesModule, slickSharedAlias } from '../lib/plugin.ts';
 import { DESKTOP, DIST_DESKTOP, MONACO, ROOT, SLICK_JS, SRC } from '../lib/paths.ts';
 import { versions } from '../lib/versions.ts';
 import { buildApp } from './app.ts';
+import { HOT_DIR } from './hot.ts';
 
 const define = {
   __SLICK_VERSION__: JSON.stringify(versions.version),
@@ -22,13 +23,12 @@ const entries = [
 ] as const;
 
 // The Monaco 0.57 files a CSS editor actually loads; the full min/vs is ~25 MB.
+// editor.main requires every *.worker-* stub, but only fetches the css and
+// editor workers behind them, so the 8 MB ts/html/json workers are left out.
 const MONACO_CSS_FILES = [
   'assets/css.worker-BpD9FCKP.js',
   'assets/editor.worker-_vAIFJDs.js',
   'assets/editorWebWorkerMain-DEgFqX2K.js',
-  'assets/html.worker-CLuInTTy.js',
-  'assets/json.worker-Csf_TLih.js',
-  'assets/ts.worker-g3pjEjl4.js',
   'basic-languages/monaco.contribution.js',
   'css-CaeNmE3S.js',
   'css.worker-BInK4lsP.js',
@@ -53,17 +53,27 @@ const MONACO_CSS_FILES = [
   'workers-BeMslOxK.js',
 ] as const;
 
-export async function buildDesktop({ debug = false } = {}) {
-  await buildApp({ debug });
+/** Builds slick.js and stages it where the desktop app serves it from. */
+export async function stageApp({ debug = false, hot = false } = {}): Promise<Metafile> {
+  const { metafile } = await buildApp({ debug, hot });
+  // Served over slick://; session.ts resolves it relative to this dir in dev.
+  await copyFile(SLICK_JS, path.join(DIST_DESKTOP, 'slick.js'));
+  return metafile;
+}
+
+export async function buildDesktop({ debug = false, hot = false } = {}) {
   await mkdir(DIST_DESKTOP, { recursive: true });
+  await rm(HOT_DIR, { recursive: true, force: true });
+  const app = await stageApp({ debug, hot });
 
   // Main halves are fixed at build time via a generated module, so nothing
   // dropped into a plugins directory later gains Node access.
   const generated = path.join(SRC, 'desktop', 'mainPlugins.generated.ts');
   await writeFile(generated, mainHalvesModule());
 
+  const main: Metafile[] = [];
   for (const { entry, out, format } of entries) {
-    await build({
+    const result = await build({
       entryPoints: [path.join(DESKTOP, entry)],
       absWorkingDir: ROOT,
       outfile: path.join(DIST_DESKTOP, out),
@@ -83,12 +93,17 @@ export async function buildDesktop({ debug = false } = {}) {
       loader: { '.woff2': 'dataurl' },
       plugins: [slickSharedAlias],
       define,
+      metafile: true,
     });
+    main.push(result.metafile);
     console.log(`[build:desktop] ${out}`);
   }
 
-  // Served over slick://; session.ts resolves them relative to this dir in dev.
-  await copyFile(SLICK_JS, path.join(DIST_DESKTOP, 'slick.js'));
+  const haikuLicenses = path.join(DIST_DESKTOP, 'licenses/HaikuWarning');
+  await mkdir(haikuLicenses, { recursive: true });
+  for (const notice of ['DICTIONARY-NOTICE.txt', 'CMUDICT-LICENSE.txt']) {
+    await copyFile(path.join(ROOT, 'src/plugins/HaikuWarning', notice), path.join(haikuLicenses, notice));
+  }
 
   const monacoStage = path.join(DIST_DESKTOP, 'monaco', 'vs');
   await rm(path.dirname(monacoStage), { recursive: true, force: true });
@@ -104,5 +119,5 @@ export async function buildDesktop({ debug = false } = {}) {
   );
 
   console.log(`[build:desktop] staged ${DIST_DESKTOP}`);
-  return DIST_DESKTOP;
+  return { app, main };
 }

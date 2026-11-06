@@ -1,14 +1,5 @@
 import { SlickPlugin } from '$slick';
-import {
-  Favorites,
-  filterFavorites,
-  fromGiphyProps,
-  gifKey,
-  searchTenor,
-  topTenor,
-  toSlackPayload,
-  type Gif,
-} from './gifs.ts';
+import { Favorites, filterFavorites, fromGiphyProps, gifKey, parseGifs, toSlackPayload, type Gif } from './gifs.ts';
 import * as meta from './meta.ts';
 
 export type PickerProps = {
@@ -16,6 +7,9 @@ export type PickerProps = {
   onClosed?: (event: React.MouseEvent) => void;
   emojiSearchQuery?: string;
 };
+
+type FocusSearchProps = { input: React.RefObject<HTMLInputElement | null> };
+type FocusTransitionListener = (key: string, listener: () => void) => void;
 
 export function isGifPicker(component: unknown): boolean {
   if (typeof component !== 'function' || component.length !== 1) return false;
@@ -25,17 +19,23 @@ export function isGifPicker(component: unknown): boolean {
   );
 }
 
+function providerOf(value: unknown): 'tenor' | 'giphy' | 'klipy' {
+  return value === 'giphy' || value === 'klipy' ? value : 'tenor';
+}
+
 export default class BetterGifs extends SlickPlugin<typeof meta.settings> {
+  static readonly requiredAPIs = ['elements'] as const;
   static readonly id = meta.id;
   static readonly pluginName = meta.pluginName;
   static readonly description = meta.description;
+  static readonly category = meta.category;
   static readonly defaultEnabled = meta.defaultEnabled;
   static readonly settings = meta.settings;
   static readonly liveSettings = ['provider', 'defaultView'];
 
   private readonly gifs = new this.api.Store<Gif[]>([]);
   private readonly error = new this.api.Store('');
-  private readonly provider = new this.api.Store(this.config.provider === 'giphy' ? 'giphy' : 'tenor');
+  private readonly provider = new this.api.Store(providerOf(this.config.provider));
   private readonly favorites = new Favorites(this.api.storage, (gifs) => {
     if (!this.api.signal.aborted) this.gifs.set(gifs);
   });
@@ -43,18 +43,20 @@ export default class BetterGifs extends SlickPlugin<typeof meta.settings> {
   private readonly inflight = new Map<string, Promise<Gif[]>>();
 
   private search(query: string): Promise<Gif[]> {
-    const key = query.trim().replace(/\s+/g, ' ');
+    const klipy = this.config.provider === 'klipy';
+    const text = query.trim().replace(/\s+/g, ' ');
+    const key = (klipy ? 'klipy:' : '') + text;
     const cached = this.searches.get(key);
     if (cached && cached.expires > Date.now()) return Promise.resolve(cached.results);
     const pending = this.inflight.get(key);
     if (pending) return pending;
-    // Bridge fetches cannot carry AbortSignals. Bound UI waiting and ignore results
-    // after unmount/teardown; the underlying request may still finish in the host.
     let timer: ReturnType<typeof setTimeout>;
     const timeout = new Promise<never>((_, reject) => {
       timer = setTimeout(() => reject(new Error('GIF search timed out. Try again.')), 12_000);
     });
-    const request = Promise.race([key ? searchTenor(this.api.fetch, query) : topTenor(this.api.fetch), timeout])
+    const lookup = this.api.main.call('search', klipy ? 'klipy' : 'tenor', text ? query : '');
+    const request = Promise.race([lookup, timeout])
+      .then(parseGifs)
       .then((results) => {
         if (!this.api.signal.aborted) {
           this.searches.delete(key);
@@ -143,8 +145,9 @@ export default class BetterGifs extends SlickPlugin<typeof meta.settings> {
 
   private readonly Picker = ({
     original: Original,
+    focusSearch: FocusSearch,
     ...props
-  }: PickerProps & { original: React.ComponentType<any> }) => {
+  }: PickerProps & { original: React.ComponentType<any>; focusSearch: React.ComponentType<FocusSearchProps> }) => {
     const provider = this.provider.use();
     const favorites = this.gifs.use();
     const favoriteError = this.error.use();
@@ -156,19 +159,19 @@ export default class BetterGifs extends SlickPlugin<typeof meta.settings> {
     const [favoriteQuery, setFavoriteQuery] = React.useState('');
     const [retry, setRetry] = React.useState(0);
     const [results, setResults] = React.useState<Gif[]>([]);
-    const [loading, setLoading] = React.useState(provider === 'tenor' && view === 'search');
+    const [loading, setLoading] = React.useState(provider !== 'giphy' && view === 'search');
     const [searchError, setSearchError] = React.useState('');
     const input = React.useRef<HTMLInputElement>(null);
 
     React.useEffect(() => {
-      if (provider === 'tenor' || view === 'favorites') input.current?.focus();
+      if (provider !== 'giphy' || view === 'favorites') input.current?.focus();
     }, [provider, view]);
 
     React.useEffect(() => {
       let active = true;
       setResults([]);
       setSearchError('');
-      const shouldSearch = provider === 'tenor' && view === 'search' && canSelect;
+      const shouldSearch = provider !== 'giphy' && view === 'search' && canSelect;
       setLoading(shouldSearch);
       if (!shouldSearch) return;
       const timer = setTimeout(
@@ -182,7 +185,11 @@ export default class BetterGifs extends SlickPlugin<typeof meta.settings> {
             },
             (error: unknown) => {
               if (active && !this.api.signal.aborted) {
-                setSearchError(error instanceof Error ? error.message : 'Could not search Tenor.');
+                setSearchError(
+                  error instanceof Error
+                    ? error.message
+                    : `Could not search ${provider === 'klipy' ? 'KLIPY' : 'Tenor'}.`,
+                );
                 setLoading(false);
               }
             },
@@ -208,6 +215,7 @@ export default class BetterGifs extends SlickPlugin<typeof meta.settings> {
       }
     };
     const shown = view === 'favorites' ? filterFavorites(favorites, favoriteQuery) : results;
+    const name = provider === 'klipy' ? 'KLIPY' : 'Tenor';
     const native = provider === 'giphy' && view === 'search';
     const status =
       view === 'favorites'
@@ -218,7 +226,7 @@ export default class BetterGifs extends SlickPlugin<typeof meta.settings> {
             : ''
         : loading
           ? query.trim()
-            ? 'Searching Tenor…'
+            ? `Searching ${name}…`
             : 'Loading top GIFs…'
           : !results.length && !searchError
             ? query.trim()
@@ -243,6 +251,7 @@ export default class BetterGifs extends SlickPlugin<typeof meta.settings> {
               }}
             >
               <option value="tenor">Tenor</option>
+              <option value="klipy">KLIPY</option>
               <option value="giphy">Giphy</option>
             </select>
           </label>
@@ -272,13 +281,14 @@ export default class BetterGifs extends SlickPlugin<typeof meta.settings> {
           <Original {...props} />
         ) : (
           <>
+            <FocusSearch input={input} />
             <header className="p-gif_picker__header">
               <input
                 ref={input}
                 type="search"
                 className="c-input_text"
-                aria-label={view === 'favorites' ? 'Search favorite GIFs' : 'Search GIFs on Tenor'}
-                placeholder={view === 'favorites' ? 'Search favorites' : 'Search GIFs on Tenor'}
+                aria-label={view === 'favorites' ? 'Search favorite GIFs' : `Search GIFs on ${name}`}
+                placeholder={view === 'favorites' ? 'Search favorites' : `Search GIFs on ${name}`}
                 value={view === 'favorites' ? favoriteQuery : query}
                 maxLength={100}
                 onChange={(event) => {
@@ -360,10 +370,14 @@ export default class BetterGifs extends SlickPlugin<typeof meta.settings> {
             {view === 'search' && (
               <footer className="slick-bg__footer">
                 GIFs via{' '}
-                <a href="https://tenor.com" target="_blank" rel="noreferrer">
-                  Tenor
-                </a>{' '}
-                · Results via tenor-proxy.vercel.app
+                <a
+                  href={provider === 'klipy' ? 'https://klipy.com' : 'https://tenor.com'}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  {name}
+                </a>
+                {provider === 'tenor' && ' · Results via tenor-proxy.vercel.app'}
               </footer>
             )}
           </>
@@ -412,9 +426,20 @@ export default class BetterGifs extends SlickPlugin<typeof meta.settings> {
     void this.favorites.load().catch(() => {
       if (!this.api.signal.aborted) this.error.set('Could not load favorites. Try reopening the picker.');
     });
-    this.api.patchComponent<PickerProps>({ filter: isGifPicker }, (Original) => (props) => (
-      <this.Picker {...props} original={Original as React.ComponentType<any>} />
-    ));
+    this.api.patchComponent<PickerProps>({ filter: isGifPicker }, (Original) => {
+      // Resolve when Slack first renders the picker, after its lazy chunk has loaded.
+      // /gif requests this focus transition after the composer finishes opening it.
+      const useFocusTransitionListener = this.api.getExport<FocusTransitionListener>(
+        (value) => typeof value === 'function' && value.name === 'useFocusTransitionListener',
+      );
+      const FocusSearch = ({ input }: FocusSearchProps) => {
+        useFocusTransitionListener?.('gif-picker-input', () => input.current?.focus());
+        return null;
+      };
+      return (props) => (
+        <this.Picker {...props} original={Original as React.ComponentType<any>} focusSearch={FocusSearch} />
+      );
+    });
     this.api.patchComponent<Record<string, unknown>>('GifListItem', (Original) => (props) => {
       const gif = fromGiphyProps(props);
       return gif ? (
@@ -429,7 +454,8 @@ export default class BetterGifs extends SlickPlugin<typeof meta.settings> {
   }
 
   onSettingsChange() {
-    this.provider.set(this.config.provider === 'giphy' ? 'giphy' : 'tenor');
+    this.provider.set(providerOf(this.config.provider));
+    this.searches.clear();
   }
 
   stop() {

@@ -10,6 +10,7 @@ import {
   historyKeyThread,
   inHistory,
   sliceCovers,
+  withLiveThread,
   withTimestamps,
   type ChannelHistory,
   type HistorySlice,
@@ -173,7 +174,10 @@ export function injectMessages(getMessages: () => Iterable<SlackMessage>): () =>
       if (!injected?.size) return bucket;
       return mapEntries<SlackMessage>(
         bucket ?? {},
-        (ts, msg) => injected.get(ts) ?? msg,
+        (ts, msg) => {
+          const restored = injected.get(ts);
+          return restored ? withLiveThread(restored, msg) : msg;
+        },
         () => injected.keys(),
       );
     },
@@ -188,9 +192,10 @@ export function injectMessages(getMessages: () => Iterable<SlackMessage>): () =>
       return entry;
     }
     const thread = historyKeyThread(key);
-    const added = [...injected.values()].filter((msg) => inHistory(msg, thread)).map((msg) => msg.ts as string);
-    if (!added.length) return entry;
-    const next = withTimestamps(entry, added);
+    const added: string[] = [];
+    const excluded: string[] = [];
+    for (const msg of injected.values()) (inHistory(msg, thread) ? added : excluded).push(msg.ts as string);
+    const next = withTimestamps(entry, added, excluded);
     diagnoseHistory(entry, added, next);
     return next === entry.slices ? entry : { ...entry, slices: next };
   });
@@ -226,10 +231,14 @@ export const messagesReady = (async () => {
   }
 
   function useMessageBot(msg: SlackMessage | undefined): SlackBot | undefined {
-    const botId = useReduxState(() => getMessageBotId(asRawMessage(msg)));
-    const stored = useReduxState<SlackBot | undefined>((state) => (botId ? state.bots?.[botId] : undefined));
-    if (!botId) return undefined;
-    return stored ?? asRawMessage(msg)?.bot_profile ?? { id: botId };
+    const bot = useReduxState<SlackBot | string | undefined>((state) => {
+      const raw = asRawMessage(msg);
+      const botId = getMessageBotId(raw);
+      return botId ? (state.bots?.[botId] ?? raw?.bot_profile ?? botId) : undefined;
+    });
+    // Keep the fallback primitive in the snapshot: a new object there would
+    // make useSyncExternalStore see a change on every read.
+    return typeof bot === 'string' ? { id: bot } : bot;
   }
 
   return {

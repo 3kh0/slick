@@ -1,0 +1,61 @@
+body {
+  min-height: 100vh;
+}
+.account-manager {
+  max-width: 720px;
+  margin: 40px auto;
+  padding: 24px;
+  line-height: 1.5;
+}
+.account-manager h1 {
+  font-size: 26px;
+  margin: 20px 0 12px;
+}
+.account-manager h2 {
+  font-size: 18px;
+  margin: 28px 0 12px;
+}
+.account-manager p {
+  margin-bottom: 16px;
+}
+.account-manager a {
+  color: #b6a1f8;
+}
+.account-manager fieldset {
+  border: 1px solid #555;
+  border-radius: 8px;
+  padding: 16px;
+  margin-top: 20px;
+}
+.account-manager .input {
+  margin: 8px 0;
+  width: 100%;
+}
+.account-manager .actions {
+  flex-wrap: wrap;
+}
+.account-list {
+  list-style: none;
+  padding: 0;
+}
+.account-list li {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 12px 0;
+  border-bottom: 1px solid #444;
+}
+.account-list li > span {
+  flex: 1;
+  min-width: 180px;
+}
+#account-status {
+  padding: 12px;
+  border-radius: 6px;
+  background: #292333;
+}
+#account-enable,
+#account-recover {
+  margin-bottom: 12px;
+}

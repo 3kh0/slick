@@ -26,7 +26,11 @@ export function streamerCss(options: StreamerCss): string {
     '.p-channel_sidebar__channel:is([data-qa-channel-sidebar-channel-type="private"], [data-qa-channel-sidebar-channel-type="mpim"]):not([data-qa-channel-sidebar-channel-is-selected="true"])';
   const activityRow = '[data-qa="activity-item-container"]';
   const preview = '[data-qa="activity-item-message"]';
-  const destination = '.p-activity_row_content__destination_tag';
+  const destination =
+    ':is(.p-activity_row_content__destination_tag, [class*="activity_single_line_row_content__location__"])';
+  const timestamp = '[class*="activity_single_line_row_content__timestamp__"]';
+  const activityUser = '[class*="activity_single_line_row_content__user__"]';
+  const activityDm = `${activityRow}:is(:has([data-qa="direct-messages"]), :has(${destination}):not(:has(${destination} .c-inline_channel_entity)))`;
   const privateDestination = `${destination}:has(${lock})`;
   const groupDestination = `${destination}:not(:has(.c-inline_channel_entity))`;
   const dmsRow = '[data-qa="dms_channel"]:not(:has(.p-activity_ia4_page__item--selected))';
@@ -40,7 +44,12 @@ export function streamerCss(options: StreamerCss): string {
   // Whose DM it is, as opposed to what it says. Only redacted on 'all'.
   const identity =
     options.dmPreviewBlur === 'all'
-      ? [`${root} ${senderName}`, `${root} ${activityRow} :is(${privateDestination}, ${groupDestination})`]
+      ? [
+          `${root} ${senderName}`,
+          `${root} ${activityRow} :is(${privateDestination}, ${groupDestination})`,
+          `${root} ${activityDm} ${activityUser}`,
+          `${root} .slick-chat-tabs [data-chat-type="dm"]`,
+        ]
       : [];
 
   const names = options.privateChannelNames
@@ -48,28 +57,33 @@ export function streamerCss(options: StreamerCss): string {
         `${root} ${sidebarRow} .p-channel_sidebar__name`,
         `${root} ${mention}`,
         `${root} ${suggestion} ${suggestionText}`,
+        `${root} ${activityRow} ${privateDestination}`,
+        `${root} .slick-chat-tabs [data-chat-type="private"]`,
       ]
     : [];
 
   const blurred = [
     ...names,
     ...identity,
-    `${root} ${activityRow}:has(${lock}) ${preview}`,
-    `${root} ${activityRow}:has([data-qa="direct-messages"]) ${preview}`,
+    `${root} ${activityRow}:has(${lock}) :is(${preview}, ${timestamp})`,
+    `${root} ${activityDm} :is(${preview}, ${timestamp})`,
     `${root} ${dmsRow} ${preview}`,
     `${root} .p-threads_view ${threadBody}`,
   ];
 
   // Hovering a row reveals it, so the client stays usable while redacted.
-  const inRow = `:is(${preview}, ${destination}, [data-qa="dms-channel-sender-name"])`;
+  const inRow = `:is(${preview}, ${destination}, ${timestamp}, ${activityUser}, [data-qa="dms-channel-sender-name"])`;
   const revealed = [
     `${root} ${sidebarRow}:hover .p-channel_sidebar__name`,
     `${root} .c-inline_channel_entity:hover .c-channel_entity__name`,
     `${root} ${activityRow}:hover ${inRow}`,
+    `${root} ${activityDm}:hover ${inRow}`,
     `${root} ${dmsRow}:hover ${inRow}`,
     `${root} .${REVEAL_CLASS} ${threadBody}`,
     `${root} .${REVEAL_CLASS} ${mention}`,
     `${root} ${suggestion}:hover ${suggestionText}`,
+    `${root} .slick-chat-tabs__tab:hover [data-chat-type]`,
+    `${root} .slick-chat-tabs__results > button:hover [data-chat-type]`,
   ];
 
   const vip = options.vipStatus

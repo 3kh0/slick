@@ -4,8 +4,10 @@
 // styles. React patches already apply, since the opener's React renders them.
 
 import { patchExportFunction } from './webpack.ts';
+import { installChildWindowQuill } from './childWindowQuill.ts';
 
 const documents = new Set<Document>();
+const transparentWindows = new WeakSet<Window>();
 const listeners = new Set<(doc: Document) => void>();
 
 function notify(listener: (doc: Document) => void, doc: Document) {
@@ -36,7 +38,9 @@ export function onChildWindow(listener: (doc: Document) => void): () => void {
 
 function register(doc: Document): void {
   if (!doc || doc === document || documents.has(doc)) return;
+  if (doc.defaultView && transparentWindows.has(doc.defaultView)) return;
   documents.add(doc);
+  installChildWindowQuill(doc);
   doc.defaultView?.addEventListener('pagehide', () => documents.delete(doc), { once: true });
   for (const listener of listeners) notify(listener, doc);
 }
@@ -86,7 +90,11 @@ export function installChildWindows(): void {
   const open = window.open.bind(window);
   window.open = function slickOpen(...args: Parameters<Window['open']>) {
     const child = open(...args);
-    if (child) void adopt(child);
+    if (child) {
+      if (/(?:^|,)\s*transparent\s*=\s*(?:yes|true|1)\s*(?:,|$)/i.test(args[2] ?? '')) {
+        transparentWindows.add(child);
+      } else void adopt(child);
+    }
     return child;
   };
 }

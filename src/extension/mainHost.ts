@@ -8,6 +8,7 @@
 import type { Capability, MainCtx, SlickMainPlugin } from '../shared/main.ts';
 import { resolveSettings, type PluginSettings, type SettingsSchema } from '../shared/settings.ts';
 import { record, type StorageArea } from './rpc.ts';
+import { serialQueue } from '../shared/queue.ts';
 
 export const SLACK_INITIATORS = ['app.slack.com'];
 export const MAIN_STORAGE_PREFIX = 'slick:firefox:main:';
@@ -57,7 +58,7 @@ export type Dnr = {
   updateSessionRules(options: { addRules?: Rule[]; removeRuleIds?: number[] }): Promise<void>;
 };
 
-/** `*://*.host/path*` → a urlFilter. `||host` already covers subdomains. */
+/** `*://*.host/path*` > a urlFilter. `||host` already covers subdomains. */
 export function patternToFilter(pattern: string): string {
   const match = /^(?:\*|https?):\/\/(?:\*\.)?([a-z0-9.-]+)(\/[^*]*)\*$/i.exec(pattern);
   if (!match) throw new Error(`unsupported match pattern: ${pattern}`);
@@ -77,7 +78,8 @@ function createRules(dnr: Dnr | undefined) {
     if (!dnr) return queue;
     queue = queue
       .then(async () => {
-        const existing = (await dnr.getSessionRules()).map((rule) => rule.id);
+        // block out any ids north of this
+        const existing = (await dnr.getSessionRules()).filter((rule) => rule.id < 1_000_000).map((rule) => rule.id);
         const excludedTabIds = exempt.size ? [...exempt] : undefined;
         const addRules = [...rules].map(([id, rule]) => ({
           id,
@@ -104,10 +106,10 @@ function createRules(dnr: Dnr | undefined) {
     },
     /** Safe-mode and bypassed tabs load Slack without Slick's request rules. */
     setExempt(tabId: number, isExempt: boolean) {
-      if (isExempt === exempt.has(tabId)) return;
+      if (isExempt === exempt.has(tabId)) return queue;
       if (isExempt) exempt.add(tabId);
       else exempt.delete(tabId);
-      void sync();
+      return sync();
     },
     /** Rules from a previous (suspended) instance of the event page. */
     reset: sync,
@@ -116,22 +118,19 @@ function createRules(dnr: Dnr | undefined) {
 
 function createStorage(area: StorageArea, id: string): MainCtx['storage'] {
   const key = MAIN_STORAGE_PREFIX + id;
-  let tail: Promise<unknown> = Promise.resolve();
+  const enqueue = serialQueue();
   const load = async (): Promise<Record<string, string>> => {
     const stored = (await area.get(key))[key];
     return Object.assign(Object.create(null), record(stored) ? stored : {});
   };
-  const mutate = (change: (blobs: Record<string, string>) => void) => {
-    const run = tail.then(async () => {
+  const mutate = (change: (blobs: Record<string, string>) => void) =>
+    enqueue(async () => {
       const blobs = await load();
       change(blobs);
       if (JSON.stringify(blobs).length > MAIN_STORAGE_MAX) throw new Error(`${id} storage quota exceeded`);
       await area.set({ [key]: blobs });
       return true;
     });
-    tail = run.catch(() => {});
-    return run;
-  };
   return {
     list: async () => Object.keys(await load()),
     readAll: async (prefix = '') =>
@@ -152,7 +151,15 @@ type Entry = BackgroundPlugin & {
   queue: Promise<void>;
 };
 
-export function createMainHost(area: StorageArea, dnr: Dnr | undefined, plugins: BackgroundPlugin[]) {
+export function createMainHost(
+  area: StorageArea,
+  dnr: Dnr | undefined,
+  plugins: BackgroundPlugin[],
+  fetcher: BrowserNet['fetch'] = async (url, init) => {
+    const response = await fetch(url, init);
+    return { status: response.status, body: await response.text() };
+  },
+) {
   const rules = createRules(dnr);
   const entries = new Map<string, Entry>();
   let globallyEnabled = true;
@@ -164,7 +171,7 @@ export function createMainHost(area: StorageArea, dnr: Dnr | undefined, plugins:
         throw new Error(`[slick] ${plugin.id} used "${capability}" without declaring it`);
     };
     const unavailable = (name: string) => () => {
-      throw new Error(`[slick] ${plugin.id}: ctx.${name} is unavailable in Firefox; add a browser.ts`);
+      throw new Error(`[slick] ${plugin.id}: ctx.${name} is unavailable in the browser extension; add a browser.ts`);
     };
     const entry = {
       ...definition,
@@ -214,8 +221,7 @@ export function createMainHost(area: StorageArea, dnr: Dnr | undefined, plugins:
         },
         async fetch(url, init) {
           need('net');
-          const response = await fetch(url, init);
-          return { status: response.status, body: await response.text() };
+          return fetcher(url, init);
         },
       },
     };
@@ -289,10 +295,11 @@ export function createMainHost(area: StorageArea, dnr: Dnr | undefined, plugins:
       globallyEnabled = config.enabled !== false;
       for (const entry of entries.values()) {
         const own = saved[entry.plugin.id];
+        const previous = JSON.stringify(entry.settings);
         entry.settings = resolveSettings(entry.schema, entry.defaultEnabled, record(own) ? own : undefined);
         // Compared with what's running, not the last settings: nothing runs before the first update.
         if (active(entry) !== entry.running) void reconcile(entry);
-        else if (active(entry) && entry.running)
+        else if (active(entry) && entry.running && JSON.stringify(entry.settings) !== previous)
           for (const listener of entry.listeners) {
             try {
               listener(entry.settings);

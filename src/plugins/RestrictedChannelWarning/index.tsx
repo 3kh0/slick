@@ -5,9 +5,11 @@ import * as meta from './meta.ts';
 type RoadblockProps = { channelId?: string; roadblockMessage?: React.ReactNode; allowWrap?: boolean };
 
 export default class RestrictedChannelWarning extends SlickPlugin<typeof meta.settings> {
+  static readonly requiredAPIs = ['elements', 'members', 'redux'] as const;
   static readonly id = meta.id;
   static readonly pluginName = meta.pluginName;
   static readonly description = meta.description;
+  static readonly category = meta.category;
   static readonly defaultEnabled = meta.defaultEnabled;
   static readonly settings = meta.settings;
 

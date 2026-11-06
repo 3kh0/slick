@@ -19,16 +19,20 @@ const REPAINT_DEBOUNCE_MS = 100;
 type SearchResult = { messages?: RelayedMessage[] };
 
 export default class ShowRealUser extends SlickPlugin<typeof meta.settings> {
+  static readonly requiredAPIs = ['members', 'messages', 'redux'] as const;
   static readonly id = meta.id;
   static readonly pluginName = meta.pluginName;
   static readonly description = meta.description;
+  static readonly category = meta.category;
   static readonly defaultEnabled = meta.defaultEnabled;
   static readonly settings = meta.settings;
 
   /** `channel:ts` -> sender, or null once the bot is known to name none. */
   private senders = this.api.Cache<string | null>('relay_senders', SENDER_TTL_MS);
   private failed = new Set<string>();
+  private pending = new Set<string>();
   private repaintTimer: ReturnType<typeof setTimeout> | null = null;
+  private stopped = false;
 
   private relay(msg: RelayedMessage | undefined) {
     return msg?.bot_id ? RELAY_BOTS[msg.bot_id] : undefined;
@@ -42,14 +46,17 @@ export default class ShowRealUser extends SlickPlugin<typeof meta.settings> {
     const key = `${channel}:${ts}`;
     const known = this.senders.peek(key);
     if (known !== undefined) return known ?? undefined;
-    if (!this.failed.has(key)) void this.lookUp(key);
+    if (!this.stopped && !this.api.signal.aborted && !this.failed.has(key) && !this.pending.has(key))
+      void this.lookUp(key);
     return undefined;
   }
 
   private async lookUp(key: string) {
+    this.pending.add(key);
     const [channel, ts] = key.split(':');
     try {
-      // The cache dedups in-flight lookups, so a repeat read costs nothing.
+      // The cache deduplicates fetching; pending also deduplicates this
+      // continuation and its repaint debounce while the lookup settles.
       await this.senders.get(key, async () => {
         const response = await this.api.userAPI<{ messages?: RelayedMessage[] }>(
           'conversations.replies',
@@ -64,8 +71,11 @@ export default class ShowRealUser extends SlickPlugin<typeof meta.settings> {
       this.failed.add(key);
       this.log('could not look up sender for', key, error);
       return;
+    } finally {
+      this.pending.delete(key);
     }
 
+    if (this.stopped || this.api.signal.aborted) return;
     if (this.repaintTimer) clearTimeout(this.repaintTimer);
     this.repaintTimer = setTimeout(() => {
       if (!this.api.signal.aborted) this.api.redux.refresh();
@@ -166,7 +176,9 @@ export default class ShowRealUser extends SlickPlugin<typeof meta.settings> {
   }
 
   stop() {
+    this.stopped = true;
     if (this.repaintTimer) clearTimeout(this.repaintTimer);
     this.repaintTimer = null;
+    this.pending.clear();
   }
 }

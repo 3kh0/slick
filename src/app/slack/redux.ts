@@ -3,12 +3,14 @@
 // restores the truth immediately.
 
 import { getFiberFromNode, reactReady } from './react.tsx';
-import { patchExportFunction, patchModuleExports } from './webpack.ts';
+import { getExport, patchExportFunction, patchModuleExports } from './webpack.ts';
+import { createThunkPatches } from './thunkPatches.ts';
 
 export type SlackStore = {
   getState(): any;
   dispatch(action: any): any;
   subscribe(cb: () => void): () => void;
+  subscribeImmediate?(cb: () => void): () => void;
 };
 
 export type StatePatch = (state: any) => any;
@@ -16,6 +18,10 @@ export type StatePatch = (state: any) => any;
 const statePatches = new Set<StatePatch>();
 /** Bumped whenever patches change, to invalidate every memo keyed on it. */
 let patchVersion = 0;
+type StateMemo = { raw: any; out: any; valid: boolean };
+// Weak records let refresh release outputs even for dormant stores without a
+// WeakMap lookup on every state read or retaining the stores themselves.
+const stateMemos = new Set<WeakRef<StateMemo>>();
 
 type WrappedGetState = (() => any) & { __slickWrapped?: true; __slickRawGetState?: () => any };
 
@@ -23,14 +29,16 @@ function wrapGetState(store: SlackStore): void {
   if ((store.getState as WrappedGetState).__slickWrapped) return;
 
   const rawGetState = store.getState.bind(store);
-  let cachedRaw: any;
-  let cachedVersion = -1;
-  let cachedOut: any;
+  const memo: StateMemo = { raw: undefined, out: undefined, valid: false };
+  // Prune on store creation too: dead records should not accumulate when no
+  // plugins change settings. Both cleanup paths run without a polling timer.
+  for (const ref of stateMemos) if (!ref.deref()) stateMemos.delete(ref);
+  stateMemos.add(new WeakRef(memo));
 
   const wrapped: WrappedGetState = () => {
     const raw = rawGetState();
     if (statePatches.size === 0) return raw;
-    if (raw === cachedRaw && cachedVersion === patchVersion) return cachedOut;
+    if (memo.valid && raw === memo.raw) return memo.out;
 
     let out = raw;
     for (const patch of statePatches) {
@@ -40,9 +48,9 @@ function wrapGetState(store: SlackStore): void {
         console.error('[slick] state patch threw:', error);
       }
     }
-    cachedRaw = raw;
-    cachedVersion = patchVersion;
-    cachedOut = out;
+    memo.raw = raw;
+    memo.out = out;
+    memo.valid = true;
     return out;
   };
 
@@ -51,11 +59,48 @@ function wrapGetState(store: SlackStore): void {
   store.getState = wrapped;
 }
 
-// Catch stores at creation, so patches are in place before Slack reads state.
-patchExportFunction('createStore', (originalCreateStore) => (...args: any[]) => {
+const batchedListeners = new Set<() => void>();
+let batchedNotify: number | undefined;
+
+type WrappedSubscribe = SlackStore['subscribe'] & { __slickWrapped?: true };
+
+// Slack batches `subscribe` and skips it when the raw state is unchanged, so
+// refresh calls those listeners itself.
+function wrapSubscribe(store: SlackStore): void {
+  const subscribe = store.subscribe as WrappedSubscribe;
+  if (subscribe.__slickWrapped || !store.subscribeImmediate || store.subscribeImmediate === subscribe) return;
+  const wrapped: WrappedSubscribe = (listener) => {
+    const entry = () => listener();
+    batchedListeners.add(entry);
+    const unsubscribe = subscribe(listener);
+    return () => {
+      batchedListeners.delete(entry);
+      unsubscribe();
+    };
+  };
+  wrapped.__slickWrapped = true;
+  store.subscribe = wrapped;
+}
+
+function notifyBatchedListeners(): void {
+  if (batchedNotify !== undefined || !batchedListeners.size) return;
+  batchedNotify = requestAnimationFrame(() => {
+    batchedNotify = undefined;
+    for (const listener of batchedListeners) {
+      try {
+        listener();
+      } catch {}
+    }
+  });
+}
+
+// Catch stores at creation, before Slack copies them, so every copy reads
+// patched state.
+patchExportFunction(['createStore', 'legacy_createStore'], (originalCreateStore) => (...args: any[]) => {
   const store = originalCreateStore(...args);
   try {
     wrapGetState(store);
+    wrapSubscribe(store);
   } catch {}
   // A new store may be about to replace the Provider's; look again next time.
   cachedStore = null;
@@ -70,15 +115,36 @@ export function getStore(): SlackStore | null {
   const start = document.querySelector('.p-client_container')?.firstElementChild;
   if (!start) return null;
 
+  const stores = providedStores(start);
+  const store = stores[0];
+  if (!store) return null;
+  // Userscripts can discover a Provider whose store predates injection, and a
+  // renamed createStore misses the hook; wrap every copy Slack renders from.
+  if (!(store.getState as WrappedGetState).__slickWrapped) {
+    console.warn('[slick] store was created before Slick saw it; wrapping its rendered copies');
+    for (const copy of stores) {
+      wrapGetState(copy);
+      wrapSubscribe(copy);
+    }
+  }
+  cachedStore = store;
+  return store;
+}
+
+function providedStores(start: Element): SlackStore[] {
+  const stores: SlackStore[] = [];
   for (let fiber = getFiberFromNode(start); fiber; fiber = fiber.return) {
     const value = fiber.memoizedProps?.value;
     const store = value?.store ?? value;
-    if (store && typeof store.getState === 'function' && typeof store.subscribe === 'function') {
-      cachedStore = store;
-      return store;
-    }
+    if (
+      store &&
+      typeof store.getState === 'function' &&
+      typeof store.subscribe === 'function' &&
+      !stores.includes(store)
+    )
+      stores.push(store);
   }
-  return null;
+  return stores;
 }
 
 const storeListeners = new Set<() => void>();
@@ -124,9 +190,19 @@ export const getPatchVersion = () => patchVersion;
  */
 export function refresh(): void {
   patchVersion++;
+  for (const ref of stateMemos) {
+    const memo = ref.deref();
+    if (!memo) {
+      stateMemos.delete(ref);
+      continue;
+    }
+    memo.raw = memo.out = undefined;
+    memo.valid = false;
+  }
   try {
     getStore()?.dispatch({ type: '@@slick/PATCH_STATE' });
   } catch {}
+  notifyBatchedListeners();
   for (const notify of patchListeners) {
     try {
       notify();
@@ -153,19 +229,20 @@ const hasOwn = (object: object, key: PropertyKey): boolean => typeof key !== 'sy
 export type MapEntry<T> = (key: string, entry: T | undefined) => T | undefined;
 
 type Memo = {
+  objects: WeakMap<object, { key: string; output: any; aliases?: Map<string, any> }>;
   cache: Map<string, { input: any; output: any }>;
   added: Set<string>;
   version: number;
+  failed: boolean;
 };
 
 const memos = new WeakMap<MapEntry<any>, Memo>();
-const failedEntryPatches = new WeakSet<MapEntry<any>>();
 const failedAddedKeys = new WeakSet<() => Iterable<string>>();
 
 function memoFor(mapEntry: MapEntry<any>): Memo {
   let memo = memos.get(mapEntry);
   if (!memo) {
-    memo = { cache: new Map(), added: new Set(), version: -1 };
+    memo = { objects: new WeakMap(), cache: new Map(), added: new Set(), version: -1, failed: false };
     memos.set(mapEntry, memo);
   }
   return memo;
@@ -178,10 +255,10 @@ export function mapEntries<T = any>(
   patchName = 'anonymous',
 ): object {
   const memo = memoFor(mapEntry);
-  let failed = false;
 
   const sync = () => {
     if (memo.version === patchVersion) return;
+    memo.objects = new WeakMap();
     memo.cache = new Map();
     if (addedKeys && !failedAddedKeys.has(addedKeys)) {
       try {
@@ -198,20 +275,42 @@ export function mapEntries<T = any>(
   const run = (key: PropertyKey, value: any): any => {
     if (typeof key !== 'string') return value;
     sync();
-    if (failed || failedEntryPatches.has(mapEntry)) return value;
-    const hit = memo.cache.get(key);
-    if (hit && hit.input === value) return hit.output;
+    if (memo.failed) return value;
+    const isObject = value !== null && (typeof value === 'object' || typeof value === 'function');
+    const objectHit = isObject ? memo.objects.get(value) : undefined;
+    if (objectHit?.key === key) return objectHit.output;
+    if (objectHit?.aliases?.has(key)) return objectHit.aliases.get(key);
+    if (!isObject) {
+      const hit = memo.cache.get(key);
+      if (hit && hit.input === value) return hit.output;
+    }
     let output: T | undefined;
     try {
       output = mapEntry(key, value as T | undefined);
     } catch (error) {
-      failed = true;
-      failedEntryPatches.add(mapEntry);
+      memo.failed = true;
+      memo.objects = new WeakMap();
       memo.cache.clear();
       console.error(`[slick] entry patch "${patchName}" threw for key "${key}" and was disabled:`, mapEntry, error);
       return value;
     }
-    memo.cache.set(key, { input: value, output });
+    if (isObject) {
+      // Slack replaces and evicts entries over time. Keying by their raw object
+      // keeps stable transformed identities without pinning evicted messages.
+      // The callback may have read another alias and populated this record.
+      // Re-read on misses so an outer completion preserves that nested result.
+      const current = memo.objects.get(value);
+      if (current?.key === key) current.output = output;
+      else if (current) (current.aliases ??= new Map()).set(key, output);
+      else memo.objects.set(value, { key, output });
+      memo.cache.delete(key);
+    } else if (value !== undefined || output !== undefined) {
+      memo.cache.set(key, { input: value, output });
+    } else {
+      // Missing IDs are common during discovery; caching undefined -> undefined
+      // retains an unbounded list of IDs without saving useful work.
+      memo.cache.delete(key);
+    }
     return output;
   };
 
@@ -395,52 +494,28 @@ export function patchSlice<T = any>(
 // yields a registry keyed by meta.name, independent of minified module ids.
 
 type ThunkCreator = (...args: any[]) => any;
-type ThunkWrap = {
-  match: (value: any) => boolean;
-  wrap: (original: ThunkCreator) => ThunkCreator;
-};
-
-const thunkWraps = new Set<ThunkWrap>();
+const thunkPatches = createThunkPatches();
 const thunkCreators = new Map<string, ThunkCreator>();
 type ThunkWaiter = { resolve: (creator: ThunkCreator) => void; timer: ReturnType<typeof setTimeout> };
 const waitingForThunk = new Map<string, Set<ThunkWaiter>>();
 const THUNK_WAIT_MS = 30_000;
 
-const wrapCreator = (original: ThunkCreator): ThunkCreator =>
-  new Proxy(original, {
-    apply(target, thisArg, args) {
-      let creator: ThunkCreator = target;
-      for (const { match, wrap } of thunkWraps) {
-        let matched = false;
-        try {
-          matched = match(target);
-        } catch {}
-        if (!matched) continue;
-        try {
-          creator = wrap(creator);
-        } catch (error) {
-          console.error('[slick] thunk wrapper threw:', error);
-        }
-      }
-      return Reflect.apply(creator, thisArg, args);
-    },
-  });
+function rememberCreator(name: string, creator: ThunkCreator): void {
+  thunkCreators.set(name, creator);
+  const waiting = waitingForThunk.get(name);
+  if (!waiting) return;
+  waitingForThunk.delete(name);
+  for (const waiter of waiting) {
+    clearTimeout(waiter.timer);
+    waiter.resolve(creator);
+  }
+}
 
 function registerCreator(creator: ThunkCreator): void {
-  // The defining module assigns `meta` on the statement *after* createThunk
-  // returns, so the name is not readable until the current task yields.
+  // The defining module assigns meta after createThunk returns.
   queueMicrotask(() => {
     const name = (creator as any).meta?.name;
-    if (typeof name !== 'string') return;
-    thunkCreators.set(name, creator);
-
-    const waiting = waitingForThunk.get(name);
-    if (!waiting) return;
-    waitingForThunk.delete(name);
-    for (const waiter of waiting) {
-      clearTimeout(waiter.timer);
-      waiter.resolve(creator);
-    }
+    if (typeof name === 'string') rememberCreator(name, creator);
   });
 }
 
@@ -470,7 +545,7 @@ patchModuleExports((exports) => {
   const descriptors = Object.getOwnPropertyDescriptors(exports);
   descriptors[key] = {
     value: (...args: any[]) => {
-      const creator = wrapCreator(createThunk(...args));
+      const creator = thunkPatches.wrapCreator(createThunk(...args));
       registerCreator(creator);
       return creator;
     },
@@ -482,11 +557,20 @@ patchModuleExports((exports) => {
 });
 
 export function getThunkCreator(name: string): ThunkCreator | undefined {
-  return thunkCreators.get(name);
+  const known = thunkCreators.get(name);
+  if (known) return known;
+  // Late injection can miss creators that predate the factory hook.
+  const existing = getExport<ThunkCreator>(
+    (value): value is ThunkCreator => typeof value === 'function' && (value as any).meta?.name === name,
+  );
+  if (!existing) return;
+  const wrapped = thunkPatches.wrapCreator(existing);
+  rememberCreator(name, wrapped);
+  return wrapped;
 }
 
 export function waitForThunkCreator(name: string): Promise<ThunkCreator> {
-  const known = thunkCreators.get(name);
+  const known = getThunkCreator(name);
   if (known) return Promise.resolve(known);
 
   return new Promise((resolve, reject) => {
@@ -515,12 +599,7 @@ export async function dispatchThunk<T = any>(name: string, ...args: any[]): Prom
 }
 
 /** Observe or alter one of Slack's thunks. */
-export function patchThunk(match: string | ThunkWrap['match'], wrap: ThunkWrap['wrap']): () => void {
-  const matcher: ThunkWrap['match'] = typeof match === 'string' ? (value) => value?.meta?.name === match : match;
-  const entry: ThunkWrap = { match: matcher, wrap };
-  thunkWraps.add(entry);
-  return () => void thunkWraps.delete(entry);
-}
+export const patchThunk = thunkPatches.patch;
 
 export const reduxReady = (async () => {
   const React = await reactReady;

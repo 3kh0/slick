@@ -5,9 +5,11 @@ import * as meta from './meta.ts';
 type AvatarStackProps = { channelId?: string; memberCount?: number };
 
 export default class HumanCount extends SlickPlugin<typeof meta.settings> {
+  static readonly requiredAPIs = ['redux'] as const;
   static readonly id = meta.id;
   static readonly pluginName = meta.pluginName;
   static readonly description = meta.description;
+  static readonly category = meta.category;
   static readonly defaultEnabled = meta.defaultEnabled;
   static readonly settings = meta.settings;
 

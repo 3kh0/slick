@@ -26,6 +26,10 @@ const STORAGE_KEY = 'overrides';
 const PAGE_SIZE = 100;
 const CUSTOM = '@@slick/custom';
 const GETTERS = new Set(['getGroupForUser', 'getGroupForUserWithoutExposure', 'getAssignmentByName']);
+// Slack dropped the getters' meta names; the group getters now wrap getGroupForUserImpl.
+const isGetter = (value: any): boolean =>
+  typeof value === 'function' &&
+  (GETTERS.has(value.meta?.name) || GETTERS.has(value.name) || String(value).includes('getGroupForUserImpl('));
 
 const FILTERS: { value: Filter; label: string }[] = [
   { value: 'all', label: 'All experiments' },
@@ -38,9 +42,11 @@ const MUTED: React.CSSProperties = { fontSize: '13px', opacity: 0.7 };
 const ACCENT = 'rgb(var(--sk_highlight, 18, 100, 163))';
 
 export default class Experiments extends SlickPlugin<typeof meta.settings> {
+  static readonly requiredAPIs = ['elements', 'redux'] as const;
   static readonly id = meta.id;
   static readonly pluginName = meta.pluginName;
   static readonly description = meta.description;
+  static readonly category = meta.category;
   static readonly defaultEnabled = meta.defaultEnabled;
   static readonly settings = meta.settings;
 
@@ -98,7 +104,7 @@ export default class Experiments extends SlickPlugin<typeof meta.settings> {
     const refs: CodeRefs = new Map();
     const selectors = this.api.getExport<Record<string, unknown>>((exp: any) => {
       if (!exp || typeof exp !== 'object') return false;
-      return Object.values(exp).some((value: any) => GETTERS.has(value?.meta?.name));
+      return Object.values(exp).some((value: any) => GETTERS.has(value?.meta?.name) || GETTERS.has(value?.name));
     });
     const moduleId = selectors && this.api.findModuleId(selectors);
     if (!selectors || moduleId === undefined) {
@@ -106,7 +112,7 @@ export default class Experiments extends SlickPlugin<typeof meta.settings> {
       return refs;
     }
 
-    const keys = Object.keys(selectors).filter((key) => GETTERS.has((selectors[key] as any)?.meta?.name));
+    const keys = Object.keys(selectors).filter((key) => isGetter(selectors[key]));
     for (const [, source] of this.api.moduleSources()) scanSource(source, moduleId, keys, refs);
     return refs;
   }

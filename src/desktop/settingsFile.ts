@@ -3,7 +3,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { settingsDir } from './paths.js';
+import { settingsDir } from './paths.ts';
 
 const SETTINGS_FILE = 'settings.json';
 const DEBOUNCE_MS = 150;
@@ -21,9 +21,22 @@ export function readSettingsText(): string {
   }
 }
 
-export function readStoredSettings(): StoredSettings | null {
+// Boot-time optimizations must distinguish a first launch from unreadable saved
+// preferences: a read failure could otherwise bypass a saved disable switch.
+export async function readBootSettings(
+  file = path.join(settingsDir(), SETTINGS_FILE),
+  read: (file: string, encoding: 'utf8') => Promise<string> = fs.promises.readFile,
+): Promise<string | undefined> {
   try {
-    const parsed = JSON.parse(readSettingsText());
+    return await read(file, 'utf8');
+  } catch (error) {
+    return (error as NodeJS.ErrnoException)?.code === 'ENOENT' ? '{}' : undefined;
+  }
+}
+
+export function readStoredSettings(text = readSettingsText()): StoredSettings | null {
+  try {
+    const parsed = JSON.parse(text);
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
     const plugins = parsed.plugins;
     return {
@@ -45,7 +58,7 @@ export function watchSettings(onChange: (text: string, settings: StoredSettings)
   const fire = () => {
     timer = null;
     const text = readSettingsText();
-    const settings = readStoredSettings();
+    const settings = readStoredSettings(text);
     // Don't reset live plugins, or let the renderer save defaults over the damaged file.
     if (settings) onChange(text, settings);
   };

@@ -1,16 +1,18 @@
-import type { SettingsSchema } from '../../shared/settings.ts';
+import type { PluginCategory, SettingsSchema } from '../../shared/settings.ts';
 
 export const id = 'PrivateChannelMapper';
 export const pluginName = 'Private Channel Mapper';
 export const description = 'Name the private channels you can’t see, and mention the ones you are not in';
+export const category: PluginCategory = 'channels';
 export const defaultEnabled = false;
 
 export const settings = {
   flaron: {
     type: 'boolean',
     label: 'Use external private channel DB (Flaron)',
-    description: 'If enabled, the plugin will show known private channel names if no local name is found.',
-    default: false,
+    description:
+      'If enabled, sends channel IDs to flaron.halceon.dev to find known private channel names when no local name is found.',
+    default: true,
   },
   mentions: {
     type: 'boolean',

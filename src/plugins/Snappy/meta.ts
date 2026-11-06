@@ -1,11 +1,25 @@
-import type { SettingsSchema } from '../../shared/settings.ts';
+import type { PluginCategory, SettingsSchema } from '../../shared/settings.ts';
 
 export const id = 'Snappy';
 export const pluginName = 'Snappy';
 export const description = 'Make Slack feel more responsive by disabling animations and other slow features';
+export const category: PluginCategory = 'app';
 export const defaultEnabled = true;
 
 export const settings = {
+  optimizeStateTracking: {
+    type: 'boolean',
+    label: 'Faster navigation',
+    description: 'Reduce work when navigating Slack. Restart to apply, including when disabling Snappy or Slick.',
+    default: true,
+    restartRequired: true,
+  },
+  optimizeDuplicateStyles: {
+    type: 'boolean',
+    label: 'Reduce duplicate stylesheets (experimental)',
+    description: 'Skip identical copies of Slack styles to reduce rendering work',
+    default: false,
+  },
   optimizeResize: {
     type: 'boolean',
     label: 'Smooth window resizing',
@@ -39,3 +53,8 @@ export const settings = {
     default: false,
   },
 } as const satisfies SettingsSchema;
+
+// A page extension cannot change the browser process or Slack's Crashpad.
+export const { ignoreGpuBlocklist: _gpu, disableCrashReporter: _crash, ...browserSettings } = settings;
+// Extensions cannot synchronously read preferences before Slack initializes.
+export const { optimizeStateTracking: _state, ...extensionSettings } = browserSettings;

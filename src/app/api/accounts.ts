@@ -2,11 +2,49 @@ import { type LocalConfigTeam, readLocalConfig } from '../slack/localConfig.ts';
 
 export const PENDING_ACCOUNT_SWITCH_KEY = 'slick:pendingAccountSwitch';
 
+export type WorkspaceConfig = {
+  teams: Record<string, LocalConfigTeam>;
+  orderedTeamIds: string[];
+  lastActiveTeamId: string;
+};
+
 export type PendingAccountSwitch = {
   userId: string;
   teamId: string;
   team: LocalConfigTeam;
+  workspaceConfig?: WorkspaceConfig;
 };
+
+/** Only session-local workspace fields travel between cookie jars. */
+export function workspaceConfigFor(value: unknown, teamId: string, team: LocalConfigTeam): WorkspaceConfig {
+  const config = value as Partial<WorkspaceConfig> | undefined;
+  const candidates = config?.teams ?? { [teamId]: team };
+  if (!candidates || typeof candidates !== 'object' || Array.isArray(candidates))
+    throw new Error('bad workspace configuration');
+  const entries = Object.entries(candidates);
+  if (!entries.length || entries.length > 200) throw new Error('bad workspace configuration');
+  const teams: Record<string, LocalConfigTeam> = {};
+  for (const [id, candidate] of entries) {
+    if (
+      !TEAM_ID.test(id) ||
+      !candidate ||
+      typeof candidate !== 'object' ||
+      typeof candidate.token !== 'string' ||
+      !candidate.token ||
+      typeof candidate.user_id !== 'string' ||
+      !TEAM_ID.test(candidate.user_id)
+    )
+      throw new Error('bad workspace configuration');
+    teams[id] = { ...candidate };
+  }
+  if (teams[teamId]?.token !== team.token || teams[teamId]?.user_id !== team.user_id)
+    throw new Error('active workspace does not match the saved configuration');
+  const ordered = Array.isArray(config?.orderedTeamIds) ? config.orderedTeamIds : [];
+  const orderedTeamIds = [
+    ...new Set([...ordered.filter((id) => typeof id === 'string' && id in teams), ...Object.keys(teams)]),
+  ];
+  return { teams, orderedTeamIds, lastActiveTeamId: teamId };
+}
 
 const TEAM_ID = /^[A-Z][A-Z0-9]{5,}$/;
 
@@ -44,10 +82,12 @@ export function applyPendingAccountSwitch(strict = false): void {
     }
 
     const localConfig = readLocalConfig();
-    // Never boot another account's workspace token against the target cookie jar.
-    localConfig.teams = { [teamId]: { ...account.team } };
-    localConfig.lastActiveTeamId = teamId;
-    localConfig.orderedTeamIds = [teamId];
+    // Replace, never merge: the main process verified this entire set with the
+    // destination cookie jar. Legacy handoffs still restore one workspace.
+    const workspaceConfig = workspaceConfigFor(account.workspaceConfig, teamId, account.team);
+    localConfig.teams = workspaceConfig.teams;
+    localConfig.lastActiveTeamId = workspaceConfig.lastActiveTeamId;
+    localConfig.orderedTeamIds = workspaceConfig.orderedTeamIds;
 
     localStorage.setItem('localConfig_v2', JSON.stringify(localConfig));
     localStorage.removeItem(PENDING_ACCOUNT_SWITCH_KEY);

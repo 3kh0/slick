@@ -35,18 +35,21 @@ const isTimestamp = (child: React.ReactNode) => isHeaderChild(child, 'clickable'
 const isSender = (child: React.ReactNode) => isHeaderChild(child, 'isInteractive');
 
 export default class UserPronouns extends SlickPlugin<typeof meta.settings> {
+  static readonly requiredAPIs = ['members', 'redux'] as const;
   static readonly id = meta.id;
   static readonly pluginName = meta.pluginName;
   static readonly description = meta.description;
+  static readonly category = meta.category;
   static readonly defaultEnabled = meta.defaultEnabled;
   static readonly settings = meta.settings;
 
   private readonly Pronouns = ({ userId, bulleted }: { userId: string; bulleted: boolean }) => {
+    const selfId = this.api.redux.useReduxState((state) => state.bootData?.user_id);
     const member = this.api.members.useMember(userId);
     const pronouns = String(member?.profile?.pronouns ?? '')
       .replace(/\s+/g, ' ')
       .trim();
-    if (!pronouns) return null;
+    if (!pronouns || (!this.config.showOwn && userId === selfId)) return null;
     return (
       <span
         className={`slick-pronouns${bulleted ? ' slick-pronouns--bulleted' : ''}`}
@@ -80,7 +83,7 @@ export default class UserPronouns extends SlickPlugin<typeof meta.settings> {
     `);
 
     // Channels: one component is handed both the sender and the timestamp.
-    this.api.patchComponent<BroadcastPreambleProps>('BroadcastPreamble', (Original) => (props) => {
+    this.api.patchComponent<BroadcastPreambleProps>('BaseBroadcastPreamble', (Original) => (props) => {
       if (!isPerson(props.msg)) return <Original {...props} />;
 
       const children = React.Children.toArray(props.children);

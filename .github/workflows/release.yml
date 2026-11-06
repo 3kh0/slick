@@ -8,6 +8,10 @@ permissions:
   contents: read
   issues: write
 
+env:
+  # Packaging downloads target Electron archives; no job launches node_modules/electron.
+  ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+
 jobs:
   validate-tag:
     runs-on: ubuntu-latest
@@ -109,6 +113,7 @@ jobs:
             dist/release/Slick-*.dmg
           if-no-files-found: error
           retention-days: 1
+          compression-level: 0
 
   build-win:
     needs: [validate-tag, electron-compatible]
@@ -124,6 +129,13 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: oven-sh/setup-bun@v2
+      - name: Cache Windows dependency downloads
+        uses: actions/cache@v6
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('bun.lock') }}
+          restore-keys: |
+            bun-${{ runner.os }}-${{ runner.arch }}-
       - run: bun install --frozen-lockfile
       - name: Build release artifact
         run: bun run build -- package --arch "${{ matrix.arch }}"
@@ -140,6 +152,7 @@ jobs:
           path: dist/release/Slick-*-win32-*.zip
           if-no-files-found: error
           retention-days: 1
+          compression-level: 0
 
   build-linux:
     needs: [validate-tag, electron-compatible]
@@ -181,6 +194,7 @@ jobs:
             dist/release/slick-*.rpm
           if-no-files-found: error
           retention-days: 1
+          compression-level: 0
 
   release:
     needs: [validate-tag, build-mac, build-win, build-linux]
@@ -191,6 +205,7 @@ jobs:
       - name: Download artifacts
         uses: actions/download-artifact@v8
         with:
+          pattern: slick-*
           path: dist
           merge-multiple: true
       - name: Create release
@@ -206,33 +221,104 @@ jobs:
             dist/slick-*.rpm
           generate_release_notes: true
 
-  firefox:
+  homebrew:
     needs: [validate-tag, release]
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
+    runs-on: macos-26
+    timeout-minutes: 20
     permissions:
-      contents: write
+      contents: read
+    concurrency:
+      group: homebrew-tap-update
+      cancel-in-progress: false
+    env:
+      BUILD: ${{ needs.validate-tag.outputs.build }}
+      HOMEBREW_NO_AUTO_UPDATE: '1'
+      HOMEBREW_NO_INSTALL_CLEANUP: '1'
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Check deploy key configuration
+        env:
+          TAP_KEY: ${{ secrets.HOMEBREW_TAP_DEPLOY_KEY }}
+        run: |
+          if [[ -z "$TAP_KEY" ]]; then
+            echo "HOMEBREW_TAP_DEPLOY_KEY is required to update the tap" >&2
+            exit 1
+          fi
+      - name: Check out the tap
+        uses: actions/checkout@v7
+        with:
+          repository: 3kh0/homebrew-tap
+          ref: main
+          path: homebrew-tap
+          ssh-key: ${{ secrets.HOMEBREW_TAP_DEPLOY_KEY }}
+      - name: Test cask updater
+        run: node --test scripts/ci/update-homebrew.test.cjs
+      - name: Download both Mac release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download "v$BUILD" --repo "$GITHUB_REPOSITORY" \
+            --pattern "Slick-2.0.$BUILD-mac-arm64.zip" \
+            --pattern "Slick-2.0.$BUILD-mac-x64.zip" \
+            --dir "$RUNNER_TEMP/homebrew-assets"
+      - name: Update the cask version and checksums
+        run: node scripts/ci/update-homebrew.cjs "$BUILD" homebrew-tap/Casks/slick.rb "$RUNNER_TEMP/homebrew-assets"
+      - name: Validate the cask
+        env:
+          # --online queries GitHub; unauthenticated calls share the runner IP's 60/hour limit.
+          HOMEBREW_GITHUB_API_TOKEN: ${{ github.token }}
+        run: |
+          brew tap 3kh0/tap "file://$GITHUB_WORKSPACE/homebrew-tap"
+          brew trust --tap 3kh0/tap
+          # The local clone above must include the uncommitted cask update.
+          cp homebrew-tap/Casks/slick.rb "$(brew --repository 3kh0/tap)/Casks/slick.rb"
+          brew style --cask 3kh0/tap/slick
+          brew audit --cask --strict --online --arch=all 3kh0/tap/slick
+      - name: Push the tap update as GitHub Actions
+        working-directory: homebrew-tap
+        run: |
+          git diff --check
+          if git diff --quiet -- Casks/slick.rb; then
+            echo "No tap update needed"
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add Casks/slick.rb
+          git commit -m "Update Slick to 2.0.$BUILD"
+          git push origin HEAD:main
+
+  firefox:
+    # AMO signing can take several minutes; overlap it with desktop packaging.
+    needs: [validate-tag, electron-compatible]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
       id-token: write
       attestations: write
     env:
       BUILD: ${{ needs.validate-tag.outputs.build }}
+      SLICK_BUILD: ${{ needs.validate-tag.outputs.build }}
+      WEB_EXT_API_KEY: ${{ secrets.AMO_JWT_ISSUER }}
+      WEB_EXT_API_SECRET: ${{ secrets.AMO_JWT_SECRET }}
     steps:
       - uses: actions/checkout@v7
       - uses: oven-sh/setup-bun@v2
       - run: bun install --frozen-lockfile
         env:
           ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
-      - name: Build and lint
-        run: |
-          bun run build -- firefox
-          bun run extension:lint
-        env:
-          SLICK_BUILD: ${{ env.BUILD }}
       - name: Source archive for AMO review
         run: |
           mkdir -p dist/release
           git archive --format=zip -o "dist/release/slick-firefox-2.0.$BUILD-source.zip" HEAD
-      - name: Sign on AMO
+      - name: Build and lint self-hosted
+        run: |
+          bun run build -- firefox
+          bun run extension:lint
+      - name: Sign self-hosted on AMO
         run: |
           bunx web-ext sign --channel unlisted \
             --source-dir dist/extension/firefox \
@@ -241,16 +327,155 @@ jobs:
           signed=$(find dist/signed -name '*.xpi' -print -quit)
           test -n "$signed"
           mv "$signed" "dist/release/slick-firefox-2.0.$BUILD.xpi"
-        env:
-          WEB_EXT_API_KEY: ${{ secrets.AMO_JWT_ISSUER }}
-          WEB_EXT_API_SECRET: ${{ secrets.AMO_JWT_SECRET }}
       - name: Update manifest
         run: node scripts/firefox-updates.ts "dist/release/slick-firefox-2.0.$BUILD.xpi" "$BUILD" dist/release/updates.json
       - name: Attest build provenance
         uses: actions/attest@v4.2.2
         with:
           subject-path: dist/release/slick-firefox-*.xpi
+      - name: Upload signed extension
+        uses: actions/upload-artifact@v7
+        with:
+          name: firefox-signed
+          path: |
+            dist/release/slick-firefox-*.xpi
+            dist/release/slick-firefox-*-source.zip
+            dist/release/updates.json
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 0
+      - name: Build and lint listed
+        run: |
+          bun run build -- firefox
+          bunx web-ext lint --source-dir dist/extension/firefox --warnings-as-errors
+        env:
+          SLICK_FIREFOX_CHANNEL: listed
+      - name: Submit listed version to AMO
+        continue-on-error: true
+        run: |
+          jq -n --arg build "$BUILD" '{categories: ["social-communication", "appearance"], version: {
+            license: "GPL-3.0-only",
+            approval_notes: "Bundled with Bun. To reproduce dist/extension/firefox from the source archive: ELECTRON_SKIP_BINARY_DOWNLOAD=1 bun install --frozen-lockfile && SLICK_BUILD=\($build) SLICK_FIREFOX_CHANNEL=listed bun run build -- firefox"
+          }}' > "$RUNNER_TEMP/amo.json"
+          bunx web-ext sign --channel listed --approval-timeout 0 \
+            --source-dir dist/extension/firefox \
+            --upload-source-code "dist/release/slick-firefox-2.0.$BUILD-source.zip" \
+            --amo-metadata "$RUNNER_TEMP/amo.json"
+
+  firefox-publish:
+    needs: [release, firefox]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      GH_REPO: ${{ github.repository }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: firefox-signed
+          path: dist/release
       - name: Attach to release
-        run: gh release upload "$GITHUB_REF_NAME" dist/release/slick-firefox-*.xpi dist/release/slick-firefox-*-source.zip dist/release/updates.json --clobber
+        run: |
+          for attempt in 1 2 3; do
+            gh release upload "$GITHUB_REF_NAME" dist/release/slick-firefox-*.xpi dist/release/slick-firefox-*-source.zip dist/release/updates.json --clobber && break
+            [[ $attempt == 3 ]] && exit 1
+            sleep 15
+          done
+
+  copr:
+    needs: [validate-tag, release]
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    env:
+      BUILD: ${{ needs.validate-tag.outputs.build }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y curl rpm pipx
+          pipx install copr-cli
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - name: Set up rpmbuild tree
+        run: mkdir -p ~/rpmbuild/{BUILD,BUILDROOT,RPMS,SOURCES,SPECS,SRPMS}
+      - name: Prepare release sources
+        run: |
+          version="2.0.$BUILD"
+          sed -i "s/^%global slick_version .*/%global slick_version $version/" packaging/copr/slick.spec
+          tarball_url="https://github.com/3kh0/slick/releases/download/v${BUILD}/Slick-${version}-linux-x64.tar.gz"
+          curl --fail --location --retry 5 --retry-delay 10 --retry-all-errors \
+            "$tarball_url" -o "$HOME/rpmbuild/SOURCES/Slick-${version}-linux-x64.tar.gz"
+      - name: Copy sources and build SRPM
+        run: |
+          cp packaging/copr/slick.spec ~/rpmbuild/SPECS/
+          cp packaging/copr/slick.desktop ~/rpmbuild/SOURCES/
+          cp packaging/flatpak/dev.slick.Slick.metainfo.xml ~/rpmbuild/SOURCES/slick.metainfo.xml
+          rpmbuild -bs ~/rpmbuild/SPECS/slick.spec
+      - name: Submit to COPR
+        run: |
+          mkdir -p ~/.config
+          cat > ~/.config/copr <<EOF
+          [copr-cli]
+          login = ${{ secrets.COPR_LOGIN }}
+          username = echolive
+          token = ${{ secrets.COPR_API_TOKEN }}
+          copr_url = https://copr.fedorainfracloud.org
+          EOF
+          srpm=$(find ~/rpmbuild/SRPMS -name '*.src.rpm' -print -quit)
+          copr-cli build echolive/slick "$srpm"
+
+  chromium:
+    needs: [validate-tag, release]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install --frozen-lockfile
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+      - run: bun run build -- chromium
+        env:
+          SLICK_BUILD: ${{ needs.validate-tag.outputs.build }}
+      - name: Attach Chromium store package
+        run: |
+          for attempt in 1 2 3; do
+            gh release upload "$GITHUB_REF_NAME" dist/extension/slick-chromium.zip --clobber && break
+            [[ $attempt == 3 ]] && exit 1
+            sleep 15
+          done
+        env:
+          GH_TOKEN: ${{ github.token }}
+      - name: Publish to the Chrome Web Store
+        run: node scripts/chrome-webstore.ts dist/extension/slick-chromium.zip
+        env:
+          CWS_ITEM_ID: alfaoldilkoklnfaonfigknfkpkpanca
+          CWS_PUBLISHER_ID: ${{ secrets.CWS_PUBLISHER_ID }}
+          CWS_SERVICE_ACCOUNT: ${{ secrets.CWS_SERVICE_ACCOUNT }}
+
+  userscript:
+    needs: [validate-tag, release]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install --frozen-lockfile
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+      - run: bun run userscript:build
+        env:
+          SLICK_BUILD: ${{ needs.validate-tag.outputs.build }}
+      - name: Attach Violentmonkey userscript and update metadata
+        run: |
+          for attempt in 1 2 3; do
+            gh release upload "$GITHUB_REF_NAME" dist/userscript/slick-monaco-*.js --clobber &&
+              gh release upload "$GITHUB_REF_NAME" dist/userscript/*.user.js dist/userscript/*.meta.js --clobber && break
+            [[ $attempt == 3 ]] && exit 1
+            sleep 15
+          done
         env:
           GH_TOKEN: ${{ github.token }}

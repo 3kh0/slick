@@ -10,6 +10,38 @@ export type BlobStore = {
   clear(): Promise<boolean>;
 };
 
+async function yieldToInput() {
+  const scheduler = (globalThis as { scheduler?: { yield?(): Promise<void> } }).scheduler;
+  if (scheduler?.yield) {
+    try {
+      await scheduler.yield();
+      return;
+    } catch {
+      // A caller's scheduler task may have been aborted; finish the storage read.
+    }
+  }
+  // Posted messages yield without the background/nested-timer clamp. Close
+  // both ports after delivery so archive loads leave no scheduler resources.
+  if (typeof MessageChannel !== 'undefined') {
+    await new Promise<void>((resolve) => {
+      const channel = new MessageChannel();
+      channel.port1.addEventListener(
+        'message',
+        () => {
+          channel.port1.close();
+          channel.port2.close();
+          resolve();
+        },
+        { once: true },
+      );
+      channel.port1.start();
+      channel.port2.postMessage(null);
+    });
+    return;
+  }
+  await new Promise<void>((resolve) => setTimeout(resolve, 0));
+}
+
 export class ScopedStorage {
   // Not a constructor parameter property: node --experimental-strip-types (tests) can't parse those.
   private blob: BlobStore;
@@ -23,13 +55,30 @@ export class ScopedStorage {
   }
 
   /** Every stored value under `prefix`, already parsed; unreadable ones are skipped. */
-  async entries<T>(prefix = ''): Promise<Map<string, T>> {
+  async entries<T>(
+    prefix = '',
+    { yieldBetweenBatches = true }: { yieldBetweenBatches?: boolean } = {},
+  ): Promise<Map<string, T>> {
     const raw = await this.blob.readAll(prefix).catch(() => ({}) as Record<string, string>);
     const out = new Map<string, T>();
-    for (const [key, value] of Object.entries(raw)) {
+    const entries = Object.entries(raw);
+    let sliceStart = yieldBetweenBatches ? performance.now() : 0;
+    for (let i = 0; i < entries.length; i++) {
+      const [key, value] = entries[i];
       try {
         out.set(key, JSON.parse(value) as T);
       } catch {}
+      // Archive loads can parse thousands of records. Let
+      // input and paint run between batches; small loads need no extra task.
+      if (
+        yieldBetweenBatches &&
+        ((i + 1) % 64 === 0 || (typeof value === 'string' && value.length >= 32_768)) &&
+        i + 1 < entries.length &&
+        performance.now() - sliceStart >= 4
+      ) {
+        await yieldToInput();
+        sliceStart = performance.now();
+      }
     }
     return out;
   }
@@ -73,11 +122,16 @@ export class Cache<T> {
 
   private storage: ScopedStorage;
   private name: string;
-  private ttlMs: number;
+  private ttlMs: number | ((value: T) => number);
   /** In-memory ceiling; a TTL alone doesn't bound residency (ShowRealUser keys per message). */
   private maxEntries: number;
 
-  constructor(storage: ScopedStorage, name: string, ttlMs = 60 * 60 * 1000, maxEntries = 5000) {
+  constructor(
+    storage: ScopedStorage,
+    name: string,
+    ttlMs: number | ((value: T) => number) = 60 * 60 * 1000,
+    maxEntries = 5000,
+  ) {
     this.storage = storage;
     this.name = name;
     this.ttlMs = ttlMs;
@@ -108,7 +162,9 @@ export class Cache<T> {
   /** Once per session on first use (not construction, to stay off boot); never awaited. */
   private async sweepStorage() {
     const prefix = `cache:${this.name}:`;
-    const stored = await this.storage.entries<{ expires?: number } | null>(prefix);
+    // A stale cleanup snapshot must not gain extra task gaps in which another
+    // cache instance can persist a fresh replacement for a soon-to-be-deleted key.
+    const stored = await this.storage.entries<{ expires?: number } | null>(prefix, { yieldBetweenBatches: false });
     const now = Date.now();
     for (const [key, entry] of stored) {
       if (entry && typeof entry.expires === 'number' && entry.expires > now) continue;
@@ -141,7 +197,8 @@ export class Cache<T> {
       }
 
       const value = await fetcher(key);
-      const entry = { value, expires: Date.now() + this.ttlMs };
+      const ttl = typeof this.ttlMs === 'function' ? this.ttlMs(value) : this.ttlMs;
+      const entry = { value, expires: Date.now() + ttl };
       this.remember(key, entry);
       void this.storage.set(this.storageKey(key), entry);
       return value;

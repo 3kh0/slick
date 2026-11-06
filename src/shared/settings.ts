@@ -1,6 +1,20 @@
 // Typed settings schema: drives plugin config, ctx.settings, Preferences and the
 // extension options form. Coercion is central, so a hostile config can never
 // reach a plugin as the wrong type.
+import { record } from './objects.ts';
+
+export const PLUGIN_CATEGORIES = {
+  messages: 'Messages',
+  composer: 'Composer',
+  people: 'People',
+  channels: 'Channels',
+  sounds: 'Huddles & sounds',
+  privacy: 'Privacy',
+  appearance: 'Look & feel',
+  app: 'App',
+  hackclub: 'Hack Club Specialities',
+} as const;
+export type PluginCategory = keyof typeof PLUGIN_CATEGORIES;
 
 export type SettingType = 'boolean' | 'number' | 'text' | 'select' | 'color' | 'file' | 'names' | 'schedule';
 
@@ -55,17 +69,17 @@ export type PluginSettings = Record<string, SettingValue> & { enabled: boolean }
 const MAX_TEXT = 4000;
 const MAX_NAMES = 2000;
 const MAX_RULES = 50;
-const USER_ID = /^[UW][A-Z0-9]{6,}$/;
+const NAME_ID = /^[UWA][A-Z0-9]{6,}$/;
 const TIME = /^([01]\d|2[0-3]):[0-5]\d$/;
 
 function coerceNames(value: unknown, fallback: Record<string, string>): Record<string, string> {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return fallback;
+  if (!record(value)) return fallback;
 
   const names: Record<string, string> = {};
   let count = 0;
-  for (const [id, name] of Object.entries(value as Record<string, unknown>)) {
+  for (const [id, name] of Object.entries(value)) {
     if (count >= MAX_NAMES) break;
-    if (!USER_ID.test(id)) continue;
+    if (!NAME_ID.test(id)) continue;
     if (typeof name !== 'string' || !name || name.length > 100) continue;
     names[id] = name;
     count++;

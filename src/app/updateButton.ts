@@ -33,6 +33,7 @@ export function installUpdateButton(bridge: SlickBridge): void {
   );
 
   let status: UpdateStatus = { state: 'idle' };
+  let stopped = false;
   const button = document.createElement('button');
   button.type = 'button';
   button.className = 'slick-update-button';
@@ -68,6 +69,7 @@ export function installUpdateButton(bridge: SlickBridge): void {
   }
 
   function render(next: UpdateStatus): void {
+    if (stopped) return;
     status = next;
     const downloading = status.state === 'downloading';
     button.disabled = downloading;
@@ -90,12 +92,15 @@ export function installUpdateButton(bridge: SlickBridge): void {
     button.setAttribute('aria-busy', String(downloading));
     button.dataset.indeterminate = String(downloading && status.percent === undefined);
     button.style.setProperty('--slick-update-progress', String(Math.max(0, Math.min(100, status.percent ?? 0)) / 100));
+    // An idle button is detached. Observing the entire message tree in that
+    // state only allocates mutation records to remove it again.
+    if (status.state === 'idle') observer.disconnect();
+    else observer.observe(document.documentElement, { childList: true, subtree: true });
     mount();
   }
 
   // Slack can replace the title bar during navigation. Reattach the same button.
   const observer = new MutationObserver(mount);
-  observer.observe(document.documentElement, { childList: true, subtree: true });
   let received = false;
   const unsubscribe = bridge.onUpdateStatus((next) => {
     received = true;
@@ -110,6 +115,7 @@ export function installUpdateButton(bridge: SlickBridge): void {
   window.addEventListener(
     'pagehide',
     () => {
+      stopped = true;
       observer.disconnect();
       unsubscribe();
     },

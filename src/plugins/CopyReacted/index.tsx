@@ -14,9 +14,11 @@ const NO_REACTIONS: SlackReaction[] = [];
 const SEPARATORS: Record<string, string> = { space: ' ', newline: '\n', comma: ', ' };
 
 export default class CopyReacted extends SlickPlugin<typeof meta.settings> {
+  static readonly requiredAPIs = ['elements', 'members', 'menu', 'modal'] as const;
   static readonly id = meta.id;
   static readonly pluginName = meta.pluginName;
   static readonly description = meta.description;
+  static readonly category = meta.category;
   static readonly defaultEnabled = meta.defaultEnabled;
   static readonly settings = meta.settings;
   static readonly liveSettings = ['format', 'separator'];

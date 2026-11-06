@@ -48,6 +48,31 @@ test('CAS is bounded and rejects malformed settings or failed responses', async 
   );
 });
 
+test('theme import CAS retries preserve concurrent imports, plugins, and CSS', async () => {
+  const theme = { name: 'Latte', vars: { '--accent': '#8839ef' } };
+  let stored = '{"plugins":{"HumanCount":{"enabled":true}}}';
+  let attempts = 0;
+  const send = async ({ method, args }: Request) => {
+    if (method === 'readSettings') return { ok: true, value: stored };
+    assert.equal(method, 'compareAndSwapSettings');
+    if (++attempts === 1) {
+      stored = JSON.stringify({ ...JSON.parse(stored), importedThemes: { 'imported:other': { css: 'body{}' } } });
+      return { ok: true, value: false };
+    }
+    stored = args[1];
+    return { ok: true, value: true };
+  };
+  await updateSetting(send, { property: 'importTheme', id: 'imported:latte', value: theme });
+  assert.deepEqual(JSON.parse(stored), {
+    plugins: { HumanCount: { enabled: true } },
+    importedThemes: { 'imported:other': { css: 'body{}' }, 'imported:latte': theme },
+    theme: 'imported:latte',
+  });
+  await updateSetting(send, { property: 'removeTheme', id: 'imported:latte' });
+  assert.equal(JSON.parse(stored).theme, '');
+  assert.deepEqual(JSON.parse(stored).importedThemes, { 'imported:other': { css: 'body{}' } });
+});
+
 test('CSS remote changes never clobber drafts; failures keep dirty state', async () => {
   const draft = new CssDraft();
   draft.remote('initial');
@@ -145,4 +170,28 @@ test('packaged recovery function sets and clears only recovery flags', () => {
     if (oldStorage) Object.defineProperty(globalThis, 'sessionStorage', oldStorage);
     else Reflect.deleteProperty(globalThis, 'sessionStorage');
   }
+});
+
+test('workspace selection writes preserve other settings and reject app-wide or invalid restrictions', async () => {
+  let stored = JSON.stringify({
+    plugins: { HaikuWarning: { enabled: true } },
+    pluginWorkspaces: { HumanCount: ['T2'] },
+  });
+  const send = async ({ method, args }: Request) => {
+    if (method === 'readSettings') return { ok: true, value: stored };
+    assert.equal(args[0], stored);
+    stored = args[1];
+    return { ok: true, value: true };
+  };
+  await updateSetting(send, { property: 'pluginWorkspaces', id: 'HaikuWarning', value: ['T1', 'E2'] });
+  assert.deepEqual(JSON.parse(stored), {
+    plugins: { HaikuWarning: { enabled: true } },
+    pluginWorkspaces: { HumanCount: ['T2'], HaikuWarning: ['T1', 'E2'] },
+  });
+  await updateSetting(send, { property: 'pluginWorkspaces', id: 'HaikuWarning', value: [] });
+  assert.deepEqual(JSON.parse(stored).pluginWorkspaces.HaikuWarning, []);
+  await updateSetting(send, { property: 'pluginWorkspaces', id: 'HaikuWarning', value: null });
+  assert.equal(JSON.parse(stored).pluginWorkspaces.HaikuWarning, null);
+  await assert.rejects(updateSetting(send, { property: 'pluginWorkspaces', id: 'HaikuWarning', value: ['bad'] }));
+  await assert.rejects(updateSetting(send, { property: 'pluginWorkspaces', id: 'NoTrack', value: ['T1'] }));
 });

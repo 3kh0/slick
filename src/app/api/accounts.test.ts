@@ -114,3 +114,54 @@ test('invalid handoffs do not alter Slack configuration', (t) => {
   }
   assert.throws(() => stageAccountRemoval('../bad'), /bad team id/);
 });
+
+test('full-set handoff restores ordered workspaces and per-workspace identities, never outgoing tokens', (t) => {
+  const values = storage(t);
+  const team = { user_id: 'U123456', token: 'first-session-token' };
+  const other = { user_id: 'U654321', token: 'second-workspace-token' };
+  const workspaceConfig = {
+    teams: { [teamId]: team, [otherId]: other },
+    orderedTeamIds: [otherId, otherId, 'TUNKNOWN', teamId],
+    lastActiveTeamId: otherId,
+  };
+  values.set(
+    'localConfig_v2',
+    JSON.stringify({
+      teams: { TFOREIGN: { token: 'foreign-token' } },
+      orderedTeamIds: ['TFOREIGN'],
+      lastActiveTeamId: 'TFOREIGN',
+    }),
+  );
+  values.set(
+    PENDING_ACCOUNT_SWITCH_KEY,
+    JSON.stringify({ userId: 'U123456', teamId: otherId, team: other, workspaceConfig }),
+  );
+  applyPendingAccountSwitch(true);
+  assert.deepEqual(JSON.parse(values.get('localConfig_v2')!), {
+    teams: workspaceConfig.teams,
+    orderedTeamIds: [otherId, teamId],
+    lastActiveTeamId: otherId,
+  });
+  assert.equal(values.has(PENDING_ACCOUNT_SWITCH_KEY), false);
+});
+
+test('malformed full-set handoffs fail before changing storage or consuming the strict marker', (t) => {
+  const values = storage(t);
+  const team = { user_id: 'U123456', token: 'new-token' };
+  for (const teams of [
+    { [teamId]: team, [otherId]: { user_id: 'U654321', token: '' } },
+    { [teamId]: { ...team, token: 'wrong-token' } },
+    {},
+  ]) {
+    values.set('localConfig_v2', JSON.stringify(config));
+    const pending = JSON.stringify({
+      teamId,
+      team,
+      workspaceConfig: { teams, orderedTeamIds: [], lastActiveTeamId: teamId },
+    });
+    values.set(PENDING_ACCOUNT_SWITCH_KEY, pending);
+    assert.throws(() => applyPendingAccountSwitch(true), /configuration/);
+    assert.equal(values.get('localConfig_v2'), JSON.stringify(config));
+    assert.equal(values.get(PENDING_ACCOUNT_SWITCH_KEY), pending);
+  }
+});

@@ -1,8 +1,9 @@
-import type { SettingsSchema } from '../../shared/settings.ts';
+import type { PluginCategory, SettingsSchema } from '../../shared/settings.ts';
 
 export const id = 'QuickJoin';
 export const pluginName = 'Quick Join';
 export const description = 'Join channels straight from a link to them, without opening each one first';
+export const category: PluginCategory = 'channels';
 export const defaultEnabled = false;
 
 export const settings = {

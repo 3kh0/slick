@@ -1,19 +1,22 @@
 // Show who reacted, inside each reaction pill. The ids arrive as
-// Reaction's props.users, but the pill is rendered by ReactionAnimation, so a
-// context carries them across.
+// Reaction's props.users, but the pill is its UnstyledButton, so a context
+// carries them across.
 
 import { SlickPlugin } from '$slick';
 import * as meta from './meta.ts';
 
 type ReactionProps = { users?: string[] };
+type ButtonProps = { 'data-qa'?: string; children?: React.ReactNode };
 
 /** Stable identity, so context consumers do not re-render for an empty list. */
 const NO_REACTORS: string[] = [];
 
 export default class WhoReacted extends SlickPlugin<typeof meta.settings> {
+  static readonly requiredAPIs = ['members'] as const;
   static readonly id = meta.id;
   static readonly pluginName = meta.pluginName;
   static readonly description = meta.description;
+  static readonly category = meta.category;
   static readonly defaultEnabled = meta.defaultEnabled;
   static readonly settings = meta.settings;
 
@@ -86,12 +89,17 @@ export default class WhoReacted extends SlickPlugin<typeof meta.settings> {
       </this.ReactorsContext.Provider>
     ));
 
-    // Rendered after the animation, so the avatars land inside the pill.
-    this.api.patchComponent('ReactionAnimation', (Original) => (props) => (
-      <>
-        <Original {...props} />
-        <this.Reactors />
-      </>
-    ));
+    this.api.patchComponent<ButtonProps>(
+      'UnstyledButton',
+      (Original) => (props) =>
+        props['data-qa'] === 'reactji' ? (
+          <Original {...props}>
+            {props.children}
+            <this.Reactors />
+          </Original>
+        ) : (
+          <Original {...props} />
+        ),
+    );
   }
 }

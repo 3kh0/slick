@@ -1,8 +1,9 @@
-import type { SettingsSchema } from '../../shared/settings.ts';
+import type { PluginCategory, SettingsSchema } from '../../shared/settings.ts';
 
 export const id = 'CustomFonts';
 export const pluginName = 'Custom Fonts';
 export const description = 'Use any installed system font or upload your own font file.';
+export const category: PluginCategory = 'appearance';
 export const defaultEnabled = false;
 
 export const settings = {

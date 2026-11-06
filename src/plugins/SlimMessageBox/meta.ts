@@ -1,8 +1,9 @@
-import type { SettingsSchema } from '../../shared/settings.ts';
+import type { PluginCategory, SettingsSchema } from '../../shared/settings.ts';
 
 export const id = 'SlimMessageBox';
 export const pluginName = 'Slim Message Box';
 export const description = 'ozempic for your message box!';
+export const category: PluginCategory = 'appearance';
 export const defaultEnabled = false;
 
 export const settings = {

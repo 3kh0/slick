@@ -1,4 +1,4 @@
-// Firefox-only, fully embedded MVP. The XPI is unsigned; release signing is separate.
+// Shared, fully embedded MV3 build. Firefox signing and store submission are separate.
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { build, type Plugin } from 'esbuild';
@@ -21,7 +21,8 @@ async function optionsData(): Promise<Plugin> {
     ...EXTENSION_PLUGINS.map((id, i) => `import * as m${i} from ${JSON.stringify(path.join(PLUGINS, id, 'meta.ts'))};`),
     'export const plugins = [',
     ...EXTENSION_PLUGINS.map(
-      (id, i) => `  { id: ${JSON.stringify(id)}, name: m${i}.pluginName, description: m${i}.description },`,
+      (id, i) =>
+        `  { id: ${JSON.stringify(id)}, name: m${i}.pluginName, description: m${i}.description, settings: m${i}.settings ?? {} },`,
     ),
     '];',
     `export const themes = ${JSON.stringify(themes)};`,
@@ -43,8 +44,8 @@ async function optionsData(): Promise<Plugin> {
   };
 }
 
-function backgroundPlugins(): Plugin {
-  const lines = BACKGROUND_PLUGINS.flatMap((id, i) => {
+export function backgroundPlugins(names: readonly string[] = BACKGROUND_PLUGINS): Plugin {
+  const lines = names.flatMap((id, i) => {
     const dir = path.join(PLUGINS, id);
     const half = existsSync(path.join(dir, 'browser.ts')) ? 'browser.ts' : 'main.ts';
     return [
@@ -55,7 +56,7 @@ function backgroundPlugins(): Plugin {
   const contents = [
     ...lines,
     'export default [',
-    ...BACKGROUND_PLUGINS.map(
+    ...names.map(
       (_, i) => `  { plugin: h${i}, schema: m${i}.settings ?? {}, defaultEnabled: m${i}.defaultEnabled === true },`,
     ),
     '];',
@@ -72,9 +73,12 @@ function backgroundPlugins(): Plugin {
   };
 }
 
-export async function buildExtension({ debug = false } = {}) {
+export async function buildExtension({
+  debug = false,
+  browser = 'firefox',
+}: { debug?: boolean; browser?: 'firefox' | 'chromium' } = {}) {
   const source = path.join(ROOT, 'src/extension');
-  const out = path.join(ROOT, 'dist/extension/firefox');
+  const out = path.join(ROOT, `dist/extension/${browser}`);
   await mkdir(out, { recursive: true });
   await buildApp({
     debug,
@@ -82,9 +86,15 @@ export async function buildExtension({ debug = false } = {}) {
     entryPoint: 'src/extension/page.ts',
     outFile: path.join(out, 'page.js'),
   });
-  const manifest = JSON.parse(await readFile(path.join(source, 'firefox/manifest.json'), 'utf8'));
+  const manifest = JSON.parse(await readFile(path.join(source, `${browser}/manifest.json`), 'utf8'));
   // Keep the manifest numeric even for local builds whose app version has a git suffix.
   manifest.version = `2.0.${versions.build}`;
+  if (browser === 'firefox' && process.env.SLICK_FIREFOX_CHANNEL === 'listed') {
+    manifest.version += '.1';
+    delete manifest.browser_specific_settings.gecko.update_url;
+    // AMO only allows userScripts in user script managers.
+    manifest.optional_permissions = manifest.optional_permissions.filter((name: string) => name !== 'userScripts');
+  }
   const entries: Record<string, Uint8Array> = {
     'manifest.json': Buffer.from(`${JSON.stringify(manifest, null, 2)}\n`),
     'page.js': await readFile(path.join(out, 'page.js')),
@@ -95,6 +105,7 @@ export async function buildExtension({ debug = false } = {}) {
     ['background', 'background-entry.ts'],
     ['content', 'content.ts'],
     ['options', 'options-entry.ts'],
+    ['accounts-ui', 'accounts-ui.ts'],
   ] as const) {
     const result = await build({
       entryPoints: [path.join(source, entry)],
@@ -103,22 +114,30 @@ export async function buildExtension({ debug = false } = {}) {
       write: false,
       platform: 'browser',
       format: 'iife',
-      target: 'firefox140',
+      target: browser === 'firefox' ? 'firefox140' : 'chrome111',
       minify: !debug,
       sourcemap: debug ? 'inline' : false,
     });
     entries[`${name}.js`] = result.outputFiles[0].contents;
   }
-  for (const name of ['options.html', 'options.css']) entries[name] = await readFile(path.join(source, name));
+  for (const name of ['options.html', 'options.css', 'accounts.html', 'accounts-paused.html', 'accounts.css'])
+    entries[name] = await readFile(path.join(source, name));
   const lato = path.join(ROOT, 'node_modules/@fontsource/lato');
   for (const weight of [400, 700, 900]) {
     entries[`fonts/lato-${weight}.woff2`] = await readFile(path.join(lato, `files/lato-latin-${weight}-normal.woff2`));
   }
   entries['fonts/LICENSE-Lato.txt'] = await readFile(path.join(lato, 'LICENSE'));
+  for (const notice of ['DICTIONARY-NOTICE.txt', 'CMUDICT-LICENSE.txt']) {
+    entries[`licenses/HaikuWarning/${notice}`] = await readFile(path.join(ROOT, 'src/plugins/HaikuWarning', notice));
+  }
   // Toolbar marks: the app's one-colour SVG, recoloured for light and dark toolbars.
   const mark = await readFile(path.join(ROOT, 'assets/desktop.svg'), 'utf8');
   entries['icons/black.svg'] = Buffer.from(mark);
   entries['icons/white.svg'] = Buffer.from(mark.replaceAll('fill="#000"', 'fill="#fff"'));
+  if (browser === 'chromium')
+    for (const color of ['black', 'white']) {
+      entries[`icons/${color}.png`] = await readFile(path.join(ROOT, `assets/extension/${color}.png`));
+    }
   for (const size of [16, 32, 128]) {
     entries[`icons/${size}.png`] = await readFile(path.join(ROOT, `assets/desktop-linux/${size}.png`));
   }
@@ -130,6 +149,7 @@ export async function buildExtension({ debug = false } = {}) {
   const archive = Object.fromEntries(
     Object.entries(entries).map(([name, bytes]) => [name, [bytes, { mtime: new Date('2000-01-01T00:00:00Z') }]]),
   ) as Parameters<typeof zipSync>[0];
-  await writeFile(path.join(out, '../slick-firefox.xpi'), zipSync(archive));
-  console.log('[build:firefox] dist/extension/firefox + slick-firefox.xpi (unsigned)');
+  const artifact = browser === 'firefox' ? 'slick-firefox.xpi' : 'slick-chromium.zip';
+  await writeFile(path.join(out, '..', artifact), zipSync(archive));
+  console.log(`[build:${browser}] dist/extension/${browser} + ${artifact}`);
 }

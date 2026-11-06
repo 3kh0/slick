@@ -1,8 +1,9 @@
-import type { SettingsSchema } from '../../shared/settings.ts';
+import type { PluginCategory, SettingsSchema } from '../../shared/settings.ts';
 
 export const id = 'StreamerMode';
 export const pluginName = 'Streamer Mode';
 export const description = 'Blur private information while others may be able to see your screen';
+export const category: PluginCategory = 'privacy';
 export const defaultEnabled = false;
 
 export const settings = {

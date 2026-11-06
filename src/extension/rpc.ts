@@ -1,6 +1,9 @@
 // Public page traffic is not secret or authenticated. Keep this surface unprivileged.
 import type { Dnr } from './mainHost.ts';
 import { BACKGROUND_PLUGINS, EXTENSION_PLUGINS, LARGE_STORAGE_PLUGINS } from './plugins.ts';
+import { record } from '../shared/objects.ts';
+import { userPluginId, type UserScripts } from './userPlugins.ts';
+export { record } from '../shared/objects.ts';
 
 export const CHANNEL = 'slick:firefox:v1';
 export const RENDERERS = EXTENSION_PLUGINS;
@@ -24,6 +27,14 @@ export const METHODS = [
   'blob.clear',
   'plugin.call',
   'tabMode',
+  'account.list',
+  'account.open',
+  'account.status',
+  'account.capture',
+  'account.forget',
+  'account.switch',
+  'account.add',
+  'account.recover',
 ] as const;
 export type Method = (typeof METHODS)[number];
 // Options UI: runtime.sendMessage({method,args}) -> {ok:true,value}|{ok:false,error}.
@@ -32,14 +43,15 @@ export type Request = { method: Method; args: string[] };
 export type Response =
   | { ok: true; value: string | boolean | null | string[] | Record<string, string> }
   | { ok: false; error: string };
-export function record(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === 'object' && !Array.isArray(value);
-}
 const text = (v: unknown, max = MAX_TEXT): v is string => typeof v === 'string' && v.length <= max;
-// PluginManager namespaces blob stores as `plugin:<id>`.
+const accountId = (v: unknown): v is string => typeof v === 'string' && /^[A-Z][A-Z0-9]{5,63}$/.test(v);
+const tabId = (v: unknown): v is string => typeof v === 'string' && /^\d{1,10}$/.test(v);
+// PluginManager namespaces blob stores as `plugin:<id>`. The background only
+// serves user plugin ids that are installed.
 export function namespace(v: unknown): v is string {
-  return typeof v === 'string' && v.startsWith('plugin:') && (RENDERERS as readonly string[]).includes(v.slice(7));
+  return typeof v === 'string' && v.startsWith('plugin:') && userPluginId(v.slice(7));
 }
+export const bundled = (ns: string) => (RENDERERS as readonly string[]).includes(ns.slice(7));
 // Per-namespace quota. Logging plugins get room for their history (MessageLogger keeps 1000 entries).
 export function blobLimits(ns: string) {
   return (LARGE_STORAGE_PLUGINS as readonly string[]).includes(ns.slice(7))
@@ -56,7 +68,20 @@ export function validRequest(v: unknown): v is Request {
     case 'readSettings':
     case 'readUserCss':
     case 'openCssEditor':
+    case 'account.list':
+    case 'account.status':
+    case 'account.recover':
       return a.length === 0;
+    case 'account.open':
+      return a.length === 0 || (a.length === 1 && accountId(a[0]));
+    case 'account.capture':
+      return (a.length === 1 || a.length === 2) && tabId(a[0]) && (a.length === 1 || text(a[1], 80));
+    case 'account.add':
+      return a.length === 1 && tabId(a[0]);
+    case 'account.forget':
+      return a.length === 1 && accountId(a[0]);
+    case 'account.switch':
+      return a.length === 2 && accountId(a[0]) && (a[1] === '' || tabId(a[1]));
     case 'writeSettings':
     case 'writeUserCss':
       return a.length === 1 && text(a[0]);
@@ -114,12 +139,20 @@ export function validMethodResponse(method: Method, response: unknown): response
   if (method === 'blob.list') return Array.isArray(value);
   if (method === 'blob.readAll') return record(value);
   if (method === 'plugin.call') return typeof value === 'string';
+  if (method === 'account.list' || method === 'account.status' || method === 'account.capture')
+    return typeof value === 'string';
   return typeof value === 'boolean';
 }
 export function validId(v: unknown): v is string {
   return typeof v === 'string' && /^[a-z0-9-]{1,80}$/.test(v);
 }
-export type Sender = { id?: string; frameId?: number; url?: string; tab?: { id?: number } };
+export type Sender = {
+  id?: string;
+  frameId?: number;
+  url?: string;
+  incognito?: boolean;
+  tab?: { id?: number; incognito?: boolean };
+};
 // Tiny extension-local browser surface; compatible with @types/firefox-webext-browser.
 export type StorageArea = {
   get(keys: string | string[]): Promise<Record<string, unknown>>;
@@ -130,11 +163,13 @@ export type ExtensionBrowser = {
   runtime: {
     id: string;
     getURL(path: string): string;
+    getManifest?(): { optional_permissions?: string[] };
     sendMessage(message: Request): Promise<unknown>;
     onMessage: { addListener(cb: (message: unknown, sender: Sender) => Promise<Response>): void };
   };
   storage: {
     local: StorageArea;
+    session?: StorageArea;
     onChanged: { addListener(cb: (changes: Record<string, { newValue?: unknown }>, area: string) => void): void };
   };
   tabs: {
@@ -142,10 +177,46 @@ export type ExtensionBrowser = {
     onRemoved?: { addListener(cb: (tabId: number) => void): void };
   };
   declarativeNetRequest?: Dnr;
+  userScripts?: UserScripts;
+  permissions?: {
+    contains(permissions: { permissions?: string[]; origins?: string[] }): Promise<boolean>;
+    request(permissions: { permissions?: string[]; origins?: string[] }): Promise<boolean>;
+    onAdded?: { addListener(cb: () => void): void };
+  };
   action?: { setIcon(details: { path: string | null }): Promise<void> };
 };
 export function extensionBrowser(): ExtensionBrowser | undefined {
-  return (globalThis as typeof globalThis & { browser?: ExtensionBrowser }).browser;
+  const globals = globalThis as typeof globalThis & { browser?: ExtensionBrowser; chrome?: ExtensionBrowser };
+  if (globals.browser) return globals.browser;
+  const chrome = globals.chrome;
+  if (!chrome?.runtime?.id) return undefined;
+  // Older Chromium needs a literal true and sendResponse for async replies.
+  return {
+    ...chrome,
+    // Appears once the optional permission is granted.
+    get userScripts() {
+      return chrome.userScripts;
+    },
+    runtime: {
+      id: chrome.runtime.id,
+      getURL: (path) => chrome.runtime.getURL(path),
+      getManifest: () => chrome.runtime.getManifest!(),
+      sendMessage: (message) => chrome.runtime.sendMessage(message),
+      onMessage: {
+        addListener(listener) {
+          const event = chrome.runtime.onMessage as unknown as {
+            addListener(cb: (message: unknown, sender: Sender, reply: (response: Response) => void) => true): void;
+          };
+          event.addListener((message, sender, reply) => {
+            Promise.resolve()
+              .then(() => listener(message, sender))
+              .then(reply, () => reply({ ok: false, error: 'Extension request failed' }));
+            return true;
+          });
+        },
+      },
+    },
+  };
 }
 
 export function createClient(send: (message: unknown) => void, timeout = 10000) {

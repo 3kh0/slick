@@ -13,9 +13,11 @@ const UPLOADED_FAMILY = 'SlickCustomFont';
 const quoteFamily = (name: string): string => (/^[\w-]+$/.test(name) ? name : JSON.stringify(name));
 
 export default class CustomFonts extends SlickPlugin<typeof meta.settings> {
+  static readonly requiredAPIs = [] as const;
   static readonly id = meta.id;
   static readonly pluginName = meta.pluginName;
   static readonly description = meta.description;
+  static readonly category = meta.category;
   static readonly defaultEnabled = meta.defaultEnabled;
   static readonly settings = meta.settings;
   static readonly liveSettings = ['fontFamily', 'fontPath'];

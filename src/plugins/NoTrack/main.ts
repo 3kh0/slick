@@ -1,15 +1,7 @@
-// Block Slack's telemetry endpoints. Patterns from uAssets and the AdGuard filters.
+// Block Slack's telemetry endpoints.
 
 import type { SlickMainPlugin } from '$slick';
-
-const TELEMETRY = [
-  '*://slackb.com/*',
-  '*://*.slackb.com/*',
-  '*://slack.com/beacon/*',
-  '*://*.slack.com/beacon/*',
-  '*://slack.com/clog/*',
-  '*://*.slack.com/clog/*',
-];
+import { TELEMETRY } from './telemetry.ts';
 
 const plugin: SlickMainPlugin = {
   id: 'NoTrack',

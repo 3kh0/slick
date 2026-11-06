@@ -1,5 +1,6 @@
 // Build entry point. `node scripts/build.ts [app|desktop|package] [--debug] [--dir] [--arch <arch>]`
 
+import { buildUserscript } from './build/userscript.ts';
 import { buildApp } from './build/app.ts';
 import { buildDesktop } from './build/desktop.ts';
 import { packageDesktop } from './build/package.ts';
@@ -18,7 +19,14 @@ if (archIndex >= 0 && (!arch || arch.startsWith('--'))) {
 const archValueIndex = archIndex < 0 ? -1 : archIndex + 1;
 const targets = args.filter((arg, index) => !arg.startsWith('--') && index !== archValueIndex);
 
-const all = { app: buildApp, desktop: buildDesktop, package: packageDesktop, firefox: buildExtension };
+const all = {
+  app: buildApp,
+  userscript: buildUserscript,
+  desktop: buildDesktop,
+  package: packageDesktop,
+  firefox: buildExtension,
+  chromium: (options: { debug: boolean }) => buildExtension({ ...options, browser: 'chromium' }),
+};
 const chosen = targets.length ? targets : ['desktop'];
 
 for (const target of chosen) {

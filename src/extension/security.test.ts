@@ -87,7 +87,8 @@ test('one-shot claim, bypass and safe mode without runtime bridge import', async
   await assert.rejects(bridge.openCssEditor(), /toolbar/);
   await assert.rejects(bridge.fetch('https://example.com'));
   await assert.rejects(bridge.plugin('Censorship').call('anything'));
-  assert.throws(() => bridge.blobStore('plugin:Other'));
+  assert.throws(() => bridge.blobStore('plugin:../Other'));
+  assert.throws(() => bridge.blobStore('user-plugins'));
   assert.doesNotThrow(() => bridge.blobStore('plugin:HumanCount'));
 });
 
@@ -113,4 +114,57 @@ test('toolbar icon follows settings; unknown or missing choices fall back to the
   onChanged({ [SETTINGS_KEY]: { newValue: '{"toolbarIcon":"auto"}' } }, 'local');
   onChanged({ [SETTINGS_KEY]: { newValue: '{"toolbarIcon":"black"}' } }, 'sync');
   assert.deepEqual(icons, ['icons/white.svg', null]);
+});
+
+test('Chromium owned UI accepts only this extension origin', async () => {
+  const root = 'chrome-extension://abcdefghijklmnop/';
+  const sender = { id: 'slick@test', url: root + 'options.html' };
+  assert.equal(allowedSender(sender, 'slick@test', root), true);
+  for (const url of [
+    'chrome-extension://other/options.html',
+    'moz-extension://abcdefghijklmnop/options.html',
+    'https://abcdefghijklmnop/options.html',
+  ]) {
+    assert.equal(allowedSender({ ...sender, url }, 'slick@test', root), false);
+  }
+  const opened: string[] = [];
+  const api = {
+    runtime: { id: 'slick@test', getURL: (p: string) => root + p },
+    storage: { local: { get: async () => ({}), set: async () => {} }, onChanged: { addListener() {} } },
+    tabs: {
+      create: async ({ url }: { url: string }) => {
+        opened.push(url);
+      },
+    },
+  } as unknown as ExtensionBrowser;
+  assert.deepEqual(await createBackground(api)({ method: 'openCssEditor', args: [] }, sender), {
+    ok: true,
+    value: true,
+  });
+  assert.deepEqual(opened, [root + 'options.html']);
+  assert.equal(toolbarIconPath('{"toolbarIcon":"white"}', true), 'icons/white.png');
+});
+test('a settings write reaches background halves before storage.onChanged does', async () => {
+  const data: Record<string, unknown> = {};
+  const area = {
+    get: async (key: string) => (key in data ? { [key]: data[key] } : {}),
+    set: async (items: Record<string, unknown>) => void Object.assign(data, items),
+  };
+  const api = {
+    runtime: { id: 'slick@test', getURL: (path: string) => 'moz-extension://own/' + path },
+    storage: { local: area, onChanged: { addListener() {} } },
+    tabs: {},
+  } as unknown as ExtensionBrowser;
+  const plugin = { id: 'ClearURLs', capabilities: [], rpc: { rules: () => 'ok' } };
+  const dispatch = createBackground(api, [{ plugin, schema: {}, defaultEnabled: false }], {} as never);
+  const sender = { id: 'slick@test', url: 'moz-extension://own/options.html' };
+  const call = () => dispatch({ method: 'plugin.call', args: ['ClearURLs', 'rules', '[]'] }, sender);
+  assert.equal((await call()).ok, false);
+  const prior = (await dispatch({ method: 'readSettings', args: [] }, sender)) as { value: string };
+  const next = JSON.stringify({ plugins: { ClearURLs: { enabled: true } } });
+  assert.deepEqual(await dispatch({ method: 'compareAndSwapSettings', args: [prior.value, next] }, sender), {
+    ok: true,
+    value: true,
+  });
+  assert.deepEqual(await call(), { ok: true, value: '"ok"' });
 });

@@ -1,8 +1,9 @@
-import type { SettingsSchema } from '../../shared/settings.ts';
+import type { PluginCategory, SettingsSchema } from '../../shared/settings.ts';
 
 export const id = 'CustomSounds';
 export const pluginName = 'Custom Sounds';
 export const description = 'Override Slack notification sounds with your own audio file.';
+export const category: PluginCategory = 'sounds';
 export const defaultEnabled = false;
 
 export const settings = {

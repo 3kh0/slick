@@ -1,5 +1,5 @@
-// No cache here: the renderer's cache already limits this to once per user
-// per day, and two caches would only disagree.
+// No cache here: the renderer's cache already rate-limits this per user, and
+// two caches would only disagree.
 
 import type { SlickMainPlugin } from '$slick';
 

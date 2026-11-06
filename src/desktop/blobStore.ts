@@ -2,7 +2,8 @@
 
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
-import { settingsDir } from './paths.js';
+import { settingsDir } from './paths.ts';
+import { mapConcurrent } from '../shared/concurrent.ts';
 
 const MAX_VALUE_BYTES = 8 * 1024 * 1024;
 
@@ -41,7 +42,9 @@ export async function list(namespace: string): Promise<string[]> {
 export async function readAll(namespace: string, prefix = ''): Promise<Record<string, string>> {
   const keys = (await list(namespace)).filter((key) => key.startsWith(prefix));
   const out: Record<string, string> = {};
-  const values = await Promise.all(keys.map((key) => read(namespace, key)));
+  // Archives can contain thousands of files. Do not queue every open/read at
+  // once and contend with Slack's own work in Node's shared IO thread pool.
+  const values = await mapConcurrent(keys, 16, (key) => read(namespace, key));
   keys.forEach((key, index) => {
     const value = values[index];
     if (value !== null) out[key] = value;

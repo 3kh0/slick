@@ -9,11 +9,20 @@ const { execFileSync } = require('child_process');
 const ROOT = path.join(__dirname, '..', '..');
 const LATEST_REDIRECT = 'https://slack.com/ssb/download-osx-universal';
 const VERSION_RE = /desktop-releases\/mac\/[^/]+\/(\d+\.\d+\.\d+)\//;
-const DIST_TAGS = 'https://registry.npmjs.org/-/package/electron/dist-tags';
 const FRAMEWORK_PLIST = 'Slack.app/Contents/Frameworks/Electron Framework.framework/Versions/A/Resources/Info.plist';
 const UA = 'slick-electron-watch';
 
 const major = (v) => parseInt(v, 10) || 0;
+function compareVersions(slackElectron, byoe) {
+  for (const version of [slackElectron, byoe]) {
+    if (!/^\d+\.\d+\.\d+$/.test(version) || version !== version.trim())
+      throw new Error(`invalid Electron version: ${version}`);
+  }
+  return {
+    mismatch: major(slackElectron) !== major(byoe),
+    versionMismatch: slackElectron !== byoe,
+  };
+}
 const die = (m) => {
   console.error(`electron-watch: ${m}`);
   process.exit(1);
@@ -38,20 +47,6 @@ function get(url, onResponse, redirects = 0) {
       .on('error', reject);
   });
 }
-
-const getJson = (url) =>
-  get(url, (res, resolve, reject) => {
-    let body = '';
-    res.setEncoding('utf8');
-    res.on('data', (c) => (body += c));
-    res.on('end', () => {
-      try {
-        resolve(JSON.parse(body));
-      } catch (e) {
-        reject(e);
-      }
-    });
-  });
 
 const download = (url, dest) =>
   get(url, (res, resolve, reject) => {
@@ -98,43 +93,37 @@ async function slackElectronVersion(version) {
   }
 }
 
-// Newest published release of a major, so the issue can suggest a concrete pin.
-async function suggestedPin(wanted) {
-  try {
-    const tags = await getJson(DIST_TAGS);
-    return tags[`${wanted}-x-y`] || '';
-  } catch {
-    return '';
-  }
-}
-
-(async () => {
+async function main() {
   if (process.platform !== 'darwin') die('needs macOS (plutil)');
 
   const byoe = require(path.join(ROOT, 'package.json')).devDependencies.electron.replace(/[^\d.]/g, '');
   const slackVersion = await latestSlackVersion().catch((e) => die(e.message));
   const slackElectron = await slackElectronVersion(slackVersion).catch((e) => die(e.message));
 
-  const mismatch = major(slackElectron) !== major(byoe);
-  const suggested = mismatch ? await suggestedPin(major(slackElectron)) : '';
+  const { mismatch, versionMismatch } = compareVersions(slackElectron, byoe);
 
   console.log(`Slack ${slackVersion} ships Electron ${slackElectron}`);
   console.log(`package.json pins Electron ${byoe}`);
   console.log(mismatch ? `MISMATCH: major ${major(slackElectron)} != ${major(byoe)}` : 'majors match');
+  console.log(versionMismatch ? `VERSION MISMATCH: ${slackElectron} != ${byoe}` : 'versions match');
 
   if (process.env.GITHUB_OUTPUT) {
     fs.appendFileSync(
       process.env.GITHUB_OUTPUT,
       [
         `mismatch=${mismatch}`,
+        `version_mismatch=${versionMismatch}`,
         `slack_version=${slackVersion}`,
         `slack_electron=${slackElectron}`,
         `slack_major=${major(slackElectron)}`,
         `byoe_electron=${byoe}`,
         `byoe_major=${major(byoe)}`,
-        `suggested=${suggested}`,
+        `suggested=${versionMismatch ? slackElectron : ''}`,
         '',
       ].join('\n'),
     );
   }
-})();
+}
+
+module.exports = { compareVersions };
+if (require.main === module) main().catch((error) => die(error.message));

@@ -1,11 +1,19 @@
-import type { SettingsSchema } from '../../shared/settings.ts';
+import type { PluginCategory, SettingsSchema } from '../../shared/settings.ts';
 
 export const id = 'MessageLogger';
 export const pluginName = 'Message Logger';
 export const description = 'Keep deleted and edited messages visible';
+export const category: PluginCategory = 'messages';
 export const defaultEnabled = false;
 
 export const settings = {
+  saveImages: {
+    type: 'boolean',
+    label: 'Save image previews',
+    description:
+      'Cache accessible images while messages are visible and keep previews after deletion. Up to 3 previews per message and 128 deleted messages; large images are resized.',
+    default: true,
+  },
   retentionDays: {
     type: 'number',
     label: 'Keep history for (days)',
@@ -30,11 +38,24 @@ export const settings = {
     description: 'Skip edits and deletes for messages sent by you',
     default: false,
   },
+  ignoreEditsFrom: {
+    type: 'text',
+    label: 'Ignore messages from',
+    description: 'Skip edits and deletes from these comma-separated app, user, or bot IDs (e.g. A08GT3TM7A4)',
+    default: '',
+  },
+  allowBotEditsFrom: {
+    type: 'text',
+    label: 'Show bot edits from',
+    description:
+      'Log edits from these comma-separated bot or app IDs (e.g. A08GT3TM7A4). Bot edits are hidden by default.',
+    default: '',
+  },
   ignoreAnchors: {
     type: 'select',
     label: 'Ignore anchors',
     description: 'Skip deletions of bot-sent (anchored) messages',
-    default: 'off',
+    default: 'strict',
     options: [
       { value: 'off', label: 'Off' },
       {

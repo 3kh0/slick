@@ -1,16 +1,9 @@
 import { setStyle } from './api/css.ts';
 import type { ConfigStore } from './configStore.ts';
+import type { ThemeJson } from '../shared/themes.ts';
+export type { ThemeJson } from '../shared/themes.ts';
 
 const THEME_SELECTOR = ':root,html,body,.sk-client-theme--dark,.sk-client-theme--light';
-
-export type ThemeJson = {
-  name?: string;
-  description?: string;
-  palette?: Record<string, Record<string, unknown>>;
-  sidebar?: Record<string, unknown>;
-  vars?: Record<string, unknown>;
-  css?: string | string[];
-};
 
 /** Convert the v1 theme format without changing its CSS ordering or precedence. */
 export function themeToCss(theme: ThemeJson): string {
@@ -37,13 +30,44 @@ export function themeToCss(theme: ThemeJson): string {
   return variables + extra;
 }
 
+const isDark = () => document.body?.classList.contains('sk-client-theme--dark') ?? false;
+
 export function installTheme(config: ConfigStore): () => void {
+  let theme: ThemeJson | undefined;
+  let css = '';
+  let installed: string | null = null;
+  let observer: MutationObserver | null = null;
+
+  const render = () => {
+    const next = theme && (!theme.mode || isDark() === (theme.mode === 'dark')) ? css : null;
+    if (next !== installed) setStyle((installed = next), 'theme');
+  };
+
+  const watch = () => {
+    if (!theme?.mode) {
+      observer?.disconnect();
+      observer = null;
+    } else if (!observer && document.body) {
+      observer = new MutationObserver(render);
+      observer.observe(document.body, { attributes: true, attributeFilter: ['class'] });
+    }
+  };
+
   const apply = () => {
     const selected = config.theme;
-    const theme = selected && selected !== 'custom' ? __SLICK_THEMES__[selected] : undefined;
-    setStyle(theme ? themeToCss(theme) : null, 'theme');
+    theme =
+      selected && selected !== 'custom' ? (config.importedThemes[selected] ?? __SLICK_THEMES__[selected]) : undefined;
+    css = theme ? themeToCss(theme) : '';
+    watch();
+    render();
   };
 
   apply();
-  return config.onConfigChange(apply);
+  if (!document.body) document.addEventListener('DOMContentLoaded', apply, { once: true });
+  const stop = config.onConfigChange(apply);
+  return () => {
+    stop();
+    observer?.disconnect();
+    observer = null;
+  };
 }
