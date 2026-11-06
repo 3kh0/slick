@@ -152,6 +152,8 @@ export function createHuddleCall({
     const isCurrent = () => thisAttempt === attempt;
     const patch = (change: Partial<CallState>) => isCurrent() && state.update((current) => ({ ...current, ...change }));
     return createMedia({
+      audioInputId: preferences.get().audioInputId,
+      audioOutputId: preferences.get().audioOutputId,
       credentials,
       localUserId,
       startMuted: muted,
@@ -286,6 +288,15 @@ export function createHuddleCall({
     savePreferences(preferences.get());
   }
 
+  async function selectAudioDevice(kind: 'input' | 'output', deviceId: string): Promise<void> {
+    const session = media;
+    const thisAttempt = attempt;
+    if (state.get().status !== 'connected' || !session) return;
+    await (kind === 'input' ? session.setAudioInput(deviceId) : session.setAudioOutput(deviceId));
+    if (thisAttempt === attempt)
+      updatePreferences(kind === 'input' ? { audioInputId: deviceId } : { audioOutputId: deviceId });
+  }
+
   /** Shader on↔off. Throws ShaderCompileError (or a camera error, for shaders that read it). */
   async function toggleShader(): Promise<void> {
     const current = state.get();
@@ -311,6 +322,8 @@ export function createHuddleCall({
     leave,
     dismiss,
     toggleMute,
+    selectAudioInput: (deviceId: string) => selectAudioDevice('input', deviceId),
+    selectAudioOutput: (deviceId: string) => selectAudioDevice('output', deviceId),
     toggleCamera: () => toggleVideoSource('cameraOn'),
     toggleScreenShare: () => toggleVideoSource('screenSharing'),
     toggleShader,

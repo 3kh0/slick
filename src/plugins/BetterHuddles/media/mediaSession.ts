@@ -37,6 +37,8 @@ export interface VideoTile {
 
 export interface MediaSession {
   setMuted: (muted: boolean) => void;
+  setAudioInput: (deviceId: string) => Promise<void>;
+  setAudioOutput: (deviceId: string) => Promise<void>;
   /** Turns your camera on/off; rejects with a user-readable error (e.g. permission denied). */
   setCamera: (enabled: boolean) => Promise<void>;
   /**
@@ -54,6 +56,8 @@ export interface MediaSession {
 }
 
 export interface MediaSessionOptions {
+  audioInputId?: string;
+  audioOutputId?: string;
   credentials: ChimeCredentials;
   /** Your Slack user id, for your own speaking indicator. */
   localUserId: string;

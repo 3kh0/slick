@@ -131,6 +131,7 @@ export default class BetterHuddles extends SlickPlugin<typeof meta.settings> {
     if (!this.api.isActive() || !this.call) return;
     const host = document.createElement('div');
     host.className = 'sbh-host';
+    host.dataset.macDesktop = String(this.api.loader === 'electron' && navigator.platform.startsWith('Mac'));
     document.body.append(host);
     const root = reactDom.createRoot(host);
     const Provider = huddleUiContext().Provider;

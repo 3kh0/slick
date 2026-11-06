@@ -1,10 +1,11 @@
-// What the call remembers between huddles: your shader code. Stored in the
-// Slack page's localStorage; parsing is pure and testable.
+// Shader code and audio devices remembered between huddles.
 
 import { DEFAULT_SHADER_SOURCE } from './media/shaderTemplates.ts';
 
 export interface CallPreferences {
   shaderSource: string;
+  audioInputId?: string;
+  audioOutputId?: string;
 }
 
 const STORAGE_KEY = 'slick-better-huddles:preferences';
@@ -17,7 +18,12 @@ export function parsePreferences(saved: unknown): CallPreferences {
   const record = (saved && typeof saved === 'object' ? saved : {}) as Record<string, unknown>;
   const shader = record.shaderSource;
   const validShader = typeof shader === 'string' && shader.trim() !== '' && shader.length <= MAX_SHADER_LENGTH;
-  return { shaderSource: validShader ? shader : DEFAULT_SHADER_SOURCE };
+  const preferences: CallPreferences = { shaderSource: validShader ? shader : DEFAULT_SHADER_SOURCE };
+  for (const key of ['audioInputId', 'audioOutputId'] as const) {
+    if (typeof record[key] === 'string' && record[key].length > 0 && record[key].length <= 256)
+      preferences[key] = record[key];
+  }
+  return preferences;
 }
 
 export function loadPreferences(storage: Pick<Storage, 'getItem'>): CallPreferences {

@@ -223,6 +223,10 @@ export function CallWindow() {
   const windowRef = React.useRef<HTMLElement>(null);
   const { fullscreen, toggle: toggleFullscreen } = useFullscreen(windowRef);
   const floating = !filled && !fullscreen;
+  const toggleSettings = () => {
+    setSettingsMounted(true);
+    setSettingsOpen(!settingsOpen);
+  };
 
   if (collapsed && state.status !== 'failed')
     return <CallBar rect={rect} onMoveStart={onMoveStart} onExpand={() => setCollapsed(false)} />;
@@ -257,13 +261,7 @@ export function CallWindow() {
         {state.status === 'failed' ? (
           <CallFailure message={state.message} log={call.log} onClose={call.dismiss} />
         ) : (
-          <Stage
-            onControlError={report}
-            onToggleSettings={() => {
-              setSettingsMounted(true);
-              setSettingsOpen(!settingsOpen);
-            }}
-          />
+          <Stage onControlError={report} onToggleSettings={toggleSettings} />
         )}
         {settingsMounted && state.status !== 'failed' && (
           <SettingsPanel hidden={!settingsOpen} onClose={() => setSettingsOpen(false)} onControlError={report} />
@@ -276,7 +274,12 @@ export function CallWindow() {
               {notice}
             </p>
           )}
-          <Controls onControlError={report} fullscreen={fullscreen} onToggleFullscreen={toggleFullscreen} />
+          <Controls
+            onControlError={report}
+            fullscreen={fullscreen}
+            onToggleFullscreen={toggleFullscreen}
+            onToggleSettings={toggleSettings}
+          />
         </footer>
       )}
       {floating && <ResizeHandles onResizeStart={onResizeStart} />}

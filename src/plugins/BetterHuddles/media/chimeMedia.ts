@@ -14,13 +14,13 @@ import {
   type MeetingSessionStatus,
 } from './chimeSdk.ts';
 import { createChimeVideoControls } from './chimeVideo.ts';
+import { createAudioDeviceControls } from './audioDevices.ts';
 import { withoutEventIngestion } from './noTelemetry.ts';
 import { createRecordingLogger } from './recordingLogger.ts';
 import { browserFamily, uplinkVideoPlan, type SendCodec } from './videoQuality.ts';
 import {
   createParticipantTracker,
   createSpeakingTracker,
-  mediaDeviceError,
   slackUserIdFromExternalId,
   type MediaSession,
   type MediaSessionOptions,
@@ -34,11 +34,6 @@ import {
  */
 
 const CONNECT_TIMEOUT_MS = 20_000;
-const MICROPHONE_CONSTRAINTS: MediaTrackConstraints = {
-  echoCancellation: true,
-  noiseSuppression: true,
-  autoGainControl: true,
-};
 
 function describeStatus(status: MeetingSessionStatus): string {
   const code = status.statusCode();
@@ -51,14 +46,6 @@ function describeStatus(status: MeetingSessionStatus): string {
     return 'You joined this huddle from another device.';
   if (code === MeetingSessionStatusCode.Left) return 'You left the huddle.';
   return `The huddle connection dropped (Chime status ${MeetingSessionStatusCode[code] ?? code}).`;
-}
-
-async function startMicrophone(audioVideo: AudioVideoFacade): Promise<void> {
-  try {
-    await audioVideo.startAudioInput(MICROPHONE_CONSTRAINTS);
-  } catch (error) {
-    throw mediaDeviceError('microphone', error);
-  }
 }
 
 /**
@@ -155,6 +142,7 @@ export async function createChimeMediaSession(options: MediaSessionOptions): Pro
   const video = createChimeVideoControls(audioVideo, options, downlinkPolicy, uplink.capture);
 
   let stopped = false;
+  const audio = createAudioDeviceControls(audioVideo, speakerOutput, () => stopped);
   async function stop(): Promise<void> {
     if (stopped) return;
     stopped = true;
@@ -166,8 +154,12 @@ export async function createChimeMediaSession(options: MediaSessionOptions): Pro
   }
 
   try {
-    await startMicrophone(audioVideo);
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    const available = (kind: MediaDeviceKind, id?: string) =>
+      devices.some((device) => device.kind === kind && device.deviceId === id) ? id! : 'default';
+    await audio.setAudioInput(available('audioinput', options.audioInputId));
     await audioVideo.bindAudioElement(speakerOutput);
+    await audio.setAudioOutput(available('audiooutput', options.audioOutputId));
     watchSpeakers(audioVideo, options, localAttendeeId);
     const started = waitForStart(audioVideo, (reason) => {
       void stop();
@@ -185,6 +177,7 @@ export async function createChimeMediaSession(options: MediaSessionOptions): Pro
   }
 
   return {
+    ...audio,
     setMuted: (muted) => (muted ? audioVideo.realtimeMuteLocalAudio() : audioVideo.realtimeUnmuteLocalAudio()),
     setCamera: video.setCamera,
     setShader: video.setShader,

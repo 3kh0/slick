@@ -1,25 +1,21 @@
-// The call window's stylesheet (installed with api.setStyle). Colours are
-// the call's own tokens, scoped to the window so Slack themes don't
-// recolour a video call. Every class is prefixed `sbh-` to stay out of Slack's way.
-
 export const CALL_WINDOW_CSS = `
 .sbh-window {
-  --sbh-stage-bg: #1a1d21;
+  --sbh-stage-bg: var(--dt_color-base-pry, #1a1d21);
   --sbh-tile-bg: #000000;
-  --sbh-pill-bg: rgba(255, 255, 255, 0.95);
-  --sbh-pill-text: #1d1c1d;
-  --sbh-speaking-ring: #ffffff;
-  --sbh-speaking-glow: rgba(255, 255, 255, 0.45);
-  --sbh-speaking-bars: #2bac76;
-  --sbh-badge-bg: rgba(0, 0, 0, 0.6);
-  --sbh-group-outline: rgba(255, 255, 255, 0.16);
-  --sbh-group-bg: rgba(255, 255, 255, 0.03);
-  --sbh-control-bg: rgba(255, 255, 255, 0.12);
-  --sbh-control-hover: rgba(255, 255, 255, 0.2);
-  --sbh-control-text: #ffffff;
-  --sbh-success: #2bac76;
-  --sbh-danger: #e01e5a;
-  --sbh-log-bg: rgba(0, 0, 0, 0.35);
+  --sbh-pill-bg: var(--dt_color-base-sec, #f8f8f8);
+  --sbh-pill-text: var(--dt_color-content-pry, #1d1c1d);
+  --sbh-speaking-ring: var(--dt_color-content-hgl-1, #2bac76);
+  --sbh-speaking-glow: var(--dt_color-surf-hgl-1, #2bac7640);
+  --sbh-speaking-bars: var(--dt_color-content-hgl-1, #2bac76);
+  --sbh-badge-bg: var(--dt_color-base-sec, #222529);
+  --sbh-group-outline: var(--dt_color-otl-pry, #ffffff29);
+  --sbh-group-bg: var(--dt_color-surf-pry, #ffffff08);
+  --sbh-control-bg: var(--dt_color-surf-pry, #ffffff1f);
+  --sbh-control-hover: var(--dt_color-surf-pry-hover, #ffffff33);
+  --sbh-control-text: var(--dt_color-content-pry, #ffffff);
+  --sbh-success: var(--dt_color-base-inv-hgl-1, #2bac76);
+  --sbh-danger: var(--dt_color-base-inv-imp, #e01e5a);
+  --sbh-log-bg: var(--dt_color-base-ter, #00000059);
   --sbh-radius: 12px;
   --sbh-tile-radius: 10px;
 
@@ -55,6 +51,14 @@ export const CALL_WINDOW_CSS = `
   touch-action: none;
 }
 .sbh-window--filled .sbh-header, .sbh-window:fullscreen .sbh-header { cursor: default; }
+.sbh-host[data-mac-desktop="true"] .sbh-window--filled:not(:fullscreen) .sbh-header {
+  padding-left: 100px;
+  -webkit-app-region: drag;
+}
+.sbh-header button { -webkit-app-region: no-drag; }
+.sbh-audio-devices { display: flex; flex-wrap: wrap; gap: 12px; }
+.sbh-audio-device { display: grid; gap: 4px; min-width: 0; flex: 1 1 160px; }
+.sbh-audio-device select { width: 100%; min-width: 0; }
 .sbh-where {
   display: inline-flex;
   align-items: center;
@@ -198,7 +202,7 @@ export const CALL_WINDOW_CSS = `
 .sbh-pill strong, .sbh-pill-pronouns { overflow: hidden; text-overflow: ellipsis; }
 .sbh-pill strong { font-weight: 700; }
 .sbh-pill-pronouns { flex-shrink: 1000; }
-.sbh-pill-muted { display: grid; color: var(--sbh-danger); }
+.sbh-pill-muted { display: grid; color: var(--dt_color-content-imp, #e01e5a); }
 .sbh-bars { display: inline-flex; align-items: center; gap: 2px; height: 14px; }
 .sbh-bars i {
   width: 3px;
@@ -213,7 +217,7 @@ export const CALL_WINDOW_CSS = `
 @keyframes sbh-talk { 0%, 100% { height: 5px; } 50% { height: 14px; } }
 @media (prefers-reduced-motion: reduce) { .sbh-bars i { animation: none; height: 10px; } }
 .sbh-footer { padding: 12px 16px 20px; }
-.sbh-notice { margin: 0 0 8px; font-size: 13px; text-align: center; color: #ffd6e0; }
+.sbh-notice { margin: 0 0 8px; font-size: 13px; text-align: center; color: var(--dt_color-content-imp, #ffd6e0); }
 .sbh-controls { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 12px; }
 .sbh-control {
   display: grid;
@@ -230,10 +234,10 @@ export const CALL_WINDOW_CSS = `
 }
 .sbh-control:hover:not(:disabled) { background: var(--sbh-control-hover); }
 .sbh-control:disabled { cursor: default; opacity: 0.45; }
-.sbh-control--active, .sbh-control--active:hover:not(:disabled) { background: var(--sbh-success); }
+.sbh-control--active, .sbh-control--active:hover:not(:disabled) { background: var(--sbh-success); color: #ffffff; }
 .sbh-control--warning, .sbh-control--warning:hover:not(:disabled) { background: var(--sbh-control-text); color: var(--sbh-stage-bg); }
 .sbh-control--warning:hover:not(:disabled) { filter: brightness(0.9); }
-.sbh-control--danger, .sbh-control--danger:hover:not(:disabled) { width: 64px; border-radius: 26px; background: var(--sbh-danger); }
+.sbh-control--danger, .sbh-control--danger:hover:not(:disabled) { width: 64px; border-radius: 26px; background: var(--sbh-danger); color: #ffffff; }
 .sbh-control--active:hover:not(:disabled), .sbh-control--danger:hover:not(:disabled) { filter: brightness(1.1); }
 .sbh-failure {
   display: grid;
@@ -308,10 +312,10 @@ export const CALL_WINDOW_CSS = `
 /* Settings slide over the stage. */
 .sbh-body { position: relative; }
 .sbh-settings {
-  --sbh-settings-bg: #222529;
-  --sbh-field-bg: #1a1d21;
-  --sbh-field-border: rgba(255, 255, 255, 0.18);
-  --sbh-error-text: #ffd6e0;
+  --sbh-settings-bg: var(--dt_color-base-sec, #222529);
+  --sbh-field-bg: var(--dt_color-base-pry, #1a1d21);
+  --sbh-field-border: var(--dt_color-otl-pry, #ffffff2e);
+  --sbh-error-text: var(--dt_color-content-imp, #ffd6e0);
   position: absolute;
   z-index: 1;
   top: 8px;
@@ -349,7 +353,7 @@ export const CALL_WINDOW_CSS = `
 .sbh-hint { margin: 0; font-size: 12px; opacity: 0.75; }
 .sbh-hint code { font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; }
 .sbh-text-button:disabled { cursor: default; opacity: 0.45; }
-.sbh-text-button--active { background: var(--sbh-success); }
+.sbh-text-button--active { background: var(--sbh-success); color: #ffffff; }
 .sbh-text-button--active:hover { background: var(--sbh-success); filter: brightness(1.1); }
 .sbh-code {
   display: flex;

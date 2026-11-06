@@ -14,6 +14,8 @@ const JOINED = {
 };
 
 interface FakeMedia extends MediaSession {
+  inputs: string[];
+  outputs: string[];
   muted: boolean[];
   camera: boolean[];
   shaders: (string | null)[];
@@ -69,11 +71,15 @@ function setup({
       if (mediaError) throw mediaError;
       if (holdMedia.enabled) await new Promise<void>((resolve) => (releaseMedia = resolve));
       const media: FakeMedia = {
+        inputs: [],
+        outputs: [],
         muted: [],
         camera: [],
         shaders: [],
         stopped: 0,
         setMuted: (muted) => void media.muted.push(muted),
+        setAudioInput: async (id) => void media.inputs.push(id),
+        setAudioOutput: async (id) => void media.outputs.push(id),
         setCamera: async (enabled) => {
           if (cameraError) throw cameraError;
           media.camera.push(enabled);
@@ -202,6 +208,29 @@ describe('huddleCall join', () => {
 });
 
 describe('huddleCall in a call', () => {
+  it('switches microphone and speaker independently, preserves mute, and remembers both for the next call', async () => {
+    const { call, medias, mediaOptions } = setup();
+    await call.join('C1', { muted: true });
+    await call.selectAudioInput('macbook');
+    await call.selectAudioOutput('earbuds');
+    assert.deepEqual(medias[0].inputs, ['macbook']);
+    assert.deepEqual(medias[0].outputs, ['earbuds']);
+    assert.equal(call.state.get().muted, true);
+    await call.leave();
+    await call.join('C1', { muted: true });
+    assert.equal(mediaOptions().audioInputId, 'macbook');
+    assert.equal(mediaOptions().audioOutputId, 'earbuds');
+  });
+
+  it('does not save a device selection that failed', async () => {
+    const { call, medias } = setup();
+    await call.join('C1');
+    medias[0].setAudioInput = async () => {
+      throw new Error('device vanished');
+    };
+    await assert.rejects(call.selectAudioInput('missing'), /device vanished/);
+    assert.equal(call.preferences.get().audioInputId, undefined);
+  });
   it('leaves: stops audio, tells Slack with the same token, and can keep the request alive through unload', async () => {
     const { call, posts, medias } = setup();
     await call.join('C1');

@@ -2,6 +2,10 @@
 
 Replaces Slack's huddle client with its own: every "start / join huddle" in Slack goes through `startHuddleWithConfirmation` (which would open Slack's join-preview popup) and ends in `startHuddle`; this plugin swaps all of them (`TAKEN_OVER_THUNKS`) for its own join, but only while the plugin is enabled. It calls `rooms.join` with your Slack token, connects straight to AWS Chime with the credentials Slack returns, and shows the call on top of the current Slack page (fills the page by default; a floating window is a setting). Slack's own huddle window never opens.
 
+## Audio and themes
+
+The call follows the active Slack/Slick theme. **Huddle settings** in the call controls has separate **Microphone** and **Speaker** selectors; changes apply during the call and are remembered for the next one. A disconnected saved device falls back to the system default when joining. Switching microphones preserves mute.
+
 ## Video effect
 
 Hover your own tile and click its gear to open the video-effect editor. It sends a GLSL shader as your video, camera on or off (the ✨ button on your own tile toggles it too). Write a Shadertoy-style `mainImage(out vec4 fragColor, in vec2 fragCoord)` with `iResolution`, `iTime`, `iFrame`, and `camera(uv)`, which samples your camera (only shaders that call it open the camera). Output is 640×480 at 24 fps. Templates: pixel plasma (the default), checkerboard tunnel, 8-bit camera, thermal camera, blank.

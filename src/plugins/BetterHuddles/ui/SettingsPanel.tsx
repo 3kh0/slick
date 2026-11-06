@@ -1,8 +1,8 @@
-// The call window's settings (gear button): the video-effect shader editor.
-// Slides over the stage so the main controls stay simple.
+// Audio devices and video effects, alongside the call stage.
 
 import { Icon } from './icons.tsx';
 import { ShaderEditor } from './ShaderEditor.tsx';
+import { AudioSettings } from './AudioSettings.tsx';
 
 interface SettingsPanelProps {
   hidden: boolean;
@@ -15,7 +15,7 @@ export function SettingsPanel({ hidden, onClose, onControlError }: SettingsPanel
     <aside
       className="sbh-settings"
       hidden={hidden}
-      aria-label="Video effect settings"
+      aria-label="Huddle settings"
       // Keys typed here (shader code) mustn't reach Slack's own keyboard shortcuts.
       onKeyDown={(event) => {
         event.stopPropagation();
@@ -23,11 +23,13 @@ export function SettingsPanel({ hidden, onClose, onControlError }: SettingsPanel
       }}
     >
       <div className="sbh-settings-row">
-        <h2>Video effect</h2>
+        <h2>Huddle settings</h2>
         <button type="button" className="sbh-icon-button" onClick={onClose} aria-label="Close settings" title="Close">
           <Icon name="x" size={16} />
         </button>
       </div>
+      <AudioSettings onControlError={onControlError} />
+      <h3>Video effect</h3>
       <ShaderEditor onControlError={onControlError} />
     </aside>
   );

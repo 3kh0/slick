@@ -72,9 +72,10 @@ interface ControlsProps {
   onControlError: (prefix: string, error: unknown) => void;
   fullscreen: boolean;
   onToggleFullscreen: () => void;
+  onToggleSettings: () => void;
 }
 
-export function Controls({ onControlError, fullscreen, onToggleFullscreen }: ControlsProps) {
+export function Controls({ onControlError, fullscreen, onToggleFullscreen, onToggleSettings }: ControlsProps) {
   const { call } = useHuddleUi();
   const state = useCallState();
   const connected = state.status === 'connected';
@@ -106,6 +107,7 @@ export function Controls({ onControlError, fullscreen, onToggleFullscreen }: Con
         pressed={fullscreen}
         onClick={onToggleFullscreen}
       />
+      <ControlButton label="Huddle settings" icon="settings" onClick={onToggleSettings} />
       <LeaveButton />
     </div>
   );

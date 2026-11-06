@@ -18,6 +18,13 @@ function memoryStorage(initial: Record<string, string> = {}) {
 }
 
 describe('call preferences', () => {
+  it('remembers microphone and speaker independently and rejects invalid device ids', () => {
+    const storage = memoryStorage();
+    const preferences = { ...DEFAULT_PREFERENCES, audioInputId: 'macbook', audioOutputId: 'earbuds' };
+    savePreferences(storage, preferences);
+    assert.deepEqual(loadPreferences(storage), preferences);
+    assert.deepEqual(parsePreferences({ audioInputId: {}, audioOutputId: 'x'.repeat(257) }), DEFAULT_PREFERENCES);
+  });
   it('round-trips shader code through storage', () => {
     const storage = memoryStorage();
     const preferences = { shaderSource: 'my shader' };
