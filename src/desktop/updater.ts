@@ -3,11 +3,14 @@
 
 import { execFile, spawn } from 'node:child_process';
 import fs from 'node:fs';
+import type { IncomingMessage } from 'node:http';
 import https from 'node:https';
 import path from 'node:path';
 import { app, BrowserWindow, dialog, shell } from 'electron';
 import { stageAppImage, swapAppImage } from './appImageUpdate.js';
 import { AttestationError, sha256File, verifyBundle } from './attestation.js';
+import { createProxyAgent } from './proxyAgent.js';
+import { parseDownloadProxy } from '../shared/downloadProxy.ts';
 import { broadcast } from './bridge.js';
 import type { UpdateStatus } from '../app/updateStatus.ts';
 import { settingsDir } from './paths.js';
@@ -15,6 +18,11 @@ import { settingsDir } from './paths.js';
 const PLATFORM = process.platform === 'darwin' ? 'darwin' : process.platform === 'win32' ? 'win32' : 'linux';
 const MAC = PLATFORM === 'darwin';
 const CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;
+const STREAMS = 16;
+const CHUNK_BYTES = 2 * 1024 * 1024;
+const CHUNK_RETRIES = 3;
+const MAX_REDIRECTS = 5;
+const STALL_MS = 20_000;
 const REPO = '3kh0/slick';
 export const RELEASES_URL = `https://github.com/${REPO}/releases`;
 
@@ -107,7 +115,16 @@ export type UpdateResult =
 
 export type Updater = ReturnType<typeof createUpdater>;
 
-export function createUpdater({ version, build }: { version: string; build: number }) {
+export function createUpdater({
+  version,
+  build,
+  downloadProxy = () => '',
+}: {
+  version: string;
+  build: number;
+  /** The proxy URL from settings, read per download so a change applies without a restart. */
+  downloadProxy?: () => string;
+}) {
   const ua = `Slick/${version}`;
 
   const statePath = () => path.join(settingsDir(), 'update-check.json');
@@ -210,42 +227,157 @@ export function createUpdater({ version, build }: { version: string; build: numb
     return (release.assets ?? []).find((a) => typeof a?.name === 'string' && a.name.endsWith(suffix)) ?? null;
   }
 
-  function download(url: string, dest: string, onProgress: (received: number, total: number) => void): Promise<void> {
+  /** GET `url`, following redirects; resolves the final response and the URL it came from. */
+  function open(
+    url: string,
+    headers: Record<string, string> = {},
+    redirects = 0,
+    agent?: https.Agent,
+  ): Promise<{ res: IncomingMessage; url: string }> {
     return new Promise((resolve, reject) => {
-      const get = (u: string, redirects: number) => {
-        https
-          .get(u, { headers: { 'User-Agent': ua } }, (res) => {
-            const status = res.statusCode ?? 0;
-            if (status > 300 && status < 400 && res.headers.location) {
-              res.resume();
-              if (redirects > 5) {
-                reject(new Error('too many redirects'));
-                return;
-              }
-              get(res.headers.location, redirects + 1);
-              return;
-            }
-            if (status !== 200) {
-              res.resume();
-              reject(new Error(`download returned HTTP ${status}`));
-              return;
-            }
-            const total = Number.parseInt(String(res.headers['content-length'] ?? '0'), 10);
-            let received = 0;
-            const file = fs.createWriteStream(dest);
-            res.on('data', (chunk) => {
-              received += chunk.length;
-              onProgress(received, total);
-            });
-            res.on('error', reject);
-            file.on('error', reject);
-            file.on('finish', () => file.close(() => resolve()));
-            res.pipe(file);
-          })
-          .on('error', reject);
-      };
-      get(url, 0);
+      const req = https.get(url, { headers: { 'User-Agent': ua, ...headers }, agent }, (res) => {
+        const status = res.statusCode ?? 0;
+        if (status > 300 && status < 400 && res.headers.location) {
+          res.resume();
+          if (redirects >= MAX_REDIRECTS) {
+            reject(new Error('too many redirects'));
+            return;
+          }
+          open(new URL(res.headers.location, url).href, headers, redirects + 1, agent).then(resolve, reject);
+          return;
+        }
+        resolve({ res, url });
+      });
+      req.setTimeout(STALL_MS, () => req.destroy(new Error('download stalled')));
+      req.on('error', reject);
     });
+  }
+
+  /** Single stream: the fallback for servers that ignore Range. */
+  function saveStream(
+    res: IncomingMessage,
+    dest: string,
+    onProgress: (received: number, total: number) => void,
+  ): Promise<void> {
+    return new Promise((resolve, reject) => {
+      if (res.statusCode !== 200) {
+        res.resume();
+        reject(new Error(`download returned HTTP ${res.statusCode}`));
+        return;
+      }
+      const total = Number.parseInt(String(res.headers['content-length'] ?? '0'), 10);
+      let received = 0;
+      const file = fs.createWriteStream(dest);
+      res.on('data', (chunk) => {
+        received += chunk.length;
+        onProgress(received, total);
+      });
+      res.on('error', reject);
+      file.on('error', reject);
+      file.on('finish', () => file.close(() => resolve()));
+      res.pipe(file);
+    });
+  }
+
+  /** Write a 206 body at `start`; throws if it ends short or the connection drops. */
+  async function pump(
+    res: IncomingMessage,
+    file: fs.promises.FileHandle,
+    start: number,
+    end: number,
+    count: (bytes: number) => void,
+  ): Promise<void> {
+    if (res.statusCode !== 206) {
+      res.resume();
+      throw new Error(`download returned HTTP ${res.statusCode}`);
+    }
+    let pos = start;
+    for await (const chunk of res as AsyncIterable<Buffer>) {
+      await file.write(chunk, 0, chunk.length, pos);
+      pos += chunk.length;
+      count(chunk.length);
+    }
+    if (pos !== end + 1) throw new Error('download ended early');
+  }
+
+  /**
+   * GitHub's release CDN can throttle each connection far below the link speed,
+   * so the file is fetched as Range chunks over a few connections, each chunk
+   * retried on its own. The first request doubles as the Range probe: a 200 means
+   * the server ignores Range and that response is just streamed to disk.
+   */
+  async function download(
+    url: string,
+    dest: string,
+    onProgress: (received: number, total: number) => void,
+  ): Promise<void> {
+    // A bad proxy setting fails the update rather than quietly going direct.
+    const proxy = parseDownloadProxy(downloadProxy());
+    const agent = proxy ? createProxyAgent(proxy) : undefined;
+    try {
+      await fetchAll(url, dest, onProgress, agent);
+    } finally {
+      agent?.destroy();
+    }
+  }
+
+  async function fetchAll(
+    url: string,
+    dest: string,
+    onProgress: (received: number, total: number) => void,
+    agent?: https.Agent,
+  ): Promise<void> {
+    const first = await open(url, { Range: `bytes=0-${CHUNK_BYTES - 1}` }, 0, agent);
+    const total = Number(/^bytes \d+-\d+\/(\d+)$/.exec(String(first.res.headers['content-range'] ?? ''))?.[1]);
+    if (first.res.statusCode !== 206 || !Number.isSafeInteger(total) || total <= 0) {
+      return saveStream(first.res, dest, onProgress);
+    }
+
+    const file = await fs.promises.open(dest, 'w');
+    try {
+      let received = 0;
+      const count = (bytes: number) => onProgress((received += bytes), total);
+      const chunks = Math.ceil(total / CHUNK_BYTES);
+      let next = 1;
+      let failure: unknown = null;
+      const failed = () => failure !== null;
+
+      // Retries go back through the original URL in case the signed CDN link expired.
+      const fetchChunk = async (index: number, res?: IncomingMessage): Promise<void> => {
+        const start = index * CHUNK_BYTES;
+        const end = Math.min(start + CHUNK_BYTES, total) - 1;
+        for (let attempt = 0; ; attempt++) {
+          let got = 0;
+          try {
+            const body =
+              res ?? (await open(attempt ? url : first.url, { Range: `bytes=${start}-${end}` }, 0, agent)).res;
+            await pump(body, file, start, end, (bytes) => {
+              got += bytes;
+              count(bytes);
+            });
+            return;
+          } catch (error) {
+            count(-got);
+            res = undefined;
+            if (attempt >= CHUNK_RETRIES) {
+              failure ??= error;
+              throw error;
+            }
+          }
+        }
+      };
+      const worker = async () => {
+        for (let index = next++; index < chunks && !failed(); index = next++) await fetchChunk(index);
+      };
+
+      await Promise.allSettled([
+        fetchChunk(0, first.res).then(worker),
+        ...Array.from({ length: Math.min(STREAMS, chunks) - 1 }, worker),
+      ]);
+      if (failure) throw failure;
+    } finally {
+      await file.close();
+    }
   }
 
   function extract(archive: string, dir: string): Promise<void> {

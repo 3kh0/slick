@@ -20,7 +20,7 @@ import {
 } from './pluginHost.js';
 import { watchHotUpdates } from './hot.js';
 import { refreshInstalledIcons } from './iconRefresh.js';
-import { readStoredSettings, watchSettings } from './settingsFile.js';
+import { readDownloadProxy, readStoredSettings, watchSettings } from './settingsFile.js';
 import { applyPatches, setMenuHandlers } from './patch.js';
 import { findSlackAsar, macSlackApp, slackElectronVersion, slackInstallKind, slackVersion } from './slackFinder.js';
 import { privilegedSchemes, setupSession } from './session.js';
@@ -249,7 +249,7 @@ function startSlack(asar: string) {
   setupPluginRpc();
 
   // patch.ts no-ops Slack's autoUpdater, so Slick updates both itself and Slack.
-  const updater = createUpdater({ version, build });
+  const updater = createUpdater({ version, build, downloadProxy: () => readDownloadProxy() });
   setupUpdaterBridge(updater);
   const cookieLogin = createCookieLogin(path.join(__dirname, 'cookieLoginPreload.js'), (target, value) =>
     loginWithCookies(target, value, accountNavigation.navigate),
