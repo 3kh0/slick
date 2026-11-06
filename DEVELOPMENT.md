@@ -39,7 +39,7 @@ Slick has [HMR](https://webpack.js.org/concepts/hot-module-replacement/), so you
 
 A failed build prints the esbuild error and leaves the app alone; fix it and save again. Hot reload only undoes what the old plugin registered through `this.api` (plus its own `stop()`), so anything a plugin's module does at the top level runs again in the new copy. HMR is not bulletproof and may have some edgecases, if you see a plugin not working as intended, give the app a reboot and it should be jazzy again!
 
-Open DevTools with **Slick → Toggle Developer Tools** or `Cmd+Option+I` / `Ctrl+Alt+I`. Renderer messages are prefixed with `[slick]`; main-process logs appear in the launching terminal. `--debug` keeps inline source maps and skips minification.
+Open DevTools with **Slick > Toggle Developer Tools** or `Cmd+Option+I` / `Ctrl+Alt+I`. Renderer messages are prefixed with `[slick]`; main-process logs appear in the launching terminal. `--debug` keeps inline source maps and skips minification.
 
 If you suspect a plugin broke startup, run in safe mode:
 

@@ -30,6 +30,7 @@ export const PLUGINS = [
   'InstalledApps',
   'LastSeen',
   'LetMeSee',
+  'LocalTime',
   'MentionProfiles',
   'MessageLogger',
   'Nicknames',

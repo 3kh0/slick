@@ -1,3 +1,8 @@
+export function chatType(channel: any): 'dm' | 'private' | 'public' {
+  if (channel?.is_im || channel?.is_mpim) return 'dm';
+  return channel?.is_private || channel?.is_group ? 'private' : 'public';
+}
+
 export function chatMemberIds(channel: any, selfId?: string): string[] {
   if (channel?.is_im) return typeof channel.user === 'string' ? [channel.user] : [];
   if (!channel?.is_mpim || !Array.isArray(channel.members)) return [];

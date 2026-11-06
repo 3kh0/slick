@@ -48,6 +48,7 @@ export function streamerCss(options: StreamerCss): string {
           `${root} ${senderName}`,
           `${root} ${activityRow} :is(${privateDestination}, ${groupDestination})`,
           `${root} ${activityDm} ${activityUser}`,
+          `${root} .slick-chat-tabs [data-chat-type="dm"]`,
         ]
       : [];
 
@@ -57,6 +58,7 @@ export function streamerCss(options: StreamerCss): string {
         `${root} ${mention}`,
         `${root} ${suggestion} ${suggestionText}`,
         `${root} ${activityRow} ${privateDestination}`,
+        `${root} .slick-chat-tabs [data-chat-type="private"]`,
       ]
     : [];
 
@@ -80,6 +82,8 @@ export function streamerCss(options: StreamerCss): string {
     `${root} .${REVEAL_CLASS} ${threadBody}`,
     `${root} .${REVEAL_CLASS} ${mention}`,
     `${root} ${suggestion}:hover ${suggestionText}`,
+    `${root} .slick-chat-tabs__tab:hover [data-chat-type]`,
+    `${root} .slick-chat-tabs__results > button:hover [data-chat-type]`,
   ];
 
   const vip = options.vipStatus

@@ -1,7 +1,8 @@
 import { SlickPlugin, type MenuTemplateItem } from '$slick';
 import { getActiveTeam, readLocalConfig } from '../../app/slack/localConfig.ts';
 import {
-  closeTab,
+  closeTabs,
+  type CloseTabsAction,
   adjacentTab,
   currentTab,
   dragScrollSpeed,
@@ -16,7 +17,7 @@ import {
 } from './tabs.ts';
 import * as meta from './meta.ts';
 import { addTabMenuItem, addThreadTabAction, THREAD_TAB_ACTION, type MessageAction } from './menu.ts';
-import { chatLabel, chatMemberIds, memberName } from './people.ts';
+import { chatLabel, chatMemberIds, chatType, memberName } from './people.ts';
 import { recentPlaces, searchPlaces, type PickerPlace } from './picker.ts';
 import { tabSwitchDirection } from './shortcut.ts';
 
@@ -33,6 +34,7 @@ export default class ChatTabs extends SlickPlugin<typeof meta.settings> {
     'threadView',
     'autoThreadTabs',
     'showSingleTab',
+    'showInActivity',
     'wrapTabSwitching',
     'closeTabSelection',
     'middleClickCloses',
@@ -161,10 +163,15 @@ export default class ChatTabs extends SlickPlugin<typeof meta.settings> {
       );
     });
     this.api.setStyle(`
-      .slick-chat-tabs-layout { display:flex; flex-direction:column; height:100%; min-height:0; min-width:0; }
+      .slick-chat-tabs-layout { grid-area:p-view_contents--primary; flex:1; display:flex; flex-direction:column; height:100%; min-height:0; min-width:0; }
       .slick-chat-tabs-body { position:relative; display:flex; flex-direction:column; flex:1; min-height:0; min-width:0; }
       .slick-chat-tabs-layout .p-view_contents--primary { flex:1; min-height:0; }
       .slick-chat-tabs { flex:none; position:relative; background:var(--dt_color-base-pry, #fff); color:var(--dt_color-content-pry, #1d1c1d); border-bottom:1px solid var(--dt_color-otl-ter, #8885); }
+      .slick-chat-tabs[hidden] { display:none; }
+      .slick-chat-tabs__menu { position:fixed; inset:unset; margin:0; min-width:200px; padding:4px; border:1px solid var(--dt_color-otl-ter, #8885); border-radius:6px; background:var(--dt_color-surf-pry, #fff); color:var(--dt_color-content-pry, #1d1c1d); box-shadow:0 4px 16px #0003; }
+      .slick-chat-tabs__menu button { display:block; width:100%; padding:6px 12px; border:0; border-radius:3px; text-align:left; background:transparent; color:inherit; }
+      .slick-chat-tabs__menu button:disabled { opacity:.4; }
+      .slick-chat-tabs__menu button:enabled:is(:hover,:focus-visible) { background:var(--dt_color-base-hgl-1, #8882); outline:none; }
       .slick-chat-tabs[data-collapsed=true] { border-bottom:0; }
       .slick-chat-tabs-search { display:flex; align-items:center; gap:8px; min-width:0; width:100%; -webkit-app-region:no-drag; }
       .slick-chat-tabs-search > .p-top_nav__search__container { flex:1; min-width:0; }
@@ -363,7 +370,7 @@ export default class ChatTabs extends SlickPlugin<typeof meta.settings> {
       );
     const members = chatMemberIds(channel, selfId);
     return (
-      <span className="slick-chat-tabs__avatars" aria-hidden="true">
+      <span className="slick-chat-tabs__avatars" data-chat-type="dm" aria-hidden="true">
         {members.slice(0, 3).map((id) => (
           <this.Avatar key={id} userId={id} />
         ))}
@@ -377,10 +384,11 @@ export default class ChatTabs extends SlickPlugin<typeof meta.settings> {
 
   private TabLabel = ({ tab, selfId }: { tab: ChatTab; selfId?: string }) => {
     const label = this.api.redux.useReduxState((state) => this.label(state, tab.channel, selfId)) ?? tab.channel;
+    const type = this.api.redux.useReduxState((state) => chatType(state.channels?.[tab.channel]));
     return (
       <>
         <this.TabAvatars channelId={tab.channel} selfId={selfId} />
-        <span className="slick-chat-tabs__name" title={label}>
+        <span className="slick-chat-tabs__name" data-chat-type={type}>
           {label}
           {tab.thread ? ' · Thread' : ''}
         </span>
@@ -391,11 +399,14 @@ export default class ChatTabs extends SlickPlugin<typeof meta.settings> {
   private TabBar = () => {
     this.settingsVersion.use();
     const splitError = this.splitError.use();
+    const activeSection = this.api.redux.useReduxState((state) => state.window?.main?.activeTab);
+    const hidden = !this.config.showInActivity && (activeSection === 'activity' || activeSection === 'activity-inbox');
     const [route, setRoute] = React.useState(() => location.pathname + location.search);
     const team = getActiveTeam();
     const teamId = team?.id;
     const scope = teamId && team?.user_id ? `${teamId}:${team.user_id}` : null;
     const [saved, setSaved] = React.useState<{ scope: string; tabs: ChatTab[] } | null>(null);
+    const [menu, setMenu] = React.useState<{ tab: ChatTab; x: number; y: number; anchor: HTMLElement } | null>(null);
     const [picker, setPicker] = React.useState(false);
     const [recents, setRecents] = React.useState<ChatTab[]>([]);
     const [pickerPosition, setPickerPosition] = React.useState({ top: 0, left: 0 });
@@ -423,7 +434,7 @@ export default class ChatTabs extends SlickPlugin<typeof meta.settings> {
     const tabs = saved?.scope === scope ? saved.tabs : [];
 
     React.useEffect(() => {
-      if (!scope || !teamId) return;
+      if (!scope || !teamId || hidden) return;
       const trigger = (anchor: HTMLButtonElement) => {
         addButton.current = anchor;
         const currentPlace = currentTab(location.pathname + location.search, this.api.redux.getStore()?.getState());
@@ -436,7 +447,14 @@ export default class ChatTabs extends SlickPlugin<typeof meta.settings> {
       return () => {
         if (this.pickerTrigger.get() === trigger) this.pickerTrigger.set(null);
       };
-    }, [scope, teamId]);
+    }, [scope, teamId, hidden]);
+
+    React.useEffect(() => {
+      if (hidden) {
+        setPicker(false);
+        setMenu(null);
+      }
+    }, [hidden]);
 
     React.useEffect(() => {
       this.pickerOpen.set(picker);
@@ -503,6 +521,7 @@ export default class ChatTabs extends SlickPlugin<typeof meta.settings> {
 
     React.useEffect(() => {
       setPicker(false);
+      setMenu(null);
       this.draggedTab.set(null);
       setDrop(null);
       setNotice('');
@@ -601,14 +620,11 @@ export default class ChatTabs extends SlickPlugin<typeof meta.settings> {
       };
     }, [teamId, scope]);
 
-    const close = async (tab: ChatTab) => {
-      const result = closeTab(tabs, tabKey(tab), activeKey, this.config.closeTabSelection);
+    const close = async (tab: ChatTab, action: CloseTabsAction = 'close') => {
+      if (pending.current) return;
+      const result = closeTabs(tabs, tabKey(tab), activeKey, action, this.config.closeTabSelection);
       if (result.next && !(await open(result.next))) return;
-      setSaved((value) =>
-        value?.scope === scope
-          ? { scope: value.scope, tabs: value.tabs.filter((entry) => tabKey(entry) !== tabKey(tab)) }
-          : value,
-      );
+      setSaved((value) => (value?.scope === scope ? { scope: value.scope, tabs: result.tabs } : value));
     };
 
     React.useEffect(() => {
@@ -622,7 +638,7 @@ export default class ChatTabs extends SlickPlugin<typeof meta.settings> {
       };
     }, [tabs, activeKey]);
 
-    const interceptClose = tabs.length > 1 && !!activeKey;
+    const interceptClose = !hidden && tabs.length > 1 && !!activeKey;
     React.useEffect(() => {
       if (this.api.loader !== 'electron') return;
       void this.api.main.call('closeShortcut', interceptClose).catch(() => {});
@@ -634,7 +650,7 @@ export default class ChatTabs extends SlickPlugin<typeof meta.settings> {
     React.useEffect(() => {
       const handler = (event: KeyboardEvent) => {
         const direction = tabSwitchDirection(event);
-        if (!direction || tabs.length < 2) return;
+        if (hidden || !direction || tabs.length < 2) return;
         const next = adjacentTab(tabs, activeKey, direction, this.config.wrapTabSwitching);
         event.preventDefault();
         event.stopImmediatePropagation();
@@ -642,7 +658,7 @@ export default class ChatTabs extends SlickPlugin<typeof meta.settings> {
       };
       window.addEventListener('keydown', handler, true);
       return () => window.removeEventListener('keydown', handler, true);
-    }, [tabs, activeKey, teamId]);
+    }, [tabs, activeKey, teamId, hidden]);
 
     React.useEffect(() => {
       if (!picker) return;
@@ -658,6 +674,7 @@ export default class ChatTabs extends SlickPlugin<typeof meta.settings> {
     return (
       <div
         className="slick-chat-tabs"
+        hidden={hidden}
         aria-label="Chat tabs"
         data-collapsed={tabs.length <= 1 && !this.config.showSingleTab}
         data-tab-count={tabs.length}
@@ -687,6 +704,26 @@ export default class ChatTabs extends SlickPlugin<typeof meta.settings> {
                 <div
                   className="slick-chat-tabs__tab"
                   key={tabKey(tab)}
+                  onContextMenu={(event) => {
+                    event.preventDefault();
+                    setMenu({
+                      tab,
+                      x: event.clientX,
+                      y: event.clientY,
+                      anchor: event.currentTarget.querySelector<HTMLElement>('[role=tab]')!,
+                    });
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key !== 'ContextMenu' && !(event.shiftKey && event.key === 'F10')) return;
+                    event.preventDefault();
+                    const rect = event.currentTarget.getBoundingClientRect();
+                    setMenu({
+                      tab,
+                      x: rect.left,
+                      y: rect.bottom,
+                      anchor: event.currentTarget.querySelector<HTMLElement>('[role=tab]')!,
+                    });
+                  }}
                   draggable
                   data-tab-key={tabKey(tab)}
                   data-dragging={dragging === tabKey(tab) || undefined}
@@ -812,6 +849,14 @@ export default class ChatTabs extends SlickPlugin<typeof meta.settings> {
             </div>
           </div>
         )}
+        {menu && !hidden && (
+          <this.TabMenu
+            menu={menu}
+            tabs={tabs}
+            dismiss={() => setMenu(null)}
+            close={(action) => void close(menu.tab, action)}
+          />
+        )}
         {(notice || splitError) && (
           <div className="slick-chat-tabs__notice" role="status">
             {notice || splitError}
@@ -835,6 +880,97 @@ export default class ChatTabs extends SlickPlugin<typeof meta.settings> {
             <this.ChatPicker recents={recents} open={(tab) => void open(tab)} />
           </div>
         )}
+      </div>
+    );
+  };
+
+  private TabMenu = ({
+    menu,
+    tabs,
+    dismiss,
+    close,
+  }: {
+    menu: { tab: ChatTab; x: number; y: number; anchor: HTMLElement };
+    tabs: ChatTab[];
+    dismiss: () => void;
+    close: (action: CloseTabsAction) => void;
+  }) => {
+    const ref = React.useRef<HTMLDivElement>(null);
+    const index = tabs.findIndex((tab) => tabKey(tab) === tabKey(menu.tab));
+    React.useLayoutEffect(() => {
+      const popup = ref.current!;
+      popup.showPopover();
+      const rect = popup.getBoundingClientRect();
+      popup.style.left = `${Math.max(4, Math.min(menu.x, innerWidth - rect.width - 4))}px`;
+      popup.style.top = `${Math.max(4, Math.min(menu.y, innerHeight - rect.height - 4))}px`;
+      popup.querySelector<HTMLButtonElement>('button:enabled')?.focus();
+      const outside = (event: PointerEvent) => {
+        if (!popup.contains(event.target as Node)) dismiss();
+      };
+      const escape = (event: KeyboardEvent) => {
+        if (event.key === 'Escape') {
+          event.preventDefault();
+          event.stopPropagation();
+          dismiss();
+          menu.anchor.focus();
+        }
+      };
+      document.addEventListener('pointerdown', outside, true);
+      document.addEventListener('keydown', escape, true);
+      window.addEventListener('resize', dismiss);
+      return () => {
+        document.removeEventListener('pointerdown', outside, true);
+        document.removeEventListener('keydown', escape, true);
+        window.removeEventListener('resize', dismiss);
+      };
+    }, [menu]);
+    const actions: [CloseTabsAction, string, boolean][] = [
+      ['close', 'Close Tab', tabs.length <= 1],
+      ['others', 'Close Other Tabs', tabs.length <= 1],
+      ['left', 'Close Tabs to the Left', index <= 0],
+      ['right', 'Close Tabs to the Right', index === tabs.length - 1],
+      ['all', 'Close All Tabs', false],
+    ];
+    return (
+      <div
+        ref={ref}
+        className="slick-chat-tabs__menu"
+        popover="manual"
+        role="menu"
+        aria-label="Tab actions"
+        onKeyDown={(event) => {
+          if (event.key === 'Tab') {
+            dismiss();
+            return;
+          }
+          if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return;
+          event.preventDefault();
+          const buttons = [...event.currentTarget.querySelectorAll<HTMLButtonElement>('button:enabled')];
+          const focused = buttons.indexOf(document.activeElement as HTMLButtonElement);
+          buttons[
+            event.key === 'Home'
+              ? 0
+              : event.key === 'End'
+                ? buttons.length - 1
+                : (focused + (event.key === 'ArrowDown' ? 1 : -1) + buttons.length) % buttons.length
+          ]?.focus();
+        }}
+      >
+        {actions.map(([action, label, disabled]) => (
+          <button
+            key={action}
+            type="button"
+            role="menuitem"
+            disabled={disabled}
+            onClick={() => {
+              dismiss();
+              close(action);
+              menu.anchor.focus();
+            }}
+          >
+            {label}
+          </button>
+        ))}
       </div>
     );
   };
@@ -933,7 +1069,12 @@ export default class ChatTabs extends SlickPlugin<typeof meta.settings> {
               onClick={() => open(place.tab)}
             >
               <this.TabAvatars channelId={place.tab.channel} selfId={selfId} />
-              <span className="slick-chat-tabs__picker-name">{place.label}</span>
+              <span
+                className="slick-chat-tabs__picker-name"
+                data-chat-type={chatType(state?.channels?.[place.tab.channel])}
+              >
+                {place.label}
+              </span>
             </button>
           ))}
           {!results.length && <div role="status">No conversations found. Try another name.</div>}

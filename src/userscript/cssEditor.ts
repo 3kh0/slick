@@ -26,7 +26,7 @@ export function cssEditor(
         #status { padding:6px 14px;font-size:12px;min-height:16px; }
         @media(prefers-color-scheme:dark) { body { background:#1e1e1e; } }
       </style></head><body>
-      <p id="help">Write raw CSS here. To load a JSON theme file, use Import theme JSON in Slick Preferences → Appearance. Changes save automatically; Ctrl/Cmd+S saves immediately.</p>
+      <p id="help">Write raw CSS here. To load a JSON theme file, use Import theme JSON in Slick Preferences > Appearance. Changes save automatically; Ctrl/Cmd+S saves immediately.</p>
       <div id="editor"></div><div id="status" role="status" aria-live="polite">Loading Monaco…</div>
       </body></html>`);
     view.document.close();

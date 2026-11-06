@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
   closeTab,
+  closeTabs,
   adjacentTab,
   currentThread,
   currentTab,
@@ -161,4 +162,21 @@ test('drag auto-scroll accelerates at the strip edges and stops outside the stri
   assert.ok(dragScrollSpeed(10, 0, 200) < dragScrollSpeed(30, 0, 200));
   assert.equal(dragScrollSpeed(201, 0, 200), 0);
   assert.equal(dragScrollSpeed(0, 0, 0), 0);
+});
+
+test('bulk closing preserves order and selects the context tab only when the active tab was removed', () => {
+  const tabs = [
+    { channel: 'C1' },
+    { channel: 'C2' },
+    { channel: 'C2', thread: '1770000000.123456' },
+    { channel: 'D3' },
+  ];
+  assert.deepEqual(closeTabs(tabs, 'C2:', 'D3:', 'others'), { tabs: [tabs[1]], next: tabs[1] });
+  assert.deepEqual(closeTabs(tabs, 'C2:', 'D3:', 'left'), { tabs: tabs.slice(1), next: undefined });
+  assert.deepEqual(closeTabs(tabs, 'C2:', 'D3:', 'right'), { tabs: tabs.slice(0, 2), next: tabs[1] });
+  assert.deepEqual(closeTabs(tabs, 'C2:', 'C2:', 'all'), { tabs: [], next: undefined });
+  assert.equal(closeTabs(tabs, 'missing', 'C2:', 'all').tabs, tabs);
+  assert.deepEqual(closeTabs(tabs, 'C1:', 'C1:', 'left').tabs, tabs);
+  assert.deepEqual(closeTabs(tabs, 'D3:', 'D3:', 'right').tabs, tabs);
+  assert.deepEqual(closeTabs(tabs, 'C2:', 'C2:', 'close'), closeTab(tabs, 'C2:', 'C2:'));
 });

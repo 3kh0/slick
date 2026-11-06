@@ -28,6 +28,11 @@ export const settings = {
     label: 'Show the tab bar with one tab',
     default: false,
   },
+  showInActivity: {
+    type: 'boolean',
+    label: 'Show tabs in Activity',
+    default: true,
+  },
   wrapTabSwitching: {
     type: 'boolean',
     label: 'Wrap keyboard tab switching',
