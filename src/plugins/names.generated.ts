@@ -6,6 +6,7 @@ export const PLUGINS = [
   'bChannel',
   'BetterBlock',
   'BetterGifs',
+  'BetterHuddles',
   'BetterTypingIndicator',
   'CallTimer',
   'Censorship',

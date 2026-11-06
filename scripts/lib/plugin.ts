@@ -39,8 +39,32 @@ const slickSharedAlias: Plugin = {
   name: 'slick-shared-alias',
   setup(builder) {
     builder.onResolve({ filter: /^\$slick$/ }, () => ({ path: path.join(SHARED, 'Plugin.ts') }));
+    chimeMeetingOnly(builder);
   },
 };
+
+// The Chime SDK's meeting code reaches its package index from one file, which
+// would bundle the SDK's messaging client and the AWS SDK (Node-only, and not
+// needed for a huddle). Point that one import at the two exports it uses.
+const CHIME_INDEX_IMPORTER = /amazon-chime-sdk-js[\\/]build[\\/]task[\\/]PromoteToPrimaryMeetingTask\.js$/;
+const CHIME_BUILD_FILE = /amazon-chime-sdk-js[\\/]build[\\/].*\.js$/;
+// The SDK reads webpack's Node-style `global` (`"document" in global`), which
+// browsers don't have. A module-local alias fixes those files without putting a
+// `global` on Slack's page.
+const GLOBAL_REFERENCE = /(?<![\w$.])global(?![\w$])/;
+
+function chimeMeetingOnly(builder: PluginBuild) {
+  builder.onResolve({ filter: /^\.\.$/ }, (args) =>
+    CHIME_INDEX_IMPORTER.test(args.importer)
+      ? { path: path.join(SRC, 'plugins', 'BetterHuddles', 'media', 'chimeIndexShim.ts') }
+      : undefined,
+  );
+  builder.onLoad({ filter: CHIME_BUILD_FILE }, async ({ path: file }) => {
+    const source = await readFile(file, 'utf8');
+    if (!GLOBAL_REFERENCE.test(source)) return undefined;
+    return { contents: `var global = globalThis;\n${source}`, loader: 'js' };
+  });
+}
 
 export type RendererRegistryOptions = {
   targetLoader?: 'electron' | 'extension' | 'userscript';

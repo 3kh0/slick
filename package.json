@@ -26,6 +26,7 @@
     "test:userscript": "node --experimental-strip-types --test \"src/userscript/**/*.test.ts\""
   },
   "dependencies": {
+    "amazon-chime-sdk-js": "^3.32.0",
     "tar-stream": "^3.2.2",
     "xz-decompress": "^0.2.3"
   },
