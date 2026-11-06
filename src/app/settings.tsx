@@ -832,6 +832,7 @@ const CONTRIBUTORS = [
   'RezThePerson',
   'Fantamomo',
   'LowPolyPhosphorus',
+  'shuuji3',
 ];
 
 function LX({ href, children }: { href: string; children: React.ReactNode }) {

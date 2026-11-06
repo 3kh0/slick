@@ -36,6 +36,7 @@ export const PLUGINS = [
   'Nicknames',
   'NoTrack',
   'NotShitMarkdown',
+  'NoUpsell',
   'OfficeHours',
   'oneko',
   'OnlineCount',
