@@ -104,7 +104,7 @@ export default class LocalTime extends SlickPlugin<typeof meta.settings> {
   }
 
   private patchMessages() {
-    this.api.patchComponent<BroadcastPreambleProps>('BroadcastPreamble', (Original) => (props) => {
+    this.api.patchComponent<BroadcastPreambleProps>('BaseBroadcastPreamble', (Original) => (props) => {
       if (!isPerson(props.msg)) return <Original {...props} />;
 
       const children = React.Children.toArray(props.children);
