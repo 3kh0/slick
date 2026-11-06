@@ -10,6 +10,7 @@ export const PLUGINS = [
   'BetterTypingIndicator',
   'CallTimer',
   'Censorship',
+  'Changelog',
   'ChannelListTyping',
   'CharacterCounter',
   'ChatTabs',
