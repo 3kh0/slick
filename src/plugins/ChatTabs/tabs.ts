@@ -113,3 +113,28 @@ export function dragScrollSpeed(x: number, left: number, right: number): number 
   if (x > right - edge) return Math.ceil(14 * (1 - (right - x) / edge));
   return 0;
 }
+
+export type CloseTabsAction = 'close' | 'others' | 'left' | 'right' | 'all';
+
+export function closeTabs(
+  tabs: ChatTab[],
+  key: string,
+  active: string | undefined,
+  action: CloseTabsAction,
+  selection = 'right',
+) {
+  if (action === 'close') return closeTab(tabs, key, active, selection);
+  const index = tabs.findIndex((tab) => tabKey(tab) === key);
+  if (index < 0) return { tabs, next: undefined };
+  const remaining =
+    action === 'all'
+      ? []
+      : tabs.filter((_, i) => (action === 'others' ? i === index : action === 'left' ? i >= index : i <= index));
+  return {
+    tabs: remaining,
+    next:
+      active && !remaining.some((tab) => tabKey(tab) === active)
+        ? remaining.find((tab) => tabKey(tab) === key)
+        : undefined,
+  };
+}
