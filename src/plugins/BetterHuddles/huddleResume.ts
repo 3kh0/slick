@@ -54,9 +54,7 @@ export function takeHuddleToResume(storage: ResumeStorage, now = Date.now()): Hu
       typeof parsed.savedAt === 'number' &&
       now - parsed.savedAt >= 0 &&
       now - parsed.savedAt <= RESUME_WINDOW_MS;
-    return valid
-      ? { channelId: parsed.channelId!, roomId: parsed.roomId!, savedAt: parsed.savedAt! }
-      : null;
+    return valid ? { channelId: parsed.channelId!, roomId: parsed.roomId!, savedAt: parsed.savedAt! } : null;
   } catch {
     return null;
   }
