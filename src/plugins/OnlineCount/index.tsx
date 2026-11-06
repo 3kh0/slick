@@ -201,10 +201,15 @@ export default class OnlineCount extends SlickPlugin<typeof meta.settings> {
     const Estimated = ({ channelId, count }: { channelId: string; count: number }) => {
       const estimate = this.useEstimate(channelId, count);
       if (!estimate) return null;
+      const complete = estimate.sampled === count;
       return (
         <Count
-          text={`~${compact.format(estimate.online)}`}
-          tip={`About ${estimate.online.toLocaleString()} online, estimated from ${estimate.sampled.toLocaleString()} of ${count.toLocaleString()} members`}
+          text={complete ? estimate.online.toLocaleString() : `~${compact.format(estimate.online)}`}
+          tip={
+            complete
+              ? `${estimate.online.toLocaleString()} online, ${(count - estimate.online).toLocaleString()} away`
+              : `About ${estimate.online.toLocaleString()} online, estimated from ${estimate.sampled.toLocaleString()} of ${count.toLocaleString()} members`
+          }
         />
       );
     };
