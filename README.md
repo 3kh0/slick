@@ -31,7 +31,7 @@ Slick runs Slack's own `app.asar` inside its own Electron (with the handy BYOE a
 | Feature                      | **Slick**                                 | [Taut](https://github.com/jeremy46231/taut) | [Rope](https://github.com/anirudhb/rope) |
 | ---------------------------- | ----------------------------------------- | ------------------------------------------- | ---------------------------------------- |
 | Actively updated             | **Yes**                                   | **Yes**                                     | No                                       |
-| Theme support                | **2 Built in themes + Monaco CSS editor** | CSS editor                                  | No                                       |
+| Theme support                | **4 Built in themes + Monaco CSS editor** | CSS editor                                  | No                                       |
 | Plugins                      | **36**                                    | 33                                          | 8                                        |
 | Desktop sign in with cookies | **Yes**                                   | No                                          | N/A                                      |
 | Message Logger               | **Deletions + Edit history**              | Out of scope                                | No                                       |
