@@ -3,7 +3,7 @@ import type { PluginCategory, SettingsSchema } from '../../shared/settings.ts';
 export const id = 'BetterHuddles';
 export const pluginName = 'Better Huddles';
 export const description =
-  "Replace Slack's huddle window with a lighter huddle client: it opens on top of the page you're on and talks to Chime directly";
+  'A lighter huddle client with its own window, optional in-page controls, and a direct Chime connection';
 export const category: PluginCategory = 'sounds';
 export const defaultEnabled = false;
 
@@ -12,10 +12,11 @@ export const settings = {
     type: 'select',
     label: 'Open huddles as',
     description: 'You can switch either way during a call with the button in its corner',
-    default: 'page',
+    default: 'separate',
     options: [
+      { value: 'separate', label: 'A separate window' },
       { value: 'page', label: 'Filling the Slack page' },
-      { value: 'window', label: 'A floating window over Slack' },
+      { value: 'window', label: 'Floating inside Slack' },
     ],
   },
   compactNoVideo: {

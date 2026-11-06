@@ -139,7 +139,10 @@ export async function createChimeMediaSession(options: MediaSessionOptions): Pro
     audioVideo.setVideoCodecSendPreferences?.(codecs);
     audioVideo.setContentShareVideoCodecPreferences?.(codecs);
   }
-  const video = createChimeVideoControls(audioVideo, options, downlinkPolicy, uplink.capture);
+  const video = createChimeVideoControls(audioVideo, options, downlinkPolicy, {
+    ...uplink.capture,
+    ...(options.cameraInputId ? { deviceId: { exact: options.cameraInputId } } : {}),
+  });
 
   let stopped = false;
   const audio = createAudioDeviceControls(audioVideo, speakerOutput, () => stopped);

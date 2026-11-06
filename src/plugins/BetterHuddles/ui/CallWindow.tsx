@@ -26,13 +26,13 @@ const RECT_STORAGE_KEY = 'slick-better-huddles:window';
 const DURATION_TICK_MS = 15_000;
 const NOTICE_MS = 6_000;
 
-const viewport = (): Viewport => ({ width: window.innerWidth, height: window.innerHeight });
+const viewport = (view: Window): Viewport => ({ width: view.innerWidth, height: view.innerHeight });
 
-function loadRect(): WindowRect {
+function loadRect(view: Window): WindowRect {
   try {
-    return parseWindowRect(JSON.parse(localStorage.getItem(RECT_STORAGE_KEY) ?? 'null'), viewport());
+    return parseWindowRect(JSON.parse(localStorage.getItem(RECT_STORAGE_KEY) ?? 'null'), viewport(view));
   } catch {
-    return parseWindowRect(null, viewport());
+    return parseWindowRect(null, viewport(view));
   }
 }
 
@@ -46,16 +46,16 @@ function saveRect(rect: WindowRect): void {
 }
 
 /** The window's rect, kept on screen when the page resizes, plus pointer handlers for move / resize. */
-function useWindowRect() {
-  const [rect, setRect] = React.useState(loadRect);
+function useWindowRect(view: Window) {
+  const [rect, setRect] = React.useState(() => loadRect(view));
   const rectRef = React.useRef(rect);
   rectRef.current = rect;
 
   React.useEffect(() => {
-    const keepOnScreen = () => setRect((current) => moveWindowRect(current, 0, 0, viewport()));
-    window.addEventListener('resize', keepOnScreen);
-    return () => window.removeEventListener('resize', keepOnScreen);
-  }, []);
+    const keepOnScreen = () => setRect((current) => moveWindowRect(current, 0, 0, viewport(view)));
+    view.addEventListener('resize', keepOnScreen);
+    return () => view.removeEventListener('resize', keepOnScreen);
+  }, [view]);
 
   const dragWith = (change: typeof moveWindowRect) => (event: React.PointerEvent<HTMLElement>) => {
     // Buttons in the header still click normally.
@@ -65,7 +65,7 @@ function useWindowRect() {
     const target = event.currentTarget;
     target.setPointerCapture(event.pointerId);
     const onMove = (move: PointerEvent) =>
-      setRect(change(start.rect, move.clientX - start.x, move.clientY - start.y, viewport()));
+      setRect(change(start.rect, move.clientX - start.x, move.clientY - start.y, viewport(view)));
     const onUp = () => {
       target.removeEventListener('pointermove', onMove);
       target.removeEventListener('pointerup', onUp);
@@ -211,14 +211,14 @@ function CallBar({
 }
 
 export function CallWindow() {
-  const { call, conversationLabel, initialLayout } = useHuddleUi();
+  const { call, conversationLabel, initialLayout, document: uiDocument, detached, moveCall } = useHuddleUi();
   const state = useCallState();
   const [filled, setFilled] = React.useState(() => initialLayout() === 'page');
   const [collapsed, setCollapsed] = React.useState(false);
   const [settingsOpen, setSettingsOpen] = React.useState(false);
   // Once opened, the panel stays mounted (just hidden) so unapplied shader edits survive closing it.
   const [settingsMounted, setSettingsMounted] = React.useState(false);
-  const { rect, onMoveStart, onResizeStart } = useWindowRect();
+  const { rect, onMoveStart, onResizeStart } = useWindowRect(uiDocument.defaultView!);
   const { notice, report } = useNotice(call.log);
   const windowRef = React.useRef<HTMLElement>(null);
   const { fullscreen, toggle: toggleFullscreen } = useFullscreen(windowRef);
@@ -242,18 +242,25 @@ export function CallWindow() {
       aria-label={`Huddle in ${conversationLabel(state.channelId)}`}
     >
       <WindowHeader onPointerDown={floating ? onMoveStart : undefined}>
-        {!fullscreen && (
+        {!fullscreen && !detached && (
           <HeaderButton
             icon="chevron-down"
             label="Hide video (stay in the huddle)"
             onClick={() => setCollapsed(true)}
           />
         )}
-        {!fullscreen && (
+        {!fullscreen && !detached && (
           <HeaderButton
             icon={filled ? 'minimize-2' : 'maximize-2'}
             label={filled ? 'Shrink to a window' : 'Fill the page'}
             onClick={() => setFilled(!filled)}
+          />
+        )}
+        {!fullscreen && (
+          <HeaderButton
+            icon={detached ? 'minimize-2' : 'maximize-2'}
+            label={detached ? 'Move into Slack' : 'Open in separate window'}
+            onClick={() => moveCall(!detached)}
           />
         )}
       </WindowHeader>

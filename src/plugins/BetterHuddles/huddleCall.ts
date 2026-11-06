@@ -148,12 +148,19 @@ export function createHuddleCall({
     }
   }
 
-  async function connectMedia(credentials: ChimeCredentials, localUserId: string, thisAttempt: number, muted: boolean) {
+  async function connectMedia(
+    credentials: ChimeCredentials,
+    localUserId: string,
+    thisAttempt: number,
+    muted: boolean,
+    cameraInputId?: string,
+  ) {
     const isCurrent = () => thisAttempt === attempt;
     const patch = (change: Partial<CallState>) => isCurrent() && state.update((current) => ({ ...current, ...change }));
     return createMedia({
       audioInputId: preferences.get().audioInputId,
       audioOutputId: preferences.get().audioOutputId,
+      cameraInputId,
       credentials,
       localUserId,
       startMuted: muted,
@@ -177,7 +184,14 @@ export function createHuddleCall({
   }
 
   /** Joins (or starts) the huddle in a conversation. Failures end up in `state.message`. */
-  async function join(channelId: string, { muted = false }: { muted?: boolean } = {}): Promise<void> {
+  async function join(
+    channelId: string,
+    {
+      muted = false,
+      cameraOn = false,
+      cameraInputId,
+    }: { muted?: boolean; cameraOn?: boolean; cameraInputId?: string } = {},
+  ): Promise<void> {
     const current = state.get();
     const busy = current.status === 'joining' || current.status === 'connected';
     if (busy && current.channelId === channelId) return;
@@ -206,7 +220,11 @@ export function createHuddleCall({
       logCredentials(credentials);
       const attendeeId = typeof credentials.attendee.AttendeeId === 'string' ? credentials.attendee.AttendeeId : '';
       if (roomId && attendeeId) room = { team: joined.team, channelId, callId: roomId, attendeeId };
-      const session = await connectMedia(credentials, joined.team.userId, thisAttempt, muted);
+      if (thisAttempt !== attempt) {
+        if (room) await tellSlackWeLeft(room, 'user_initiated');
+        return;
+      }
+      const session = await connectMedia(credentials, joined.team.userId, thisAttempt, muted, cameraInputId);
       if (thisAttempt !== attempt) {
         log.add('info', 'left while audio was connecting; hanging up');
         await session.stop();
@@ -219,6 +237,14 @@ export function createHuddleCall({
       log.add('info', 'audio connected');
       // update, not set: tiles and participants may have arrived while connecting.
       state.update((connecting) => ({ ...connecting, status: 'connected', roomId, muted, connectedAt: Date.now() }));
+      if (cameraOn) {
+        try {
+          await session.setCamera(true);
+          if (thisAttempt === attempt) state.update((latest) => ({ ...latest, cameraOn: true }));
+        } catch (error) {
+          log.add('warn', `starting the preview camera failed: ${describeError(error)}`);
+        }
+      }
     } catch (error) {
       log.add('error', `join failed: ${describeError(error)}`);
       // Slack already counts us in after a successful rooms.join; don't leave a ghost participant.
@@ -279,8 +305,9 @@ export function createHuddleCall({
     const current = state.get();
     if (current.status !== 'connected' || !media) return;
     const enabled = !current[source];
+    const thisAttempt = attempt;
     await (source === 'cameraOn' ? media.setCamera(enabled) : media.setScreenShare(enabled));
-    state.update((latest) => ({ ...latest, [source]: enabled }));
+    if (thisAttempt === attempt) state.update((latest) => ({ ...latest, [source]: enabled }));
   }
 
   function updatePreferences(change: Partial<CallPreferences>): void {
@@ -302,8 +329,9 @@ export function createHuddleCall({
     const current = state.get();
     if (current.status !== 'connected' || !media) return;
     const enabled = !current.shaderOn;
+    const thisAttempt = attempt;
     await media.setShader(enabled ? preferences.get().shaderSource : null);
-    state.update((latest) => ({ ...latest, shaderOn: enabled }));
+    if (thisAttempt === attempt) state.update((latest) => ({ ...latest, shaderOn: enabled }));
   }
 
   /** Saves new shader code, and sends it straight away if the shader is on. */
@@ -324,6 +352,8 @@ export function createHuddleCall({
     toggleMute,
     selectAudioInput: (deviceId: string) => selectAudioDevice('input', deviceId),
     selectAudioOutput: (deviceId: string) => selectAudioDevice('output', deviceId),
+    setAudioPreferences: (devices: Pick<CallPreferences, 'audioInputId' | 'audioOutputId'>) =>
+      updatePreferences(devices),
     toggleCamera: () => toggleVideoSource('cameraOn'),
     toggleScreenShare: () => toggleVideoSource('screenSharing'),
     toggleShader,

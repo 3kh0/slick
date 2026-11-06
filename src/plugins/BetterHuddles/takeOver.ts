@@ -1,16 +1,5 @@
-// Which of Slack's huddle-start dispatches Better Huddles handles. Every way
-// into a huddle ends in `startHuddle({ channelId, muted, ... })`, but the header
-// button and most other entry points go through `startHuddleWithConfirmation`
-// first, which opens Slack's own join-preview popup (and "switch huddle" /
-// "notify N people" modals) before `startHuddle` ever runs. Taking over at
-// every level means our call starts at whichever one Slack dispatches first.
-
-/** Outermost first; all of them take the same `{ channelId, muted, ... }` argument. */
-export const TAKEN_OVER_THUNKS = [
-  'startHuddleWithConfirmation',
-  'startHuddleWithShoutyRooster',
-  'startHuddle',
-] as const;
+// Keep Slack's preview and confirmation flow; replace only the confirmed join.
+export const TAKEN_OVER_THUNKS = ['startHuddle'] as const;
 
 export interface TakeOverRequest {
   channelId: string;

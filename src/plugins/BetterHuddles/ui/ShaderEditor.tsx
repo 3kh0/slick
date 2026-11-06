@@ -19,7 +19,7 @@ function handleEditorKeys(event: React.KeyboardEvent<HTMLTextAreaElement>, onApp
   event.preventDefault();
   const editor = event.currentTarget;
   // execCommand keeps the browser's undo history, unlike setting `value`.
-  if (!document.execCommand('insertText', false, INDENT))
+  if (!editor.ownerDocument.execCommand('insertText', false, INDENT))
     editor.setRangeText(INDENT, editor.selectionStart, editor.selectionEnd, 'end');
 }
 
@@ -81,7 +81,7 @@ function TemplatePicker({ onPick }: { onPick: (source: string) => void }) {
 }
 
 export function ShaderEditor({ onControlError }: { onControlError: (prefix: string, error: unknown) => void }) {
-  const { call } = useHuddleUi();
+  const { call, document: uiDocument } = useHuddleUi();
   const state = useCallState();
   const saved = usePreferences().shaderSource;
   const [draft, setDraft] = React.useState(saved);
@@ -103,7 +103,7 @@ export function ShaderEditor({ onControlError }: { onControlError: (prefix: stri
       });
   };
   const loadTemplate = (source: string) => {
-    if (dirty && !window.confirm('Replace your unapplied changes with this template?')) return;
+    if (dirty && !uiDocument.defaultView?.confirm('Replace your unapplied changes with this template?')) return;
     setDraft(source);
     setErrors([]);
     setStatus('');

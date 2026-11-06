@@ -5,13 +5,16 @@ export function useFullscreen(targetRef: React.RefObject<HTMLElement | null>) {
   const [fullscreen, setFullscreen] = React.useState(false);
 
   React.useEffect(() => {
+    const target = targetRef.current;
+    const document = target?.ownerDocument;
+    if (!document) return;
     const sync = () =>
       setFullscreen(Boolean(document.fullscreenElement && document.fullscreenElement === targetRef.current));
     document.addEventListener('fullscreenchange', sync);
     return () => {
       document.removeEventListener('fullscreenchange', sync);
       // The call ending (window unmounting) also leaves full screen.
-      if (document.fullscreenElement && document.fullscreenElement === targetRef.current) {
+      if (document.fullscreenElement && document.fullscreenElement === target) {
         document
           .exitFullscreen()
           .catch((error: Error) =>
@@ -22,6 +25,8 @@ export function useFullscreen(targetRef: React.RefObject<HTMLElement | null>) {
   }, [targetRef]);
 
   const toggle = React.useCallback(async () => {
+    const document = targetRef.current?.ownerDocument;
+    if (!document) return;
     try {
       if (document.fullscreenElement) await document.exitFullscreen();
       else await targetRef.current?.requestFullscreen();

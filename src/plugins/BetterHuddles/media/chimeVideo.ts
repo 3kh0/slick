@@ -142,6 +142,7 @@ export function createChimeVideoControls(
   let cameraOn = false;
   let shaderSource: string | null = null;
   let sharing = false;
+  let stopped = false;
   // What's being sent right now (null = no video), and the shader drawing it, if any.
   let sending: VideoInput | null = null;
   let runningShader: ShaderVideoSource | null = null;
@@ -171,14 +172,24 @@ export function createChimeVideoControls(
 
   /** Starts or swaps Chime's video input to match `wantedInput()`; on failure the old input keeps going. */
   async function applyVideoInput(): Promise<void> {
+    if (stopped) return;
     const wanted = wantedInput();
     const unchanged = wanted === null ? sending === null : sending !== null && sending.shader === wanted.shader;
     if (unchanged) return;
     if (!wanted) return stopSending();
     if (!capabilities.canSend) throw new Error("Slack didn't allow this huddle session to send video.");
     const nextShader = wanted.shader === null ? null : await startShaderStream(wanted.shader, cameraConstraints);
+    if (stopped) {
+      nextShader?.stop();
+      return;
+    }
     try {
       await audioVideo.startVideoInput(nextShader ? nextShader.stream : cameraConstraints);
+      if (stopped) {
+        await audioVideo.stopVideoInput();
+        nextShader?.stop();
+        return;
+      }
     } catch (error) {
       nextShader?.stop();
       throw mediaDeviceError('camera', error);
@@ -217,6 +228,7 @@ export function createChimeVideoControls(
     });
 
   async function setScreenShare(enabled: boolean): Promise<void> {
+    if (stopped) return;
     if (enabled === sharing) return;
     if (!enabled) {
       sharing = false;
@@ -225,6 +237,10 @@ export function createChimeVideoControls(
     }
     try {
       await audioVideo.startContentShareFromScreenCapture();
+      if (stopped) {
+        audioVideo.stopContentShare();
+        return;
+      }
     } catch (error) {
       throw mediaDeviceError('screen', error);
     }
@@ -239,8 +255,13 @@ export function createChimeVideoControls(
     unbindTile: (tileId) => audioVideo.unbindVideoElement(tileId, false),
     setVideoDisplayHeight,
     async stop() {
+      if (stopped) return;
+      stopped = true;
       stopStatsLogging();
-      if (sharing) await setScreenShare(false);
+      if (sharing) {
+        sharing = false;
+        audioVideo.stopContentShare();
+      }
       if (sending) await stopSending();
       audioVideo.removeContentShareObserver(contentObserver);
       tracker.clear();

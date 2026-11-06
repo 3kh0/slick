@@ -24,9 +24,8 @@ describe('takeOverRequest', () => {
 });
 
 describe('TAKEN_OVER_THUNKS', () => {
-  it('includes the confirmation thunk the header button dispatches, ahead of startHuddle', () => {
-    assert.ok(TAKEN_OVER_THUNKS.includes('startHuddleWithConfirmation'));
-    assert.ok(TAKEN_OVER_THUNKS.indexOf('startHuddleWithConfirmation') < TAKEN_OVER_THUNKS.indexOf('startHuddle'));
+  it('preserves Slack preview and confirmation, taking over only the confirmed join', () => {
+    assert.deepEqual(TAKEN_OVER_THUNKS, ['startHuddle']);
   });
 });
 

@@ -58,6 +58,7 @@ export interface MediaSession {
 export interface MediaSessionOptions {
   audioInputId?: string;
   audioOutputId?: string;
+  cameraInputId?: string;
   credentials: ChimeCredentials;
   /** Your Slack user id, for your own speaking indicator. */
   localUserId: string;

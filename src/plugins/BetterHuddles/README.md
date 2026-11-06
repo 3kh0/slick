@@ -1,6 +1,8 @@
 # Better Huddles
 
-Replaces Slack's huddle client with its own: every "start / join huddle" in Slack goes through `startHuddleWithConfirmation` (which would open Slack's join-preview popup) and ends in `startHuddle`; this plugin swaps all of them (`TAKEN_OVER_THUNKS`) for its own join, but only while the plugin is enabled. It calls `rooms.join` with your Slack token, connects straight to AWS Chime with the credentials Slack returns, and shows the call on top of the current Slack page (fills the page by default; a floating window is a setting). Slack's own huddle window never opens.
+Slack's normal preview and confirmation screens run first, including microphone, speaker, and camera selection. Only the confirmed `startHuddle` is replaced: Better Huddles calls `rooms.join` and connects directly to Chime. Cancelling the preview does not join the huddle.
+
+Calls open in a separate, movable desktop window by default, with a unified macOS header. Use **Move into Slack** to dock the call, or **Open in separate window** to detach it without reconnecting. **Open huddles as** also offers a page-filling view and a floating view inside Slack. Closing the separate window leaves the huddle.
 
 ## Audio and themes
 

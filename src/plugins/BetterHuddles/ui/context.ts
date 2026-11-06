@@ -6,6 +6,9 @@ import type { CallState, HuddleCall } from '../huddleCall.ts';
 import type { CallPreferences } from '../preferences.ts';
 
 export interface HuddleUiServices {
+  document: Document;
+  detached: boolean;
+  moveCall: (detached: boolean) => void;
   call: HuddleCall;
   /** Slick's `members.useMember` (a hook: same call order every render). */
   useMember: (userId: string) => SlackMember | undefined;
