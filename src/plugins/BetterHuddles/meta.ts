@@ -15,8 +15,7 @@ export const settings = {
     default: 'separate',
     options: [
       { value: 'separate', label: 'A separate window' },
-      { value: 'page', label: 'Filling the Slack page' },
-      { value: 'window', label: 'Floating inside Slack' },
+      { value: 'page', label: 'Inside Slack' },
     ],
   },
   compactNoVideo: {

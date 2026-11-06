@@ -58,16 +58,6 @@ function LeaveButton() {
   return <ControlButton label="Leave huddle" icon="phone-off" tone="danger" onClick={() => void call.leave()} />;
 }
 
-/** Mute and leave only: the collapsed audio-only bar. */
-export function CompactControls() {
-  return (
-    <div className="sbh-controls" role="toolbar" aria-label="Huddle controls">
-      <MuteButton />
-      <LeaveButton />
-    </div>
-  );
-}
-
 interface ControlsProps {
   onControlError: (prefix: string, error: unknown) => void;
   fullscreen: boolean;

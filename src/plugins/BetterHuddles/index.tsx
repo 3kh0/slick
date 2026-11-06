@@ -241,7 +241,6 @@ export default class BetterHuddles extends SlickPlugin<typeof meta.settings> {
           const member = members.getCachedMember(userId);
           return member ? memberDisplayName(member) : undefined;
         }),
-      initialLayout: () => (detached || this.config.layout !== 'window' ? 'page' : 'window'),
       useCompactNoVideo: () => React.useSyncExternalStore(this.compactNoVideo.subscribe, this.compactNoVideo.get),
     };
   }

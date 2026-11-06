@@ -46,7 +46,7 @@ export const CALL_WINDOW_CSS = `
   gap: 8px;
   min-width: 0;
   padding: 12px 16px;
-  cursor: grab;
+  cursor: default;
   user-select: none;
   touch-action: none;
 }
@@ -56,6 +56,21 @@ export const CALL_WINDOW_CSS = `
   -webkit-app-region: drag;
 }
 .sbh-header button { -webkit-app-region: no-drag; }
+.sbh-window-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border: 0;
+  border-radius: 6px;
+  background: var(--sbh-control-bg);
+  color: inherit;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.sbh-window-switch:hover { background: var(--sbh-control-hover); }
 .sbh-audio-devices { display: flex; flex-wrap: wrap; gap: 12px; }
 .sbh-audio-device { display: grid; gap: 4px; min-width: 0; flex: 1 1 160px; }
 .sbh-audio-device select { width: 100%; min-width: 0; }
@@ -276,39 +291,6 @@ export const CALL_WINDOW_CSS = `
   word-break: break-word;
   user-select: text;
 }
-/* Invisible grab strips on every side and corner; the bottom-right one also shows a grip. */
-.sbh-resize { position: absolute; z-index: 2; touch-action: none; }
-.sbh-resize--n, .sbh-resize--s { left: 14px; right: 14px; height: 6px; cursor: ns-resize; }
-.sbh-resize--n { top: 0; }
-.sbh-resize--s { bottom: 0; }
-.sbh-resize--e, .sbh-resize--w { top: 14px; bottom: 14px; width: 6px; cursor: ew-resize; }
-.sbh-resize--e { right: 0; }
-.sbh-resize--w { left: 0; }
-.sbh-resize--ne, .sbh-resize--nw, .sbh-resize--se, .sbh-resize--sw { width: 16px; height: 16px; }
-.sbh-resize--ne { top: 0; right: 0; cursor: nesw-resize; }
-.sbh-resize--sw { bottom: 0; left: 0; cursor: nesw-resize; }
-.sbh-resize--nw { top: 0; left: 0; cursor: nwse-resize; }
-.sbh-resize--se {
-  right: 0;
-  bottom: 0;
-  cursor: nwse-resize;
-  background: linear-gradient(135deg, transparent 55%, rgba(255, 255, 255, 0.35) 55%, rgba(255, 255, 255, 0.35) 62%, transparent 62%, transparent 75%, rgba(255, 255, 255, 0.35) 75%, rgba(255, 255, 255, 0.35) 82%, transparent 82%);
-}
-/* Collapsed to an audio-only bar. */
-.sbh-window--bar {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  max-width: calc(100vw - 16px);
-  padding-right: 12px;
-  border-radius: 999px;
-}
-.sbh-window--bar .sbh-header { flex: 1 1 auto; padding: 8px 4px 8px 20px; }
-.sbh-window--bar .sbh-where { font-size: 15px; }
-.sbh-window--bar .sbh-header-end { margin: 0; }
-.sbh-window--bar .sbh-controls { flex-wrap: nowrap; gap: 8px; }
-.sbh-window--bar .sbh-control { width: 40px; height: 40px; }
-.sbh-window--bar .sbh-control--danger { width: 52px; }
 /* Settings slide over the stage. */
 .sbh-body { position: relative; }
 .sbh-settings {

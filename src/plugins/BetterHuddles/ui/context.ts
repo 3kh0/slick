@@ -14,8 +14,6 @@ export interface HuddleUiServices {
   useMember: (userId: string) => SlackMember | undefined;
   /** "#general" / a DM partner's name for a conversation id. */
   conversationLabel: (channelId: string) => string;
-  /** Whether a new call starts as a floating window or filling the page. */
-  initialLayout: () => 'window' | 'page';
   /** The "shrink people without video" setting, live (a hook). */
   useCompactNoVideo: () => boolean;
 }
