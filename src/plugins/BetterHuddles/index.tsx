@@ -45,10 +45,12 @@ export default class BetterHuddles extends SlickPlugin<typeof meta.settings> {
   private previewWindow: Window | null = null;
   // Mirrors the setting so the open call window re-lays out when it changes.
   private readonly compactNoVideo = createValueStore(true);
+  private readonly inlineLayout = createValueStore<'page' | 'window' | 'minimized'>('page');
 
   start() {
     this.api.setStyle(CALL_WINDOW_CSS);
     this.compactNoVideo.set(this.config.compactNoVideo !== false);
+    this.inlineLayout.set(this.config.layout === 'separate' ? 'page' : this.config.layout);
     const teams = () => candidateTeams(readLocalConfigTeams(), routeTeamId(location.pathname));
     const call = createHuddleCall({
       teams,
@@ -139,6 +141,7 @@ export default class BetterHuddles extends SlickPlugin<typeof meta.settings> {
 
   onSettingsChange(changed: string[]) {
     this.compactNoVideo.set(this.config.compactNoVideo !== false);
+    if (changed.includes('layout') && this.config.layout !== 'separate') this.inlineLayout.set(this.config.layout);
     if (changed.includes('layout') && this.call && this.call.state.get().status !== 'idle')
       this.presentation?.show(this.config.layout === 'separate');
   }
@@ -228,9 +231,16 @@ export default class BetterHuddles extends SlickPlugin<typeof meta.settings> {
   private services(call: HuddleCall, doc: Document, detached: boolean): HuddleUiServices {
     const { members, channels } = this.api;
     return {
+      useInlineLayout: () => React.useSyncExternalStore(this.inlineLayout.subscribe, this.inlineLayout.get),
+      setInlineLayout: (layout) => {
+        this.inlineLayout.set(layout);
+        this.presentation?.show(false);
+        void this.api.settings.set('layout', layout);
+      },
       document: doc,
       detached,
       moveCall: (separate) => {
+        if (!separate) this.inlineLayout.set('page');
         this.presentation?.show(separate);
         void this.api.settings.set('layout', separate ? 'separate' : 'page');
       },

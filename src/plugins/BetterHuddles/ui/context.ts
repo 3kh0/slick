@@ -6,6 +6,8 @@ import type { CallState, HuddleCall } from '../huddleCall.ts';
 import type { CallPreferences } from '../preferences.ts';
 
 export interface HuddleUiServices {
+  useInlineLayout: () => 'page' | 'window' | 'minimized';
+  setInlineLayout: (layout: 'page' | 'window' | 'minimized') => void;
   document: Document;
   detached: boolean;
   moveCall: (detached: boolean) => void;

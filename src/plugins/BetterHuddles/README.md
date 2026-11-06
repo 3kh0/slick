@@ -2,7 +2,7 @@
 
 Slack's normal preview and confirmation screens run first, including microphone, speaker, and camera selection. Only the confirmed `startHuddle` is replaced: Better Huddles calls `rooms.join` and connects directly to Chime. Cancelling the preview does not join the huddle.
 
-Calls open in a separate, movable desktop window by default, with a unified macOS header. Use **Move into Slack** to dock the call, or **Open in separate window** to detach it without reconnecting. **Open huddles as** has two choices: a separate window or a docked view inside Slack. Closing the separate window leaves the huddle.
+Calls open in a separate, movable desktop window by default, with a unified macOS header. Use **Move into Slack** to dock the call, or **Open in separate window** to detach it without reconnecting. **Open huddles as** defaults to a separate window. Floating panels and minimized audio bars inside Slack are opt-in choices in that setting, or in **Layout inside Slack** during a call. These views can be dragged, and floating panels can be resized. **Pop out** always opens a separate desktop window. Closing the separate window leaves the huddle.
 
 ## Audio and themes
 

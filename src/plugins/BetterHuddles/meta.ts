@@ -11,11 +11,13 @@ export const settings = {
   layout: {
     type: 'select',
     label: 'Open huddles as',
-    description: 'You can switch either way during a call with the button in its corner',
+    description: 'Separate windows are the default. Floating and minimized views inside Slack are optional.',
     default: 'separate',
     options: [
       { value: 'separate', label: 'A separate window' },
       { value: 'page', label: 'Inside Slack' },
+      { value: 'window', label: 'Floating inside Slack' },
+      { value: 'minimized', label: 'Minimized inside Slack' },
     ],
   },
   compactNoVideo: {
