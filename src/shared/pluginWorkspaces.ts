@@ -8,6 +8,7 @@ const APP_WIDE: Record<string, string> = {
   CustomSounds: 'Native notification sounds apply to the whole app.',
   NoTrack: 'Network tracking protection applies to the shared Slack session.',
   QuietSpotify: 'Embedded audio controls apply to the whole app.',
+  SelfCare: 'Self-care breaks lock Slack and silence notifications across the whole app.',
   ShutUpSlackbot: 'Native notification filtering applies to the whole app.',
   Snappy: 'Startup optimizations apply to the whole app.',
   StreamerMode: 'Streamer mode can silence notifications across the whole app.',

@@ -44,6 +44,7 @@ export const PLUGINS = [
   'QuickJoin',
   'QuietSpotify',
   'RestrictedChannelWarning',
+  'SelfCare',
   'ShowRealUser',
   'ShowSendingBot',
   'ShutUpSlackbot',

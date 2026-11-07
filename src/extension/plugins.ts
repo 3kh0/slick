@@ -38,6 +38,7 @@ export const RENDERER_ONLY_ON_WEB = [
   'CustomFonts',
   'CustomSounds',
   'NoTrack',
+  'SelfCare',
   'ShutUpSlackbot',
   'Snappy',
   'StreamerMode',
