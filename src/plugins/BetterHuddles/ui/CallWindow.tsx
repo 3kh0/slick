@@ -261,7 +261,7 @@ export function CallWindow() {
           </button>
           <PresentationButton />
         </WindowHeader>
-        <CompactControls />
+        <CompactControls onControlError={report} />
       </section>
     );
   const floating = layout !== 'page' && !fullscreen;

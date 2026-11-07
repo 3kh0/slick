@@ -8,8 +8,6 @@ export const CALL_WINDOW_CSS = `
   --sbh-speaking-glow: var(--dt_color-surf-hgl-1, #2bac7640);
   --sbh-speaking-bars: var(--dt_color-content-hgl-1, #2bac76);
   --sbh-badge-bg: var(--dt_color-base-sec, #222529);
-  --sbh-group-outline: var(--dt_color-otl-pry, #ffffff29);
-  --sbh-group-bg: var(--dt_color-surf-pry, #ffffff08);
   --sbh-control-bg: var(--dt_color-surf-pry, #ffffff1f);
   --sbh-control-hover: var(--dt_color-surf-pry-hover, #ffffff33);
   --sbh-control-text: var(--dt_color-content-pry, #ffffff);
@@ -23,6 +21,7 @@ export const CALL_WINDOW_CSS = `
   z-index: 10000;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr);
   box-sizing: border-box;
   overflow: hidden;
   border-radius: var(--sbh-radius);
@@ -108,15 +107,26 @@ export const CALL_WINDOW_CSS = `
 .sbh-icon-button:hover { background: var(--sbh-control-bg); }
 .sbh-body { min-height: 0; }
 .sbh-stage {
+  min-width: 0;
+  min-height: 0;
   box-sizing: border-box;
   display: flex;
-  flex-wrap: wrap;
-  align-content: center;
-  justify-content: center;
+  align-items: stretch;
+  outline: none;
   width: 100%;
   height: 100%;
   padding: 12px;
 }
+.sbh-stage--stacked { flex-direction: column; }
+.sbh-stage--left { flex-direction: row-reverse; }
+.sbh-main-grid { flex: 1; min-width: 0; min-height: 0; position: relative; }
+.sbh-grid-cell { position: absolute; }
+.sbh-participant-strip { flex: none; min-width: 0; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; }
+.sbh-participant-strip--horizontal { flex-direction: row; overflow-x: auto; overflow-y: hidden; align-items: center; }
+.sbh-share-expand { position: absolute; inset: 0; border: 0; padding: 0; background: transparent; color: white; cursor: zoom-in; }
+.sbh-share-expand[aria-pressed="true"] { cursor: zoom-out; }
+.sbh-share-expand span { position: absolute; top: 8px; right: 8px; display: grid; place-items: center; width: 30px; height: 30px; border-radius: 8px; background: #0009; }
+.sbh-share-expand:focus-visible { outline: 2px solid white; outline-offset: -3px; }
 .sbh-stage-status { margin: 0; font-size: 18px; opacity: 0.8; }
 .sbh-tile {
   position: relative;
@@ -131,21 +141,6 @@ export const CALL_WINDOW_CSS = `
 .sbh-tile--speaking {
   box-shadow: 0 0 0 3px var(--sbh-speaking-ring), 0 0 18px 4px var(--sbh-speaking-glow);
 }
-/* Four people without video sharing one video-sized slot. */
-.sbh-group {
-  display: grid;
-  flex: none;
-  box-sizing: border-box;
-  grid-template-columns: repeat(2, max-content);
-  grid-auto-rows: max-content;
-  /* Top-left, so tiles stay put as people join or leave the group. */
-  align-content: start;
-  justify-content: start;
-  border-radius: var(--sbh-tile-radius);
-  /* Outlines the whole slot, so a half-empty group still shows it's one big tile's worth of space. */
-  outline: 1px solid var(--sbh-group-outline);
-  background: var(--sbh-group-bg);
-}
 /* Icons in the pill and corner scale with the tile too. */
 .sbh-pill svg, .sbh-corner-button svg {
   width: calc(14px * var(--sbh-scale, 1));
@@ -157,7 +152,7 @@ export const CALL_WINDOW_CSS = `
   width: 100%;
   height: 100%;
   background: var(--sbh-tile-bg);
-  object-fit: cover;
+  object-fit: contain;
 }
 /* Your own camera is mirrored like every video app, so moving left looks left. */
 .sbh-video--mirrored { transform: scaleX(-1); }

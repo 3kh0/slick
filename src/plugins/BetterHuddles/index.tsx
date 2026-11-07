@@ -5,6 +5,7 @@ import { createMediaSession } from './media/mediaSession.ts';
 import * as meta from './meta.ts';
 import { loadPreferences, savePreferences } from './preferences.ts';
 import { readPreviewSelection, type PreviewSelection } from './preview.ts';
+import { openHuddleThread } from './huddleThread.ts';
 import { callWithFallback, candidateTeams, readLocalConfigTeams, routeTeamId } from './slackApi.ts';
 import { closePreparedWindows, TAKEN_OVER_THUNKS, takeOverRequest } from './takeOver.ts';
 import { CallApp } from './ui/CallWindow.tsx';
@@ -34,7 +35,7 @@ export default class BetterHuddles extends SlickPlugin<typeof meta.settings> {
   static readonly defaultEnabled = meta.defaultEnabled;
   static readonly settings = meta.settings;
   // Moving the call UI must not restart its media session.
-  static readonly liveSettings = ['layout', 'compactNoVideo'];
+  static readonly liveSettings = ['layout', 'compactNoVideo', 'participantSide'];
 
   private call: HuddleCall | null = null;
   private root: ReactRoot | null = null;
@@ -44,12 +45,14 @@ export default class BetterHuddles extends SlickPlugin<typeof meta.settings> {
   private preview: PreviewSelection | null = null;
   private previewWindow: Window | null = null;
   // Mirrors the setting so the open call window re-lays out when it changes.
+  private readonly participantSide = createValueStore<'left' | 'right'>('right');
   private readonly compactNoVideo = createValueStore(true);
   private readonly inlineLayout = createValueStore<'page' | 'window' | 'minimized'>('page');
 
   start() {
     this.api.setStyle(CALL_WINDOW_CSS);
     this.compactNoVideo.set(this.config.compactNoVideo !== false);
+    this.participantSide.set(this.config.participantSide);
     this.inlineLayout.set(this.config.layout === 'separate' ? 'page' : this.config.layout);
     const teams = () => candidateTeams(readLocalConfigTeams(), routeTeamId(location.pathname));
     const call = createHuddleCall({
@@ -141,6 +144,7 @@ export default class BetterHuddles extends SlickPlugin<typeof meta.settings> {
 
   onSettingsChange(changed: string[]) {
     this.compactNoVideo.set(this.config.compactNoVideo !== false);
+    this.participantSide.set(this.config.participantSide);
     if (changed.includes('layout') && this.config.layout !== 'separate') this.inlineLayout.set(this.config.layout);
     if (changed.includes('layout') && this.call && this.call.state.get().status !== 'idle')
       this.presentation?.show(this.config.layout === 'separate');
@@ -245,12 +249,31 @@ export default class BetterHuddles extends SlickPlugin<typeof meta.settings> {
         void this.api.settings.set('layout', separate ? 'separate' : 'page');
       },
       call,
+      openThread: () =>
+        openHuddleThread({
+          getCall: call.state.get,
+          getCachedThread: (roomId) => this.api.redux.getRawState()?.huddlesCanvas?.byHuddleId?.[roomId]?.thread,
+          getRoom: async (roomId) =>
+            (
+              await callWithFallback<{ room?: unknown }>(
+                candidateTeams(readLocalConfigTeams(), routeTeamId(location.pathname)),
+                'screenhero.rooms.info',
+                { room: roomId },
+              )
+            ).result.room,
+          showThread: (target) => this.api.redux.dispatchThunk('showThread', target),
+          focusSlack: () => window.focus(),
+        }),
       useMember: members.useMember,
       conversationLabel: (channelId) =>
         conversationLabel(channels.getCachedChannel(channelId), (userId) => {
           const member = members.getCachedMember(userId);
           return member ? memberDisplayName(member) : undefined;
         }),
+      useParticipantSide: () => React.useSyncExternalStore(this.participantSide.subscribe, this.participantSide.get),
+      setParticipantSide: (side) => {
+        void this.api.settings.set('participantSide', side);
+      },
       useCompactNoVideo: () => React.useSyncExternalStore(this.compactNoVideo.subscribe, this.compactNoVideo.get),
     };
   }

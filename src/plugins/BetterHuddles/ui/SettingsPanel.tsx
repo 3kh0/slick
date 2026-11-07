@@ -1,5 +1,6 @@
 // Audio devices and video effects, alongside the call stage.
 
+import { useHuddleUi } from './context.ts';
 import { Icon } from './icons.tsx';
 import { ShaderEditor } from './ShaderEditor.tsx';
 import { AudioSettings } from './AudioSettings.tsx';
@@ -11,6 +12,8 @@ interface SettingsPanelProps {
 }
 
 export function SettingsPanel({ hidden, onClose, onControlError }: SettingsPanelProps) {
+  const { useParticipantSide, setParticipantSide } = useHuddleUi();
+  const participantSide = useParticipantSide();
   return (
     <aside
       className="sbh-settings"
@@ -28,6 +31,17 @@ export function SettingsPanel({ hidden, onClose, onControlError }: SettingsPanel
           <Icon name="x" size={16} />
         </button>
       </div>
+      <label className="sbh-settings-section">
+        <span>Participants beside screen shares</span>
+        <select
+          className="sbh-select"
+          value={participantSide}
+          onChange={(event) => setParticipantSide(event.target.value as 'left' | 'right')}
+        >
+          <option value="left">Left</option>
+          <option value="right">Right</option>
+        </select>
+      </label>
       <AudioSettings onControlError={onControlError} />
       <h3>Video effect</h3>
       <ShaderEditor onControlError={onControlError} />

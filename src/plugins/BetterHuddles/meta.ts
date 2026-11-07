@@ -20,11 +20,20 @@ export const settings = {
       { value: 'minimized', label: 'Minimized inside Slack' },
     ],
   },
+  participantSide: {
+    type: 'select',
+    label: 'Participants beside screen shares',
+    default: 'right',
+    options: [
+      { value: 'left', label: 'Left' },
+      { value: 'right', label: 'Right' },
+    ],
+  },
   compactNoVideo: {
     type: 'boolean',
-    label: 'Shrink people without video',
+    label: 'Compact participant strip',
     description:
-      'With two or more people without video, they share square tiles, four small photos to a tile, so you still see who is talking',
+      'Use a narrower participant strip during screen sharing. Photos stay square and cameras keep their video shape.',
     default: true,
   },
 } as const satisfies SettingsSchema;

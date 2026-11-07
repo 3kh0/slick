@@ -46,7 +46,7 @@ function MuteButton() {
       label={state.muted ? 'Unmute microphone' : 'Mute microphone'}
       icon={state.muted ? 'mic-off' : 'mic'}
       pressed={state.muted}
-      tone={state.muted ? 'warning' : 'default'}
+      tone={state.muted ? 'default' : 'warning'}
       disabled={state.status !== 'connected'}
       onClick={call.toggleMute}
     />
@@ -58,10 +58,35 @@ function LeaveButton() {
   return <ControlButton label="Leave huddle" icon="phone-off" tone="danger" onClick={() => void call.leave()} />;
 }
 
-export function CompactControls() {
+function ThreadButton({ onControlError }: Pick<ControlsProps, 'onControlError'>) {
+  const { openThread } = useHuddleUi();
+  const state = useCallState();
+  const [opening, setOpening] = React.useState(false);
+  const open = async () => {
+    setOpening(true);
+    try {
+      await openThread();
+    } catch (error) {
+      onControlError("Couldn't open the huddle thread", error);
+    } finally {
+      setOpening(false);
+    }
+  };
+  return (
+    <ControlButton
+      label="Open huddle thread"
+      icon="message-square"
+      disabled={opening || state.status !== 'connected' || !state.roomId}
+      onClick={() => void open()}
+    />
+  );
+}
+
+export function CompactControls({ onControlError }: Pick<ControlsProps, 'onControlError'>) {
   return (
     <div className="sbh-controls" role="toolbar" aria-label="Huddle controls">
       <MuteButton />
+      <ThreadButton onControlError={onControlError} />
       <LeaveButton />
     </div>
   );
@@ -107,6 +132,7 @@ export function Controls({ onControlError, fullscreen, onToggleFullscreen, onTog
         onClick={onToggleFullscreen}
       />
       <ControlButton label="Huddle settings" icon="settings" onClick={onToggleSettings} />
+      <ThreadButton onControlError={onControlError} />
       <LeaveButton />
     </div>
   );

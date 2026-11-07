@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import { expect } from '../expect.ts';
-import { buildStageEntries, fitTileHeight, nameWithPronouns } from '../../media/stageLayout.ts';
+import { buildStageEntries, nameWithPronouns } from '../../media/stageLayout.ts';
 
 const camera = (tileId: number, userId: string | null, isLocal = false) => ({
   tileId,
@@ -32,31 +32,6 @@ describe('buildStageEntries', () => {
   it("never drops a camera Chime couldn't match to a participant", () => {
     const entries = buildStageEntries([camera(5, null), camera(6, 'U9')], ['U1'], 'U1');
     expect(entries.map((entry) => entry.key)).toEqual(['photo-U1', 'tile-5', 'tile-6']);
-  });
-});
-
-describe('fitTileHeight', () => {
-  it('fills the height with one tile when the window is wide enough', () => {
-    expect(fitTileHeight([16 / 9], 1000, 300, 10)).toBe(300);
-  });
-
-  it('is limited by width for a single wide tile in a narrow window', () => {
-    expect(fitTileHeight([2], 400, 1000, 10)).toBe(200);
-  });
-
-  it('wraps into rows when that makes tiles bigger', () => {
-    // Four squares in a 500×500 window: a 2×2 grid of ~245px beats one row of ~117px.
-    expect(fitTileHeight([1, 1, 1, 1], 500, 500, 10)).toBe(245);
-  });
-
-  it('mixes aspect ratios (a 16:9 video next to square photos) in one row', () => {
-    // One row: floor(1.78h) + 2h + 2 gaps ≤ 1000 → h = 259; two rows would cap h at 145.
-    expect(fitTileHeight([16 / 9, 1, 1], 1000, 300, 10)).toBe(259);
-  });
-
-  it('gives 0 for nothing to show or no room', () => {
-    expect(fitTileHeight([], 500, 500, 10)).toBe(0);
-    expect(fitTileHeight([1], 0, 500, 10)).toBe(0);
   });
 });
 

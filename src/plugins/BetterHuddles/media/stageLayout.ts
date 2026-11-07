@@ -10,8 +10,6 @@ export type StageEntry =
   | { kind: 'video'; key: string; tile: VideoTile; userId: string | null }
   | { kind: 'photo'; key: string; userId: string };
 
-// Profile photos are square; video uses whatever shape the stream actually has.
-export const PHOTO_ASPECT_RATIO = 1;
 export const DEFAULT_VIDEO_ASPECT_RATIO = 16 / 9;
 
 /**
@@ -38,31 +36,70 @@ export function buildStageEntries(tiles: VideoTile[], participantIds: string[], 
   return [...shares, ...participants, ...unmatched];
 }
 
-/** One slot on the stage: a single tile, or up to four people without video sharing one square slot. */
-export type StageSlot =
-  | { kind: 'single'; key: string; entry: StageEntry }
-  | { kind: 'group'; key: string; entries: StageEntry[] };
+export const PARTICIPANT_ASPECT_RATIO = 1;
 
-export const PEOPLE_PER_GROUP = 4;
+export interface TileRect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
 
-/**
- * With `compact` on and at least two people without video, those people are
- * packed four to a square slot (a 2×2 grid of small square tiles) after the
- * videos. A leftover few get a square of their own at the same small size,
- * never one big tile beside small ones. Otherwise every entry gets its own slot.
- */
-export function buildStageSlots(entries: StageEntry[], compact: boolean): StageSlot[] {
-  const singles = (list: StageEntry[]) => list.map((entry): StageSlot => ({ kind: 'single', key: entry.key, entry }));
-  const videos = entries.filter((entry) => entry.kind === 'video');
-  const photos = entries.filter((entry) => entry.kind === 'photo');
-  if (!compact || photos.length < 2) return singles(entries);
-  const groups: StageSlot[] = [];
-  for (let start = 0; start < photos.length; start += PEOPLE_PER_GROUP) {
-    const members = photos.slice(start, start + PEOPLE_PER_GROUP);
-    // Keyed by the first person, so a group keeps its identity while others join or leave after them.
-    groups.push({ kind: 'group', key: `group-${members[0].key}`, entries: members });
+export function fitGrid(aspectRatios: number[], width: number, height: number, gap: number): TileRect[] {
+  if (!aspectRatios.length || width <= 0 || height <= 0) return [];
+  function pack(tileHeight: number) {
+    const widths = aspectRatios.map((ratio) => Math.floor(tileHeight * ratio));
+    const plans = [{ rows: 0, cost: 0, start: 0 }];
+    for (let end = 1; end <= widths.length; end++) {
+      let rowWidth = 0;
+      let best = { rows: Infinity, cost: Infinity, start: 0 };
+      for (let start = end - 1; start >= 0; start--) {
+        rowWidth += widths[start] + (start === end - 1 ? 0 : gap);
+        if (rowWidth > width) break;
+        const rows = plans[start].rows + 1;
+        const cost = plans[start].cost + (width - rowWidth) ** 2;
+        if (rows < best.rows || (rows === best.rows && cost < best.cost)) best = { rows, cost, start };
+      }
+      plans.push(best);
+    }
+    return { widths, plans, rows: plans.at(-1)!.rows };
   }
-  return [...singles(videos), ...groups];
+  let low = 0;
+  let high = Math.floor(height) + 1;
+  while (high - low > 1) {
+    const candidate = Math.floor((low + high) / 2);
+    const { rows } = pack(candidate);
+    if (rows * candidate + (rows - 1) * gap <= height) low = candidate;
+    else high = candidate;
+  }
+  if (!low) return [];
+  const { widths, plans, rows } = pack(low);
+  const rects: TileRect[] = Array(aspectRatios.length);
+  let end = widths.length;
+  for (let row = rows - 1; row >= 0; row--) {
+    const start = plans[end].start;
+    const rowWidth = widths.slice(start, end).reduce((sum, value) => sum + value, 0) + (end - start - 1) * gap;
+    let x = Math.floor((width - rowWidth) / 2);
+    const y = Math.floor((height - (rows * low + (rows - 1) * gap)) / 2 + row * (low + gap));
+    for (let index = start; index < end; index++) {
+      rects[index] = { x, y, width: widths[index], height: low };
+      x += widths[index] + gap;
+    }
+    end = start;
+  }
+  return rects;
+}
+
+export function stageSections(entries: StageEntry[], expandedKey: string | null) {
+  const shares = entries.filter((entry) => entry.kind === 'video' && entry.tile.isContent);
+  const expanded = shares.find((entry) => entry.key === expandedKey);
+  return {
+    expanded,
+    main: expanded ? [expanded] : shares.length ? shares : entries,
+    sidebar: shares.length
+      ? entries.filter((entry) => (expanded ? entry.key !== expanded.key : !shares.includes(entry)))
+      : [],
+  };
 }
 
 /**
@@ -71,45 +108,6 @@ export function buildStageSlots(entries: StageEntry[], compact: boolean): StageS
  */
 export function tileTextScale(width: number, height: number): number {
   return Math.min(1, Math.max(0.5, Math.min(width, height) / 280));
-}
-
-/** Packs tiles of height `tileHeight` into rows left to right; returns the row count, or Infinity if a tile is too wide. */
-function rowsNeeded(aspectRatios: number[], tileHeight: number, width: number, gap: number): number {
-  let rows = 1;
-  let rowWidth = 0;
-  for (const ratio of aspectRatios) {
-    const tileWidth = Math.floor(tileHeight * ratio);
-    if (tileWidth > width) return Infinity;
-    const widened = rowWidth === 0 ? tileWidth : rowWidth + gap + tileWidth;
-    if (widened > width) {
-      rows++;
-      rowWidth = tileWidth;
-    } else {
-      rowWidth = widened;
-    }
-  }
-  return rows;
-}
-
-/**
- * The tallest whole-pixel tile height at which every tile (each at its own
- * aspect ratio) fits in `width × height` when wrapped into rows like CSS
- * flex-wrap. Binary search, since bigger tiles can jump to more rows.
- */
-export function fitTileHeight(aspectRatios: number[], width: number, height: number, gap: number): number {
-  if (aspectRatios.length === 0 || width <= 0 || height <= 0) return 0;
-  const fits = (tileHeight: number) => {
-    const rows = rowsNeeded(aspectRatios, tileHeight, width, gap);
-    return rows * tileHeight + (rows - 1) * gap <= height;
-  };
-  let largestFitting = 0;
-  let smallestTooBig = Math.floor(height) + 1;
-  while (smallestTooBig - largestFitting > 1) {
-    const candidate = Math.floor((largestFitting + smallestTooBig) / 2);
-    if (fits(candidate)) largestFitting = candidate;
-    else smallestTooBig = candidate;
-  }
-  return largestFitting;
 }
 
 /** "Sofia Egan (they/them)", or just the name when no pronouns are set. */

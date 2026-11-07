@@ -10,7 +10,6 @@ import { Icon } from './icons.tsx';
 interface VideoTileProps {
   tileId: number;
   mirrored: boolean;
-  /** `contain` keeps screen shares readable; cameras fill their tile. */
   fit: 'cover' | 'contain';
   onRatio: (aspectRatio: number) => void;
 }
@@ -132,6 +131,8 @@ export interface StageTileProps {
   onRatio: (aspectRatio: number) => void;
   onToggleShader: () => void;
   onOpenSettings: () => void;
+  expanded?: boolean;
+  onToggleExpanded?: () => void;
 }
 
 export function StageTile({
@@ -145,6 +146,8 @@ export function StageTile({
   onRatio,
   onToggleShader,
   onOpenSettings,
+  expanded = false,
+  onToggleExpanded,
 }: StageTileProps) {
   const { useMember } = useHuddleUi();
   const member = useMember(entry.userId ?? '');
@@ -158,12 +161,7 @@ export function StageTile({
   let media: React.ReactNode;
   if (entry.kind === 'video') {
     media = (
-      <VideoTile
-        tileId={entry.tile.tileId}
-        mirrored={isOwnCamera && !shaderOn}
-        fit={isScreenShare ? 'contain' : 'cover'}
-        onRatio={onRatio}
-      />
+      <VideoTile tileId={entry.tile.tileId} mirrored={isOwnCamera && !shaderOn} fit="contain" onRatio={onRatio} />
     );
   } else if (photoUrl && failedPhoto !== photoUrl) {
     media = (
@@ -195,10 +193,23 @@ export function StageTile({
   return (
     <figure
       className={talking ? 'sbh-tile sbh-tile--speaking' : 'sbh-tile'}
-      // Small tiles (e.g. four to a group) scale their name pill and buttons down with them.
       style={{ width, height, '--sbh-scale': tileTextScale(width, height) } as React.CSSProperties}
     >
       {media}
+      {isScreenShare && onToggleExpanded && (
+        <button
+          type="button"
+          className="sbh-share-expand"
+          aria-label={expanded ? 'Return to grid' : `Expand ${label.name}'s screen`}
+          aria-pressed={expanded}
+          onClick={onToggleExpanded}
+          title={expanded ? 'Return to grid (Escape)' : 'Expand screen share'}
+        >
+          <span>
+            <Icon name={expanded ? 'minimize-2' : 'maximize-2'} size={18} />
+          </span>
+        </button>
+      )}
       {isYou && !isScreenShare && (
         <div className="sbh-corner">
           <SettingsButton onClick={onOpenSettings} />

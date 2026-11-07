@@ -4,6 +4,7 @@
 type IconElement = ['path', { d: string }] | ['rect' | 'circle', Record<string, string>];
 
 const ICONS = {
+  'message-square': [['path', { d: 'M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z' }]],
   mic: [
     ['path', { d: 'M12 19v3' }],
     ['path', { d: 'M19 10v2a7 7 0 0 1-14 0v-2' }],

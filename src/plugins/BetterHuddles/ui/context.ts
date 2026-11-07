@@ -12,11 +12,14 @@ export interface HuddleUiServices {
   detached: boolean;
   moveCall: (detached: boolean) => void;
   call: HuddleCall;
+  openThread: () => Promise<void>;
   /** Slick's `members.useMember` (a hook: same call order every render). */
   useMember: (userId: string) => SlackMember | undefined;
   /** "#general" / a DM partner's name for a conversation id. */
   conversationLabel: (channelId: string) => string;
   /** The "shrink people without video" setting, live (a hook). */
+  useParticipantSide: () => 'left' | 'right';
+  setParticipantSide: (side: 'left' | 'right') => void;
   useCompactNoVideo: () => boolean;
 }
 
