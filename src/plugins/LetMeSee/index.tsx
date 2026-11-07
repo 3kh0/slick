@@ -24,12 +24,11 @@ const useDrawingsHidden = (): boolean =>
 const PANEL_CLASS = 'p-huddle_mini_panel';
 const STOP_CLASS = 'p-huddle_mini_panel__button--stop-screen-share-updated';
 const ACTIVE_CLASS = 'p-huddle_mini_panel__button--active';
-// the strike across the brush, bottom-left to top-right, in the 20x20 box
-const STRIKE = 'M3 17L17 3';
-
-// Slack's non-filled paintbrush icon from its icon set (20x20), the path only
-const BRUSH_PATH =
-  'M17.57 1.246c.39-.039.902.004 1.283.385s.424.893.386 1.282c-.04.405-.18.846-.362 1.284-.368.882-.984 1.927-1.675 2.961-1.386 2.072-3.172 4.249-4.187 5.264-1.022 1.022-2.013 1.629-3.003 1.721q-.157.015-.308.012c.088.567.022 1.196-.262 1.886-.54 1.31-1.647 1.997-2.759 2.274-1.094.272-2.27.173-3.129-.157a5.4 5.4 0 0 1-1.927-1.276 4.7 4.7 0 0 1-.54-.663 2.2 2.2 0 0 1-.299-.601 1 1 0 0 1-.033-.175.8.8 0 0 1 .033-.337.78.78 0 0 1 .701-.547c.116-.009.23.01.254.014h.004l.007.001c.04.006.062.01.088.012h.002c.057.005.227.02.54-.203.27-.191.423-.493.654-1.053l.034-.085c.204-.499.481-1.176 1.059-1.716.673-.631 1.514-.777 2.26-.662l.016.002a3 3 0 0 1-.003-.373C6.46 9.494 7.03 8.5 8.063 7.469c1.015-1.015 3.191-2.801 5.263-4.186 1.035-.692 2.079-1.308 2.962-1.676.437-.182.879-.322 1.283-.361M14.16 4.53a43 43 0 0 0-4.211 3.234 7 7 0 0 1 1.6 1.158 6.4 6.4 0 0 1 1.184 1.6 43 43 0 0 0 3.222-4.198c.673-1.006 1.225-1.955 1.537-2.704.158-.378.235-.662.254-.853l.002-.031-.03.002c-.192.02-.476.097-.854.254-.748.312-1.698.865-2.704 1.538M7.9 10.58c.024-.41.24-.967.897-1.706q.119.05.26.12a5.6 5.6 0 0 1 1.444 1.003 4.95 4.95 0 0 1 1.118 1.683c-.756.68-1.33.93-1.747.97-.428.04-.846-.13-1.307-.63-.492-.531-.69-.987-.665-1.44m9.963-7.84-.005-.002q.006 0 .005.002m-.118-.115-.001-.005zm-12.59 9.999c.269-.252.614-.335 1.008-.275.409.063.817.277 1.091.541.371.357.686.705.856 1.108.154.364.21.825-.056 1.472-.312.757-.953 1.195-1.734 1.39-.799.198-1.66.116-2.23-.102a3.9 3.9 0 0 1-1.332-.865q.235-.104.494-.287c.664-.47.954-1.175 1.163-1.685l.009-.02c.233-.567.4-.967.73-1.277m-3.658 3.43h.008z';
+// Slack's draw-others and draw-others-off icons (20x20), the path only
+const DRAW_OTHERS_PATH =
+  'M7.75 1.5a.75.75 0 0 1 0 1.5h-6a.75.75 0 0 1 0-1.5zm9.6 6.658a.25.25 0 0 0 0-.353l-.626-.627-1.06 1.061.626.626a.25.25 0 0 0 .354 0zM13.246 3.7a.25.25 0 0 0-.1-.06l-1.518-.497.497 1.519a.25.25 0 0 0 .06.1l2.419 2.417 1.06-1.06zm4.46 6.227a1.75 1.75 0 0 1-2.476 0l-4.105-4.105a1.75 1.75 0 0 1-.426-.694L10.05 3.14a1.25 1.25 0 0 1 1.575-1.576l1.987.649c.262.085.5.231.694.426l4.105 4.105a1.75 1.75 0 0 1 0 2.475zm-4.597 2.475a.25.25 0 0 0 0-.354l-.626-.626-1.061 1.06.626.627a.25.25 0 0 0 .354 0zm-4.106-4.46a.25.25 0 0 0-.1-.06l-1.518-.497.496 1.518a.25.25 0 0 0 .061.1l2.418 2.418 1.061-1.06zm4.458 6.227a1.75 1.75 0 0 1-2.474 0L6.88 10.063a1.75 1.75 0 0 1-.426-.694l-.648-1.986a1.25 1.25 0 0 1 1.576-1.576l1.986.648c.262.086.5.232.694.426l4.106 4.106a1.75 1.75 0 0 1 0 2.474zm-4.596 2.12a.25.25 0 0 1 0 .354l-.707.708a.25.25 0 0 1-.353 0l-.627-.627 1.061-1.06zm-4.204-4.165a.25.25 0 0 1 .1.06l2.417 2.419-1.06 1.06-2.419-2.418a.25.25 0 0 1-.06-.1l-.497-1.517zm2.083 6.287a1.75 1.75 0 0 0 2.475 0l.707-.707a1.75 1.75 0 0 0 0-2.475l-4.105-4.105a1.75 1.75 0 0 0-.694-.426L3.14 10.05a1.25 1.25 0 0 0-1.576 1.575l.649 1.987c.085.262.231.5.426.694zM4.5 6.5a.75.75 0 0 0-.75-.75h-2a.75.75 0 0 0 0 1.5h2a.75.75 0 0 0 .75-.75';
+const DRAW_OTHERS_OFF_PATH =
+  'M7.75 1.5a.75.75 0 0 1 0 1.5h-6a.75.75 0 0 1 0-1.5zm9.6 6.658a.25.25 0 0 0 0-.353l-.626-.627-1.06 1.061.626.626a.25.25 0 0 0 .354 0zm-5.723-5.016.928.303L13.74 2.26a2 2 0 0 0-.128-.047l-1.987-.649A1.25 1.25 0 0 0 10.05 3.14l.648 1.987q.021.065.047.128l1.186-1.186zm2.207 5.388 3.182-3.182 1.395 1.396a1.75 1.75 0 0 1 0 2.475l-.707.707a1.75 1.75 0 0 1-2.475 0zM9.369 6.455q.066.022.128.048L8.312 7.688l-.927-.303.303.927-1.185 1.185a2 2 0 0 1-.048-.128l-.648-1.986a1.25 1.25 0 0 1 1.576-1.576zm-4.242 4.243q.065.021.128.047l-1.186 1.186-.927-.303.303.927L2.26 13.74a2 2 0 0 1-.047-.128l-.649-1.987A1.25 1.25 0 0 1 3.14 10.05zm3.403 3.136-3.182 3.182 1.396 1.395a1.75 1.75 0 0 0 2.475 0l.707-.707a1.75 1.75 0 0 0 0-2.475zm4.243-4.243-3.182 3.182 1.396 1.396a1.75 1.75 0 0 0 2.474 0l.708-.708a1.75 1.75 0 0 0 0-2.474zm.335 2.81a.25.25 0 0 0 0-.354l-.626-.626-1.061 1.06.626.627a.25.25 0 0 0 .354 0zM8.865 16.29a.25.25 0 0 1 0 .354l-.707.707a.25.25 0 0 1-.353 0l-.627-.627 1.061-1.06zM4.5 6.5a.75.75 0 0 0-.75-.75h-2a.75.75 0 0 0 0 1.5h2a.75.75 0 0 0 .75-.75M2.07 17.13a.75.75 0 0 0 1.06 0l14-14a.75.75 0 1 0-1.06-1.06l-14 14a.75.75 0 0 0 0 1.06';
 
 export default class LetMeSee extends SlickPlugin<typeof meta.settings> {
   static readonly requiredAPIs = [] as const;
@@ -45,9 +44,6 @@ export default class LetMeSee extends SlickPlugin<typeof meta.settings> {
   private wrapper: HTMLElement | undefined;
   private iconSize = 20;
   private iconTemplate: HTMLElement | undefined;
-  private slashTemplate: HTMLElement | undefined;
-  /** fallback until Slack's own slash icon has been seen */
-  private strikeColor = '#E01E5A';
   private hintRoot: HTMLElement | undefined;
   private unsubscribeDrawings: (() => void) | undefined;
   private guard: MutationObserver | undefined;
@@ -116,7 +112,7 @@ export default class LetMeSee extends SlickPlugin<typeof meta.settings> {
       .replace(/\s+/g, ' ')
       .trim();
     button.classList.add('p-huddle_mini_panel__button');
-    // the mic's icon wrapper, so the brush sits in the same box as the mic icon
+    // the mic's icon wrapper, so the icon sits in the same box as the mic icon
     const micChild = mic.firstElementChild as HTMLElement | null;
     this.iconTemplate =
       micChild && micChild.tagName.toLowerCase() !== 'svg' ? (micChild.cloneNode(false) as HTMLElement) : undefined;
@@ -124,15 +120,12 @@ export default class LetMeSee extends SlickPlugin<typeof meta.settings> {
     button.setAttribute('type', 'button');
     button.setAttribute('role', 'switch');
     button.addEventListener('click', () => drawings.set(!drawings.hidden));
-    // Slack's own strike icon, from the Draw button when it is in the off state, copied so the strike matches
-    const slash = root.querySelector<HTMLElement>('.p-huddle_mini_panel__icon--slash');
-    this.slashTemplate = slash ? (slash.cloneNode(true) as HTMLElement) : undefined;
     this.hintRoot = root;
     // the same hover hint as the other buttons, shown in place of the activity text
     button.addEventListener('mouseover', () => this.showHint(true));
     button.addEventListener('mouseout', () => this.showHint(false));
 
-    // size the brush to the mic's icon as it renders, falling back to 20px
+    // size the icon to the mic's icon as it renders, falling back to 20px
     const micIcon = mic.querySelector('svg, span, i') as HTMLElement | null;
     const measured = micIcon?.getBoundingClientRect().width ?? 0;
     this.iconSize = measured >= 8 ? Math.round(measured) : 20;
@@ -198,7 +191,7 @@ export default class LetMeSee extends SlickPlugin<typeof meta.settings> {
     button.setAttribute('aria-checked', String(!hidden));
     button.classList.toggle(ACTIVE_CLASS, !hidden);
 
-    // the mic's icon wrapper when there is one, else a box the size of the mic icon; the slash is an HTML line over the brush
+    // the mic's icon wrapper when there is one, else a box the size of the mic icon
     const box = this.iconTemplate
       ? (this.iconTemplate.cloneNode(false) as HTMLElement)
       : document.createElement('span');
@@ -211,50 +204,13 @@ export default class LetMeSee extends SlickPlugin<typeof meta.settings> {
     svg.setAttribute('viewBox', '0 0 20 20');
     svg.setAttribute('aria-hidden', 'true');
     svg.style.cssText = 'display:block;color:inherit;';
-    const element = (tag: string, attributes: Record<string, string>) => {
-      const node = document.createElementNS('http://www.w3.org/2000/svg', tag);
-      for (const [name, value] of Object.entries(attributes)) node.setAttribute(name, value);
-      return node;
-    };
-    const brush = element('g', { transform: 'translate(10 10) scale(0.85) translate(-10 -10)' });
-    brush.append(
-      element('path', {
-        fill: 'currentColor',
-        'fill-rule': 'evenodd',
-        'clip-rule': 'evenodd',
-        transform: 'rotate(90 10 10)',
-        d: BRUSH_PATH,
-      }),
-    );
-    // while hidden, the brush is cut away along the strike with a gap (a buffer), like Slack's pencil strike
-    // the strike takes Slack's own slash colour, read from its slash icon whenever the Draw button shows one
-    const slash = this.hintRoot?.querySelector<HTMLElement>('.p-huddle_mini_panel__icon--slash');
-    if (slash) this.strikeColor = getComputedStyle(slash).color || this.strikeColor;
-    if (hidden) {
-      const defs = element('defs', {});
-      const mask = element('mask', {
-        id: 'letmesee-gap',
-        maskUnits: 'userSpaceOnUse',
-        x: '0',
-        y: '0',
-        width: '20',
-        height: '20',
-      });
-      mask.append(
-        element('rect', { width: '20', height: '20', fill: 'white' }),
-        element('path', { d: STRIKE, stroke: 'black', 'stroke-width': '5.5', 'stroke-linecap': 'round' }),
-      );
-      defs.append(mask);
-      const maskedBrush = element('g', { mask: 'url(#letmesee-gap)' });
-      maskedBrush.append(brush);
-      svg.append(
-        defs,
-        maskedBrush,
-        element('path', { d: STRIKE, stroke: this.strikeColor, 'stroke-width': '1.8', 'stroke-linecap': 'round' }),
-      );
-    } else {
-      svg.append(brush);
-    }
+    // draw-others when drawings are shown, draw-others-off when hidden
+    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    path.setAttribute('fill', 'currentColor');
+    path.setAttribute('fill-rule', 'evenodd');
+    path.setAttribute('clip-rule', 'evenodd');
+    path.setAttribute('d', hidden ? DRAW_OTHERS_OFF_PATH : DRAW_OTHERS_PATH);
+    svg.append(path);
     box.append(svg);
     button.replaceChildren(box);
   }
