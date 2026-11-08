@@ -30,7 +30,7 @@ import { prepareLinuxArm64Natives, prepareWindowsNatives } from './windowsNative
 import { downloadLinuxArm64Slack } from './linuxArm64Slack.js';
 import { createCookieLogin } from './windows/cookieLogin.js';
 import { loginWithCookies } from './cookieLogin.js';
-import { openSettings } from './openSettings.js';
+import { focusClientWindow, openSettings } from './openSettings.js';
 import { configDir } from './paths.js';
 import { clearStaleProfileLock } from './profileLock.ts';
 
@@ -50,15 +50,7 @@ const replayPendingOpenUrls = () => {
     replayingOpenUrl = false;
   }
 };
-const focusExistingWindow = () => {
-  for (const window of BrowserWindow.getAllWindows()) {
-    if (window.isDestroyed()) continue;
-    if (window.isMinimized()) window.restore();
-    window.show();
-    window.focus();
-    return;
-  }
-};
+const focusExistingWindow = () => void focusClientWindow(BrowserWindow.getAllWindows());
 const captureOpenUrl = (event: Electron.Event, url: string) => {
   event?.preventDefault?.();
   if (replayingOpenUrl) return;

@@ -12,6 +12,7 @@ import { wrapMacNotifications } from './macNotificationSounds.js';
 import { createPreloadSources } from './preloadSources.ts';
 import { relabelAppMenu } from './menuLabels.ts';
 import { popupOptions } from './popupOptions.ts';
+import { claimFlatpakScheme } from './flatpakHandler.ts';
 
 const cjsRequire = createRequire(import.meta.url);
 const NodeModule = cjsRequire('module') as any;
@@ -134,7 +135,7 @@ export function applyPatches(
         }
         if (prop === 'setAsDefaultProtocolClient') {
           return (scheme: string, ...args: any[]) =>
-            scheme === 'slack' ? true : target.setAsDefaultProtocolClient(scheme, ...args);
+            scheme === 'slack' ? claimFlatpakScheme(scheme) : target.setAsDefaultProtocolClient(scheme, ...args);
         }
         const value = Reflect.get(target, prop, target);
         return typeof value === 'function' ? value.bind(target) : value;
@@ -180,6 +181,7 @@ export function applyPatches(
   const OrigBrowserWindow = electronCjs.BrowserWindow;
   overrides.BrowserWindow = new Proxy(OrigBrowserWindow, {
     construct(Target: any, [opts = {}]: any[]) {
+      if (opts.transparent) return new Target(opts);
       const { webPreferences, preloadKey } = substitutePreload(opts.webPreferences);
       const window = new Target({ ...opts, webPreferences });
       if (preloadKey) window.once('closed', () => originalPreloads.release(preloadKey));
@@ -208,7 +210,8 @@ export function applyPatches(
           console.error('[slick] Slack window-open handler threw:', error);
           throw error;
         }
-        if (result?.action !== 'allow') return result;
+        // Leave overlays (huddle drawing, Slackbot Mini) exactly as Slack builds them.
+        if (result?.action !== 'allow' || result.overrideBrowserWindowOptions?.transparent) return result;
 
         const { webPreferences, preloadKey } = substitutePreload(result.overrideBrowserWindowOptions?.webPreferences);
         if (preloadKey) {

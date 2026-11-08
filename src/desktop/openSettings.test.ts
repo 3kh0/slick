@@ -1,12 +1,13 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { openSettings } from './openSettings.ts';
+import { focusClientWindow, openSettings } from './openSettings.ts';
 
-function fixture(url = 'https://app.slack.com/client/T123', minimized = false, destroyed = false) {
+function fixture(url = 'https://app.slack.com/client/T123', minimized = false, destroyed = false, focusable = true) {
   const actions: string[] = [];
   const window = {
     isDestroyed: () => destroyed,
     isMinimized: () => minimized,
+    isFocusable: () => focusable,
     restore: () => actions.push('restore'),
     show: () => actions.push('show'),
     focus: () => actions.push('focus'),
@@ -52,4 +53,23 @@ test('does not send settings to destroyed, sign-in, or non-client windows', () =
   );
   for (const { actions } of windows) assert.deepEqual(actions, []);
   assert.equal(openSettings([], null), false);
+});
+
+test('a second launch surfaces the client, never a hidden huddle overlay', () => {
+  const overlay = fixture('about:blank', false, false, false);
+  const panel = fixture('about:blank');
+  const client = fixture();
+  assert.equal(focusClientWindow([overlay.window, panel.window, client.window]), true);
+  assert.deepEqual(overlay.actions, []);
+  assert.deepEqual(panel.actions, []);
+  assert.deepEqual(client.actions, ['show', 'focus']);
+});
+
+test('before sign-in a second launch falls back to a navigated window only', () => {
+  const overlay = fixture('about:blank', false, false, false);
+  const signIn = fixture('https://slack.com/signin', true);
+  assert.equal(focusClientWindow([overlay.window, signIn.window]), true);
+  assert.deepEqual(overlay.actions, []);
+  assert.deepEqual(signIn.actions, ['restore', 'show', 'focus']);
+  assert.equal(focusClientWindow([fixture('about:blank', false, false, false).window]), false);
 });
