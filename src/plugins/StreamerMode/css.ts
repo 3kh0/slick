@@ -39,6 +39,11 @@ export function streamerCss(options: StreamerCss): string {
   const suggestion =
     '.c-search_autocomplete__suggestion_item:is(:has(.c-channel_icon svg[data-qa^="lock"]), [data-type="mpim"])';
   const suggestionText = '.c-search_autocomplete__suggestion_item_left';
+  const memberSuggestion = '.c-search_autocomplete__suggestion_item[data-type="member"]';
+  const historyItem = '.p-ia4_history_menu_item';
+  const historyPrivate = '[data-channel-type-icon^="lock"] ~ .c-base_entity__text-contents';
+  const groupName = '.c-small_mpim_entity__primary_name';
+  const dmIdentity = ':is([data-qa="small_member_entity"], .c-small_mpim_entity__mpim_avatars)';
   const mention = `.c-inline_channel_entity:has(${lock}):not(${activityRow} *) .c-channel_entity__name`;
 
   // Whose DM it is, as opposed to what it says. Only redacted on 'all'.
@@ -49,6 +54,8 @@ export function streamerCss(options: StreamerCss): string {
           `${root} ${activityRow} :is(${privateDestination}, ${groupDestination})`,
           `${root} ${activityDm} ${activityUser}`,
           `${root} .slick-chat-tabs [data-chat-type="dm"]`,
+          `${root} ${historyItem} :is(${dmIdentity}, ${groupName})`,
+          `${root} ${memberSuggestion} ${suggestionText}`,
         ]
       : [];
 
@@ -59,6 +66,7 @@ export function streamerCss(options: StreamerCss): string {
         `${root} ${suggestion} ${suggestionText}`,
         `${root} ${activityRow} ${privateDestination}`,
         `${root} .slick-chat-tabs [data-chat-type="private"]`,
+        `${root} ${historyItem} :is(${historyPrivate}, ${groupName})`,
       ]
     : [];
 
@@ -81,7 +89,8 @@ export function streamerCss(options: StreamerCss): string {
     `${root} ${dmsRow}:hover ${inRow}`,
     `${root} .${REVEAL_CLASS} ${threadBody}`,
     `${root} .${REVEAL_CLASS} ${mention}`,
-    `${root} ${suggestion}:hover ${suggestionText}`,
+    `${root} :is(${suggestion}, ${memberSuggestion}):hover ${suggestionText}`,
+    `${root} ${historyItem}:hover :is(${historyPrivate}, ${groupName}, ${dmIdentity})`,
     `${root} .slick-chat-tabs__tab:hover [data-chat-type]`,
     `${root} .slick-chat-tabs__results > button:hover [data-chat-type]`,
   ];
