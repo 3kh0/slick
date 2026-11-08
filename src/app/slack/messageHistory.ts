@@ -44,9 +44,14 @@ const THREAD_FIELDS = [
 
 export function withLiveThread<T extends object>(injected: T, live: object | undefined): T {
   if (!live) return injected;
+  const saved = injected as Record<string, unknown>;
+  const current = live as Record<string, unknown>;
+  const keepReplies = typeof saved.reply_count === 'number' && saved.reply_count > (Number(current.reply_count) || 0);
   let next: T | undefined;
   for (const field of THREAD_FIELDS) {
     if (!(field in live)) continue;
+    if (keepReplies && ['thread_ts', 'reply_count', 'reply_users', 'reply_users_count', 'latest_reply'].includes(field))
+      continue;
     const value = (live as Record<string, unknown>)[field];
     if ((injected as Record<string, unknown>)[field] === value) continue;
     next ??= { ...injected };

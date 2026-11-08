@@ -8,6 +8,7 @@ import * as meta from './meta.ts';
 import { MAX_EDIT_TEXT, MAX_EDITS_PER_MESSAGE, evictable, mergeEntry, normalize, trim } from './retention.ts';
 import { ImageArchive, type SavedImage } from './images.ts';
 import { blocksText, hasEvasionPadding, messageText } from './content.ts';
+import { withLoggedReplies } from './threads.ts';
 
 type StoredEdit = { oldText: string; newText: string };
 
@@ -509,7 +510,7 @@ export default class MessageLogger extends SlickPlugin<typeof meta.settings> {
       if (typeof entry.message.channel !== 'string' || typeof entry.message.ts !== 'string') continue;
       out.push(entry.message);
     }
-    return out;
+    return withLoggedReplies(out);
   }
 
   private loggedThread(channel?: string, threadTs?: string): SlackMessage[] {
@@ -521,7 +522,7 @@ export default class MessageLogger extends SlickPlugin<typeof meta.settings> {
       if (!entry.deleted || !entry.message || entry.channel !== channel || entry.ts === threadTs) continue;
       if (entry.message.thread_ts === threadTs) replies.push(entry.message);
     }
-    return [parent.message, ...replies.toSorted((a, b) => String(a.ts).localeCompare(String(b.ts)))];
+    return withLoggedReplies([parent.message, ...replies.toSorted((a, b) => String(a.ts).localeCompare(String(b.ts)))]);
   }
 
   private patchReplies() {
