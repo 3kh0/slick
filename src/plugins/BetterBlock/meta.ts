@@ -1,7 +1,7 @@
 import type { PluginCategory, SettingsSchema } from '$slick';
 
 export const id = 'BetterBlock';
-export const pluginName = 'BetterBlock';
+export const pluginName = 'Better Blocking';
 export const description =
   'Make people disappear locally: messages, reactions, typing, and more. Huddles are untouched.';
 export const category: PluginCategory = 'people';
