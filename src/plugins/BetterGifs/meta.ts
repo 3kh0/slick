@@ -23,7 +23,7 @@ export const settings = {
     description: 'Tenor is the default. Giphy is Slack’s own picker. KLIPY needs your own API key (see below).',
     default: 'tenor',
     options: [
-      { value: 'tenor', label: 'Tenor Proxy' },
+      { value: 'tenor', label: 'Tenor' },
       { value: 'giphy', label: 'Giphy (Slack default)' },
       { value: 'klipy', label: 'KLIPY (needs API key)' },
     ],

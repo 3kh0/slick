@@ -377,7 +377,6 @@ export default class BetterGifs extends SlickPlugin<typeof meta.settings> {
                 >
                   {name}
                 </a>
-                {provider === 'tenor' && ' · Results via tenor-proxy.vercel.app'}
               </footer>
             )}
           </>

@@ -100,7 +100,6 @@ function validateGif(value: unknown): Gif | null {
   };
 }
 
-/** Proxy fields are preferred; older Tenor media records can supply missing dimensions. */
 export function normalizeTenorResponse(value: unknown): Gif[] {
   const results = record(value)?.results;
   if (!Array.isArray(results)) return [];
@@ -116,13 +115,13 @@ export function normalizeTenorResponse(value: unknown): Gif[] {
     const gif = validateGif({
       provider: 'tenor',
       id: item.id,
-      name: item.title === undefined || item.title === '' ? (item.description ?? 'GIF') : item.title,
+      name: item.title === undefined || item.title === '' ? item.h1_title || item.description || 'GIF' : item.title,
       url: item.gif ?? original?.url,
       previewUrl: item.preview ?? preview?.url,
       animationUrl: preview?.url,
       width: item.width ?? dims[0] ?? original?.width,
       height: item.height ?? dims[1] ?? original?.height,
-      pageUrl: item.url,
+      pageUrl: item.itemurl ?? item.url,
       bytes: original?.size,
       previewBytes: preview?.size,
     });
@@ -300,6 +299,14 @@ export class Favorites {
   }
 }
 
+function tenorUrl(endpoint: 'search' | 'trending'): URL {
+  // https://github.com/Vendicated/Vencord/blob/main/src/plugins/gifProviderSwitcher/tenor.ts#L12
+  const url = new URL(`https://api.tenor.com/v1/${endpoint}`);
+  url.searchParams.set('key', '3Z0688EVWYKH');
+  url.searchParams.set('limit', '50');
+  return url;
+}
+
 export async function searchTenor(
   fetcher: (url: string, init?: RequestInit) => Promise<{ status: number; body: string }>,
   query: string,
@@ -307,17 +314,15 @@ export async function searchTenor(
   if (typeof query !== 'string' || CONTROL.test(query)) throw new Error('Invalid GIF search query.');
   const normalized = query.trim().replace(/\s+/g, ' ');
   if (!normalized || normalized.length > 100) throw new Error('GIF search query must be 1–100 characters.');
-  const url = new URL('https://tenor-proxy.vercel.app/api/search');
-  // https://github.com/3kh0/tenor-proxy
+  const url = tenorUrl('search');
   url.searchParams.set('q', normalized);
-  url.searchParams.set('limit', '50');
   return fetchGifs(fetcher, url, 'GIF search', 'tenor');
 }
 
 export function topTenor(
   fetcher: (url: string, init?: RequestInit) => Promise<{ status: number; body: string }>,
 ): Promise<Gif[]> {
-  return fetchGifs(fetcher, new URL('https://tenor-proxy.vercel.app/api/top?limit=50'), 'Top GIF', 'tenor');
+  return fetchGifs(fetcher, tenorUrl('trending'), 'Top GIF', 'tenor');
 }
 
 type Fetcher = (url: string, init?: RequestInit) => Promise<{ status: number; body: string }>;
