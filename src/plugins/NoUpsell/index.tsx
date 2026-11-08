@@ -31,7 +31,9 @@ export default class NoUpsell extends SlickPlugin<typeof meta.settings> {
         [data-qa="ask_slackbot_file_summary"],
         [data-qa="search_answer_ask_slackbot_button"],
         [data-qa="channel-setup-foreword-slackbot-tile"],
-        [data-qa="onboarding_tasks_get_started_with_slackbot_button"] {
+        [data-qa="onboarding_tasks_get_started_with_slackbot_button"],
+        [data-qa*="_promo_"],
+        [data-qa="limited_history_counter_menu_item"] {
           display: none !important;
         }
       `);
