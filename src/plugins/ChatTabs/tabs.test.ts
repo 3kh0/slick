@@ -11,6 +11,7 @@ import {
   moveTab,
   MAX_TABS,
   readTab,
+  replaceTab,
   restoreTabs,
   tabKey,
   tabUri,
@@ -56,6 +57,19 @@ test('visiting reuses existing tabs, keeps threads separate and bounds retention
   assert.equal(next.length, MAX_TABS);
   assert.equal(next[0]?.channel, 'C1');
   assert.equal(next.at(-1)?.channel, 'D999');
+});
+
+test('replacing navigates the selected tab in place and falls back to adding one', () => {
+  const tabs = [{ channel: 'C1' }, { channel: 'C2' }, { channel: 'D3' }];
+  assert.deepEqual(replaceTab(tabs, 'C2:', { channel: 'G4' }), [
+    { channel: 'C1' },
+    { channel: 'G4' },
+    { channel: 'D3' },
+  ]);
+  assert.equal(replaceTab(tabs, 'C2:', { channel: 'D3' }), tabs);
+  assert.deepEqual(replaceTab(tabs, undefined, { channel: 'G4' }), [...tabs, { channel: 'G4' }]);
+  assert.deepEqual(replaceTab(tabs, 'C9:', { channel: 'G4' }), [...tabs, { channel: 'G4' }]);
+  assert.deepEqual(replaceTab([], undefined, { channel: 'C1' }), [{ channel: 'C1' }]);
 });
 
 test('closing selects the adjacent tab and never closes the final tab', () => {

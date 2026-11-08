@@ -46,6 +46,12 @@ export function visitTab(tabs: ChatTab[], tab: ChatTab): ChatTab[] {
   return [...tabs.slice(-(MAX_TABS - 1)), tab];
 }
 
+export function replaceTab(tabs: ChatTab[], key: string | undefined, tab: ChatTab): ChatTab[] {
+  if (tabs.some((entry) => tabKey(entry) === tabKey(tab))) return tabs;
+  const index = tabs.findIndex((entry) => tabKey(entry) === key);
+  return index < 0 ? visitTab(tabs, tab) : tabs.map((entry, i) => (i === index ? tab : entry));
+}
+
 export function closeTab(tabs: ChatTab[], key: string, active: string | undefined, selection = 'right') {
   const index = tabs.findIndex((tab) => tabKey(tab) === key);
   if (index < 0 || tabs.length === 1) return { tabs, next: undefined };

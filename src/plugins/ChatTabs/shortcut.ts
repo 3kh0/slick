@@ -21,3 +21,12 @@ export function tabSwitchDirection(
   }
   return 0;
 }
+export function sidebarTabClick(
+  input: Pick<MouseEvent, 'button' | 'ctrlKey' | 'altKey' | 'metaKey' | 'shiftKey'>,
+  mac: boolean,
+): 'background' | 'foreground' | undefined {
+  if (input.altKey) return;
+  const command = mac ? input.metaKey && !input.ctrlKey : input.ctrlKey && !input.metaKey;
+  if (input.button !== 1 && !(input.button === 0 && command)) return;
+  return input.shiftKey ? 'foreground' : 'background';
+}

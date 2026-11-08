@@ -3,7 +3,7 @@ import { EventEmitter } from 'node:events';
 import { test } from 'node:test';
 import type { MainCtx } from '../../shared/main.ts';
 import plugin from './main.ts';
-import { isCloseTabInput, tabSwitchDirection } from './shortcut.ts';
+import { isCloseTabInput, sidebarTabClick, tabSwitchDirection } from './shortcut.ts';
 
 const key = { type: 'keyDown', key: 'w', meta: true, control: false, shift: false, alt: false } as Electron.Input;
 
@@ -20,6 +20,20 @@ test('tab switching supports forward and backward cycling without capturing unre
     ['ArrowRight', 1],
   ] as const)
     assert.equal(tabSwitchDirection({ ...input, key: arrow, ctrlKey: false, altKey: true, shiftKey: true }), direction);
+});
+
+test('sidebar new-tab clicks use middle click or the platform command key and leave split view alone', () => {
+  const click = { button: 0, ctrlKey: false, altKey: false, metaKey: false, shiftKey: false };
+  assert.equal(sidebarTabClick(click, true), undefined);
+  assert.equal(sidebarTabClick({ ...click, button: 1 }, true), 'background');
+  assert.equal(sidebarTabClick({ ...click, button: 1, shiftKey: true }, false), 'foreground');
+  assert.equal(sidebarTabClick({ ...click, metaKey: true }, true), 'background');
+  assert.equal(sidebarTabClick({ ...click, metaKey: true, shiftKey: true }, true), 'foreground');
+  assert.equal(sidebarTabClick({ ...click, ctrlKey: true }, true), undefined);
+  assert.equal(sidebarTabClick({ ...click, ctrlKey: true }, false), 'background');
+  assert.equal(sidebarTabClick({ ...click, metaKey: true }, false), undefined);
+  assert.equal(sidebarTabClick({ ...click, metaKey: true, altKey: true }, true), undefined);
+  assert.equal(sidebarTabClick({ ...click, button: 2 }, false), undefined);
 });
 
 test('close-tab shortcut accepts the platform modifier and ignores unrelated shortcuts', () => {

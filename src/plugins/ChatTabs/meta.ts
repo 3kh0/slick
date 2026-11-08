@@ -7,6 +7,17 @@ export const description =
 export const category: PluginCategory = 'app';
 export const defaultEnabled = false;
 export const settings = {
+  chatNavigation: {
+    type: 'select',
+    label: 'Opening a chat from Slack',
+    default: 'new-tab',
+    options: [
+      { value: 'new-tab', label: 'Adds a tab' },
+      { value: 'current-tab', label: 'Replaces the current tab' },
+    ],
+    description:
+      'Either way, the + button, Open in new Slick tab, and a middle-click or Cmd/Ctrl-click on a sidebar chat add a tab.',
+  },
   threadView: {
     type: 'select',
     label: 'Open thread tabs in',
