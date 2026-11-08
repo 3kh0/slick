@@ -8,14 +8,22 @@ param(
   [string]$Target = (Join-Path $env:LOCALAPPDATA 'Slick')
 )
 
-$ErrorActionPreference = 'Stop'
-$ProgressPreference = 'SilentlyContinue'
 try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 } catch {}
 $Root = $PSScriptRoot
+$ScriptPath = $PSCommandPath
 $Repo = '3kh0/slick'
 
 function Step($m) { Write-Host "==> " -ForegroundColor Magenta -NoNewline; Write-Host $m -ForegroundColor White }
-function Die($m)  { Write-Host "error: " -ForegroundColor Red -NoNewline; Write-Host $m; exit 1 }
+function Die($m)  { $e = [Exception]::new($m); $e.Data['SlickDie'] = $true; throw $e }
+
+function Test-OwnWindow {
+  try {
+    if ($Host.Name -ne 'ConsoleHost' -or -not [Environment]::UserInteractive -or [Console]::IsInputRedirected) { return $false }
+    $hostArgs = @([Environment]::GetCommandLineArgs() | Select-Object -Skip 1)
+    if ($hostArgs -match '^[-/](noe|noni)') { return $false }
+    return [bool]($hostArgs | Where-Object { $_ -notmatch '^[-/]' -or $_ -match '^[-/](c|com\w*|f|fi\w*|e|ec|enc\w*)$' })
+  } catch { return $false }
+}
 
 function Assert-ReleaseAttestation([string]$Path) {
   if (-not (Get-Command gh -ErrorAction SilentlyContinue)) {
@@ -256,14 +264,13 @@ function Restore-OfficialHandler {
   return $false
 }
 
-if ($RestoreHandler) {
+function Invoke-RestoreHandler {
   Unregister-SlackHandler
   if (Restore-OfficialHandler) { Write-Host "Slick unregistered; slack:// now points at the official Slack." }
   else { Write-Host "Slick unregistered. Launch the official Slack once to reclaim slack://." }
-  exit 0
 }
 
-if ($Uninstall) {
+function Invoke-Uninstall {
   Step "Uninstalling Slick"
   Stop-Slick $Target
   Unregister-SlackHandler
@@ -279,141 +286,161 @@ if ($Uninstall) {
   Write-Host ""
   Write-Host "Slick uninstalled." -ForegroundColor Green
   if (-not $Purge) { Write-Host "Your sign-in/settings are kept at $env:APPDATA\Slick (rerun with -Purge to remove them too)." }
-  exit 0
 }
 
-Step "Checking prerequisites"
-$slackRes = Find-SlackResources
-if (-not $slackRes) { Die "Slack not found. Install Slack Desktop from https://slack.com/download or the Microsoft Store, then rerun." }
-Write-Host "    Slack resources: $slackRes"
+function Install-Slick {
+  Step "Checking prerequisites"
+  $slackRes = Find-SlackResources
+  if (-not $slackRes) { Die "Slack not found. Install Slack from https://slack.com/downloads/windows or the Microsoft Store, then rerun." }
+  Write-Host "    Slack resources: $slackRes"
 
-$slackExe  = Slack-Exe $slackRes
-$slackArch = if ($slackExe) { Get-PEArch $slackExe.FullName } else {
-  if ($slackRes -match '\\WindowsApps\\[^\\]+_arm64_') { 'arm64' }
-  elseif ($slackRes -match '\\WindowsApps\\[^\\]+_x64_') { 'x64' }
-  else { 'x64' }
-}
-if ($slackArch -eq 'arm64') {
-  Write-Host "    Microsoft Store (MSIX) ARM64 Slack detected." -ForegroundColor Cyan
-} elseif ($env:PROCESSOR_ARCHITECTURE -eq 'ARM64') {
-  Write-Host "    note: x64 Slack on an ARM64 PC runs emulated (a drop in performance is expected)." -ForegroundColor Yellow
-}
+  $slackExe  = Slack-Exe $slackRes
+  $slackArch = if ($slackExe) { Get-PEArch $slackExe.FullName } else {
+    if ($slackRes -match '\\WindowsApps\\[^\\]+_arm64_') { 'arm64' }
+    elseif ($slackRes -match '\\WindowsApps\\[^\\]+_x64_') { 'x64' }
+    else { 'x64' }
+  }
+  if ($slackArch -eq 'arm64') {
+    Write-Host "    Microsoft Store (MSIX) ARM64 Slack detected." -ForegroundColor Cyan
+  } elseif ($env:PROCESSOR_ARCHITECTURE -eq 'ARM64') {
+    Write-Host "    note: x64 Slack on an ARM64 PC runs emulated (a drop in performance is expected)." -ForegroundColor Yellow
+  }
 
-$InstallTarget = $Target
-# From a checkout, build; piped through `irm | iex`, download the latest release.
-$FromSource = [bool]$Root -and (Test-Path (Join-Path $Root 'src\desktop\main.ts'))
+  $InstallTarget = $Target
+  # From a checkout, build; piped through `irm | iex`, download the latest release.
+  $FromSource = [bool]$Root -and (Test-Path (Join-Path $Root 'src\desktop\main.ts'))
 
-if ($FromSource) {
-  if (-not (Get-Command node -EA SilentlyContinue)) { Die "Node.js 22+ is required to build Slick v2 (get it from nodejs.org)" }
+  if ($FromSource) {
+    if (-not (Get-Command node -EA SilentlyContinue)) { Die "Node.js 22+ is required to build Slick v2 (get it from nodejs.org)" }
 
-  $unpacked = if ($slackArch -eq 'arm64') { 'win-arm64-unpacked' } else { 'win-unpacked' }
+    $unpacked = if ($slackArch -eq 'arm64') { 'win-arm64-unpacked' } else { 'win-unpacked' }
 
-  if (-not (Test-Path (Join-Path $Root 'node_modules\electron-builder'))) {
-    Step "Installing build dependencies"
+    if (-not (Test-Path (Join-Path $Root 'node_modules\electron-builder'))) {
+      Step "Installing build dependencies"
+      Push-Location $Root
+      try {
+        if (Get-Command bun -EA SilentlyContinue) { & bun install --frozen-lockfile }
+        else { & npm install --no-audit --no-fund }
+        if ($LASTEXITCODE -ne 0) { Die "dependency install failed" }
+      } finally { Pop-Location }
+    }
+
+    Step "Building Slick v2 (this bundles Electron; give it a minute)"
     Push-Location $Root
     try {
-      if (Get-Command bun -EA SilentlyContinue) { & bun install --frozen-lockfile }
-      else { & npm install --no-audit --no-fund }
-      if ($LASTEXITCODE -ne 0) { Die "dependency install failed" }
+      $log = Join-Path $env:TEMP 'slick-build.log'
+      $code = Invoke-Logged $log { node (Join-Path $Root 'scripts\build.ts') package --arch $slackArch }
+      if ($code -ne 0) {
+        Get-Content $log -Tail 30 -EA SilentlyContinue | Write-Host
+        Die "build failed (full log: $log)"
+      }
     } finally { Pop-Location }
-  }
 
-  Step "Building Slick v2 (this bundles Electron; give it a minute)"
-  Push-Location $Root
-  try {
-    $log = Join-Path $env:TEMP 'slick-build.log'
-    $code = Invoke-Logged $log { node (Join-Path $Root 'scripts\build.ts') package --arch $slackArch }
-    if ($code -ne 0) {
-      Get-Content $log -Tail 30 -EA SilentlyContinue | Write-Host
-      Die "build failed (full log: $log)"
+    $built = Join-Path $Root "dist\release\$unpacked"
+    if (-not (Test-Path (Join-Path $built 'Slick.exe'))) { Die "electron-builder produced no Slick.exe at $built" }
+
+    # Copied rather than moved, so a failed install does not destroy the build.
+    $Target = Join-Path (Split-Path $InstallTarget) ('slick-stage-' + [Guid]::NewGuid().ToString('N'))
+    Copy-Item $built $Target -Recurse -Force
+  } else {
+    Step "Finding the latest Slick release"
+    $asset = $null; $tag = $null
+    $releaseArch = $slackArch
+  
+    try {
+      $rel = Invoke-RestMethod "https://api.github.com/repos/$Repo/releases/latest" -Headers @{ 'User-Agent' = 'slick-install' }
+      $tag = $rel.tag_name
+      $asset = $rel.assets |
+        Where-Object { $_.name -match "win32-$releaseArch\.zip$" } |
+        Select-Object -First 1
+    } catch {
+      Die "could not reach GitHub to find a release ($($_.Exception.Message))"
     }
-  } finally { Pop-Location }
-
-  $built = Join-Path $Root "dist\release\$unpacked"
-  if (-not (Test-Path (Join-Path $built 'Slick.exe'))) { Die "electron-builder produced no Slick.exe at $built" }
-
-  # Copied rather than moved, so a failed install does not destroy the build.
-  $Target = Join-Path (Split-Path $InstallTarget) ('slick-stage-' + [Guid]::NewGuid().ToString('N'))
-  Copy-Item $built $Target -Recurse -Force
-} else {
-  Step "Finding the latest Slick release"
-  $asset = $null; $tag = $null
-  $releaseArch = $slackArch
   
+    if (-not $asset) {
+      Die "the latest release ($tag) has no Windows (win32-$releaseArch) build yet. Clone the repo and run install.ps1 to build from source: git clone https://github.com/$Repo"
+    }
+  
+    Step "Downloading Slick $tag (win32-$releaseArch)"
+    $zip = Join-Path $env:TEMP "slick-$tag-win32-$releaseArch.zip"
+    Get-File $asset.browser_download_url $zip "Downloading Slick $tag (win32-$releaseArch)"
+    Assert-ReleaseAttestation $zip
+    $stage = Join-Path (Split-Path $InstallTarget) ("slick-stage-" + [Guid]::NewGuid().ToString('N'))
+    Expand-Archive $zip -DestinationPath $stage -Force
+    Remove-Item $zip -EA SilentlyContinue
+    $exeItem = Get-ChildItem $stage -Recurse -Filter 'Slick.exe' -EA SilentlyContinue | Select-Object -First 1
+    if (-not $exeItem) { Die "release zip did not contain Slick.exe" }
+    $Target = $exeItem.Directory.FullName
+  }
+
+  $exe = Join-Path $Target 'Slick.exe'
+  if (-not (Test-Path $exe)) { Die "install incomplete: $exe is missing" }
+
+  Stop-Slick $InstallTarget
+  $backup = $InstallTarget + '.previous-' + [Guid]::NewGuid().ToString('N')
+  $hadInstall = Test-Path $InstallTarget
+  if ($hadInstall) { Move-Item $InstallTarget $backup }
   try {
-    $rel = Invoke-RestMethod "https://api.github.com/repos/$Repo/releases/latest" -Headers @{ 'User-Agent' = 'slick-install' }
-    $tag = $rel.tag_name
-    $asset = $rel.assets |
-      Where-Object { $_.name -match "win32-$releaseArch\.zip$" } |
-      Select-Object -First 1
+    New-Item -ItemType Directory -Force (Split-Path $InstallTarget) | Out-Null
+    Move-Item $Target $InstallTarget
   } catch {
-    Die "could not reach GitHub to find a release ($($_.Exception.Message))"
+    if ($hadInstall) { Move-Item $backup $InstallTarget }
+    throw
   }
-  
-  if (-not $asset) {
-    Die "the latest release ($tag) has no Windows (win32-$releaseArch) build yet. Clone the repo and run install.ps1 to build from source: git clone https://github.com/$Repo"
-  }
-  
-  Step "Downloading Slick $tag (win32-$releaseArch)"
-  $zip = Join-Path $env:TEMP "slick-$tag-win32-$releaseArch.zip"
-  Get-File $asset.browser_download_url $zip "Downloading Slick $tag (win32-$releaseArch)"
-  Assert-ReleaseAttestation $zip
-  $stage = Join-Path (Split-Path $InstallTarget) ("slick-stage-" + [Guid]::NewGuid().ToString('N'))
-  Expand-Archive $zip -DestinationPath $stage -Force
-  Remove-Item $zip -EA SilentlyContinue
-  $exeItem = Get-ChildItem $stage -Recurse -Filter 'Slick.exe' -EA SilentlyContinue | Select-Object -First 1
-  if (-not $exeItem) { Die "release zip did not contain Slick.exe" }
-  $Target = $exeItem.Directory.FullName
+  if ($hadInstall) { Remove-Item $backup -Recurse -Force }
+  if (-not $FromSource) { Remove-Item $stage -Recurse -Force -EA SilentlyContinue }
+  $Target = $InstallTarget
+  $exe = Join-Path $Target 'Slick.exe'
+
+  $iconFile = if ($FromSource) { Join-Path $Root 'assets\icon.ico' } else { $null }
+
+  $muiCache = 'HKCU:\Software\Classes\Local Settings\Software\Microsoft\Windows\Shell\MuiCache'
+  Remove-ItemProperty $muiCache -Name "$exe.FriendlyAppName" -EA SilentlyContinue
+  Remove-ItemProperty $muiCache -Name "$exe.ApplicationCompany" -EA SilentlyContinue
+
+  Step "Registering Slick as the slack:// handler"
+  Register-SlackHandler $exe $iconFile
+
+  Step "Creating shortcuts"
+  New-Shortcuts $exe $iconFile
+
+  Step "Launching Slick"
+  $prevNoAttach = $env:ELECTRON_NO_ATTACH_CONSOLE
+  $env:ELECTRON_NO_ATTACH_CONSOLE = '1'
+  # Lets the boot timeline price launch -> electron start. Shortcuts cannot carry
+  # env vars, so normal launches fall back to the wrapper-entry mark instead.
+  $prevLaunchT0 = $env:SLICK_LAUNCH_T0
+  $env:SLICK_LAUNCH_T0 = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds().ToString()
+  Start-Process $exe
+  $env:SLICK_LAUNCH_T0 = $prevLaunchT0
+  $env:ELECTRON_NO_ATTACH_CONSOLE = $prevNoAttach
+
+  Write-Host ""
+  Write-Host "Yippee! " -ForegroundColor Green -NoNewline
+  Write-Host "Slick is installed at $Target"
+  Write-Host "Things to know:"
+  Write-Host "- A new install starts at Slack's sign-in screen (Slick keeps its own session, separate from the official app). Sign in once; it persists."
+  Write-Host "- Configure at Preferences -> Slick."
+  Write-Host "- Uninstall:  powershell -File install.ps1 -Uninstall   (add -Purge to also wipe your profile)"
+  Write-Host "- Restore slack:// to official Slack:  powershell -File install.ps1 -RestoreHandler"
 }
 
-$exe = Join-Path $Target 'Slick.exe'
-if (-not (Test-Path $exe)) { Die "install incomplete: $exe is missing" }
-
-Stop-Slick $InstallTarget
-$backup = $InstallTarget + '.previous-' + [Guid]::NewGuid().ToString('N')
-$hadInstall = Test-Path $InstallTarget
-if ($hadInstall) { Move-Item $InstallTarget $backup }
 try {
-  New-Item -ItemType Directory -Force (Split-Path $InstallTarget) | Out-Null
-  Move-Item $Target $InstallTarget
+  & {
+    $ErrorActionPreference = 'Stop'
+    $ProgressPreference = 'SilentlyContinue'
+    if ($RestoreHandler) { Invoke-RestoreHandler }
+    elseif ($Uninstall) { Invoke-Uninstall }
+    else { Install-Slick }
+  }
 } catch {
-  if ($hadInstall) { Move-Item $backup $InstallTarget }
-  throw
+  Write-Host ""
+  Write-Host "error: " -ForegroundColor Red -NoNewline
+  Write-Host $_.Exception.Message
+  if (-not $_.Exception.Data['SlickDie']) { Write-Host $_.ScriptStackTrace -ForegroundColor DarkGray }
+  Write-Host "If this keeps happening, report it at https://github.com/$Repo/issues"
+  if (Test-OwnWindow) {
+    try { Read-Host "Press Enter to close" | Out-Null } catch {}
+  }
+  if ($ScriptPath) { exit 1 }
 }
-if ($hadInstall) { Remove-Item $backup -Recurse -Force }
-if (-not $FromSource) { Remove-Item $stage -Recurse -Force -EA SilentlyContinue }
-$Target = $InstallTarget
-$exe = Join-Path $Target 'Slick.exe'
-
-$iconFile = if ($FromSource) { Join-Path $Root 'assets\icon.ico' } else { $null }
-
-$muiCache = 'HKCU:\Software\Classes\Local Settings\Software\Microsoft\Windows\Shell\MuiCache'
-Remove-ItemProperty $muiCache -Name "$exe.FriendlyAppName" -EA SilentlyContinue
-Remove-ItemProperty $muiCache -Name "$exe.ApplicationCompany" -EA SilentlyContinue
-
-Step "Registering Slick as the slack:// handler"
-Register-SlackHandler $exe $iconFile
-
-Step "Creating shortcuts"
-New-Shortcuts $exe $iconFile
-
-Step "Launching Slick"
-$prevNoAttach = $env:ELECTRON_NO_ATTACH_CONSOLE
-$env:ELECTRON_NO_ATTACH_CONSOLE = '1'
-# Lets the boot timeline price launch -> electron start. Shortcuts cannot carry
-# env vars, so normal launches fall back to the wrapper-entry mark instead.
-$prevLaunchT0 = $env:SLICK_LAUNCH_T0
-$env:SLICK_LAUNCH_T0 = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds().ToString()
-Start-Process $exe
-$env:SLICK_LAUNCH_T0 = $prevLaunchT0
-$env:ELECTRON_NO_ATTACH_CONSOLE = $prevNoAttach
-
-Write-Host ""
-Write-Host "Yippee! " -ForegroundColor Green -NoNewline
-Write-Host "Slick is installed at $Target"
-Write-Host "Things to know:"
-Write-Host "- A new install starts at Slack's sign-in screen (Slick keeps its own session, separate from the official app). Sign in once; it persists."
-Write-Host "- Configure at Preferences -> Slick."
-Write-Host "- Uninstall:  powershell -File install.ps1 -Uninstall   (add -Purge to also wipe your profile)"
-Write-Host "- Restore slack:// to official Slack:  powershell -File install.ps1 -RestoreHandler"
-
