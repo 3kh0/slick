@@ -3,6 +3,7 @@
 // patch.
 
 import { SlickPlugin, type ComponentType, type RtmEvent, type SlackMessage } from '$slick';
+import { diffWordsWithSpace } from 'diff';
 import * as meta from './meta.ts';
 import { MAX_EDIT_TEXT, MAX_EDITS_PER_MESSAGE, evictable, mergeEntry, normalize, trim } from './retention.ts';
 import { ImageArchive, type SavedImage } from './images.ts';
@@ -109,7 +110,13 @@ export default class MessageLogger extends SlickPlugin<typeof meta.settings> {
   static readonly category = meta.category;
   static readonly defaultEnabled = meta.defaultEnabled;
   static readonly settings = meta.settings;
-  static readonly liveSettings = ['deletedStyle', 'retentionDays', 'ignoreEditsFrom', 'allowBotEditsFrom'];
+  static readonly liveSettings = [
+    'deletedStyle',
+    'editDisplay',
+    'retentionDays',
+    'ignoreEditsFrom',
+    'allowBotEditsFrom',
+  ];
 
   private readonly entries = new Map<string, LogEntry>();
   private readonly legacyEntries = new Map<string, LogEntry>();
@@ -576,6 +583,8 @@ export default class MessageLogger extends SlickPlugin<typeof meta.settings> {
       .slick-ml-edited-original { display: block; padding: 4px 20px 0 0; opacity: .62; white-space: pre-wrap; word-break: break-word; }
       .slick-ml-edited-original-line { display: block; }
       .slick-ml-edited-original s { text-decoration: line-through; }
+      .slick-ml-edit-removed { color: #f27b9f; background: rgba(224, 30, 90, .25); text-decoration: line-through; }
+      .slick-ml-edit-added { color: #75d9a5; background: rgba(46, 160, 100, .25); }
       .slick-ml-edited-marker { margin-left: 4px; font-size: .85em; opacity: .72; }
       .slick-ml-images { display: flex; flex-wrap: wrap; gap: 8px; padding: 4px 0; }
       .slick-ml-image { display: block; max-width: 100%; width: fit-content; }
@@ -798,6 +807,7 @@ export default class MessageLogger extends SlickPlugin<typeof meta.settings> {
 
   private editHistory(edits: StoredEdit[]) {
     const React = this.api.react;
+    const diff = this.config.editDisplay !== 'original';
     return React.createElement(
       'span',
       { className: 'slick-ml-edited-original' },
@@ -805,7 +815,23 @@ export default class MessageLogger extends SlickPlugin<typeof meta.settings> {
         React.createElement(
           'span',
           { className: 'slick-ml-edited-original-line', key: index },
-          React.createElement('s', null, edit.oldText || '(empty message)'),
+          diff
+            ? (
+                diffWordsWithSpace(edit.oldText, edit.newText, { maxEditLength: 500 }) ?? [
+                  { value: edit.oldText, removed: true },
+                  { value: edit.newText, added: true },
+                ]
+              ).map((part, i) =>
+                React.createElement(
+                  'span',
+                  {
+                    key: i,
+                    className: part.added ? 'slick-ml-edit-added' : part.removed ? 'slick-ml-edit-removed' : undefined,
+                  },
+                  part.value,
+                ),
+              )
+            : React.createElement('s', null, edit.oldText || '(empty message)'),
           React.createElement('span', { className: 'slick-ml-edited-marker' }, '(edited)'),
         ),
       ),

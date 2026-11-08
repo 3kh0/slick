@@ -32,6 +32,16 @@ export const settings = {
       { value: 'opacity', label: '50% opacity' },
     ],
   },
+  editDisplay: {
+    type: 'select',
+    label: 'Edit display',
+    description: 'How previous edits should look',
+    default: 'diff',
+    options: [
+      { value: 'diff', label: 'Green and red diff' },
+      { value: 'original', label: 'Strikethrough original' },
+    ],
+  },
   ignoreSelf: {
     type: 'boolean',
     label: 'Ignore self',
