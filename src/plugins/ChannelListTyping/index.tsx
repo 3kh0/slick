@@ -33,7 +33,7 @@ export default class ChannelListTyping extends SlickPlugin<typeof meta.settings>
     const display = this.config.display;
     const includeCurrent = this.config.includeCurrentChannel !== false;
     const includeMuted = this.config.includeMutedChannels === true;
-    const includeThreads = this.config.includeThreads !== false;
+    const includeThreads = this.config.includeThreads === true;
 
     void this.api.waitForExport<NameOf>(named('getPrefCompliantMemberName')).then(this.nameOf.set);
     void this.api.waitForExport<I18nClass>(named('I18n')).then((I18n) => {

@@ -31,6 +31,6 @@ export const settings = {
     type: 'boolean',
     label: 'Include thread replies',
     description: 'Count people typing in a channel’s threads as typing in the channel',
-    default: true,
+    default: false,
   },
 } as const satisfies SettingsSchema;

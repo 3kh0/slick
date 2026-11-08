@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { resolveSettings } from '../../shared/settings.ts';
+import { defaultEnabled, settings } from './meta.ts';
 import { showTypingIn, typersIn, typingSentence } from './typers.ts';
 
 test('typersIn skips you, other channels and duplicate thread records', () => {
@@ -13,6 +15,19 @@ test('typersIn skips you, other channels and duplicate thread records', () => {
   assert.deepEqual(typersIn(records, 'C1', true), ['U1', 'U2']);
   assert.deepEqual(typersIn(records, 'C1', false), ['U1']);
   assert.deepEqual(typersIn(records, 'C3', true), []);
+});
+
+test('someone typing only in a thread doesn’t mark the channel by default', () => {
+  const byDefault = resolveSettings(settings, defaultEnabled, undefined).includeThreads === true;
+  const optedIn = resolveSettings(settings, defaultEnabled, { includeThreads: true }).includeThreads === true;
+  const records = [
+    { channelId: 'C1', memberId: 'U1', threadTs: '1.0' },
+    { channelId: 'C2', memberId: 'U2', threadTs: '2.0' },
+    { channelId: 'C2', memberId: 'U3' },
+  ];
+  assert.deepEqual(typersIn(records, 'C1', byDefault), []);
+  assert.deepEqual(typersIn(records, 'C2', byDefault), ['U3']);
+  assert.deepEqual(typersIn(records, 'C1', optedIn), ['U1']);
 });
 
 test('typingSentence uses Slack’s sentences and folds the rest into "N others"', () => {
