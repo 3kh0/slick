@@ -26,6 +26,21 @@ Slick runs Slack's own `app.asar` inside its own Electron (with the handy BYOE a
 - **Open source**: Slick is free and open source under the GPLv3 license. You can inspect the code, contribute, or fork it to your heart's content.
 - **Fully private**: Slick does not collect any of its own and disables Slack's spyware.
 
+## Compare
+
+| Feature                      | **Slick**                                       | [Taut](https://github.com/jeremy46231/taut) | [Rope](https://github.com/anirudhb/rope) |
+| ---------------------------- | ----------------------------------------------- | ------------------------------------------- | ---------------------------------------- |
+| Actively updated             | **Yes**                                         | **Yes**                                     | No                                       |
+| Theme support                | **10 Built in themes + Monaco CSS editor**      | CSS editor                                  | No                                       |
+| Plugins                      | **56 + User plugin support**                    | 39 + User plugin support                    | 8                                        |
+| Desktop sign in with cookies | **Yes**                                         | No                                          | N/A                                      |
+| Message Logger               | **Deletions + Edit history**                    | Out of scope                                | No                                       |
+| Auto updates                 | **Client and Slack update together**            | Slack version is pinned                     | Manual updating required                 |
+| Supported platforms          | **Desktop + Browsers**                          | **Desktop + Browsers**                      | Browser only                             |
+| Privacy                      | **Blocks all telemetry**                        | Replaces Slack's telemetry with its own     | Does not block telemetry                 |
+| Code sourcing                | **Bundled in the app**                          | Fetched from a remote server                | **Bundled in the userscript**            |
+
+
 ## Installation
 
 Slick is widly available on platforms all shapes and sizes. Just scroll down to your platform and follow the instructions.
