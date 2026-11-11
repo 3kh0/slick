@@ -52,6 +52,8 @@ const CHIME_BUILD_FILE = /amazon-chime-sdk-js[\\/]build[\\/].*\.js$/;
 // browsers don't have. A module-local alias fixes those files without putting a
 // `global` on Slack's page.
 const GLOBAL_REFERENCE = /(?<![\w$.])global(?![\w$])/;
+const CHIME_REMOTE_EFFECTS =
+  /amazon-chime-sdk-js[\\/]build[\\/](?:backgroundsegmentation[\\/]BackgroundSegmentationVideoFrameProcessor|videofx[\\/]VideoFxProcessor)\.js$/;
 
 function chimeMeetingOnly(builder: PluginBuild) {
   builder.onResolve({ filter: /^\.\.$/ }, (args) =>
@@ -60,6 +62,7 @@ function chimeMeetingOnly(builder: PluginBuild) {
       : undefined,
   );
   builder.onLoad({ filter: CHIME_BUILD_FILE }, async ({ path: file }) => {
+    if (CHIME_REMOTE_EFFECTS.test(file)) return { contents: 'exports.default = class {};', loader: 'js' };
     const source = await readFile(file, 'utf8');
     if (!GLOBAL_REFERENCE.test(source)) return undefined;
     return { contents: `var global = globalThis;\n${source}`, loader: 'js' };
