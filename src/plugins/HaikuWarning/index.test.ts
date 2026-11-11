@@ -67,6 +67,7 @@ test('send check waits for a visible warning, supports cancel and approval, and 
       addSendCheck: (fn: any) => {
         check = fn;
       },
+      channels: { getCachedChannel: () => ({ is_channel: true }) },
     },
     {},
   );
@@ -108,6 +109,82 @@ test('send check waits for a visible warning, supports cancel and approval, and 
   }
 });
 
+test('warns only where Orpheus would reply', async () => {
+  const globals = globalThis as any;
+  const previous = globals.openTestDialog;
+  const controller = new AbortController();
+  const ORPHEUS = 'UM1L1C38X';
+  const channels: Record<string, any> = {
+    CPUBLIC: { id: 'CPUBLIC', is_channel: true },
+    CPRIVATE: { id: 'CPRIVATE', is_private: true, is_group: true },
+    CPRIVATE_MISSING: { id: 'CPRIVATE_MISSING', is_private: true, is_group: true },
+    CPRIVATE_PAGED: { id: 'CPRIVATE_PAGED', is_private: true, is_group: true },
+    CPRIVATE_FAIL: { id: 'CPRIVATE_FAIL', is_private: true, is_group: true },
+    DORPHEUS: { id: 'DORPHEUS', is_im: true, user: ORPHEUS },
+    DOTHER: { id: 'DOTHER', is_im: true, user: 'UOTHER' },
+    GORPHEUS: { id: 'GORPHEUS', is_mpim: true, members: ['UOTHER', ORPHEUS] },
+    GOTHER: { id: 'GOTHER', is_mpim: true, members: ['UOTHER'] },
+  };
+  const pages: Record<string, string[][]> = {
+    CPRIVATE: [[ORPHEUS]],
+    CPRIVATE_MISSING: [['UOTHER']],
+    CPRIVATE_PAGED: [['UOTHER'], [ORPHEUS]],
+  };
+  const lookups: { channel: string; cursor?: string }[] = [];
+  const plugin = new HaikuWarning(
+    {
+      signal: controller.signal,
+      channels: { getCachedChannel: (id: string) => channels[id] },
+      userAPI: async (method: string, params: Record<string, string>) => {
+        assert.equal(method, 'conversations.members');
+        lookups.push({ channel: params.channel, cursor: params.cursor });
+        if (params.channel === 'CPRIVATE_FAIL') throw new Error('offline');
+        const channelPages = pages[params.channel] ?? [];
+        const index = Number(params.cursor ?? 0);
+        return {
+          ok: true,
+          members: channelPages[index] ?? [],
+          response_metadata: { next_cursor: index + 1 < channelPages.length ? String(index + 1) : '' },
+        };
+      },
+    },
+    {},
+  );
+  plugin.findHaiku = async () => ['five', 'seven', 'five'];
+  globals.openTestDialog = (_doc: unknown, _haiku: string[], settle: (approved: boolean) => void) => {
+    const prompt = { close: () => settle(false) };
+    queueMicrotask(() => settle(false));
+    return prompt;
+  };
+  const check = (channelId: string) =>
+    plugin.check([], { channelId, targetWindow: { document: {} } as unknown as Window });
+  try {
+    assert.equal(await check('CPUBLIC'), false);
+    assert.equal(await check('CPRIVATE'), false);
+    assert.equal(await check('CPRIVATE'), false, 'membership is cached');
+    assert.equal(await check('CPRIVATE_MISSING'), true);
+    assert.equal(await check('CPRIVATE_PAGED'), false);
+    assert.equal(await check('CPRIVATE_FAIL'), true);
+    assert.equal(await check('DORPHEUS'), false);
+    assert.equal(await check('DOTHER'), true);
+    assert.equal(await check('GORPHEUS'), false);
+    assert.equal(await check('GOTHER'), true);
+    assert.deepEqual(
+      lookups.map(({ channel, cursor }) => [channel, cursor]),
+      [
+        ['CPRIVATE', undefined],
+        ['CPRIVATE_MISSING', undefined],
+        ['CPRIVATE_PAGED', undefined],
+        ['CPRIVATE_PAGED', '1'],
+        ['CPRIVATE_FAIL', undefined],
+      ],
+    );
+  } finally {
+    plugin.stop();
+    globals.openTestDialog = previous;
+  }
+});
+
 test('reported quoted message produces the exact haiku Orpheus posted', async () => {
   const { blocksToSlackText, findHaiku } = await import('./haiku.ts');
   const text = blocksToSlackText([
@@ -134,7 +211,10 @@ test('excluded and long messages skip decoding; detection and dialog failures pe
   const previous = globals.openTestDialog;
   let decodes = 0;
   let failures = 0;
-  const plugin = new HaikuWarning({ signal: new AbortController().signal }, {});
+  const plugin = new HaikuWarning(
+    { signal: new AbortController().signal, channels: { getCachedChannel: () => ({ is_channel: true }) } },
+    {},
+  );
   plugin.dictionary = async () => {
     decodes++;
     throw new Error('invalid dictionary');
