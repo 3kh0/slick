@@ -31,7 +31,28 @@ await build({
     },
   ],
 });
-const { pickSlackResources } = await import(bundle);
+const { pickSlackResources, slackInstallKind, slackDownloadUrl } = await import(bundle);
+
+test('WindowsApps identifies the package format without assuming a Store install', (t) => {
+  const override = process.env.SLICK_SLACK_RESOURCES;
+  delete process.env.SLICK_SLACK_RESOURCES;
+  t.after(() => {
+    if (override === undefined) delete process.env.SLICK_SLACK_RESOURCES;
+    else process.env.SLICK_SLACK_RESOURCES = override;
+  });
+
+  for (const arch of ['x64', 'arm64']) {
+    const asar = `C:\\Program Files\\WindowsApps\\com.tinyspeck.slackdesktop_4.53.287.0_${arch}__8yrtsj140pw4g\\app\\resources\\app.asar`;
+    assert.equal(slackInstallKind(asar), 'msix');
+    assert.equal(slackInstallKind(asar.replaceAll('\\', '/')), 'msix');
+  }
+});
+
+test('update destinations offer direct downloads on each platform', () => {
+  assert.equal(slackDownloadUrl('win32'), 'https://slack.com/downloads/windows');
+  assert.equal(slackDownloadUrl('darwin'), 'https://slack.com/downloads/mac');
+  assert.equal(slackDownloadUrl('linux'), 'https://slack.com/downloads/linux');
+});
 
 const installs = {
   oldSquirrel: { arch: 'x64', electronMajor: 43 },

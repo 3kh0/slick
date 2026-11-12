@@ -9,7 +9,7 @@
 //
 // Windows: standalone Slack is Squirrel, so Update.exe installs a new
 // `app-<ver>` dir from Slack's feed (hash-verified) and slackFinder.ts picks the
-// newest at next launch. MSIX Slack is left to the Store.
+// newest at next launch. MSIX updates are handled outside Slick.
 //
 // Linux: the package manager keeps Slack current.
 

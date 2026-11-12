@@ -97,16 +97,20 @@ export function slackVersion(asar: string): string {
   }
 }
 
-export type SlackInstallKind = 'override' | 'pinned' | 'store' | 'standalone' | 'snap' | '';
+export type SlackInstallKind = 'override' | 'pinned' | 'msix' | 'standalone' | 'snap' | '';
 
 export function slackInstallKind(asar: string): SlackInstallKind {
   if (process.env.SLICK_SLACK_RESOURCES) return 'override';
   const pinned = pinnedSlackApp();
   if (pinned && asar.startsWith(pinned)) return 'pinned';
-  if (/[\\/]WindowsApps[\\/]/i.test(asar)) return 'store';
+  if (/[\\/]WindowsApps[\\/]/i.test(asar)) return 'msix';
   if (asar.startsWith('/snap/')) return 'snap';
   if (process.platform === 'win32' && /[\\/]slack[\\/]app-\d/i.test(asar)) return 'standalone';
   return '';
+}
+
+export function slackDownloadUrl(platform: NodeJS.Platform = process.platform): string {
+  return `https://slack.com/downloads/${platform === 'darwin' ? 'mac' : platform === 'win32' ? 'windows' : 'linux'}`;
 }
 
 /** COFF machine word -> arch, so an arm64 Slick does not adopt an x64 Slack. */
