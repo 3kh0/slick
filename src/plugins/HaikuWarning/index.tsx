@@ -86,7 +86,7 @@ export default class HaikuWarning extends SlickPlugin<typeof meta.settings> {
       })
       .catch((error) => {
         this.log('could not check whether Orpheus is in this channel', error);
-        return false;
+        return true;
       })
       .finally(() => this.membershipLookups.delete(channelId));
     this.membershipLookups.set(channelId, lookup);

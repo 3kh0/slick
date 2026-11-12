@@ -164,7 +164,7 @@ test('warns only where Orpheus would reply', async () => {
     assert.equal(await check('CPRIVATE'), false, 'membership is cached');
     assert.equal(await check('CPRIVATE_MISSING'), true);
     assert.equal(await check('CPRIVATE_PAGED'), false);
-    assert.equal(await check('CPRIVATE_FAIL'), true);
+    assert.equal(await check('CPRIVATE_FAIL'), false, 'warns when membership is unknown');
     assert.equal(await check('DORPHEUS'), false);
     assert.equal(await check('DOTHER'), true);
     assert.equal(await check('GORPHEUS'), false);
