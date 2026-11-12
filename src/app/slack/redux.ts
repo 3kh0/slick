@@ -212,6 +212,11 @@ export function refresh(): void {
 
 export function patchState(patch: StatePatch): () => void {
   statePatches.add(patch);
+  if (statePatches.has(patchSlices)) {
+    const rest = [...statePatches].filter((each) => each !== patchSlices);
+    statePatches.clear();
+    for (const each of [patchSlices, ...rest]) statePatches.add(each);
+  }
   refresh();
   return () => {
     statePatches.delete(patch);
