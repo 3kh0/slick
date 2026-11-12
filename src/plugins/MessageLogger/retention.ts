@@ -11,6 +11,13 @@ export const MAX_EDIT_TEXT = 4000;
 export const MAX_MESSAGE_BYTES = 32 * 1024;
 export const DAY_MS = 24 * 60 * 60 * 1000;
 
+export type Edit = { oldText: string; newText: string; hidden?: boolean };
+
+export const visibleEdits = (edits: Edit[] | undefined): Edit[] => edits?.filter((edit) => !edit.hidden) ?? [];
+
+export const withEditsHidden = (edits: Edit[] | undefined, hidden: boolean): Edit[] | undefined =>
+  edits?.map(({ hidden: _, ...edit }) => (hidden ? { ...edit, hidden: true } : edit));
+
 const HEAVY_FIELDS = ['blocks', 'attachments', 'files', 'metadata'] as const;
 
 export function weigh(value: unknown): number {
@@ -71,7 +78,7 @@ export function evictable(entries: Iterable<[string, { at?: number }]>, retentio
  * on write would leave oversized entries until the message was edited again.
  * Returns whether it changed, so the caller persists it.
  */
-export function normalize(entry: { message?: SlackMessage; edits?: { oldText: string; newText: string }[] }): boolean {
+export function normalize(entry: { message?: SlackMessage; edits?: Edit[] }): boolean {
   let changed = false;
 
   if (entry.edits && entry.edits.length > MAX_EDITS_PER_MESSAGE) {
@@ -100,7 +107,7 @@ type Mergeable = {
   deleted?: boolean;
   evaded?: boolean;
   message?: SlackMessage;
-  edits?: { oldText: string; newText: string }[];
+  edits?: Edit[];
 };
 
 export function mergeEntry<T extends Mergeable>(stored: T, live: T): T {
