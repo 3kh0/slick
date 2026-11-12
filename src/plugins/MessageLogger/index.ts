@@ -5,12 +5,20 @@
 import { SlickPlugin, type ComponentType, type RtmEvent, type SlackMessage } from '$slick';
 import { diffWordsWithSpace } from 'diff';
 import * as meta from './meta.ts';
-import { MAX_EDIT_TEXT, MAX_EDITS_PER_MESSAGE, evictable, mergeEntry, normalize, trim } from './retention.ts';
+import {
+  MAX_EDIT_TEXT,
+  MAX_EDITS_PER_MESSAGE,
+  evictable,
+  mergeEntry,
+  normalize,
+  trim,
+  visibleEdits,
+  withEditsHidden,
+  type Edit,
+} from './retention.ts';
 import { ImageArchive, type SavedImage } from './images.ts';
 import { blocksText, hasEvasionPadding, messageText } from './content.ts';
 import { withLoggedReplies } from './threads.ts';
-
-type StoredEdit = { oldText: string; newText: string };
 
 type LogEntry = {
   channel: string;
@@ -19,7 +27,7 @@ type LogEntry = {
   deleted?: boolean;
   evaded?: boolean;
   message?: SlackMessage;
-  edits?: StoredEdit[];
+  edits?: Edit[];
   at: number;
 };
 
@@ -126,6 +134,7 @@ export default class MessageLogger extends SlickPlugin<typeof meta.settings> {
   private readonly dirty = new Set<string>();
   /** Dismissals must outlive a flush until the startup snapshot is merged. */
   private restoreDismissals: Set<string> | null = null;
+  private restoreEditToggles: Map<string, boolean> | null = null;
   private writes: Promise<void> = Promise.resolve();
   private persistTimer: ReturnType<typeof setTimeout> | null = null;
   private rowTimer: ReturnType<typeof setTimeout> | null = null;
@@ -134,7 +143,7 @@ export default class MessageLogger extends SlickPlugin<typeof meta.settings> {
 
   private readonly EditContext = React.createContext<{
     ts: string;
-    edits: StoredEdit[];
+    edits: Edit[];
     blocks: boolean;
     evaded?: boolean;
   } | null>(null);
@@ -188,7 +197,9 @@ export default class MessageLogger extends SlickPlugin<typeof meta.settings> {
   /** One key per entry so a delete doesn't rewrite the whole log (the blob reached 881 KB). */
   private async restore() {
     const dismissed = new Set<string>();
+    const toggled = new Map<string, boolean>();
     this.restoreDismissals = dismissed;
+    this.restoreEditToggles = toggled;
     try {
       const started = performance.now();
       // Kept apart from `entries`/`dirty` until merged: a stop() mid-load flushes
@@ -219,7 +230,9 @@ export default class MessageLogger extends SlickPlugin<typeof meta.settings> {
         if (dismissed.has(key)) continue;
         const live = this.entries.get(key);
         if (live || loaded.dirty.has(key)) this.dirty.add(key);
-        this.setEntry(key, live ? mergeEntry(entry, live) : entry);
+        const merged = live ? mergeEntry(entry, live) : entry;
+        const hidden = toggled.get(key);
+        this.setEntry(key, hidden === undefined ? merged : { ...merged, edits: withEditsHidden(merged.edits, hidden) });
       }
       this.cap();
       this.flush();
@@ -231,6 +244,7 @@ export default class MessageLogger extends SlickPlugin<typeof meta.settings> {
       this.log(`logging deletes and edits (${this.entries.size} stored, loaded in ${ms}ms)`);
     } finally {
       this.restoreDismissals = null;
+      this.restoreEditToggles = null;
     }
   }
 
@@ -676,9 +690,10 @@ export default class MessageLogger extends SlickPlugin<typeof meta.settings> {
         this.remember({ ...(this.api.messages.getRawMessage(channel, msg.ts) ?? msg), channel, ts: msg.ts });
     }, [msg, props.channelId, entry?.deleted]);
     this.seenRow = true;
-    if (!entry?.deleted && !entry?.edits?.length && !entry?.evaded) return React.createElement(Original, props);
+    const edits = visibleEdits(entry?.edits);
+    if (!entry || (!entry.deleted && !edits.length && !entry.evaded)) return React.createElement(Original, props);
 
-    const classes = [props.className, entry.deleted && 'slick-ml-deleted', entry.edits?.length && 'slick-ml-edited']
+    const classes = [props.className, entry.deleted && 'slick-ml-deleted', edits.length && 'slick-ml-edited']
       .filter(Boolean)
       .join(' ');
 
@@ -712,13 +727,13 @@ export default class MessageLogger extends SlickPlugin<typeof meta.settings> {
       { value: mapped },
       React.createElement('div', { className: classes || undefined }, React.createElement(Original, rowProps)),
     );
-    if ((!entry.edits?.length && !entry.evaded) || !msg?.ts) return row;
+    if ((!edits.length && !entry.evaded) || !msg?.ts) return row;
     return React.createElement(
       this.EditContext.Provider,
       {
         value: {
           ts: msg.ts,
-          edits: entry.edits ?? [],
+          edits,
           blocks: Array.isArray(msg.blocks) && msg.blocks.length > 0,
           evaded: entry.evaded,
         },
@@ -740,9 +755,23 @@ export default class MessageLogger extends SlickPlugin<typeof meta.settings> {
       const rows = React.useMemo(() => {
         const entry = channelId && ts ? this.entries.get(this.key(channelId, ts)) : undefined;
         if (!entry) return [];
+        const shown = visibleEdits(entry.edits).length;
         return [
-          entry.edits?.length
-            ? this.menuRow('slick_ml_hide_edits', 'Hide edit history', () => this.hideEdits(entry), onTriggerClose)
+          shown
+            ? this.menuRow(
+                'slick_ml_hide_edits',
+                'Hide edit history',
+                () => this.hideEdits(entry, true),
+                onTriggerClose,
+              )
+            : null,
+          shown < (entry.edits?.length ?? 0)
+            ? this.menuRow(
+                'slick_ml_show_edits',
+                'Show edit history',
+                () => this.hideEdits(entry, false),
+                onTriggerClose,
+              )
             : null,
           entry.deleted
             ? this.menuRow('slick_ml_accept_delete', 'Accept deletion', () => this.acceptDelete(entry), onTriggerClose)
@@ -788,13 +817,12 @@ export default class MessageLogger extends SlickPlugin<typeof meta.settings> {
     );
   }
 
-  private hideEdits(entry: LogEntry) {
+  private hideEdits(entry: LogEntry, hidden: boolean) {
     const key = this.key(entry.channel, entry.ts);
     const current = this.entries.get(key);
     if (!current) return;
-    this.restoreDismissals?.add(key);
-    if (current.deleted) this.setEntry(key, { ...current, edits: undefined });
-    else this.deleteEntry(key);
+    this.restoreEditToggles?.set(key, hidden);
+    this.setEntry(key, { ...current, edits: withEditsHidden(current.edits, hidden) });
     this.dirty.add(key);
     this.persist();
     this.api.redux.refresh();
@@ -806,7 +834,7 @@ export default class MessageLogger extends SlickPlugin<typeof meta.settings> {
     this.api.redux.refresh();
   }
 
-  private editHistory(edits: StoredEdit[]) {
+  private editHistory(edits: Edit[]) {
     const React = this.api.react;
     const diff = this.config.editDisplay !== 'original';
     return React.createElement(
