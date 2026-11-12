@@ -24,6 +24,7 @@ export const PLUGINS = [
   'Experiments',
   'HaikuWarning',
   'HcaStatus',
+  'HideResolved',
   'HuddleMuteDetector',
   'HumanCount',
   'IgnoreTime',
