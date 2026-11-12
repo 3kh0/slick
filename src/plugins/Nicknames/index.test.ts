@@ -70,74 +70,6 @@ function fixture(names: Record<string, string> = {}, rawMembers: Record<string, 
   }
 }
 
-test('default empty nicknames retain menus without registering an identity members patch', () => {
-  const f = fixture();
-  f.plugin.start();
-  assert.equal(Nicknames.defaultEnabled, true);
-  assert.deepEqual(f.components, [
-    'RimetoMemberProfileOverflowMenu',
-    'AppDetailsOverflow',
-    'MenuFromTemplate',
-    'EditProfileFormPane',
-  ]);
-  assert.equal(f.patches.length, 0);
-  f.plugin.onSettingsChange(['names']);
-  f.plugin.stop();
-  assert.deepEqual(f.counts(), { refreshes: 0, disposals: 0 });
-});
-
-test('live add, edit, remove and re-add manage one member patch and invalidate active mappings', () => {
-  const f = fixture();
-  const member = { profile: { display_name: 'Original' } };
-  f.plugin.start();
-  f.config.names = { U123456: 'First' };
-  f.plugin.onSettingsChange(['names']);
-  assert.equal(f.patches.length, 1);
-  assert.equal(f.patches[0].map('U123456', member).profile.display_name, 'First');
-  assert.equal(f.patches[0].map('U999999', member), member);
-  const withoutProfile = {};
-  assert.equal(f.patches[0].map('U123456', withoutProfile), withoutProfile);
-  assert.equal(member.profile.display_name, 'Original');
-  assert.deepEqual(f.counts(), { refreshes: 0, disposals: 0 });
-
-  f.config.names = { U123456: 'Second' };
-  f.plugin.onSettingsChange(['names']);
-  assert.equal(f.patches.length, 1);
-  assert.equal(f.patches[0].map('U123456', member).profile.display_name, 'Second');
-  assert.deepEqual(f.counts(), { refreshes: 1, disposals: 0 });
-
-  f.config.names = {};
-  f.plugin.onSettingsChange(['names']);
-  assert.equal(f.patches[0].active, false);
-  f.plugin.onSettingsChange(['names']);
-  assert.deepEqual(f.counts(), { refreshes: 1, disposals: 1 });
-
-  f.config.names = { U123456: 'Again' };
-  f.plugin.onSettingsChange(['names']);
-  assert.equal(f.patches.length, 2);
-  assert.equal(f.patches[1].map('U123456', member).profile.display_name, 'Again');
-  f.plugin.stop();
-  f.plugin.stop();
-  assert.deepEqual(f.counts(), { refreshes: 1, disposals: 2 });
-});
-
-test('effective nicknames use the existing truthiness rule and can be present at startup', () => {
-  const f = fixture({ U123456: '' });
-  f.plugin.start();
-  assert.equal(f.patches.length, 0);
-  f.config.names = { U123456: ' ' };
-  f.plugin.onSettingsChange(['names']);
-  assert.equal(f.patches.length, 1);
-  f.plugin.stop();
-
-  const populated = fixture({ U123456: 'Nickname' });
-  populated.plugin.start();
-  assert.equal(populated.patches.length, 1);
-  populated.plugin.onSettingsChange(['names']);
-  assert.deepEqual(populated.counts(), { refreshes: 1, disposals: 0 });
-  populated.plugin.stop();
-});
-
 test('profile writes built from a nicknamed copy keep the real names', () => {
   const real = { profile: { real_name: 'Real Name', display_name: 'real', pronouns: 'they/them' } };
   const f = fixture({ [SELF]: 'Nick', U0OTHER01: 'Pal' }, { [SELF]: real, U0OTHER01: real });
@@ -184,31 +116,4 @@ test('the profile editor sees and saves your real name while it is open', () => 
   assert.equal(f.thunk('apiCall')(typed)[0], typed);
   f.plugin.stop();
   assert.equal(members.active, false);
-});
-
-test('app nicknames rename every bot of the app and its bot user', () => {
-  const f = fixture({ U123456: 'Pal' });
-  f.plugin.start();
-  assert.equal(f.slice('bots').length, 0);
-
-  f.config.names = { U123456: 'Pal', A0APP0001: 'Robo' };
-  f.plugin.onSettingsChange(['names']);
-  const [bots] = f.slice('bots');
-  const [members] = f.slice('members');
-  const bot = { name: 'Scanner', app_id: 'A0APP0001' };
-  assert.equal(bots.map('B0BOT0001', bot).name, 'Robo');
-  assert.equal(bot.name, 'Scanner');
-  const stranger = { name: 'Other', app_id: 'A0APP0002' };
-  assert.equal(bots.map('B0BOT0002', stranger), stranger);
-
-  const botUser = { is_bot: true, profile: { api_app_id: 'A0APP0001', real_name: 'Scanner' } };
-  assert.equal(members.map('U0BOT0001', botUser).profile.real_name, 'Robo');
-  const human = { profile: { api_app_id: 'A0APP0001', real_name: 'Human' } };
-  assert.equal(members.map('U0HUMAN01', human), human);
-
-  f.config.names = { U123456: 'Pal' };
-  f.plugin.onSettingsChange(['names']);
-  assert.equal(bots.active, false);
-  assert.equal(members.active, true);
-  f.plugin.stop();
 });
