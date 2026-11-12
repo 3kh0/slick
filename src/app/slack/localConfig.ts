@@ -43,3 +43,15 @@ export function getActiveTeam(config: LocalConfig = readLocalConfig()): LocalCon
   const teamId = routed ?? config.lastActiveTeamId;
   return teamId ? config.teams?.[teamId] : undefined;
 }
+
+export function enterpriseWorkspace(active: LocalConfigTeam, config: LocalConfig): LocalConfigTeam | undefined {
+  if (!active.id || !active.user_id) return undefined;
+  return Object.values(config.teams ?? {}).find(
+    (team) =>
+      team.id !== active.id &&
+      team.user_id === active.user_id &&
+      !!team.token &&
+      !!team.url &&
+      team.enterprise_id === active.id,
+  );
+}

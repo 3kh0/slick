@@ -1,7 +1,7 @@
 // Web API calls as the signed-in user, using Slack's own localConfig token (no
 // second credential copy) through the page's same-origin fetch.
 
-import { getActiveTeam } from '../slack/localConfig.ts';
+import { enterpriseWorkspace, getActiveTeam, readLocalConfig, type LocalConfigTeam } from '../slack/localConfig.ts';
 
 export type UserAPIOptions = {
   rateLimitRetries?: number;
@@ -31,16 +31,21 @@ export async function userAPI<T = any>(
   params: Record<string, string | Blob> = {},
   options: UserAPIOptions = {},
 ): Promise<{ ok: true } & T> {
-  const team = getActiveTeam();
-  if (!team?.token || !team?.url) throw new Error('[slick] userAPI: no active Slack team or token');
+  const config = readLocalConfig();
+  const active = getActiveTeam(config);
+  if (!active?.token || !active?.url) throw new Error('[slick] userAPI: no active Slack team or token');
 
-  const url = new URL(`api/${method}`, team.url);
-  // Without this Slack omits the CORS headers the response needs.
-  url.searchParams.set('_x_gantry', 'true');
-
-  const body = new FormData();
-  body.set('token', team.token);
-  for (const [name, value] of Object.entries(params)) body.set(name, value);
+  const request = (team: LocalConfigTeam) => {
+    const url = new URL(`api/${method}`, team.url);
+    // Without this Slack omits the CORS headers the response needs.
+    url.searchParams.set('_x_gantry', 'true');
+    const body = new FormData();
+    body.set('token', team.token!);
+    for (const [name, value] of Object.entries(params)) body.set(name, value);
+    return { url, body };
+  };
+  let team = active;
+  let { url, body } = request(team);
 
   const retries = options.rateLimitRetries ?? 0;
   for (let attempt = 0; ; attempt++) {
@@ -75,6 +80,14 @@ export async function userAPI<T = any>(
           await sleep(DEFAULT_RETRY_AFTER_SEC * 1000, options.signal);
           continue;
         }
+      }
+      // Enterprise tokens are refused for some methods the same login's workspace token may call.
+      const workspace =
+        json.error === 'enterprise_is_restricted' && team === active && enterpriseWorkspace(active, config);
+      if (workspace) {
+        team = workspace;
+        ({ url, body } = request(team));
+        continue;
       }
       throw new Error(`[slick] userAPI ${method} failed: ${JSON.stringify(json)}`);
     }
