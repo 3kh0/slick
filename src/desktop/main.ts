@@ -22,7 +22,14 @@ import { watchHotUpdates } from './hot.js';
 import { refreshInstalledIcons } from './iconRefresh.js';
 import { readStoredSettings, watchSettings } from './settingsFile.js';
 import { applyPatches, setMenuHandlers } from './patch.js';
-import { findSlackAsar, macSlackApp, slackElectronVersion, slackInstallKind, slackVersion } from './slackFinder.js';
+import {
+  findSlackAsar,
+  macSlackApp,
+  slackDownloadUrl,
+  slackElectronVersion,
+  slackInstallKind,
+  slackVersion,
+} from './slackFinder.js';
 import { privilegedSchemes, setupSession } from './session.js';
 import { createSlackUpdater } from './slackUpdater.js';
 import { createUpdater, RELEASES_URL } from './updater.js';
@@ -144,7 +151,7 @@ function slackDiagnostics(asar: string, slackElectron = slackElectronVersion(asa
   const kind = {
     override: 'SLICK_SLACK_RESOURCES',
     pinned: 'pinned path',
-    store: 'Microsoft Store',
+    msix: 'MSIX',
     standalone: 'standalone',
     snap: 'snap',
     '': '',
@@ -157,11 +164,6 @@ function slackDiagnostics(asar: string, slackElectron = slackElectronVersion(asa
   ].join('\n');
 }
 
-function slackDownloadUrl(asar: string): string {
-  if (slackInstallKind(asar) === 'store') return 'ms-windows-store://downloadsandupdates';
-  return `https://slack.com/downloads/${process.platform === 'darwin' ? 'mac' : process.platform === 'win32' ? 'windows' : 'linux'}`;
-}
-
 /**
  * Decided before Slack is required: a mismatched bundle can crash the process in
  * the native module loader first. The dialog only works after app-ready, so ask
@@ -170,8 +172,8 @@ function slackDownloadUrl(asar: string): string {
 function askLaunchAnyway(asar: string, slackElectron: string, mismatch: { ours: number; theirs: number }) {
   const slackIsOlder = mismatch.theirs < mismatch.ours;
   const advice = slackIsOlder
-    ? slackInstallKind(asar) === 'store'
-      ? 'Update Slack in the Microsoft Store, then open Slick again.'
+    ? slackInstallKind(asar) === 'msix'
+      ? 'Download and install the latest Slack MSIX from slack.com, or update it in the Microsoft Store if you installed it there. Then open Slick again.'
       : 'Update Slack to the latest version, then open Slick again.'
     : 'Update Slick, then open it again.';
   const diagnostics = slackDiagnostics(asar, slackElectron);
@@ -200,7 +202,7 @@ function askLaunchAnyway(asar: string, slackElectron: string, mismatch: { ours: 
         return;
       }
       if (choice === 1) {
-        void shell.openExternal(slackIsOlder ? slackDownloadUrl(asar) : RELEASES_URL).finally(() => app.exit(0));
+        void shell.openExternal(slackIsOlder ? slackDownloadUrl() : RELEASES_URL).finally(() => app.exit(0));
         return;
       }
       app.exit(1);
