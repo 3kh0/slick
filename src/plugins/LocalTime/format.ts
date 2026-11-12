@@ -11,3 +11,8 @@ export const localTime = (tz: unknown, twelveHour: boolean, now: number): string
     return '';
   }
 };
+
+export const otherLocalTime = (tz: unknown, viewerTz: unknown, twelveHour: boolean, now: number): string => {
+  const text = localTime(tz, twelveHour, now);
+  return text && text === localTime(viewerTz, twelveHour, now) ? '' : text;
+};

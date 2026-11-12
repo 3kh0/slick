@@ -1,7 +1,7 @@
 // Profiles get their own line rather than Slack's LocalTime, which Slack hides while someone is OOO.
 
 import { SlickPlugin } from '$slick';
-import { localTime } from './format.ts';
+import { localTime, otherLocalTime } from './format.ts';
 import * as meta from './meta.ts';
 
 type Message = { user?: string; bot_id?: string };
@@ -18,6 +18,7 @@ type HoverCardProps = { memberId?: string };
 type Surface = { userId?: string; hoverCard?: boolean };
 
 const USER_ID = /^[UW][A-Z0-9]+$/;
+const systemZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
 const isPerson = (msg: Message | undefined): msg is Message & { user: string } =>
   !!msg?.user && USER_ID.test(msg.user) && msg.user !== 'USLACKBOT' && !msg.bot_id;
@@ -58,12 +59,13 @@ export default class LocalTime extends SlickPlugin<typeof meta.settings> {
 
   private readonly Clock = ({ userId, className }: { userId: string; className: string }) => {
     const member = this.api.members.useMember(userId);
+    const viewer = this.api.members.useMember(this.api.members.getCurrentMemberId() ?? '');
     const now = React.useSyncExternalStore(
       subscribe,
       () => Math.floor(Date.now() / 60_000),
       () => 0,
     );
-    const text = localTime(member?.tz, this.config.use12Hour !== false, now * 60_000);
+    const text = otherLocalTime(member?.tz, viewer?.tz ?? systemZone, this.config.use12Hour !== false, now * 60_000);
     if (!text) return null;
     return (
       <span className={className} data-stringify-ignore="">
