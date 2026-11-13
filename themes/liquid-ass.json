@@ -1,0 +1,24 @@
+{
+  "name": "Liquid Ass",
+  "description": "Frosted macOS Liquid Glass panes over a soft gradient. Silly, and blurs the big panes too",
+  "mode": "dark",
+  "vars": {
+    "--sk_highlight": "140,170,255",
+    "--sk_highlight_accent": "140,170,255",
+    "--sk_highlight_hover": "170,195,255"
+  },
+  "css": [
+    ".p-theme_background{background:radial-gradient(ellipse at 12% 0%,rgba(120,160,255,0.38),transparent 45%),radial-gradient(ellipse at 92% 100%,rgba(255,140,200,0.26),transparent 50%),#15121f !important;}",
+    ".p-theme_background:after{background:transparent !important;backdrop-filter:none !important;}",
+    "html,body{background:#15121f !important;}",
+    ".p-view_contents--sidebar,.p-tab_rail,.p-view_contents--primary,.p-ia4_top_nav,.p-view_header,.p-workspace__header{background:rgba(255,255,255,0.06) !important;backdrop-filter:blur(28px) saturate(180%) !important;-webkit-backdrop-filter:blur(28px) saturate(180%) !important;border-color:rgba(255,255,255,0.12) !important;}",
+    ".c-menu,.c-popover__content,[role=menu],[role=dialog],[role=listbox],.ReactModal__Content,.c-toast,.p-context_bar_v2,.p-ia4_floating_window{background:linear-gradient(160deg,rgba(255,255,255,0.16),rgba(255,255,255,0.04)),rgba(28,26,42,0.55) !important;backdrop-filter:blur(30px) saturate(200%) !important;-webkit-backdrop-filter:blur(30px) saturate(200%) !important;border:1px solid rgba(255,255,255,0.18) !important;border-radius:18px !important;box-shadow:inset 0 1px 0 rgba(255,255,255,0.25),0 12px 40px rgba(0,0,0,0.35) !important;}",
+    ".p-message_input__input_container_unstyled,.c-wysiwyg_container--theme_dark,.c-search__input,[data-qa=search_input]{background:rgba(255,255,255,0.07) !important;border:1px solid rgba(255,255,255,0.14) !important;backdrop-filter:blur(16px) !important;-webkit-backdrop-filter:blur(16px) !important;border-radius:14px !important;}",
+    ".c-message_kit__background--hovered:not(.c-message_kit__background--highlight),.c-message:hover:not(.c-message--highlight){background:rgba(255,255,255,0.06) !important;}",
+    ".p-channel_sidebar__channel--selected,.p-channel_sidebar__link--selected,.p-channel_sidebar__channel[aria-current=page],.p-channel_sidebar__link[aria-current=page]{background:rgba(255,255,255,0.16) !important;box-shadow:inset 0 1px 0 rgba(255,255,255,0.2) !important;border-radius:10px !important;}",
+    ".p-channel_sidebar__channel:hover,.p-channel_sidebar__link:hover{background:rgba(255,255,255,0.08) !important;border-radius:10px !important;}",
+    ".c-button--primary,.c-icon_button--primary{background:linear-gradient(180deg,#8fb0ff,#5b7fe0) !important;color:#0d1020 !important;border:none !important;box-shadow:inset 0 1px 0 rgba(255,255,255,0.4) !important;border-radius:999px !important;}",
+    ".c-tabs__tab_menu--vertical .c-tabs__tab.c-tabs__tab--active{background:rgba(255,255,255,0.18) !important;box-shadow:inset 0 1px 0 rgba(255,255,255,0.25) !important;border-radius:10px !important;}",
+    "::selection{background:rgba(140,170,255,0.35);}"
+  ]
+}
