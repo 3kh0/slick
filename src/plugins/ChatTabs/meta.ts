@@ -14,9 +14,10 @@ export const settings = {
     options: [
       { value: 'new-tab', label: 'Adds a tab' },
       { value: 'current-tab', label: 'Replaces the current tab' },
+      { value: 'manual', label: 'Only keep chats I add' },
     ],
     description:
-      'Either way, the + button, Open in new Slick tab, and a middle-click or Cmd/Ctrl-click on a sidebar chat add a tab.',
+      'Only keep chats I add leaves your tabs unchanged while you browse Slack, including threads. Use +, Open in new Slick tab, or a middle-click or Cmd/Ctrl-click on a sidebar chat to add one. Existing tabs are kept when switching modes.',
   },
   threadView: {
     type: 'select',

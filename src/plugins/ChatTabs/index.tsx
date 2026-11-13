@@ -3,7 +3,7 @@ import { getActiveTeam, readLocalConfig } from '../../app/slack/localConfig.ts';
 import {
   closeTabs,
   type CloseTabsAction,
-  replaceTab,
+  trackTab,
   adjacentTab,
   currentTab,
   dragScrollSpeed,
@@ -460,6 +460,9 @@ export default class ChatTabs extends SlickPlugin<typeof meta.settings> {
     const [channel, thread] = activeKey?.split(':') ?? [];
     const current = channel ? { channel, ...(thread ? { thread } : {}) } : null;
     const tabs = saved?.scope === scope ? saved.tabs : [];
+    const manual = this.config.chatNavigation === 'manual';
+    const showTabs = tabs.length > 1 || (tabs.length === 1 && (manual || this.config.showSingleTab));
+    const canClose = tabs.length > 1 || manual;
 
     React.useEffect(() => {
       if (!scope || !teamId || hidden) return;
@@ -573,17 +576,17 @@ export default class ChatTabs extends SlickPlugin<typeof meta.settings> {
     }, [scope]);
 
     React.useEffect(() => {
-      if (!current || !scope) return;
+      if (!current || !scope || manual) return;
       const sidePane = !!current.thread && !currentTab(route, this.api.redux.getStore()?.getState())?.thread;
       const replace = this.config.chatNavigation === 'current-tab' && !sidePane;
       if (replace && pending.current) return;
       const previous = selected.current;
       setSaved((value) => {
         if (value?.scope !== scope) return value;
-        const next = replace ? replaceTab(value.tabs, previous, current) : visitTab(value.tabs, current);
+        const next = trackTab(value.tabs, current, previous, this.config.chatNavigation, sidePane);
         return next === value.tabs ? value : { scope, tabs: next };
       });
-    }, [activeKey, scope, saved?.scope]);
+    }, [activeKey, scope, saved?.scope, this.config.chatNavigation, this.config.autoThreadTabs]);
 
     React.useEffect(() => {
       if (activeKey && tabs.some((tab) => tabKey(tab) === activeKey)) selected.current = activeKey;
@@ -676,7 +679,13 @@ export default class ChatTabs extends SlickPlugin<typeof meta.settings> {
 
     const close = async (tab: ChatTab, action: CloseTabsAction = 'close') => {
       if (pending.current) return;
-      const result = closeTabs(tabs, tabKey(tab), activeKey, action, this.config.closeTabSelection);
+      const result = closeTabs(
+        tabs,
+        tabKey(tab),
+        activeKey,
+        manual && tabs.length === 1 && action === 'close' ? 'all' : action,
+        this.config.closeTabSelection,
+      );
       if (result.next && !(await open(result.next))) return;
       setSaved((value) => (value?.scope === scope ? { scope: value.scope, tabs: result.tabs } : value));
     };
@@ -684,15 +693,15 @@ export default class ChatTabs extends SlickPlugin<typeof meta.settings> {
     React.useEffect(() => {
       const closeCurrent = () => {
         const tab = tabs.find((entry) => tabKey(entry) === activeKey);
-        if (tab && tabs.length > 1) void close(tab);
+        if (tab && canClose) void close(tab);
       };
       this.closeCurrent = closeCurrent;
       return () => {
         if (this.closeCurrent === closeCurrent) this.closeCurrent = undefined;
       };
-    }, [tabs, activeKey]);
+    }, [tabs, activeKey, canClose]);
 
-    const interceptClose = !hidden && tabs.length > 1 && !!activeKey;
+    const interceptClose = !hidden && canClose && tabs.some((tab) => tabKey(tab) === activeKey);
     React.useEffect(() => {
       if (this.api.loader !== 'electron') return;
       void this.api.main.call('closeShortcut', interceptClose).catch(() => {});
@@ -730,10 +739,10 @@ export default class ChatTabs extends SlickPlugin<typeof meta.settings> {
         ref={setBarNode}
         hidden={hidden}
         aria-label="Chat tabs"
-        data-collapsed={tabs.length <= 1 && !this.config.showSingleTab}
+        data-collapsed={!showTabs}
         data-tab-count={tabs.length}
       >
-        {(tabs.length > 1 || this.config.showSingleTab) && (
+        {showTabs && (
           <div className="slick-chat-tabs__row">
             <div
               className="slick-chat-tabs__list"
@@ -829,7 +838,7 @@ export default class ChatTabs extends SlickPlugin<typeof meta.settings> {
                     setDrop(null);
                   }}
                   onAuxClick={(event) => {
-                    if (event.button === 1 && this.config.middleClickCloses && tabs.length > 1) {
+                    if (event.button === 1 && this.config.middleClickCloses && canClose) {
                       event.preventDefault();
                       void close(tab);
                     }
@@ -862,7 +871,7 @@ export default class ChatTabs extends SlickPlugin<typeof meta.settings> {
                       if (!['ArrowLeft', 'ArrowRight', 'Home', 'End', 'Delete'].includes(event.key)) return;
                       event.preventDefault();
                       if (event.key === 'Delete') {
-                        if (tabs.length > 1) void close(tab);
+                        if (canClose) void close(tab);
                         return;
                       }
                       const destination =
@@ -887,7 +896,7 @@ export default class ChatTabs extends SlickPlugin<typeof meta.settings> {
                   >
                     <this.TabLabel tab={tab} selfId={team?.user_id} />
                   </button>
-                  {tabs.length > 1 && (
+                  {canClose && (
                     <button
                       type="button"
                       className="slick-chat-tabs__close"
@@ -907,6 +916,7 @@ export default class ChatTabs extends SlickPlugin<typeof meta.settings> {
           <this.TabMenu
             menu={menu}
             tabs={tabs}
+            canClose={canClose}
             dismiss={() => setMenu(null)}
             close={(action) => void close(menu.tab, action)}
           />
@@ -947,11 +957,13 @@ export default class ChatTabs extends SlickPlugin<typeof meta.settings> {
   private TabMenu = ({
     menu,
     tabs,
+    canClose,
     dismiss,
     close,
   }: {
     menu: { tab: ChatTab; x: number; y: number; anchor: HTMLElement };
     tabs: ChatTab[];
+    canClose: boolean;
     dismiss: () => void;
     close: (action: CloseTabsAction) => void;
   }) => {
@@ -985,7 +997,7 @@ export default class ChatTabs extends SlickPlugin<typeof meta.settings> {
       };
     }, [menu]);
     const actions: [CloseTabsAction, string, boolean][] = [
-      ['close', 'Close Tab', tabs.length <= 1],
+      ['close', 'Close Tab', !canClose],
       ['others', 'Close Other Tabs', tabs.length <= 1],
       ['left', 'Close Tabs to the Left', index <= 0],
       ['right', 'Close Tabs to the Right', index === tabs.length - 1],
