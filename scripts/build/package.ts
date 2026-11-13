@@ -14,6 +14,7 @@ import path from 'node:path';
 import { Arch, archFromString, build as electronBuild, Platform } from 'electron-builder';
 import { ASSETS, DIST, DIST_DESKTOP, ROOT, THEMES } from '../lib/paths.ts';
 import { versions } from '../lib/versions.ts';
+import { shellInfo, writeCodePack, writeShellInfo } from './codePack.ts';
 import { buildDesktop } from './desktop.ts';
 import { buildLinuxArm64Natives } from './linuxNatives.ts';
 import { prepareMacNotificationSounds } from './macSounds.ts';
@@ -141,6 +142,8 @@ export async function packageDesktop({
     const source = process.env.SLICK_SLACK_RESOURCES ?? (existsSync(path.join(installed, 'app.asar')) ? installed : '');
     await prepareMacNotificationSounds(source, macSounds);
   }
+  const shell = shellInfo(platform, Arch[selectedArch], electronVersion());
+  const shellDir = writeShellInfo(shell);
   const selectedPlatform =
     platform === 'darwin' ? Platform.MAC : platform === 'win32' ? Platform.WINDOWS : Platform.LINUX;
   const targets = selectedPlatform.createTarget(
@@ -172,6 +175,7 @@ export async function packageDesktop({
         // Served over slick:// from Slick's own resources. main.ts captures
         // `process.resourcesPath` before patch.ts spoofs it to Slack's.
         { from: path.join(DIST_DESKTOP, 'slick.js'), to: 'slick.js' },
+        { from: shellDir, to: '.', filter: ['shell.json'] },
         { from: path.join(DIST_DESKTOP, 'monaco'), to: 'monaco' },
         { from: THEMES, to: 'themes', filter: ['**/*.json'] },
         { from: path.join(ASSETS, 'tray'), to: 'tray' },
@@ -247,6 +251,7 @@ export async function packageDesktop({
   for (const artifact of results) if (artifact.endsWith('.dmg')) await recompressDmg(artifact);
   results = results.filter((artifact) => !artifact.endsWith('.dmg.blockmap'));
   if (platform !== 'darwin' && !dir) results.push(await legacyArchive(platform, Arch[selectedArch]));
+  results.push(writeCodePack(shell, platform, Arch[selectedArch], OUTPUT));
   for (const artifact of results) console.log(`[build:package] ${path.relative(ROOT, artifact)}`);
   console.log(`[build:package] version ${versions.version} (build ${versions.build})`);
   return results;

@@ -19,6 +19,8 @@ export type StoredConfig = {
   importedThemes?: Record<string, ThemeJson>;
   plugins?: Record<string, Record<string, unknown>>;
   pluginWorkspaces?: PluginWorkspaces;
+  lastSeenBuild?: number;
+  whatsNewPopup?: boolean;
 };
 
 type SchemaEntry = { schema: SettingsSchema; defaultEnabled: boolean };
@@ -107,6 +109,15 @@ export class ConfigStore {
 
   get globallyEnabled(): boolean {
     return this.stored.enabled !== false;
+  }
+
+  get lastSeenBuild(): number | undefined {
+    const build = this.stored.lastSeenBuild;
+    return typeof build === 'number' && Number.isInteger(build) ? build : undefined;
+  }
+
+  get whatsNewPopup(): boolean {
+    return this.stored.whatsNewPopup !== false;
   }
 
   get theme(): string {
@@ -252,6 +263,12 @@ export class ConfigStore {
           included ? [...selected, workspaceId] : selected.filter((selectedId) => selectedId !== workspaceId),
         ),
       };
+    });
+  }
+
+  setWhatsNewPopup(enabled: boolean) {
+    return this.update((config) => {
+      config.whatsNewPopup = enabled;
     });
   }
 

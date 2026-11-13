@@ -1,0 +1,40 @@
+name: Changelog
+
+on:
+  workflow_run:
+    workflows: [Release]
+    types: [completed]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: changelog-cut
+  cancel-in-progress: true
+
+jobs:
+  cut:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: oven-sh/setup-bun@v2
+      - run: bun scripts/changelog.ts cut
+      - uses: peter-evans/create-pull-request@v8
+        with:
+          author: "github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>"
+          committer: "github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>"
+          branch: ci/changelog
+          delete-branch: true
+          add-paths: CHANGELOG.md
+          commit-message: "chore(changelog): file entries under released builds"
+          title: "chore(changelog): file entries under released builds"
+          body: |
+            Moves the Unreleased entries each release tag shipped under its `## Build N` heading. Entries merged after the latest tag stay in Unreleased.
+
+            <sub>Opened automatically by <a href="${{ github.server_url }}/${{ github.repository }}/blob/main/.github/workflows/changelog.yml">changelog.yml</a>.</sub>

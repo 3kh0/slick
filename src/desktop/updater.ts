@@ -10,6 +10,9 @@ import { stageAppImage, swapAppImage } from './appImageUpdate.js';
 import { AttestationError, sha256File, verifyBundle } from './attestation.js';
 import { broadcast } from './bridge.js';
 import type { UpdateStatus } from '../app/updateStatus.ts';
+import { type ChangelogRelease, cutChangelog, parseChangelog } from '../shared/changelog.ts';
+import { readCodeState, readShell } from './codeBoot.ts';
+import { installCodePack } from './codePack.ts';
 import { settingsDir } from './paths.js';
 
 const PLATFORM = process.platform === 'darwin' ? 'darwin' : process.platform === 'win32' ? 'win32' : 'linux';
@@ -18,7 +21,7 @@ const CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;
 const REPO = '3kh0/slick';
 export const RELEASES_URL = `https://github.com/${REPO}/releases`;
 
-type Asset = { name?: string; browser_download_url?: string };
+type Asset = { name?: string; browser_download_url?: string; size?: number };
 type Release = { tag_name?: string; html_url?: string; assets?: Asset[] };
 type State = { lastCheckedAt?: number };
 type Progress = {
@@ -60,21 +63,29 @@ function installRoot(): string {
   return MAC ? path.resolve(process.execPath, '..', '..', '..') : path.dirname(process.execPath);
 }
 
+/** A package manager owns this copy, so Slick must not update any of it. */
+function managedInstall(): string {
+  if (PLATFORM !== 'linux') return '';
+  if (process.env.FLATPAK_ID || fs.existsSync('/.flatpak-info')) {
+    return 'This copy of Slick is a Flatpak, so it is updated through Flatpak.';
+  }
+  if (installRoot() === '/opt/Slick') {
+    return 'This copy of Slick is a system package. Update it with your package manager or download a new package from the release page.';
+  }
+  if (process.execPath.startsWith('/nix/store/')) {
+    return 'This copy of Slick comes from Nix, so it is updated through Nix.';
+  }
+  return '';
+}
+
 /**
  * Why Slick cannot replace itself here, or '' when it can. Flatpak's /app is
  * read-only, and an unwritable install dir would fail the swap after download.
  */
 function selfUpdateBlocker(): string {
+  const managed = managedInstall();
+  if (managed) return managed;
   if (PLATFORM === 'linux') {
-    if (process.env.FLATPAK_ID || fs.existsSync('/.flatpak-info')) {
-      return 'This copy of Slick is a Flatpak, so it is updated through Flatpak.';
-    }
-    if (installRoot() === '/opt/Slick') {
-      return 'This copy of Slick is a system package. Update it with your package manager or download a new package from the release page.';
-    }
-    if (process.execPath.startsWith('/nix/store/')) {
-      return 'This copy of Slick comes from Nix, so it is updated through Nix.';
-    }
     if (process.env.APPIMAGE) {
       try {
         fs.accessSync(path.dirname(process.env.APPIMAGE), fs.constants.W_OK);
@@ -107,8 +118,9 @@ export type UpdateResult =
 
 export type Updater = ReturnType<typeof createUpdater>;
 
-export function createUpdater({ version, build }: { version: string; build: number }) {
+export function createUpdater({ version, build, resources }: { version: string; build: number; resources?: string }) {
   const ua = `Slick/${version}`;
+  const appShell = resources ? readShell(resources) : null;
 
   const statePath = () => path.join(settingsDir(), 'update-check.json');
 
@@ -128,10 +140,17 @@ export function createUpdater({ version, build }: { version: string; build: numb
     } catch {}
   }
 
-  function fetchJson(
+  async function fetchJson(
     url: string,
     opts: { maxBytes?: number; timeout?: number; notFoundMessage?: string } = {},
   ): Promise<any> {
+    return JSON.parse(await fetchText(url, opts));
+  }
+
+  function fetchText(
+    url: string,
+    opts: { maxBytes?: number; timeout?: number; notFoundMessage?: string } = {},
+  ): Promise<string> {
     const maxBytes = opts.maxBytes ?? 1024 * 1024;
     const timeout = opts.timeout ?? 15000;
     return new Promise((resolve, reject) => {
@@ -155,13 +174,7 @@ export function createUpdater({ version, build }: { version: string; build: numb
             body += chunk;
             if (body.length > maxBytes) req.destroy(new Error('GitHub API response was too large'));
           });
-          res.on('end', () => {
-            try {
-              resolve(JSON.parse(body));
-            } catch (error) {
-              reject(error);
-            }
-          });
+          res.on('end', () => resolve(body));
         },
       );
       req.setTimeout(timeout, () => req.destroy(new Error('GitHub API request timed out')));
@@ -170,6 +183,16 @@ export function createUpdater({ version, build }: { version: string; build: numb
   }
 
   const fetchLatestRelease = (): Promise<Release> => fetchJson(`https://api.github.com/repos/${REPO}/releases/latest`);
+
+  /** The changelog as the release tag has it, with its Unreleased entries credited to that build. */
+  async function fetchNotes(latestBuild: number): Promise<ChangelogRelease[]> {
+    const text = await fetchText(`https://raw.githubusercontent.com/${REPO}/v${latestBuild}/CHANGELOG.md`, {
+      maxBytes: 512 * 1024,
+    });
+    return cutChangelog(parseChangelog(text), [], latestBuild).releases.filter(
+      (release) => release.build !== null && release.build > build,
+    );
+  }
 
   /** Resolves to the verified digest, or throws an AttestationError. */
   async function verifyReleaseArtifact(file: string): Promise<string> {
@@ -207,6 +230,16 @@ export function createUpdater({ version, build }: { version: string; build: numb
               ? '-linux-aarch64.AppImage'
               : '-linux-x86_64.AppImage'
             : `-linux-${arch}.tar.gz`;
+    return (release.assets ?? []).find((a) => typeof a?.name === 'string' && a.name.endsWith(suffix)) ?? null;
+  }
+
+  /** The small code-only download, when the release was built for this exact app shell. */
+  function pickCodeAsset(release: Release): Asset | null {
+    if (!appShell || managedInstall() || process.env.SLICK_CODE_UPDATES === '0') return null;
+    if (readCodeState().bad?.includes(releaseBuild(release))) return null;
+    const arch = process.arch === 'arm64' ? 'arm64' : 'x64';
+    const os = PLATFORM === 'darwin' ? 'mac' : PLATFORM;
+    const suffix = `-code-${os}-${arch}-${appShell.id}.tar.gz`;
     return (release.assets ?? []).find((a) => typeof a?.name === 'string' && a.name.endsWith(suffix)) ?? null;
   }
 
@@ -400,10 +433,12 @@ export function createUpdater({ version, build }: { version: string; build: numb
   let status: UpdateStatus = { state: 'idle' };
   let availableRelease: Release | null = null;
   let pendingInstall: { stage: string; dir: string } | null = null;
+  let pendingCode = false;
+  let notes: ChangelogRelease[] | undefined;
   let busy = false;
 
   function publish(next: UpdateStatus): void {
-    status = next;
+    status = { ...next, notes };
     broadcast('slick:update-status', status);
   }
 
@@ -419,6 +454,7 @@ export function createUpdater({ version, build }: { version: string; build: numb
 
   function setProgress(data: Progress): void {
     publish({
+      ...status,
       state: 'downloading',
       latestBuild: releaseBuild(availableRelease),
       title: data.title,
@@ -437,7 +473,94 @@ export function createUpdater({ version, build }: { version: string; build: numb
     void install(stage, dir, relaunch).finally(() => app.exit(0));
   });
 
+  async function downloadWithProgress(url: string, archive: string, share: number): Promise<void> {
+    setTaskbarProgress(0);
+    setProgress({ title: 'Downloading update', percent: 0, detail: 'Starting…' });
+    let lastTime = Date.now();
+    let lastReceived = 0;
+    let speed = 0;
+    let lastProgressAt = 0;
+    await download(url, archive, (received, total) => {
+      const now = Date.now();
+      const dt = (now - lastTime) / 1000;
+      if (dt >= 0.25) {
+        const instant = (received - lastReceived) / dt;
+        speed = speed ? speed * 0.6 + instant * 0.4 : instant;
+        lastTime = now;
+        lastReceived = received;
+      }
+      if (now - lastProgressAt < 250 && (!total || received < total)) return;
+      lastProgressAt = now;
+      const fraction = total ? received / total : 0;
+      const pct = Math.round(fraction * 100);
+      const rate = `${fmtBytes(speed)}/s`;
+      setTaskbarProgress(fraction * share);
+      setProgress(
+        total
+          ? {
+              title: 'Downloading update',
+              percent: pct,
+              detail: `${fmtBytes(received)} / ${fmtBytes(total)}  ·  ${rate}  ·  ${fmtEta((total - received) / speed)} left`,
+            }
+          : {
+              title: 'Downloading update',
+              indeterminate: true,
+              detail: `${fmtBytes(received)} downloaded  ·  ${rate}`,
+            },
+      );
+    });
+  }
+
+  function fail(release: Release, error: unknown): void {
+    setTaskbarProgress(-1);
+    const blocked = error instanceof AttestationError;
+    const reason = String((error as Error)?.message ?? error);
+    publish({
+      state: 'error',
+      latestBuild: releaseBuild(release),
+      detail: blocked
+        ? `Build provenance verification failed: ${reason}. Slick refused to install this download.`
+        : reason,
+    });
+  }
+
+  /** True when installed; false to fall back to the full download. Throws only on provenance failures. */
+  async function performCode(release: Release, asset: Asset): Promise<boolean> {
+    const dir = fs.mkdtempSync(path.join(app.getPath('temp'), 'slick-code-'));
+    try {
+      const archive = path.join(dir, 'code.tar.gz');
+      await downloadWithProgress(asset.browser_download_url!, archive, 0.8);
+      setTaskbarProgress(0.9);
+      setProgress({ title: 'Verifying update', indeterminate: true, detail: 'Checking build provenance…' });
+      await verifyReleaseArtifact(archive);
+      setProgress({ title: 'Preparing update', indeterminate: true, detail: 'Installing…' });
+      installCodePack(fs.readFileSync(archive), appShell!, releaseBuild(release));
+      return true;
+    } catch (error) {
+      if (error instanceof AttestationError) throw error;
+      console.error('[slick] code-only update failed; downloading the full app instead:', error);
+      return false;
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  }
+
   async function perform(release: Release): Promise<void> {
+    const codeAsset = pickCodeAsset(release);
+    if (codeAsset?.browser_download_url) {
+      try {
+        if (await performCode(release, codeAsset)) {
+          pendingCode = true;
+          setTaskbarProgress(-1);
+          publish({ state: 'ready', latestBuild: releaseBuild(release), kind: 'code', size: codeAsset.size });
+          return;
+        }
+      } catch (error) {
+        fail(release, error);
+        return;
+      }
+    }
+
     const asset = pickAsset(release);
     if (!asset?.browser_download_url || selfUpdateBlocker()) {
       await shell.openExternal(release.html_url || RELEASES_URL);
@@ -448,42 +571,7 @@ export function createUpdater({ version, build }: { version: string; build: numb
     try {
       dir = fs.mkdtempSync(path.join(app.getPath('temp'), 'slick-update-'));
       const archive = path.join(dir, asset.name ?? 'slick-update');
-      setTaskbarProgress(0);
-      setProgress({ title: 'Downloading update', percent: 0, detail: 'Starting…' });
-
-      let lastTime = Date.now();
-      let lastReceived = 0;
-      let speed = 0;
-      let lastProgressAt = 0;
-      await download(asset.browser_download_url, archive, (received, total) => {
-        const now = Date.now();
-        const dt = (now - lastTime) / 1000;
-        if (dt >= 0.25) {
-          const instant = (received - lastReceived) / dt;
-          speed = speed ? speed * 0.6 + instant * 0.4 : instant;
-          lastTime = now;
-          lastReceived = received;
-        }
-        if (now - lastProgressAt < 250 && (!total || received < total)) return;
-        lastProgressAt = now;
-        const fraction = total ? received / total : 0;
-        const pct = Math.round(fraction * 100);
-        const rate = `${fmtBytes(speed)}/s`;
-        setTaskbarProgress(fraction * 0.85);
-        setProgress(
-          total
-            ? {
-                title: 'Downloading update',
-                percent: pct,
-                detail: `${fmtBytes(received)} / ${fmtBytes(total)}  ·  ${rate}  ·  ${fmtEta((total - received) / speed)} left`,
-              }
-            : {
-                title: 'Downloading update',
-                indeterminate: true,
-                detail: `${fmtBytes(received)} downloaded  ·  ${rate}`,
-              },
-        );
-      });
+      await downloadWithProgress(asset.browser_download_url, archive, 0.85);
 
       setTaskbarProgress(0.9);
       setProgress({
@@ -512,34 +600,45 @@ export function createUpdater({ version, build }: { version: string; build: numb
       setTaskbarProgress(1);
       setProgress({ title: 'Update ready', percent: 100, detail: 'Ready to restart.' });
     } catch (error) {
-      setTaskbarProgress(-1);
       try {
         if (dir) fs.rmSync(dir, { recursive: true, force: true });
       } catch {}
-      const blocked = error instanceof AttestationError;
-      const reason = String((error as Error)?.message ?? error);
-      publish({
-        state: 'error',
-        latestBuild: releaseBuild(release),
-        detail: blocked
-          ? `Build provenance verification failed: ${reason}. Slick refused to install this download.`
-          : reason,
-      });
+      fail(release, error);
       return;
     }
 
     pendingInstall = { stage, dir };
     setTaskbarProgress(-1);
-    publish({ state: 'ready', latestBuild: releaseBuild(release) });
+    publish({ state: 'ready', latestBuild: releaseBuild(release), kind: 'full' });
   }
 
   function offer(release: Release): void {
     availableRelease = release;
-    publish({ state: 'available', latestBuild: releaseBuild(release), detail: selfUpdateBlocker() || undefined });
+    const latestBuild = releaseBuild(release);
+    const codeAsset = pickCodeAsset(release);
+    const available = (): UpdateStatus => ({
+      state: 'available',
+      latestBuild,
+      kind: codeAsset ? 'code' : 'full',
+      size: (codeAsset ?? pickAsset(release))?.size,
+      detail: codeAsset ? undefined : selfUpdateBlocker() || undefined,
+    });
+    publish(available());
+    fetchNotes(latestBuild)
+      .then((fetched) => {
+        notes = fetched;
+        publish(status.state === 'available' && status.latestBuild === latestBuild ? available() : status);
+      })
+      .catch(() => {});
   }
 
   async function activate(): Promise<void> {
     if (busy) return;
+    if (pendingCode) {
+      app.relaunch();
+      app.quit();
+      return;
+    }
     if (pendingInstall) {
       relaunch = true;
       app.quit();
@@ -556,7 +655,7 @@ export function createUpdater({ version, build }: { version: string; build: numb
 
   /** The background check: silent unless there is something to offer. */
   async function checkForUpdates(): Promise<void> {
-    if (!build || busy || pendingInstall || availableRelease) return;
+    if (!build || busy || pendingInstall || pendingCode || availableRelease) return;
     const now = Date.now();
     const state = readState();
     writeState({ ...state, lastCheckedAt: now });
@@ -576,7 +675,7 @@ export function createUpdater({ version, build }: { version: string; build: numb
 
   /** The menu item: always says something, even when there is no update. */
   async function manualCheckForUpdates({ quiet = false } = {}): Promise<UpdateResult> {
-    if (busy || pendingInstall)
+    if (busy || pendingInstall || pendingCode)
       return {
         state: 'available',
         latestBuild: status.latestBuild ?? build,

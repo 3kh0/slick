@@ -9,6 +9,7 @@ import { PluginManager } from './pluginManager.ts';
 import { addSettingsTab } from './settings.tsx';
 import { installUpdateButton } from './updateButton.ts';
 import { installTheme } from './theme.ts';
+import { showWhatsNew } from './whatsNew.tsx';
 
 export async function bootstrap(bridge: SlickBridge): Promise<void> {
   installUpdateButton(bridge);
@@ -38,6 +39,7 @@ export async function bootstrap(bridge: SlickBridge): Promise<void> {
   await manager.reconcile();
   await addSettingsTab(manager, config, bridge);
   manager.startAutoUpdate();
+  void showWhatsNew(config).catch((error) => console.error("[slick] what's new failed:", error));
 
   const all = manager.info();
   const running = all.filter((plugin) => plugin.running);

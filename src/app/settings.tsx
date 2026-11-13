@@ -14,6 +14,7 @@ import { Store } from './store.ts';
 import type { ThemeJson } from './theme.ts';
 import { parseThemeJson } from '../shared/themes.ts';
 import { currentWorkspaceId, knownWorkspaces } from './workspaces.ts';
+import { ChangelogView } from './whatsNew.tsx';
 import { HACK_CLUB_PATH } from '../shared/icons.ts';
 import slickMark from '../../assets/desktop.svg';
 
@@ -416,6 +417,9 @@ const PREFERENCES_CSS = `
 .slick-settings__inline > .c-input_text {
   flex: 1 1 auto;
   min-width: 0;
+}
+.slick-settings__changelog {
+  padding: 14px 16px;
 }
 .slick-settings__value {
   font-variant-numeric: tabular-nums;
@@ -884,6 +888,7 @@ function OverviewPanel({
           <span className="slick-settings__value">{bridge.loaderVersion}</span>
         </Field>
       </Card>
+      <WhatsNewCard config={config} />
       <Card title="Credits">
         <Field
           label="Slick contributors"
@@ -927,6 +932,42 @@ function OverviewPanel({
         </Field>
       </Card>
     </div>
+  );
+}
+
+const CHANGELOG_PREVIEW = 3;
+
+function WhatsNewCard({ config }: { config: ConfigStore }) {
+  const [expanded, setExpanded] = React.useState(false);
+  const releases = __SLICK_CHANGELOG__;
+  const shown = expanded ? releases : releases.slice(0, CHANGELOG_PREVIEW);
+  return (
+    <Card
+      title="What's new"
+      action={
+        releases.length > CHANGELOG_PREVIEW && (
+          <elements.Button type="outline" size="small" onClick={() => setExpanded(!expanded)}>
+            {expanded ? 'Show less' : 'Show older builds'}
+          </elements.Button>
+        )
+      }
+    >
+      <Field
+        label="Show highlights after updates"
+        description="Open a short summary when an update brings something notable."
+        htmlFor="slick-whats-new-popup"
+      >
+        <Switch
+          id="slick-whats-new-popup"
+          label="Show highlights after updates"
+          checked={config.whatsNewPopup}
+          onChange={(enabled) => queueConfigWrite(config, () => config.setWhatsNewPopup(enabled))}
+        />
+      </Field>
+      <div className="slick-settings__changelog">
+        <ChangelogView releases={shown} />
+      </div>
+    </Card>
   );
 }
 

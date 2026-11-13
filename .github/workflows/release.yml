@@ -63,6 +63,8 @@ jobs:
       SLICK_SIGN_IDENTITY: ${{ secrets.SLICK_SIGN_IDENTITY }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
       - uses: oven-sh/setup-bun@v2
       - name: Install tools
         run: bun install --frozen-lockfile
@@ -104,6 +106,7 @@ jobs:
           subject-path: |
             dist/release/Slick-*.zip
             dist/release/Slick-*.dmg
+            dist/release/Slick-*-code-*.tar.gz
       - name: Upload artifacts
         uses: actions/upload-artifact@v7
         with:
@@ -111,6 +114,7 @@ jobs:
           path: |
             dist/release/Slick-*.zip
             dist/release/Slick-*.dmg
+            dist/release/Slick-*-code-*.tar.gz
           if-no-files-found: error
           retention-days: 1
           compression-level: 0
@@ -128,6 +132,8 @@ jobs:
         arch: [x64, arm64]
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
       - uses: oven-sh/setup-bun@v2
       - name: Cache Windows dependency downloads
         uses: actions/cache@v6
@@ -144,12 +150,16 @@ jobs:
       - name: Attest build provenance
         uses: actions/attest@v4.2.2
         with:
-          subject-path: dist/release/Slick-*-win32-*.zip
+          subject-path: |
+            dist/release/Slick-*-win32-*.zip
+            dist/release/Slick-*-code-*.tar.gz
       - name: Upload artifacts
         uses: actions/upload-artifact@v7
         with:
           name: slick-win32-${{ matrix.arch }}
-          path: dist/release/Slick-*-win32-*.zip
+          path: |
+            dist/release/Slick-*-win32-*.zip
+            dist/release/Slick-*-code-*.tar.gz
           if-no-files-found: error
           retention-days: 1
           compression-level: 0
@@ -167,6 +177,8 @@ jobs:
         arch: [x64, arm64]
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
       - uses: oven-sh/setup-bun@v2
       - run: bun install --frozen-lockfile
       - name: Install Linux packaging tools
@@ -202,6 +214,12 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: oven-sh/setup-bun@v2
+      - name: Write release notes from CHANGELOG.md
+        run: bun scripts/changelog.ts notes "${{ needs.validate-tag.outputs.build }}" > "$RUNNER_TEMP/notes.md"
       - name: Download artifacts
         uses: actions/download-artifact@v8
         with:
@@ -219,6 +237,7 @@ jobs:
             dist/Slick-*.AppImage
             dist/slick_*.deb
             dist/slick-*.rpm
+          body_path: ${{ runner.temp }}/notes.md
           generate_release_notes: true
 
   homebrew:

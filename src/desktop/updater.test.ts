@@ -14,6 +14,7 @@ const shims: Record<string, string> = {
     export const app = {
       getPath: () => globalThis.__updaterFixture.dir,
       on: (...args) => globalThis.__updaterFixture.events.on(...args),
+      relaunch: () => { globalThis.__updaterFixture.relaunches++; },
       quit: () => { globalThis.__updaterFixture.quits++; globalThis.__updaterFixture.events.emit('will-quit', { preventDefault() {} }); },
       exit: () => { globalThis.__updaterFixture.exits++; },
     };
@@ -23,6 +24,7 @@ const shims: Record<string, string> = {
   `,
   './bridge.js': `export const broadcast = (_, status) => globalThis.__updaterFixture.statuses.push(status);`,
   './paths.js': `export const settingsDir = () => globalThis.__updaterFixture.dir;`,
+  './paths.ts': `export const settingsDir = () => globalThis.__updaterFixture.dir;`,
   './attestation.js': `
     export class AttestationError extends Error {}
     export const sha256File = async () => 'digest';
@@ -58,12 +60,31 @@ await build({
   ],
 });
 const { createUpdater } = await import(bundle);
+const { createCodePack } = await import('./codePack.ts');
 
-function fixture(blocked = false) {
+const OS = process.platform === 'darwin' ? 'mac' : process.platform;
+const ARCH = process.arch === 'arm64' ? 'arm64' : 'x64';
+const SHELL = { format: 1, id: 'aaaabbbbccccdddd', build: 116 };
+const CHANGELOG = '# Changelog\n\n## Unreleased\n\n### New\n\n- Shiny thing\n\n## Build 116\n\n- Old thing\n';
+
+function pack(releaseBuild = 117, shell = SHELL.id) {
+  const files = new Map<string, Uint8Array>([
+    ['main.js', Buffer.from('export {}')],
+    ['slick.js', Buffer.from('void 0')],
+  ]);
+  return createCodePack(files, { build: releaseBuild, version: `2.0.${releaseBuild}`, shell });
+}
+
+function fixture(blocked = false, code?: { pack: Buffer; shell?: string }) {
   const dir = fs.mkdtempSync(path.join(temp, 'case-'));
+  const resources = fs.mkdtempSync(path.join(temp, 'resources-'));
+  fs.writeFileSync(path.join(resources, 'shell.json'), JSON.stringify(SHELL));
   const f = {
     dir,
     blocked,
+    code,
+    relaunches: 0,
+    codeDownloads: 0,
     events: new EventEmitter(),
     statuses: [] as any[],
     installs: [] as any[],
@@ -85,11 +106,25 @@ function fixture(blocked = false) {
               tag_name: 'v117',
               assets: [
                 { name: `Slick-mac-${process.arch}.zip`, browser_download_url: 'https://example.test/update.zip' },
+                ...(f.code
+                  ? [
+                      {
+                        name: `Slick-2.0.117-code-${OS}-${ARCH}-${f.code.shell ?? SHELL.id}.tar.gz`,
+                        browser_download_url: 'https://example.test/code.tar.gz',
+                        size: f.code.pack.length,
+                      },
+                    ]
+                  : []),
               ],
             }),
           );
         } else if (url.includes('/attestations/')) {
           res.end(JSON.stringify({ attestations: [{ bundle: {} }] }));
+        } else if (url.endsWith('/v117/CHANGELOG.md')) {
+          res.end(CHANGELOG);
+        } else if (url.endsWith('/code.tar.gz')) {
+          f.codeDownloads++;
+          res.end(f.code!.pack);
         } else {
           f.downloads++;
           res.headers['content-length'] = '4';
@@ -105,8 +140,61 @@ function fixture(blocked = false) {
     },
   };
   (globalThis as any).__updaterFixture = f;
-  return { f, updater: createUpdater({ version: '2.0.116', build: 116 }) };
+  return { f, updater: createUpdater({ version: '2.0.116', build: 116, resources }) };
 }
+
+const codeState = (dir: string) => JSON.parse(fs.readFileSync(path.join(dir, 'code', 'state.json'), 'utf8'));
+
+test('a matching code pack installs without touching the app and relaunches on click', async () => {
+  const { f, updater } = fixture(false, { pack: pack() });
+  await updater.manualCheckForUpdates();
+  assert.equal(updater.getStatus().kind, 'code');
+  await updater.activate();
+  assert.equal(f.codeDownloads, 1);
+  assert.equal(f.downloads, 0);
+  assert.equal(updater.getStatus().state, 'ready');
+  assert.equal(codeState(f.dir).active, 117);
+  assert.ok(fs.existsSync(path.join(f.dir, 'code', '117', 'main.js')));
+  await updater.activate();
+  assert.equal(f.relaunches, 1);
+  assert.equal(f.installs.length, 0);
+});
+
+test('release notes come from the tagged changelog', async () => {
+  const { updater } = fixture(false, { pack: pack() });
+  await updater.manualCheckForUpdates();
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.deepEqual(updater.getStatus().notes, [{ build: 117, groups: [{ title: 'New', items: ['Shiny thing'] }] }]);
+});
+
+test('a code pack for another shell is ignored', { skip: process.platform !== 'darwin' }, async () => {
+  const { f, updater } = fixture(false, { pack: pack(117, 'ffffffffffffffff'), shell: 'ffffffffffffffff' });
+  await updater.manualCheckForUpdates();
+  assert.equal(updater.getStatus().kind, 'full');
+  await updater.activate();
+  assert.equal(f.codeDownloads, 0);
+  assert.equal(f.downloads, 1);
+});
+
+test('a broken code pack falls back to the full update', { skip: process.platform !== 'darwin' }, async () => {
+  const { f, updater } = fixture(false, { pack: pack(118) });
+  await updater.manualCheckForUpdates();
+  await updater.activate();
+  assert.equal(f.codeDownloads, 1);
+  assert.equal(f.downloads, 1);
+  assert.equal(updater.getStatus().kind, 'full');
+  assert.equal(fs.existsSync(path.join(f.dir, 'code', '117')), false);
+});
+
+test('a code pack failing provenance is refused, not swapped for the full update', async () => {
+  const { f, updater } = fixture(true, { pack: pack() });
+  await updater.manualCheckForUpdates();
+  await updater.activate();
+  assert.equal(updater.getStatus().state, 'error');
+  assert.match(updater.getStatus().detail, /provenance/);
+  assert.equal(f.downloads, 0);
+  assert.equal(fs.existsSync(path.join(f.dir, 'code', '117')), false);
+});
 
 test(
   'offers silently, ignores duplicate downloads, stages and waits for explicit apply',
