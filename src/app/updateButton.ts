@@ -1,6 +1,25 @@
 import { setStyle } from './api/css.ts';
 import type { SlickBridge } from './bridge.ts';
+import { newerThan } from '../shared/changelog.ts';
 import type { UpdateStatus } from './updateStatus.ts';
+
+const NOTE_LINES = 8;
+
+export function updateSummary(
+  status: UpdateStatus,
+  build = __SLICK_BUILD__,
+  changelog = __SLICK_CHANGELOG__,
+): string[] {
+  const lines: string[] = [];
+  if (status.kind === 'code' && status.size) lines.push(`Small update: ${(status.size / 1024 / 1024).toFixed(1)} MB`);
+  const items = newerThan(status.notes ?? [], build, changelog).flatMap((release) =>
+    release.groups.flatMap((group) => group.items),
+  );
+  if (!items.length) return lines;
+  lines.push("What's new:", ...items.slice(0, NOTE_LINES).map((item) => `• ${item.replace(/`/g, '')}`));
+  if (items.length > NOTE_LINES) lines.push(`…and ${items.length - NOTE_LINES} more`);
+  return lines;
+}
 
 export function installUpdateButton(bridge: SlickBridge): void {
   if (!bridge.getUpdateStatus || !bridge.onUpdateStatus || !bridge.activateUpdate) return;
@@ -85,6 +104,7 @@ export function installUpdateButton(bridge: SlickBridge): void {
       status.latestBuild ? `Slick Build ${status.latestBuild}` : '',
       status.detail ?? '',
       status.state === 'ready' ? 'Restart Slick to apply the update, or it will install when you quit.' : '',
+      ...(status.state === 'error' ? [] : updateSummary(status)),
     ]
       .filter(Boolean)
       .join('\n');

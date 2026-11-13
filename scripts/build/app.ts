@@ -6,6 +6,7 @@ import { gzipSync } from 'node:zlib';
 import { build, type BuildOptions, type Plugin } from 'esbuild';
 import type { ThemeJson } from '../../src/app/theme.ts';
 import { compactDictionary } from '../../src/plugins/HaikuWarning/haiku.ts';
+import { bundledChangelog } from '../lib/changelog.ts';
 import { APP, ROOT, SLICK_JS, THEMES } from '../lib/paths.ts';
 import { hostModules, rendererRegistryPlugin, slickSharedAlias, type RendererRegistryOptions } from '../lib/plugin.ts';
 import { versions } from '../lib/versions.ts';
@@ -61,6 +62,7 @@ export async function pageBuildOptions({
       __SLICK_VERSION__: JSON.stringify(versions.version),
       __SLICK_BUILD__: JSON.stringify(versions.build),
       __SLICK_THEMES__: JSON.stringify(themes),
+      __SLICK_CHANGELOG__: JSON.stringify(bundledChangelog(Number(process.env.SLICK_BUILD) || undefined)),
       __SLICK_LOADER__: JSON.stringify(targetLoader),
       // Page bundle: reaching for Node globals is a bug, so fail loudly.
       process: 'undefined',

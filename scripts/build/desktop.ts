@@ -16,6 +16,7 @@ const define = {
 
 // main is ESM (import.meta.url, top-level await); preloads must be CJS.
 const entries = [
+  { entry: 'boot.ts', out: 'boot.js', format: 'esm' },
   { entry: 'main.ts', out: 'main.js', format: 'esm' },
   { entry: 'preload.ts', out: 'preload.js', format: 'cjs' },
   { entry: 'windows/cssEditorPreload.ts', out: 'cssEditorPreload.js', format: 'cjs' },
@@ -115,7 +116,7 @@ export async function buildDesktop({ debug = false, hot = false } = {}) {
 
   await writeFile(
     path.join(DIST_DESKTOP, 'package.json'),
-    `${JSON.stringify({ name: 'slick', version: versions.version, main: 'main.js', type: 'module' }, null, 2)}\n`,
+    `${JSON.stringify({ name: 'slick', version: versions.version, main: 'boot.js', type: 'module' }, null, 2)}\n`,
   );
 
   console.log(`[build:desktop] staged ${DIST_DESKTOP}`);

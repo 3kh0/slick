@@ -39,6 +39,8 @@ import { createCookieLogin } from './windows/cookieLogin.js';
 import { loginWithCookies } from './cookieLogin.js';
 import { focusClientWindow, openSettings } from './openSettings.js';
 import { configDir } from './paths.js';
+import { markCodeHealthy, readShell } from './codeBoot.ts';
+import { pruneCode } from './codePack.ts';
 import { clearStaleProfileLock } from './profileLock.ts';
 
 const cjsRequire = createRequire(import.meta.url);
@@ -90,6 +92,8 @@ protocol.registerSchemesAsPrivileged(privilegedSchemes());
 
 const version = typeof __SLICK_VERSION__ === 'string' ? __SLICK_VERSION__ : 'dev';
 const build = typeof __SLICK_BUILD__ === 'number' ? __SLICK_BUILD__ : 0;
+// Set by boot.ts when this main.js came from a code-only update.
+const codeBuild = Number(process.env.SLICK_CODE_BUILD) || 0;
 
 // Before findSlackAsar: this can replace the bundle it resolves. Uses the pinned
 // Slack, not always /Applications.
@@ -243,7 +247,7 @@ function startSlack(asar: string) {
   setupPluginRpc();
 
   // patch.ts no-ops Slack's autoUpdater, so Slick updates both itself and Slack.
-  const updater = createUpdater({ version, build });
+  const updater = createUpdater({ version, build, resources: slickResourcesPath });
   setupUpdaterBridge(updater);
   const cookieLogin = createCookieLogin(path.join(__dirname, 'cookieLoginPreload.js'), (target, value) =>
     loginWithCookies(target, value, accountNavigation.navigate),
@@ -263,9 +267,19 @@ function startSlack(asar: string) {
   });
   updater.scheduleUpdateChecks();
   slackUpdater.scheduleChecks();
+  if (codeBuild) {
+    app.once('browser-window-created', (_event, win) => {
+      win.webContents.once('did-finish-load', () => markCodeHealthy(codeBuild));
+    });
+  }
 
   app.whenReady().then(async () => {
-    setupSession([slickResourcesPath, __dirname]);
+    setupSession(codeBuild ? [__dirname, slickResourcesPath] : [slickResourcesPath, __dirname]);
+    try {
+      pruneCode(readShell(slickResourcesPath));
+    } catch (error) {
+      console.error('[slick] could not clean up installed code:', error);
+    }
     if (process.env.SLICK_HOT) watchHotUpdates(path.join(__dirname, 'hot'));
     void refreshInstalledIcons(slickResourcesPath, app.isPackaged);
     await readyMainPlugins();
