@@ -16,7 +16,13 @@ This file covers what those don't: the Slack internals that bite, how to drive t
 - Keep code comments rare: one short line for a genuinely non-obvious constraint. Put rationale in the PR or chat, not in JSDoc or file headers.
 - Match the surrounding code's naming and idiom.
 - After adding or renaming a plugin, run `bun run typecheck` and commit `src/plugins/names.generated.ts`. Never hand-edit `*.generated.ts`.
+- Never work on `main`. Create your own branch before changing anything, so the work can become a pull request.
 - Use conventional commit subjects (`feat(web): …`, `fix(dev): …`). `main` takes squash merges only.
+- When a change is something users will notice, add one line under `## Unreleased` in [CHANGELOG.md](CHANGELOG.md). Slick shows these lines in its UI, so write them for users.
+  - Keep it to one short sentence about what changed for them, not how: `- LocalTime no longer shows a time that matches your own.`
+  - Start with the plugin's id when it's about a plugin (`MessageLogger …`); Slick turns that into a **Turn on** button.
+  - Use `### New` or `### Fixed`. Add `### Highlights` only when the maintainer asks; every highlight opens a popup for everyone.
+  - Skip chores, CI, refactors and dependency bumps. Never edit `## Build N` sections; a bot files entries there after each release.
 - Test against Slack itself, not just unit tests. Green tests don't prove Slack's components still have the props you patch.
 
 ## Map
