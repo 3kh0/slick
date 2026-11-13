@@ -27,13 +27,13 @@ jobs:
       - run: bun scripts/changelog.ts cut
       - uses: peter-evans/create-pull-request@v8
         with:
-          author: "github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>"
-          committer: "github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>"
+          author: 'github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>'
+          committer: 'github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>'
           branch: ci/changelog
           delete-branch: true
           add-paths: CHANGELOG.md
-          commit-message: "chore(changelog): file entries under released builds"
-          title: "chore(changelog): file entries under released builds"
+          commit-message: 'chore(changelog): file entries under released builds'
+          title: 'chore(changelog): file entries under released builds'
           body: |
             Moves the Unreleased entries each release tag shipped under its `## Build N` heading. Entries merged after the latest tag stay in Unreleased.
 

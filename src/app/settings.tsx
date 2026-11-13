@@ -14,7 +14,7 @@ import { Store } from './store.ts';
 import type { ThemeJson } from './theme.ts';
 import { parseThemeJson } from '../shared/themes.ts';
 import { currentWorkspaceId, knownWorkspaces } from './workspaces.ts';
-import { ChangelogView } from './whatsNew.tsx';
+import { ReleaseLinks, ReleaseTimeline, UpdatePanel } from './whatsNew.tsx';
 import { HACK_CLUB_PATH } from '../shared/icons.ts';
 import slickMark from '../../assets/desktop.svg';
 
@@ -417,9 +417,6 @@ const PREFERENCES_CSS = `
 .slick-settings__inline > .c-input_text {
   flex: 1 1 auto;
   min-width: 0;
-}
-.slick-settings__changelog {
-  padding: 14px 16px;
 }
 .slick-settings__value {
   font-variant-numeric: tabular-nums;
@@ -888,7 +885,7 @@ function OverviewPanel({
           <span className="slick-settings__value">{bridge.loaderVersion}</span>
         </Field>
       </Card>
-      <WhatsNewCard config={config} />
+      <WhatsNewCards manager={manager} config={config} bridge={bridge} />
       <Card title="Credits">
         <Field
           label="Slick contributors"
@@ -937,37 +934,52 @@ function OverviewPanel({
 
 const CHANGELOG_PREVIEW = 3;
 
-function WhatsNewCard({ config }: { config: ConfigStore }) {
+function WhatsNewCards({
+  manager,
+  config,
+  bridge,
+}: {
+  manager: PluginManager;
+  config: ConfigStore;
+  bridge: SlickBridge;
+}) {
   const [expanded, setExpanded] = React.useState(false);
   const releases = __SLICK_CHANGELOG__;
   const shown = expanded ? releases : releases.slice(0, CHANGELOG_PREVIEW);
   return (
-    <Card
-      title="What's new"
-      action={
-        releases.length > CHANGELOG_PREVIEW && (
-          <elements.Button type="outline" size="small" onClick={() => setExpanded(!expanded)}>
-            {expanded ? 'Show less' : 'Show older builds'}
-          </elements.Button>
-        )
-      }
-    >
-      <Field
-        label="Show highlights after updates"
-        description="Open a short summary when an update brings something notable."
-        htmlFor="slick-whats-new-popup"
-      >
-        <Switch
-          id="slick-whats-new-popup"
+    <>
+      <Card title="Updates">
+        <UpdatePanel bridge={bridge} Button={elements.Button} manager={manager} config={config} />
+        <Field
           label="Show highlights after updates"
-          checked={config.whatsNewPopup}
-          onChange={(enabled) => queueConfigWrite(config, () => config.setWhatsNewPopup(enabled))}
-        />
-      </Field>
-      <div className="slick-settings__changelog">
-        <ChangelogView releases={shown} />
-      </div>
-    </Card>
+          description="Open a short tour when an update brings something notable."
+          htmlFor="slick-whats-new-popup"
+        >
+          <Switch
+            id="slick-whats-new-popup"
+            label="Show highlights after updates"
+            checked={config.whatsNewPopup}
+            onChange={(enabled) => queueConfigWrite(config, () => config.setWhatsNewPopup(enabled))}
+          />
+        </Field>
+      </Card>
+      {releases.length > 0 && (
+        <section className="slick-settings__section">
+          <div className="slick-settings__section-head">
+            <h3 className="slick-settings__section-title">What's new</h3>
+            {releases.length > CHANGELOG_PREVIEW && (
+              <elements.Button type="outline" size="small" onClick={() => setExpanded(!expanded)}>
+                {expanded ? 'Show less' : `Show ${releases.length - CHANGELOG_PREVIEW} older builds`}
+              </elements.Button>
+            )}
+          </div>
+          <div className="slick-settings__card">
+            <ReleaseTimeline releases={shown} manager={manager} config={config} />
+          </div>
+          <ReleaseLinks />
+        </section>
+      )}
+    </>
   );
 }
 

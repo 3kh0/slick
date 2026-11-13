@@ -39,7 +39,7 @@ export async function bootstrap(bridge: SlickBridge): Promise<void> {
   await manager.reconcile();
   await addSettingsTab(manager, config, bridge);
   manager.startAutoUpdate();
-  void showWhatsNew(config).catch((error) => console.error("[slick] what's new failed:", error));
+  void showWhatsNew(config, manager).catch((error) => console.error("[slick] what's new failed:", error));
 
   const all = manager.info();
   const running = all.filter((plugin) => plugin.running);
