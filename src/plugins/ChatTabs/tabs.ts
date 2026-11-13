@@ -52,6 +52,11 @@ export function replaceTab(tabs: ChatTab[], key: string | undefined, tab: ChatTa
   return index < 0 ? visitTab(tabs, tab) : tabs.map((entry, i) => (i === index ? tab : entry));
 }
 
+export function trackTab(tabs: ChatTab[], tab: ChatTab, previous: string | undefined, mode: string, sidePane = false) {
+  if (mode === 'manual') return tabs;
+  return mode === 'current-tab' && !sidePane ? replaceTab(tabs, previous, tab) : visitTab(tabs, tab);
+}
+
 export function closeTab(tabs: ChatTab[], key: string, active: string | undefined, selection = 'right') {
   const index = tabs.findIndex((tab) => tabKey(tab) === key);
   if (index < 0 || tabs.length === 1) return { tabs, next: undefined };

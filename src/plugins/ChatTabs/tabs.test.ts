@@ -17,7 +17,30 @@ import {
   tabUri,
   splitProps,
   visitTab,
+  trackTab,
 } from './tabs.ts';
+
+test('manual tabs stay unchanged while browsing channels, DMs and either thread view', () => {
+  const tabs = [{ channel: 'C1' }, { channel: 'D2', thread: '1770000000.123456' }];
+  for (const tab of [{ channel: 'C3' }, { channel: 'D4' }, { channel: 'C1', thread: '1770000000.123456' }]) {
+    for (const sidePane of [false, true]) {
+      assert.equal(trackTab(tabs, tab, 'C1:', 'manual', sidePane), tabs);
+      assert.deepEqual(trackTab([], tab, undefined, 'manual', sidePane), []);
+    }
+  }
+  const added = visitTab(tabs, { channel: 'C3' });
+  assert.equal(added.length, 3);
+  assert.equal(trackTab(added, { channel: 'C4' }, 'C3:', 'manual'), added);
+});
+
+test('automatic tracking retains add and replace modes, including side-pane threads', () => {
+  const tabs = [{ channel: 'C1' }, { channel: 'D2' }];
+  const chat = { channel: 'C3' };
+  const thread = { channel: 'C3', thread: '1770000000.123456' };
+  assert.deepEqual(trackTab(tabs, chat, 'C1:', 'new-tab'), [...tabs, chat]);
+  assert.deepEqual(trackTab(tabs, chat, 'C1:', 'current-tab'), [chat, tabs[1]]);
+  assert.deepEqual(trackTab(tabs, thread, 'C1:', 'current-tab', true), [...tabs, thread]);
+});
 
 test('channel, DM and thread routes round trip through Slack deep links', () => {
   assert.deepEqual(readTab('/client/T123/C123'), { channel: 'C123' });

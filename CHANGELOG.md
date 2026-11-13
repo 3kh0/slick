@@ -13,6 +13,7 @@ In a PR that changes something users will notice, add a line under **Unreleased*
 ### New
 
 - MessageLogger can show edit history again.
+- ChatTabs now has a "Only keep chats I add" option.
 - HaikuWarning only warns when Orpheus is in the channel.
 - Slick finds Slack installed from the MSIX package or a direct download on Windows.
 
