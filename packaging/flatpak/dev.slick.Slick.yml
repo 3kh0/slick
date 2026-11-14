@@ -22,6 +22,8 @@ finish-args:
   - --filesystem=host-os:ro
   - --filesystem=/opt/Slack:ro
   - --filesystem=/opt/slack:ro
+  - --filesystem=/var/lib/flatpak/app/com.slack.Slack:ro
+  - --filesystem=xdg-data/flatpak/app/com.slack.Slack:ro
   - --filesystem=xdg-data/slack:ro
   - --filesystem=xdg-config/mimeapps.list
   - --filesystem=xdg-run/slick:create

@@ -131,7 +131,7 @@ if (!slackAsar && process.platform === 'linux' && process.arch === 'arm64' && !p
         (process.platform === 'linux'
           ? process.arch === 'arm64'
             ? 'Slick downloads Slack automatically on arm64. Check SLICK_SLACK_RESOURCES if you set it, or restart Slick to retry.'
-            : 'Install the official Slack desktop app from https://slack.com/downloads/linux (or your distro’s Slack package), then open Slick again. Slick looks for Slack in /usr/lib/slack and /opt/Slack.'
+            : 'Install the official Slack desktop app from https://slack.com/downloads/linux (or your distro’s Slack package, Flatpak or Snap), then open Slick again. Slick looks in /usr/lib/slack, /opt/Slack and your Flatpak and Snap installs.'
           : 'Install Slack, then open Slick again.'),
       buttons: ['Quit'],
     });
@@ -157,6 +157,7 @@ function slackDiagnostics(asar: string, slackElectron = slackElectronVersion(asa
     pinned: 'pinned path',
     msix: 'MSIX',
     standalone: 'standalone',
+    flatpak: 'flatpak',
     snap: 'snap',
     '': '',
   }[slackInstallKind(asar)];

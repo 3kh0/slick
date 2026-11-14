@@ -7,6 +7,9 @@ import { settingsDir } from './paths.js';
 import { downloadedSlackResources } from './linuxArm64Slack.js';
 
 const MAC_DEFAULT_APP = '/Applications/Slack.app';
+const HOME = process.env.HOME || '';
+
+const FLATPAK_SLACK = 'flatpak/app/com.slack.Slack/current/active/files/extra';
 
 const LINUX_CANDIDATES = [
   '/run/host/usr/lib/slack',
@@ -15,9 +18,14 @@ const LINUX_CANDIDATES = [
   '/usr/lib/slack',
   '/opt/Slack',
   '/opt/slack',
+  // Flatpak keeps the Electron files in extra/, not at the deployment root.
+  `/var/lib/${FLATPAK_SLACK}`,
+  // Slick's own Flatpak still sees the host path as ~/.local/share.
+  path.join(HOME, '.local/share', FLATPAK_SLACK),
+  path.join(process.env.XDG_DATA_HOME || path.join(HOME, '.local/share'), FLATPAK_SLACK),
   // Nix profiles expose Slack's lib/slack/resources/app.asar symlink.
   '/run/current-system/sw/lib/slack',
-  path.join(process.env.HOME || '', '.nix-profile/lib/slack'),
+  path.join(HOME, '.nix-profile/lib/slack'),
   path.join('/etc/profiles/per-user', process.env.USER || '', 'lib/slack'),
   // Last, so a native package wins over the snap.
   '/snap/slack/current/usr/lib/slack',
@@ -97,13 +105,14 @@ export function slackVersion(asar: string): string {
   }
 }
 
-export type SlackInstallKind = 'override' | 'pinned' | 'msix' | 'standalone' | 'snap' | '';
+export type SlackInstallKind = 'override' | 'pinned' | 'msix' | 'standalone' | 'flatpak' | 'snap' | '';
 
 export function slackInstallKind(asar: string): SlackInstallKind {
   if (process.env.SLICK_SLACK_RESOURCES) return 'override';
   const pinned = pinnedSlackApp();
   if (pinned && asar.startsWith(pinned)) return 'pinned';
   if (/[\\/]WindowsApps[\\/]/i.test(asar)) return 'msix';
+  if (/[\\/]flatpak[\\/]app[\\/]com\.slack\.Slack[\\/]/.test(asar)) return 'flatpak';
   if (asar.startsWith('/snap/')) return 'snap';
   if (process.platform === 'win32' && /[\\/]slack[\\/]app-\d/i.test(asar)) return 'standalone';
   return '';

@@ -48,6 +48,20 @@ test('WindowsApps identifies the package format without assuming a Store install
   }
 });
 
+test('recognises Slack installed through Flatpak', (t) => {
+  const override = process.env.SLICK_SLACK_RESOURCES;
+  delete process.env.SLICK_SLACK_RESOURCES;
+  t.after(() => {
+    if (override === undefined) delete process.env.SLICK_SLACK_RESOURCES;
+    else process.env.SLICK_SLACK_RESOURCES = override;
+  });
+
+  for (const root of ['/var/lib/flatpak', '/home/user/.local/share/flatpak']) {
+    const asar = `${root}/app/com.slack.Slack/current/active/files/extra/resources/app.asar`;
+    assert.equal(slackInstallKind(asar), 'flatpak');
+  }
+});
+
 test('update destinations offer direct downloads on each platform', () => {
   assert.equal(slackDownloadUrl('win32'), 'https://slack.com/downloads/windows');
   assert.equal(slackDownloadUrl('darwin'), 'https://slack.com/downloads/mac');

@@ -15,6 +15,8 @@ SLACK_PATHS=(
   "/usr/lib/slack"
   "/opt/Slack"
   "/opt/slack"
+  "/var/lib/flatpak/app/com.slack.Slack/current/active/files/extra"
+  "$DATA_HOME/flatpak/app/com.slack.Slack/current/active/files/extra"
   "$HOME/.local/share/slack"
 )
 NO_LAUNCH=0
@@ -170,7 +172,7 @@ EOF
 
 step "Checking prerequisites"
 
-SLACK="$(find_slack)" || die "Slack not found. Install the official Slack .deb from https://slack.com/downloads/linux, then rerun."
+SLACK="$(find_slack)" || die "Slack not found. Install the official Slack app from https://slack.com/downloads/linux (or your distro's Slack package, Flatpak or Snap), then rerun."
 echo "    Slack resources: $SLACK/resources"
 
 if [ "$CLONED" -eq 0 ] && [ "$FROM_RELEASE" -eq 0 ]; then
