@@ -26,13 +26,17 @@
     "test:userscript": "node --experimental-strip-types --test \"src/userscript/**/*.test.ts\""
   },
   "dependencies": {
+    "@modelcontextprotocol/node": "^2.1.2",
+    "@modelcontextprotocol/server": "^2.4.0",
     "amazon-chime-sdk-js": "^3.32.0",
     "diff": "^9.0.0",
     "tar-stream": "^3.2.2",
-    "xz-decompress": "^0.2.3"
+    "xz-decompress": "^0.2.3",
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@fontsource/lato": "^5.3.0",
+    "@modelcontextprotocol/client": "^2.4.0",
     "@types/node": "^26.6.6",
     "@types/react": "^19.3.0",
     "@types/tar-stream": "^3.1.5",

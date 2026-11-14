@@ -105,7 +105,7 @@ Slick discovers these integrations before calling `start()`. Accessing one you d
 
 | `requiredAPIs` entry  | What you get                                                                                                 |
 | --------------------- | ------------------------------------------------------------------------------------------------------------ |
-| `redux`               | `api.redux`: store access, React selectors, state/slice/thunk patches, thunk dispatch.                       |
+| `redux`               | `api.redux`: store access, React selectors, state/slice/thunk patches, `thunkNames()`, thunk dispatch.       |
 | `rtm`                 | `api.rtm.on(type, listener)`: incoming events by type, subtype, or `'*'`.                                    |
 | `messages`            | `api.messages`: message lookup, modification, and local message injection.                                   |
 | `members`             | `api.members`: cached/async member lookup, `useMember`, current user ID, member transforms.                  |

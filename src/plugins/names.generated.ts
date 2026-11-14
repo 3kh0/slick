@@ -50,6 +50,7 @@ export const PLUGINS = [
   'ShowSendingBot',
   'ShutUpSlackbot',
   'SilentTyping',
+  'SlickMCP',
   'SlimMessageBox',
   'Snappy',
   'StreamerMode',
