@@ -51,6 +51,27 @@ export const settings = {
     description: 'Continue from the last tab to the first, and vice versa.',
     default: true,
   },
+  arrowShortcut: {
+    type: 'select',
+    label: 'Arrow keys for switching tabs',
+    default: 'alt-shift',
+    options: [
+      { value: 'alt-shift', label: 'Option+Shift+Left/Right (Alt+Shift)' },
+      { value: 'meta-alt', label: 'Cmd+Option+Left/Right (Meta+Alt)' },
+      { value: 'off', label: 'Off (Ctrl+Tab only)' },
+    ],
+  },
+  arrowShortcutWhileTyping: {
+    type: 'select',
+    label: 'Arrow keys in a text field',
+    default: 'empty',
+    options: [
+      { value: 'empty', label: 'Switch tabs only when the field is empty' },
+      { value: 'always', label: 'Always switch tabs' },
+      { value: 'never', label: 'Never switch tabs' },
+    ],
+    description: 'When not switching tabs, the keys keep their normal text behaviour, like selecting by word.',
+  },
   closeTabSelection: {
     type: 'select',
     label: 'After closing the selected tab',
