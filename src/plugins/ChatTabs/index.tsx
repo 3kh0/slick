@@ -20,7 +20,7 @@ import * as meta from './meta.ts';
 import { addTabMenuItem, addThreadTabAction, THREAD_TAB_ACTION, type MessageAction } from './menu.ts';
 import { chatLabel, chatMemberIds, chatType, memberName } from './people.ts';
 import { recentPlaces, searchPlaces, type PickerPlace } from './picker.ts';
-import { sidebarTabClick, tabSwitchDirection } from './shortcut.ts';
+import { arrowShortcutHints, sidebarTabClick, tabSwitchDirection } from './shortcut.ts';
 
 type DisplayName = (state: any, channel: any, options: Record<string, boolean>) => string;
 
@@ -712,8 +712,17 @@ export default class ChatTabs extends SlickPlugin<typeof meta.settings> {
 
     React.useEffect(() => {
       const handler = (event: KeyboardEvent) => {
-        const direction = tabSwitchDirection(event);
+        const direction = tabSwitchDirection(event, this.config.arrowShortcut);
         if (hidden || !direction || tabs.length < 2) return;
+        const field =
+          event.key !== 'Tab' && (event.target as Element | null)?.closest?.('input, textarea, [contenteditable]');
+        const typing = this.config.arrowShortcutWhileTyping;
+        if (
+          field &&
+          (typing === 'never' ||
+            (typing === 'empty' && ('value' in field ? String(field.value) : field.textContent)?.trim()))
+        )
+          return;
         const next = adjacentTab(tabs, activeKey, direction, this.config.wrapTabSwitching);
         event.preventDefault();
         event.stopImmediatePropagation();
@@ -848,8 +857,8 @@ export default class ChatTabs extends SlickPlugin<typeof meta.settings> {
                     type="button"
                     role="tab"
                     aria-selected={tabKey(tab) === activeKey}
-                    aria-keyshortcuts="Control+Tab Control+Shift+Tab Alt+Shift+ArrowLeft Alt+Shift+ArrowRight"
-                    title="Switch tabs: Ctrl+Tab / Ctrl+Shift+Tab or Alt+Shift+Left/Right"
+                    aria-keyshortcuts={`Control+Tab Control+Shift+Tab${arrowShortcutHints[this.config.arrowShortcut][0]}`}
+                    title={`Switch tabs: Ctrl+Tab / Ctrl+Shift+Tab${arrowShortcutHints[this.config.arrowShortcut][1]}`}
                     className="slick-chat-tabs__select"
                     onClick={() => void open(tab)}
                     onKeyDown={(event) => {

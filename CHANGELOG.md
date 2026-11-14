@@ -6,6 +6,10 @@ In a PR that changes something users will notice, add a line under **Unreleased*
 
 ## Unreleased
 
+### Fixed
+
+- Chat Tabs: Option+Shift+Left/Right no longer switches tabs while you're typing in a message, so it selects by word again. The shortcut and this behaviour can be changed in settings.
+
 ## Build 156
 
 ### Highlights
