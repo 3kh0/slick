@@ -639,6 +639,7 @@ export const reduxReady = (async () => {
     getThunkCreator,
     waitForThunkCreator,
     dispatchThunk,
+    thunkNames: () => [...thunkCreators.keys()],
     refresh,
   };
 })();

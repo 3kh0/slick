@@ -6,6 +6,14 @@ In a PR that changes something users will notice, add a line under **Unreleased*
 
 ## Unreleased
 
+## Highlights
+
+- SlickMCP connects local AI agents to Slack with search, messaging, and desktop controls.
+
+### New
+
+- New docs for AI Agents working on Slick
+
 ### Fixed
 
 - Chat Tabs: Option+Shift+Left/Right no longer switches tabs while you're typing in a message, so it selects by word again. The shortcut and this behaviour can be changed in settings.

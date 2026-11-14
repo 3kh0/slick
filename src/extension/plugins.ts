@@ -5,6 +5,7 @@ import { PLUGINS } from '../plugins/names.generated.ts';
 // privileged halves run in the background (see BACKGROUND_PLUGINS).
 export const WEB_EXCLUDED = [
   'QuietSpotify', // main.ts injects into cross-origin Spotify frames through Electron
+  'SlickMCP', // Local agent connections require the desktop process.
 ] as const;
 
 type WebPlugin = Exclude<(typeof PLUGINS)[number], (typeof WEB_EXCLUDED)[number]>;
