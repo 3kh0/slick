@@ -10,12 +10,21 @@ export function isCloseTabInput(
     (platform === 'darwin' ? input.meta && !input.control : input.control && !input.meta)
   );
 }
+export const arrowShortcutHints: Record<string, [aria: string, title: string]> = {
+  'alt-shift': [' Alt+Shift+ArrowLeft Alt+Shift+ArrowRight', ' or Alt+Shift+Left/Right'],
+  'meta-alt': [' Meta+Alt+ArrowLeft Meta+Alt+ArrowRight', ' or Cmd+Option+Left/Right'],
+  off: ['', ''],
+};
 export function tabSwitchDirection(
   input: Pick<KeyboardEvent, 'key' | 'ctrlKey' | 'altKey' | 'metaKey' | 'shiftKey'>,
+  arrows: 'alt-shift' | 'meta-alt' | 'off' = 'alt-shift',
 ): number {
-  if (input.metaKey) return 0;
-  if (input.ctrlKey && !input.altKey && input.key === 'Tab') return input.shiftKey ? -1 : 1;
-  if (!input.ctrlKey && input.altKey && input.shiftKey) {
+  if (input.ctrlKey && !input.altKey && !input.metaKey && input.key === 'Tab') return input.shiftKey ? -1 : 1;
+  const arrowMods =
+    arrows === 'meta-alt'
+      ? input.metaKey && !input.shiftKey
+      : arrows === 'alt-shift' && !input.metaKey && input.shiftKey;
+  if (!input.ctrlKey && input.altKey && arrowMods) {
     if (input.key === 'ArrowLeft') return -1;
     if (input.key === 'ArrowRight') return 1;
   }

@@ -14,7 +14,7 @@ DMs show the person’s profile picture. Group DMs show stacked pictures and par
 - Drag a tab before or after another tab to reorder it. The strip scrolls when dragging near either edge.
 - Drag any tab to the right edge of the chat pane to open it in Slack’s split view while keeping the current chat.
 - On desktop, **Cmd+W** (**Ctrl+W** on Windows/Linux) closes the selected tab. The final tab keeps the normal window-close shortcut.
-- **Ctrl+Tab** switches to the next tab; **Ctrl+Shift+Tab** switches to the previous tab and wraps at either end. **Alt+Shift+Left/Right** also works (including in browsers that reserve Ctrl+Tab).
+- **Ctrl+Tab** switches to the next tab; **Ctrl+Shift+Tab** switches to the previous tab and wraps at either end. **Alt+Shift+Left/Right** also works (including in browsers that reserve Ctrl+Tab); you can switch it to **Cmd+Option+Left/Right** or turn it off. In a text field with text in it, the arrow shortcut keeps its normal text behaviour unless you change that in settings.
 - With a tab focused, **Ctrl+Shift+Left/Right** reorders it; **Left/Right**, **Home** and **End** select tabs.
 - Close a tab with **×**, a middle click, or **Delete** while it is focused. The final tab stays open.
 - **Escape** dismisses the chat picker.
