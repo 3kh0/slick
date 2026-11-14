@@ -20,7 +20,7 @@ import * as meta from './meta.ts';
 import { addTabMenuItem, addThreadTabAction, THREAD_TAB_ACTION, type MessageAction } from './menu.ts';
 import { chatLabel, chatMemberIds, chatType, memberName } from './people.ts';
 import { recentPlaces, searchPlaces, type PickerPlace } from './picker.ts';
-import { arrowShortcutHints, sidebarTabClick, tabSwitchDirection } from './shortcut.ts';
+import { arrowShortcutHints, sidebarTabClick, tabSwitchDirection, textFieldHasContent } from './shortcut.ts';
 
 type DisplayName = (state: any, channel: any, options: Record<string, boolean>) => string;
 
@@ -717,12 +717,7 @@ export default class ChatTabs extends SlickPlugin<typeof meta.settings> {
         const field =
           event.key !== 'Tab' && (event.target as Element | null)?.closest?.('input, textarea, [contenteditable]');
         const typing = this.config.arrowShortcutWhileTyping;
-        if (
-          field &&
-          (typing === 'never' ||
-            (typing === 'empty' && ('value' in field ? String(field.value) : field.textContent)?.trim()))
-        )
-          return;
+        if (field && (typing === 'never' || (typing === 'empty' && textFieldHasContent(field)))) return;
         const next = adjacentTab(tabs, activeKey, direction, this.config.wrapTabSwitching);
         event.preventDefault();
         event.stopImmediatePropagation();

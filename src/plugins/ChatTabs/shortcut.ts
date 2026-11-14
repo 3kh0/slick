@@ -15,6 +15,10 @@ export const arrowShortcutHints: Record<string, [aria: string, title: string]> =
   'meta-alt': [' Meta+Alt+ArrowLeft Meta+Alt+ArrowRight', ' or Cmd+Option+Left/Right'],
   off: ['', ''],
 };
+export function textFieldHasContent(field: Element): boolean {
+  if ('value' in field) return !!String(field.value).trim();
+  return !!field.textContent?.trim() || !!field.querySelector('img, video, audio, iframe, object, embed');
+}
 export function tabSwitchDirection(
   input: Pick<KeyboardEvent, 'key' | 'ctrlKey' | 'altKey' | 'metaKey' | 'shiftKey'>,
   arrows: 'alt-shift' | 'meta-alt' | 'off' = 'alt-shift',
