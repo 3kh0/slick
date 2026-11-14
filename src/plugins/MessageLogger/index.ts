@@ -48,6 +48,42 @@ type ActionsMenuProps = {
 
 type MenuProps = { children?: React.ReactNode };
 
+type MenuRowProps = { rowKey: string; label: string; click: () => void; close?: (event?: unknown) => void };
+
+/**
+ * Mimics Slack's `MenuItem` markup; the classes are the contract. Slack has no `:hover` rule for menu
+ * rows — it drives the highlight with a `--highlighted` class it toggles as the pointer or keyboard roves.
+ * Our injected rows live outside that machinery, so we toggle the same classes ourselves to match the
+ * native hover state.
+ */
+function MenuRow({ rowKey, label, click, close }: MenuRowProps) {
+  const [highlighted, setHighlighted] = React.useState(false);
+  const on = () => setHighlighted(true);
+  const off = () => setHighlighted(false);
+  return React.createElement(
+    'div',
+    { className: `c-menu_item__li${highlighted ? ' c-menu_item__li--highlighted' : ''}`, role: 'presentation' },
+    React.createElement(
+      'button',
+      {
+        type: 'button',
+        role: 'menuitem',
+        className: `c-menu_item__button${highlighted ? ' c-menu_item__button--highlighted' : ''}`,
+        'data-qa': rowKey,
+        onMouseEnter: on,
+        onMouseLeave: off,
+        onFocus: on,
+        onBlur: off,
+        onClick: () => {
+          click();
+          close?.();
+        },
+      },
+      React.createElement('div', { className: 'c-menu_item__label' }, label),
+    ),
+  );
+}
+
 type ApiRequest = { method?: string; args?: { channel?: string; ts?: string } };
 type ApiThunk = (...args: unknown[]) => unknown;
 
@@ -794,27 +830,8 @@ export default class MessageLogger extends SlickPlugin<typeof meta.settings> {
     });
   }
 
-  /** Slack's `MenuItem` isn't addressable by name, so this mimics its markup; the classes are the contract. */
   private menuRow(key: string, label: string, click: () => void, close?: (event?: unknown) => void) {
-    const React = this.api.react;
-    return React.createElement(
-      'div',
-      { key, className: 'c-menu_item__li', role: 'presentation' },
-      React.createElement(
-        'button',
-        {
-          type: 'button',
-          role: 'menuitem',
-          className: 'c-menu_item__button',
-          'data-qa': key,
-          onClick: () => {
-            click();
-            close?.();
-          },
-        },
-        React.createElement('div', { className: 'c-menu_item__label' }, label),
-      ),
-    );
+    return this.api.react.createElement(MenuRow, { key, rowKey: key, label, click, close });
   }
 
   private hideEdits(entry: LogEntry, hidden: boolean) {
