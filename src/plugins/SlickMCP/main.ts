@@ -3,6 +3,7 @@ import { randomBytes, randomUUID } from 'node:crypto';
 import type { SlickMainPlugin } from '$slick';
 import { serialQueue } from '../../shared/queue.ts';
 import { connectionConfig, type ConnectionStatus } from './connection.ts';
+import { executionScript } from './execution.ts';
 import { id } from './meta.ts';
 
 let status: ConnectionStatus = { state: 'stopped', url: '', error: null };
@@ -37,18 +38,7 @@ function execute(
   args: Record<string, unknown>,
   scope?: import('./tools.ts').OperationScope,
 ) {
-  const lookup = `window.__slickPluginManager?.plugins.get('SlickMCP')?.instance`;
-  const guard = scope
-    ? `const context=await plugin.run('context',{});if(context.workspace_id!==${JSON.stringify(scope.workspace_id)}||context.user_id!==${JSON.stringify(scope.user_id)})throw Error('Workspace changed before the operation could run');`
-    : '';
-  const body =
-    action === 'evaluate'
-      ? `const api=plugin.api, redux=api.redux; return await (async()=>{${String(args.code)}\n})();`
-      : `return await plugin.run(${JSON.stringify(action)},${JSON.stringify(args)});`;
-  return window.webContents.executeJavaScript(
-    `(async()=>{const plugin=${lookup};if(!plugin||!plugin.api.isActive())throw Error('Slick MCP is not ready in this workspace');${guard}${body}})()`,
-    true,
-  );
+  return window.webContents.executeJavaScript(executionScript(action, args, scope), true);
 }
 
 export default {

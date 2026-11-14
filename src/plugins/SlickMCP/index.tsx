@@ -59,6 +59,15 @@ export default class SlickMCP extends SlickPlugin<typeof meta.settings> {
         })),
       };
     }
+    if (action === 'evaluate') {
+      const AsyncFunction = Object.getPrototypeOf(async () => {}).constructor;
+      return new AsyncFunction('api', 'redux', 'document', 'window', String(args.code))(
+        this.api,
+        this.api.redux,
+        document,
+        window,
+      );
+    }
     if (action === 'api') {
       const params = Object.fromEntries(
         Object.entries(args.params ?? {})
