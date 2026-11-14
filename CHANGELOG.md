@@ -6,9 +6,13 @@ In a PR that changes something users will notice, add a line under **Unreleased*
 
 ## Unreleased
 
-### New
+## Highlights
 
 - SlickMCP connects local AI agents to Slack with search, messaging, and desktop controls.
+
+### New
+
+- New docs for AI Agents working on Slick
 
 ### Fixed
 
