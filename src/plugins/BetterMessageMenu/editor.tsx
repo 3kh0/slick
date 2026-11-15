@@ -1,7 +1,4 @@
-// The plugin's own settings panel (rendered on its detail page): a reorderable
-// list of menu items, each with a rename box, a show/hide toggle and an "icon
-// row" toggle. Reorder is pointer-based (HTML5 drag is unreliable inside
-// Slack/Electron). Reads and writes the plugin's MenuConfig store.
+// Pointer-based reorder: HTML5 drag is unreliable inside Slack's Electron window.
 
 import { BIG_LABEL, CATALOG, defaultConfig, type ItemConfig, type MenuConfig } from './config.ts';
 
@@ -10,12 +7,25 @@ export type EditorHost = {
   update(next: MenuConfig): void;
 };
 
+type Kind = 'big' | 'item' | 'hidden';
+
+const kindOf = (item: ItemConfig): Kind => (item.hidden ? 'hidden' : item.big ? 'big' : 'item');
+const asKind = (kind: Kind): Partial<ItemConfig> => ({ hidden: kind === 'hidden', big: kind === 'big' });
+
+const GROUPS: { kind: Kind; title: string; hint: string }[] = [
+  {
+    kind: 'big',
+    title: 'Big buttons',
+    hint: 'Shown side by side as icon buttons. On other people’s messages, Edit and Delete give way to Forward and Copy.',
+  },
+  { kind: 'item', title: 'Menu items', hint: 'Shown as normal rows in the menu.' },
+  { kind: 'hidden', title: 'Hidden', hint: 'Left out of the menu.' },
+];
+
 const nameOf = (id: string) => CATALOG.find((c) => c.id === id)?.name ?? id;
-const placeholderOf = (id: string) => BIG_LABEL[id] ?? nameOf(id);
 
 export function MenuEditor({ plugin }: { plugin: EditorHost }) {
   const saved = plugin.store.use();
-  // While dragging, render a local preview order; commit on release.
   const [preview, setPreview] = React.useState<ItemConfig[] | null>(null);
   const [dragId, setDragId] = React.useState<string | null>(null);
   const rows = React.useRef(new Map<string, HTMLElement>());
@@ -32,19 +42,18 @@ export function MenuEditor({ plugin }: { plugin: EditorHost }) {
       const current = preview ?? saved.order;
       const from = current.findIndex((i) => i.id === dragId);
       if (from < 0) return;
-      let to = from;
-      current.forEach((item, index) => {
-        const el = rows.current.get(item.id);
-        if (!el) return;
-        const r = el.getBoundingClientRect();
-        if (e.clientY >= r.top && e.clientY <= r.bottom) to = index;
+      const kind = kindOf(current[from]);
+      // Only rows in the same group are drop targets; groups change via the dropdown.
+      const to = current.findIndex((item) => {
+        if (kindOf(item) !== kind) return false;
+        const r = rows.current.get(item.id)?.getBoundingClientRect();
+        return !!r && e.clientY >= r.top && e.clientY <= r.bottom;
       });
-      if (to !== from) {
-        const next = [...current];
-        const [moved] = next.splice(from, 1);
-        next.splice(to, 0, moved);
-        setPreview(next);
-      }
+      if (to < 0 || to === from) return;
+      const next = [...current];
+      const [moved] = next.splice(from, 1);
+      next.splice(to, 0, moved);
+      setPreview(next);
     };
     const onUp = () => {
       setPreview((p) => {
@@ -61,11 +70,51 @@ export function MenuEditor({ plugin }: { plugin: EditorHost }) {
     };
   }, [dragId, preview, saved.order]);
 
+  const row = (item: ItemConfig) => (
+    <div
+      role="listitem"
+      key={item.id}
+      ref={(el) => {
+        if (el) rows.current.set(item.id, el);
+        else rows.current.delete(item.id);
+      }}
+      className={`slick-bmm-row${dragId === item.id ? ' slick-bmm-row--drag' : ''}`}
+    >
+      <span
+        className="slick-bmm-handle"
+        aria-label={`Drag ${nameOf(item.id)}`}
+        onPointerDown={(e) => {
+          e.preventDefault();
+          setDragId(item.id);
+        }}
+      >
+        ⠿
+      </span>
+      <input
+        className="slick-bmm-name"
+        type="text"
+        value={item.label ?? ''}
+        placeholder={(item.big && BIG_LABEL[item.id]) || nameOf(item.id)}
+        aria-label={`Label for ${nameOf(item.id)}`}
+        onChange={(e) => patch(item.id, { label: e.currentTarget.value || undefined })}
+      />
+      <select
+        className="slick-bmm-kind"
+        value={kindOf(item)}
+        aria-label={`How ${nameOf(item.id)} shows`}
+        onChange={(e) => patch(item.id, asKind(e.currentTarget.value as Kind))}
+      >
+        <option value="big">Big button</option>
+        <option value="item">Menu item</option>
+        <option value="hidden">Hidden</option>
+      </select>
+    </div>
+  );
+
   return (
     <div className="slick-bmm-editor">
       <p className="slick-bmm-hint">
-        Drag the handle to reorder. Type to rename an item (blank = Slack's default). “Icon” shows it as a button in the
-        row at the edge of the menu.
+        Drag the handle to reorder within a group. Type to rename an item; leave it blank for Slack’s name.
       </p>
       <label className="slick-bmm-cursor">
         <input
@@ -73,57 +122,23 @@ export function MenuEditor({ plugin }: { plugin: EditorHost }) {
           checked={!!saved.followCursor}
           onChange={(e) => commit(saved.order, { followCursor: e.currentTarget.checked })}
         />
-        Keep the icon row nearest the cursor
+        Keep the big buttons nearest the cursor
       </label>
 
-      <div className="slick-bmm-list" role="list">
-        {order.map((item) => (
-          <div
-            role="listitem"
-            key={item.id}
-            ref={(el) => {
-              if (el) rows.current.set(item.id, el);
-              else rows.current.delete(item.id);
-            }}
-            className={`slick-bmm-row${dragId === item.id ? ' slick-bmm-row--drag' : ''}${item.hidden ? ' slick-bmm-row--off' : ''}`}
-          >
-            <span
-              className="slick-bmm-handle"
-              aria-label={`Drag ${nameOf(item.id)}`}
-              onPointerDown={(e) => {
-                e.preventDefault();
-                setDragId(item.id);
-              }}
-            >
-              ⠿
-            </span>
-            <input
-              className="slick-bmm-name"
-              type="text"
-              value={item.label ?? ''}
-              placeholder={placeholderOf(item.id)}
-              aria-label={`Label for ${nameOf(item.id)}`}
-              onChange={(e) => patch(item.id, { label: e.currentTarget.value || undefined })}
-            />
-            <label className="slick-bmm-opt" title="Show in the menu">
-              <input
-                type="checkbox"
-                checked={!item.hidden}
-                onChange={(e) => patch(item.id, { hidden: !e.currentTarget.checked })}
-              />
-              Show
-            </label>
-            <label className="slick-bmm-opt" title="Show as an icon button in the row">
-              <input
-                type="checkbox"
-                checked={!!item.big}
-                onChange={(e) => patch(item.id, { big: e.currentTarget.checked })}
-              />
-              Icon
-            </label>
+      {GROUPS.map(({ kind, title, hint }) => {
+        const items = order.filter((item) => kindOf(item) === kind);
+        return (
+          <div key={kind} className={`slick-bmm-group slick-bmm-group--${kind}`}>
+            <div className="slick-bmm-group-head">
+              <span className="slick-bmm-group-title">{title}</span>
+              <span className="slick-bmm-hint">{hint}</span>
+            </div>
+            <div className="slick-bmm-list" role="list" aria-label={title}>
+              {items.length ? items.map(row) : <div className="slick-bmm-empty">Nothing here.</div>}
+            </div>
           </div>
-        ))}
-      </div>
+        );
+      })}
 
       <button type="button" className="slick-bmm-reset" onClick={() => plugin.update(defaultConfig())}>
         Reset to defaults

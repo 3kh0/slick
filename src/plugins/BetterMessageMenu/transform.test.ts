@@ -41,13 +41,14 @@ const other = (): ActionGroups => [
 
 const ids = (g: ActionGroups) => g.flat().map((d) => d.id ?? (d['data-qa'] as string));
 const find = (g: ActionGroups, id: string) => g.flat().find((d) => d.id === id);
+const fixed = (): MenuConfig => ({ ...defaultConfig(), followCursor: false });
 
 test('non-array input is tolerated', () => {
   assert.deepEqual(applyMenu(undefined, defaultConfig(), 'down'), []);
 });
 
 test('default config reproduces the image-2 layout on an own message', () => {
-  const out = applyMenu(own(), defaultConfig(), 'down');
+  const out = applyMenu(own(), fixed(), 'down');
   // reaction + reply hidden
   assert.equal(find(out, 'add_reaction'), undefined);
   assert.equal(find(out, 'comment'), undefined);
@@ -71,7 +72,7 @@ test('default config reproduces the image-2 layout on an own message', () => {
 });
 
 test("others' messages swap Forward + Copy message into the row", () => {
-  const out = applyMenu(other(), defaultConfig(), 'down');
+  const out = applyMenu(other(), fixed(), 'down');
   const row = out[out.length - 1];
   assert.deepEqual(
     row.map((d) => d.id),
@@ -86,7 +87,7 @@ test("others' messages swap Forward + Copy message into the row", () => {
 });
 
 test('icon row tags the count so width can fill (3 own, 2 when forwarding is off)', () => {
-  const three = applyMenu(own(), defaultConfig(), 'down');
+  const three = applyMenu(own(), fixed(), 'down');
   const row3 = three[three.length - 1];
   assert.equal(row3.length, 3);
   for (const d of row3) assert.ok((d.className ?? '').includes(`${BIG_ACTION_CLASS}-n3`));
@@ -97,7 +98,7 @@ test('icon row tags the count so width can fill (3 own, 2 when forwarding is off
     [{ id: 'copy_text', name: 'Copy message' }],
     [{ id: 'remind_later', 'data-qa': 'remind_me', name: 'Add a reminder' }],
   ];
-  const two = applyMenu(noForward, defaultConfig(), 'down');
+  const two = applyMenu(noForward, fixed(), 'down');
   const row2 = two[two.length - 1];
   assert.deepEqual(
     row2.map((d) => d.id),
@@ -136,7 +137,7 @@ test('hiding an item removes it; renaming overrides the label', () => {
 });
 
 test('un-marking big keeps the item in the main list instead of the row', () => {
-  const cfg = defaultConfig();
+  const cfg = fixed();
   for (const item of cfg.order) if (item.id === 'edit_message') item.big = false;
   const out = applyMenu(own(), cfg, 'down');
   const row = out[out.length - 1];
@@ -147,12 +148,32 @@ test('un-marking big keeps the item in the main list instead of the row', () => 
   assert.ok(out[0].some((d) => d.id === 'edit_message'));
 });
 
-test('followCursor + opens-down puts the icon row first', () => {
-  const cfg: MenuConfig = { ...defaultConfig(), followCursor: true };
-  const out = applyMenu(own(), cfg, 'down');
+test('followCursor is the default', () => {
+  assert.equal(defaultConfig().followCursor, true);
+});
+
+test('opening below the cursor: icon row first, then the configured order', () => {
+  const out = applyMenu(own(), defaultConfig(), 'down');
   assert.deepEqual(
     out[0].map((d) => d.id),
     ['copy_link', 'edit_message', 'delete_message'],
+  );
+  assert.deepEqual(
+    out[1].slice(0, 5).map((d) => d.id),
+    ['copy_text', 'remind_later', 'subscribe', 'organize_actions_menu', 'connect_to_apps_actions_menu'],
+  );
+});
+
+test('opening above the cursor: the whole menu mirrors, icon row last', () => {
+  const down = applyMenu(own(), defaultConfig(), 'down');
+  const up = applyMenu(own(), defaultConfig(), 'up');
+  assert.deepEqual(
+    up[up.length - 1].map((d) => d.id),
+    ['copy_link', 'edit_message', 'delete_message'],
+  );
+  assert.deepEqual(
+    up[0].map((d) => d.id),
+    down[1].toReversed().map((d) => d.id),
   );
 });
 

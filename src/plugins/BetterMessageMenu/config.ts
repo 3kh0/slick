@@ -76,7 +76,7 @@ export function canonicalId(descriptor: { id?: string; 'data-qa'?: string }): st
 export function defaultConfig(): MenuConfig {
   return {
     order: CATALOG.map((c) => ({ id: c.id, hidden: c.hidden, big: c.big })),
-    followCursor: false,
+    followCursor: true,
   };
 }
 
@@ -102,5 +102,5 @@ export function mergeCatalog(stored: MenuConfig | undefined): MenuConfig {
     });
   }
   for (const entry of base.order) if (!seen.has(entry.id)) order.push(entry);
-  return { order, followCursor: !!stored.followCursor };
+  return { order, followCursor: stored.followCursor !== false };
 }

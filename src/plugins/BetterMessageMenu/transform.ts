@@ -105,10 +105,9 @@ export function applyMenu(groups: ActionGroups | undefined, config: MenuConfig, 
   // Preserve everything else (unknown descriptors) in Slack's order.
   for (const d of flat) if (!consumed.has(d)) main.push(d);
 
-  const result: ActionGroups = [main];
-  if (bigGroup.length) {
-    if (config.followCursor && placement === 'down') result.unshift(bigGroup);
-    else result.push(bigGroup);
-  }
-  return result.filter((g) => g.length);
+  // Mirror around the cursor: opening below it, the icon row leads; opening
+  // above it, the whole menu is reversed so the icon row ends next to it.
+  if (config.followCursor && placement === 'down') return [bigGroup, main].filter((g) => g.length);
+  if (config.followCursor) main.reverse();
+  return [main, bigGroup].filter((g) => g.length);
 }
