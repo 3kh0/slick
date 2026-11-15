@@ -27,7 +27,7 @@ import { reduxReady } from './slack/redux.ts';
 import { rtmReady } from './slack/rtm.ts';
 import { findModuleId, getByProps, getExport, getValueSource, moduleSources, waitForExport } from './slack/webpack.ts';
 import { userAPI } from './api/userAPI.ts';
-import { addSettingsTab, type SettingsTab } from './api/settingsTabs.ts';
+import { addSettingsTab, setPluginPanel, type SettingsTab } from './api/settingsTabs.ts';
 
 import { createAPILoader } from './apiLoader.ts';
 import { createScope, type PluginScope } from './pluginScope.ts';
@@ -282,6 +282,8 @@ function createScopedAPI(
     settings: {
       set: (key: string, value: unknown) => config.setPluginSetting(id, key, value),
       addTab: tracked((tab: Omit<SettingsTab, 'id'>) => addSettingsTab({ ...tab, id: `slick-plugin-${id}` })),
+      /** Render custom UI on this plugin's own settings page. */
+      panel: tracked((render: () => React.ReactNode) => setPluginPanel(id, render)),
     },
 
     /** This plugin's main-process half. The id is bound; it cannot be spoofed. */

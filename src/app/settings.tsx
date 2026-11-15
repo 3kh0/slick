@@ -4,7 +4,7 @@ import { fileLabel } from './api/storedFiles.ts';
 import { modalReady, type ModalHandle } from './api/modal.tsx';
 import { elementsReady } from './api/elements.ts';
 import { setStyle } from './api/css.ts';
-import { settingsTabs, type SettingsTab } from './api/settingsTabs.ts';
+import { pluginPanels, settingsTabs, type SettingsTab } from './api/settingsTabs.ts';
 import type { SlickBridge } from './bridge.ts';
 import type { ConfigStore } from './configStore.ts';
 import type { PluginManager } from './pluginManager.ts';
@@ -1218,6 +1218,7 @@ function PluginDetail({
   manager: PluginManager;
   onBack: () => void;
 }) {
+  const panels = pluginPanels.use();
   const info = plugins.find((plugin) => plugin.id === id);
   const back = (
     <button type="button" className="c-button-unstyled slick-settings__back" onClick={onBack}>
@@ -1291,6 +1292,7 @@ function PluginDetail({
           ))}
         </Card>
       )}
+      {panels[info.id] && <Card title="Customize">{panels[info.id]!()}</Card>}
       <Card title="Workspaces">
         <WorkspaceSettings info={info} config={config} />
       </Card>
