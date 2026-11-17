@@ -16,7 +16,7 @@ In a PR that changes something users will notice, add a line under **Unreleased*
 
 ### Fixed
 
-- Slick finds Slack when it is installed as a Flatpak.
+- Slick finds Slack installed as a Flatpak, including in a custom data directory.
 - Chat Tabs: Option+Shift+Left/Right no longer switches tabs while you're typing in a message, so it selects by word again. The shortcut and this behaviour can be changed in settings.
 - ChatTabs keeps arrow shortcuts in the composer when your draft contains only emoji.
 

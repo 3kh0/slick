@@ -20,9 +20,12 @@ const LINUX_CANDIDATES = [
   '/opt/slack',
   // Flatpak keeps the Electron files in extra/, not at the deployment root.
   `/var/lib/${FLATPAK_SLACK}`,
-  // Slick's own Flatpak still sees the host path as ~/.local/share.
+  // Flatpak preserves a custom host data directory in HOST_XDG_DATA_HOME.
   path.join(HOME, '.local/share', FLATPAK_SLACK),
-  path.join(process.env.XDG_DATA_HOME || path.join(HOME, '.local/share'), FLATPAK_SLACK),
+  path.join(
+    process.env.HOST_XDG_DATA_HOME || process.env.XDG_DATA_HOME || path.join(HOME, '.local/share'),
+    FLATPAK_SLACK,
+  ),
   // Nix profiles expose Slack's lib/slack/resources/app.asar symlink.
   '/run/current-system/sw/lib/slack',
   path.join(HOME, '.nix-profile/lib/slack'),
