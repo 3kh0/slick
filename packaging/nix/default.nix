@@ -5,7 +5,7 @@
   nodejs_24,
   pkgs,
   # Must share Slack's Electron major; defaults to what nixpkgs' Slack bundles.
-  electron ? null,
+  electronPackage ? null,
   makeWrapper,
   src,
   slackPackage ? null,
@@ -15,7 +15,7 @@ let
   # Kept current by .github/workflows/nix.yml: build follows the latest GitHub
   # release, nodeModulesHash follows bun.lock, electron follows nixpkgs' Slack.
   pins = lib.importJSON ./pins.json;
-  electron' = if electron != null then electron else pkgs."electron_${toString pins.electron}";
+  electron' = if electronPackage != null then electronPackage else pkgs."electron_${toString pins.electron}";
   build = toString pins.build;
   version = "2.0.${build}";
 
