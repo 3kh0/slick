@@ -17,7 +17,7 @@ import {
   type ChatTab,
 } from './tabs.ts';
 import * as meta from './meta.ts';
-import { addTabMenuItem, addThreadTabAction, THREAD_TAB_ACTION, type MessageAction } from './menu.ts';
+import { addTabMenuItem, THREAD_TAB_ACTION } from './menu.ts';
 import { chatLabel, chatMemberIds, chatType, memberName } from './people.ts';
 import { recentPlaces, searchPlaces, type PickerPlace } from './picker.ts';
 import { arrowShortcutHints, sidebarTabClick, tabSwitchDirection, textFieldHasContent } from './shortcut.ts';
@@ -42,7 +42,7 @@ export default class ChatTabs extends SlickPlugin<typeof meta.settings> {
     'middleClickCloses',
     'dragToSplit',
   ] as const;
-  static readonly requiredAPIs = ['redux', 'elements'] as const;
+  static readonly requiredAPIs = ['redux', 'elements', 'menu'] as const;
 
   private MenuTarget = React.createContext<string | null>(null);
   private BarSlot = React.createContext<React.ReactNode | undefined>(undefined);
@@ -111,49 +111,21 @@ export default class ChatTabs extends SlickPlugin<typeof meta.settings> {
         />
       );
     });
-    this.api.patchComponent<{
-      channelId?: string;
-      ts?: string;
-      threadTs?: string;
-      actions?: MessageAction[][];
-      autoClogProps?: { uiComponentName?: string };
-      onSelectAction?: (...args: any[]) => unknown;
-    }>(
-      {
-        filter: (candidate: any) => {
-          const render = candidate?.render ?? candidate;
-          return (
-            typeof render === 'function' &&
-            String(render).includes('renderActionGroup') &&
-            String(render).includes('dispatchMessageAction')
-          );
-        },
-      },
-      (Original) => (props) => {
-        if (props.autoClogProps?.uiComponentName !== 'message_actions_menu' || !Array.isArray(props.actions))
-          return <Original {...props} />;
-        const tab = threadTabForMessage(
-          props.channelId,
-          props.ts,
-          props.threadTs,
-          this.api.redux.getStore()?.getState(),
-        );
-        if (!tab) return <Original {...props} />;
-        return (
-          <Original
-            {...props}
-            actions={addThreadTabAction(props.actions)}
-            onSelectAction={(event, action, context) => {
-              if (action?.id === THREAD_TAB_ACTION) {
+    this.api.menu.addMessageActions(({ channelId, ts, threadTs }) => {
+      const tab = threadTabForMessage(channelId, ts, threadTs, this.api.redux.getStore()?.getState());
+      return tab
+        ? [
+            {
+              id: THREAD_TAB_ACTION,
+              'data-qa': 'slick-chat-tabs-open-thread',
+              name: 'Open in new Slick tab',
+              onSelect: () => {
                 void this.openChat?.(tab);
-                return true;
-              }
-              return props.onSelectAction?.(event, action, context);
-            }}
-          />
-        );
-      },
-    );
+              },
+            },
+          ]
+        : [];
+    });
     this.api.patchComponent('BaseSearch', (Original) => (props) => {
       const active = this.active.use();
       return active ? (

@@ -1,9 +1,4 @@
-// Pure rewrite of Slack's message-actions template, driven by the user's saved
-// MenuConfig. MessageActionsMenu passes its body (MAMenu) `actions`: a 2-D array
-// of plain descriptor objects, rendered group-by-group with a separator between
-// groups. Reshaping that array is the whole plugin — no React, no DOM.
-
-import { BIG_ICON, BIG_LABEL, canonicalId, type MenuConfig, ORGANISE_CHILDREN } from './config.ts';
+import { actionId, BIG_ICON, BIG_LABEL, type MenuConfig } from './config.ts';
 
 export type Descriptor = {
   id?: string;
@@ -13,101 +8,83 @@ export type Descriptor = {
   submenuActions?: Descriptor[];
   [key: string]: unknown;
 };
-
 export type ActionGroups = Descriptor[][];
 export type Placement = 'up' | 'down';
-
-/** Marker the stylesheet keys the horizontal icon row off. */
 export const BIG_ACTION_CLASS = 'slick-bmm-bigaction';
-
 const ORGANIZE = 'organize_actions_menu';
 
-const is = (d: Descriptor, keys: readonly string[]): boolean =>
-  keys.includes(d.id as string) || keys.includes(d['data-qa'] as string);
-
-/** The label to render: a user rename wins, then our defaults, then Slack's own. */
-function labelFor(canon: string, d: Descriptor, inBig: boolean, userLabel?: string): unknown {
-  if (userLabel && userLabel.trim()) return userLabel.trim();
-  if (inBig && BIG_LABEL[canon]) return BIG_LABEL[canon];
-  if (!inBig && canon === 'subscribe' && typeof d.name === 'string' && /turn off/i.test(d.name)) return 'UNSUBSCRIBE';
-  return d.name;
+function labelFor(id: string, descriptor: Descriptor, big: boolean, label?: string): unknown {
+  if (label?.trim()) return label.trim();
+  if (big && BIG_LABEL[id]) return BIG_LABEL[id];
+  if (!big && id === 'subscribe' && typeof descriptor.name === 'string' && /turn off/i.test(descriptor.name))
+    return 'UNSUBSCRIBE';
+  return descriptor.name;
 }
 
-/**
- * Reshape the live `actions` into the configured menu. Unknown descriptors
- * (app shortcuts, AI actions, …) are preserved so nothing is ever lost.
- */
 export function applyMenu(groups: ActionGroups | undefined, config: MenuConfig, placement: Placement): ActionGroups {
   if (!Array.isArray(groups)) return groups ?? [];
-
-  const flat = groups.flat().filter((d): d is Descriptor => !!d && typeof d === 'object');
+  const flat = groups.flat().filter((action) => action && typeof action === 'object');
   const cfg = new Map(config.order.map((item) => [item.id, item]));
   const consumed = new Set<Descriptor>();
-
-  // Does Slack offer Edit/Delete? Only on the viewer's own message.
-  const own = flat.some((d) => ['edit_message', 'delete_message'].includes(canonicalId(d)));
-
-  // Which canonical ids go in the icon row.
-  let bigIds = config.order.filter((item) => item.big && !item.hidden).map((item) => item.id);
-  if (!own) {
-    // Edit/Delete are absent; move Forward + Copy message down into the row instead.
-    bigIds = bigIds.filter((id) => id !== 'edit_message' && id !== 'delete_message');
-    for (const id of ['copy_link', 'share_message', 'copy_text']) if (!bigIds.includes(id)) bigIds.push(id);
-  }
-
-  const take = (canon: string): Descriptor | undefined => {
-    const found = flat.find((d) => !consumed.has(d) && canonicalId(d) === canon);
-    if (found) consumed.add(found);
-    return found;
+  const nativeOrganize = flat.find((action) => actionId(action) === ORGANIZE);
+  const originalChildren = nativeOrganize?.submenuActions ?? [];
+  for (const child of originalChildren)
+    if (!flat.some((action) => actionId(action) === actionId(child))) flat.push(child);
+  const take = (id: string): Descriptor | undefined => {
+    const action = flat.find((item) => !consumed.has(item) && actionId(item) === id);
+    if (action) consumed.add(action);
+    return action;
   };
 
-  // Icon row, in configured order. Width is split by how many actually render
-  // (e.g. a channel with forwarding off drops to two), so the row always fills.
-  const taken: { canon: string; d: Descriptor }[] = [];
-  for (const canon of bigIds) {
-    const d = take(canon);
-    if (d) taken.push({ canon, d });
+  const children: Descriptor[] = [];
+  for (const item of config.order) {
+    if (item.section !== 'organize' || item.id === ORGANIZE || item.big || item.hidden) continue;
+    const child = take(item.id);
+    if (child) children.push({ ...child, name: labelFor(item.id, child, false, item.label) });
   }
-  const bigGroup: Descriptor[] = taken.map(({ canon, d }) => ({
-    ...d,
-    name: labelFor(canon, d, true, cfg.get(canon)?.label),
-    icon: d.icon ?? BIG_ICON[canon],
-    className: [d.className, BIG_ACTION_CLASS, `${BIG_ACTION_CLASS}-n${taken.length}`].filter(Boolean).join(' '),
-  }));
+  for (const child of originalChildren) {
+    if (consumed.has(child) || cfg.has(actionId(child))) continue;
+    consumed.add(child);
+    children.push(child);
+  }
+  if (nativeOrganize) flat[flat.indexOf(nativeOrganize)] = { ...nativeOrganize, submenuActions: children };
+  else if (children.length) flat.push({ id: ORGANIZE, name: 'Organize', submenuActions: children });
 
-  // Organise submenu absorbs its stray top-level children. Replace the descriptor
-  // in `flat` with a merged copy so the ordering pass below places it normally.
-  const organize = flat.find((d) => !consumed.has(d) && canonicalId(d) === ORGANIZE);
-  if (organize) {
-    const moved = flat.filter((d) => !consumed.has(d) && is(d, ORGANISE_CHILDREN));
-    if (moved.length) {
-      moved.forEach((d) => consumed.add(d));
-      flat[flat.indexOf(organize)] = {
-        ...organize,
-        submenuActions: [...(organize.submenuActions ?? []), ...moved],
-      };
+  const own = flat.some((action) => ['edit_message', 'delete_message'].includes(actionId(action)));
+  const bigIds = config.order
+    .filter((item) => item.big && !item.hidden && item.section !== 'organize')
+    .map((item) => item.id);
+  if (!own) {
+    for (const id of ['copy_link', 'share_message', 'copy_text']) {
+      const item = cfg.get(id);
+      if (!item?.hidden && item?.big !== false && !bigIds.includes(id)) bigIds.push(id);
     }
   }
-
-  // Main list in configured order.
+  const taken: { id: string; action: Descriptor }[] = [];
+  for (const id of bigIds) {
+    const action = take(id);
+    if (action) taken.push({ id, action });
+  }
+  const rows = Math.ceil(taken.length / 3);
+  const counts = Array.from(
+    { length: rows },
+    (_, index) => Math.floor(taken.length / rows) + (index < taken.length % rows ? 1 : 0),
+  ).flatMap((count) => Array(count).fill(count) as number[]);
+  const bigGroup = taken.map(({ id, action }, index) => ({
+    ...action,
+    name: labelFor(id, action, true, cfg.get(id)?.label),
+    icon: action.icon ?? BIG_ICON[id],
+    className: [action.className, BIG_ACTION_CLASS, `${BIG_ACTION_CLASS}-n${counts[index]}`].filter(Boolean).join(' '),
+  }));
   const main: Descriptor[] = [];
   for (const item of config.order) {
-    if (item.hidden || item.big) continue;
-    const d = take(item.id);
-    if (!d) continue;
-    main.push({ ...d, name: labelFor(item.id, d, false, item.label) });
+    if (item.hidden || item.big || item.section === 'organize') continue;
+    const action = take(item.id);
+    if (action) main.push({ ...action, name: labelFor(item.id, action, false, item.label) });
   }
-  // Drop any items the user hid that are still unconsumed.
-  for (const d of flat) {
-    const canon = canonicalId(d);
-    if (canon && cfg.get(canon)?.hidden) consumed.add(d);
-  }
-  // Preserve everything else (unknown descriptors) in Slack's order.
-  for (const d of flat) if (!consumed.has(d)) main.push(d);
-
-  // Mirror around the cursor: opening below it, the icon row leads; opening
-  // above it, the whole menu is reversed so the icon row ends next to it.
-  if (config.followCursor && placement === 'down') return [bigGroup, main].filter((g) => g.length);
+  for (const action of flat) if (cfg.get(actionId(action))?.hidden) consumed.add(action);
+  for (const action of flat) if (!consumed.has(action)) main.push(action);
+  if (config.followCursor && placement === 'down') return [bigGroup, main].filter((group) => group.length);
   if (config.followCursor) main.reverse();
-  return [main, bigGroup].filter((g) => g.length);
+  return [main, bigGroup].filter((group) => group.length);
 }

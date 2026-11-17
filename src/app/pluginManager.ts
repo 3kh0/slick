@@ -170,6 +170,7 @@ function createScopedAPI(
 
   const storage = new ScopedStorage(blob);
   const workspaceId = currentWorkspaceId();
+  let menu: BaseAPI['menu'] | undefined;
   let redux: BaseAPI['redux'] | undefined;
   let rtm: BaseAPI['rtm'] | undefined;
   let messages: BaseAPI['messages'] | undefined;
@@ -210,7 +211,7 @@ function createScopedAPI(
       return base.elements;
     },
     get menu() {
-      return base.menu;
+      return (menu ??= { ...base.menu, addMessageActions: tracked(base.menu.addMessageActions) });
     },
     get modal() {
       return base.modal;
