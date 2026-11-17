@@ -113,7 +113,7 @@ Slick discovers these integrations before calling `start()`. Accessing one you d
 | `blocks`              | `api.blocks`: Quill Delta, Slack blocks, plain text, and Markdown conversion.                                |
 | `files`               | `api.files`: Slack file upload helper.                                                                       |
 | `elements`            | `api.elements`: discovered Slack UI components.                                                              |
-| `menu`                | `api.menu.Menu`: menu component.                                                                             |
+| `menu`                | `api.menu.Menu`: menu component; `addMessageActions(provider)` adds native message actions.                  |
 | `modal`               | `api.modal`: `openModal`, `confirm`, and `alert`.                                                            |
 | `react`               | `api.react`: Slack's React instance.                                                                         |
 | `onMessageSendDelta`  | `api.onMessageSendDelta(transform)`: synchronous outgoing-message and edit transform.                        |
@@ -134,7 +134,7 @@ Slick automatically removes registrations made through these scoped APIs:
 
 - `patchComponent`, `redux.patchState`, `redux.patchSlice`, `redux.patchThunk`.
 - `rtm.on`, `messages.injectMessages`, `onMessageSendDelta`, `onMessageSendBlocks`, `addSendCheck`.
-- `setStyle`, `onDocument`, `deferResizeWork`, `settings.addTab`, `main.on`.
+- `setStyle`, `onDocument`, `deferResizeWork`, `settings.addTab`, `settings.panel`, `main.on`, `menu.addMessageActions`.
 - Blob URLs created by `storedFileUrl`.
 
 Their registration methods return disposers when you need to remove something early. Stuff you create yourself is still your problem: timers, raw DOM listeners, observers, added elements, store subscriptions, and open UI. Clean those up in `stop()`, use React effect cleanup, or attach a DOM listener with `{ signal: this.api.signal }` where appropriate.
@@ -321,3 +321,9 @@ Before sending a patch:
 5. Run `bun run typecheck` and commit `src/plugins/names.generated.ts` if you added or renamed a plugin.
 
 Keep pure transforms in helper files with `node:test` tests; [ClearURLs](ClearURLs/clean.test.ts), [HumanCount](HumanCount/count.test.ts), and [NotShitMarkdown](NotShitMarkdown/markdown.test.ts) are good starting points. For renderer mocks, copy the approach in a nearby `index.test.ts`. Then actually use the thing for a bit. All green tests don't click buttons for you.
+
+### Custom plugin settings and message actions
+
+Use `api.settings.panel(() => <YourEditor />)` to show a custom editor on the plugin’s own settings page. The panel is removed when the plugin stops.
+
+Declare the `menu` API to register `api.menu.addMessageActions(({ channelId, ts }) => actions)`. Return actions with `id`, `name`, optional `icon`, and an `onSelect` callback. Return an empty list for messages without actions. Slick renders these as native menu items and closes the menu after selection; BetterMessageMenu can reorder, hide, or group them. Providers are disposed on stop. `api.menu.getMessageActions(context)` reads the active contributions for a custom menu renderer.

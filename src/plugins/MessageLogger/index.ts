@@ -40,14 +40,6 @@ type RowProps = {
   className?: string;
 };
 
-type ActionsMenuProps = {
-  channelId?: string;
-  ts?: string;
-  onTriggerClose?: (event?: unknown) => void;
-};
-
-type MenuProps = { children?: React.ReactNode };
-
 type ApiRequest = { method?: string; args?: { channel?: string; ts?: string } };
 type ApiThunk = (...args: unknown[]) => unknown;
 
@@ -112,7 +104,7 @@ function comparableText(message: SlackMessage, other: SlackMessage): string | un
 }
 
 export default class MessageLogger extends SlickPlugin<typeof meta.settings> {
-  static readonly requiredAPIs = ['messages', 'react', 'redux', 'rtm'] as const;
+  static readonly requiredAPIs = ['messages', 'react', 'redux', 'rtm', 'menu'] as const;
   static readonly id = meta.id;
   static readonly pluginName = meta.pluginName;
   static readonly description = meta.description;
@@ -149,9 +141,6 @@ export default class MessageLogger extends SlickPlugin<typeof meta.settings> {
   } | null>(null);
 
   private readonly ImageContext = React.createContext<SavedImage[]>([]);
-
-  /** `MessageActionsMenu` knows the message; the generic `Menu` that renders rows does not. */
-  private readonly MenuRowsContext = React.createContext<React.ReactNode[]>([]);
 
   start() {
     this.images = new ImageArchive(this.api.storage, this.api.signal, () => this.api.redux.refresh());
@@ -742,79 +731,23 @@ export default class MessageLogger extends SlickPlugin<typeof meta.settings> {
     );
   }
 
-  /**
-   * Slack builds the message menu from redux selectors, not a template prop, so
-   * the rows are appended as extra children of the menu body.
-   */
   private patchMenu() {
-    const React = this.api.react;
-
-    this.api.patchComponent<ActionsMenuProps>('MessageActionsMenu', (Original) => (props) => {
-      const version = this.api.redux.usePatchVersion();
-      const { channelId, ts, onTriggerClose } = props;
-      const rows = React.useMemo(() => {
-        const entry = channelId && ts ? this.entries.get(this.key(channelId, ts)) : undefined;
-        if (!entry) return [];
-        const shown = visibleEdits(entry.edits).length;
-        return [
-          shown
-            ? this.menuRow(
-                'slick_ml_hide_edits',
-                'Hide edit history',
-                () => this.hideEdits(entry, true),
-                onTriggerClose,
-              )
-            : null,
-          shown < (entry.edits?.length ?? 0)
-            ? this.menuRow(
-                'slick_ml_show_edits',
-                'Show edit history',
-                () => this.hideEdits(entry, false),
-                onTriggerClose,
-              )
-            : null,
-          entry.deleted
-            ? this.menuRow('slick_ml_accept_delete', 'Accept deletion', () => this.acceptDelete(entry), onTriggerClose)
-            : null,
-        ].filter((row) => row !== null);
-      }, [channelId, ts, onTriggerClose, version]);
-
-      return React.createElement(this.MenuRowsContext.Provider, { value: rows }, React.createElement(Original, props));
+    this.api.menu.addMessageActions(({ channelId, ts }) => {
+      const entry = channelId && ts ? this.entries.get(this.key(channelId, ts)) : undefined;
+      if (!entry) return [];
+      const shown = visibleEdits(entry.edits).length;
+      return [
+        ...(shown
+          ? [{ id: 'slick_ml_hide_edits', name: 'Hide edit history', onSelect: () => this.hideEdits(entry, true) }]
+          : []),
+        ...(shown < (entry.edits?.length ?? 0)
+          ? [{ id: 'slick_ml_show_edits', name: 'Show edit history', onSelect: () => this.hideEdits(entry, false) }]
+          : []),
+        ...(entry.deleted
+          ? [{ id: 'slick_ml_accept_delete', name: 'Accept deletion', onSelect: () => this.acceptDelete(entry) }]
+          : []),
+      ];
     });
-
-    this.api.patchComponent<MenuProps>('Menu', (Original) => (props) => {
-      const rows = React.useContext(this.MenuRowsContext);
-      if (!rows.length) return React.createElement(Original, props);
-      // Empty the context below so submenus (each its own `Menu`) don't get the rows.
-      return React.createElement(
-        this.MenuRowsContext.Provider,
-        { value: [] },
-        React.createElement(Original, props, props.children, rows),
-      );
-    });
-  }
-
-  /** Slack's `MenuItem` isn't addressable by name, so this mimics its markup; the classes are the contract. */
-  private menuRow(key: string, label: string, click: () => void, close?: (event?: unknown) => void) {
-    const React = this.api.react;
-    return React.createElement(
-      'div',
-      { key, className: 'c-menu_item__li', role: 'presentation' },
-      React.createElement(
-        'button',
-        {
-          type: 'button',
-          role: 'menuitem',
-          className: 'c-menu_item__button',
-          'data-qa': key,
-          onClick: () => {
-            click();
-            close?.();
-          },
-        },
-        React.createElement('div', { className: 'c-menu_item__label' }, label),
-      ),
-    );
   }
 
   private hideEdits(entry: LogEntry, hidden: boolean) {

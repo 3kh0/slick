@@ -1,7 +1,8 @@
 // Owns its menu markup rather than depend on the unverified props of Slack's
 // private MenuFromTemplate.
 
-import { reactReady } from '../slack/react.tsx';
+import { patchComponent, reactReady } from '../slack/react.tsx';
+import { reduxReady } from '../slack/redux.ts';
 import type { MenuTemplateItem } from './elements.ts';
 
 export type { MenuTemplateItem };
@@ -13,8 +14,69 @@ export type MenuProps = {
   children?: React.ReactNode;
 };
 
+export type MessageMenuContext = { channelId?: string; ts?: string; threadTs?: string };
+export type MessageMenuAction = { id: string; name: string; icon?: string; 'data-qa'?: string; onSelect: () => void };
+type MessageMenuProps = MessageMenuContext & {
+  actions?: (Record<string, any> & { id?: string; submenuActions?: Record<string, any>[] })[][];
+  slickMessageActionsHandled?: boolean;
+  autoClogProps?: { uiComponentName?: string };
+  onSelectAction?: (...args: any[]) => unknown;
+  onTriggerClose?: (event?: unknown) => void;
+};
+const messageActions = new Set<(context: MessageMenuContext) => MessageMenuAction[]>();
+
+function addMessageActions(provider: (context: MessageMenuContext) => MessageMenuAction[]): () => void {
+  messageActions.add(provider);
+  return () => {
+    messageActions.delete(provider);
+  };
+}
+
+function getMessageActions(context: MessageMenuContext): MessageMenuAction[] {
+  const actions = new Map<string, MessageMenuAction>();
+  for (const provider of messageActions) {
+    try {
+      for (const action of provider(context))
+        actions.set(action.id, { ...action, 'data-qa': action['data-qa'] ?? action.id });
+    } catch (error) {
+      console.error('[slick] message menu provider failed:', error);
+    }
+  }
+  return [...actions.values()];
+}
+
 export const menuReady = (async () => {
   await reactReady;
+  const { usePatchVersion } = await reduxReady;
+  patchComponent<MessageMenuProps>('MAMenu', (Original) => (props) => {
+    usePatchVersion();
+    const { slickMessageActionsHandled, ...nativeProps } = props;
+    const custom = getMessageActions(props);
+    if (!custom.length || !Array.isArray(props.actions)) return <Original {...nativeProps} />;
+    const ids = new Set(
+      props.actions.flat().flatMap((action) => [action.id, ...(action.submenuActions ?? []).map((child) => child.id)]),
+    );
+    const added =
+      slickMessageActionsHandled || props.autoClogProps?.uiComponentName !== 'message_actions_menu'
+        ? []
+        : custom.filter((action) => !ids.has(action.id));
+    return (
+      <Original
+        {...nativeProps}
+        actions={added.length ? [...props.actions, added] : props.actions}
+        onSelectAction={(event, action, ...rest) => {
+          const selected = custom.find((item) => item.id === action.id);
+          if (!selected) return props.onSelectAction?.(event, action, ...rest);
+          try {
+            selected.onSelect();
+          } finally {
+            props.onTriggerClose?.(event);
+          }
+          return true;
+        }}
+      />
+    );
+  });
 
   function Menu({ template, position, children }: MenuProps) {
     const [open, setOpen] = React.useState(false);
@@ -141,7 +203,7 @@ export const menuReady = (async () => {
     );
   }
 
-  return { Menu };
+  return { Menu, addMessageActions, getMessageActions };
 })();
 
 export type MenuAPI = Awaited<typeof menuReady>;
