@@ -15,6 +15,11 @@ on:
       # The sync PR has already built these pins; merging it needs no second sync.
       - '!packaging/nix/pins.json'
   workflow_dispatch:
+    inputs:
+      dry-run:
+        description: Validate pins without opening or updating a PR
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -50,6 +55,7 @@ jobs:
         run: bash scripts/ci/sync-nix-pins.sh "$(jq -r .build "$PINS")"
 
       - uses: peter-evans/create-pull-request@v8
+        if: inputs.dry-run != true
         with:
           author: 'github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>'
           committer: 'github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>'
