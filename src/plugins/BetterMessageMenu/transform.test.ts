@@ -66,8 +66,8 @@ test('default config reproduces the image-2 layout on an own message', () => {
   const org = find(out, 'organize_actions_menu');
   const kids = (org?.submenuActions ?? []).map((d) => d.id);
   assert.ok(kids.includes('pin') && kids.includes('mark_unread') && kids.includes('later'));
-  // subscribe promoted to UNSUBSCRIBE; unknown shortcut survives
-  assert.equal(find(out, 'subscribe')?.name, 'UNSUBSCRIBE');
+  // Native notification labels and unknown shortcuts survive.
+  assert.equal(find(out, 'subscribe')?.name, 'Turn off notifications for replies');
   assert.ok(find(out, 'some_app_shortcut'));
 });
 

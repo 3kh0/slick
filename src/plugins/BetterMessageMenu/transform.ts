@@ -16,8 +16,6 @@ const ORGANIZE = 'organize_actions_menu';
 function labelFor(id: string, descriptor: Descriptor, big: boolean, label?: string): unknown {
   if (label?.trim()) return label.trim();
   if (big && BIG_LABEL[id]) return BIG_LABEL[id];
-  if (!big && id === 'subscribe' && typeof descriptor.name === 'string' && /turn off/i.test(descriptor.name))
-    return 'UNSUBSCRIBE';
   return descriptor.name;
 }
 
