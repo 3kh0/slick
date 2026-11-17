@@ -71,6 +71,11 @@ test('attribution handles existing blocks, file comments, plaintext, and long Un
   const block = { type: 'section', text: { type: 'mrkdwn', text: 'Keep this' } };
   const existing = attributeMessage('chat.postMessage', { blocks: JSON.stringify([block]) });
   assert.deepEqual(existing.blocks[0], block);
+  const legacy = attributeMessage('chat.postMessage', {
+    blocks: [{ type: 'context', elements: [{ type: 'mrkdwn', text: MCP_ATTRIBUTION.replaceAll('*', '') }] }],
+  });
+  assert.equal(legacy.blocks.length, 1);
+  assert.equal(legacy.blocks[0].elements[0].text, MCP_ATTRIBUTION);
   const mixed = attributeMessage('chat.postMessage', {
     blocks: [
       {

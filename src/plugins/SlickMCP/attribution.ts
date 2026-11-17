@@ -1,4 +1,4 @@
-export const MCP_ATTRIBUTION = 'Sent via <https://slickclient.net/|SlickMCP>';
+export const MCP_ATTRIBUTION = '*Sent via <https://slickclient.net/|SlickMCP>*';
 const messageMethods = new Set(['chat.postMessage', 'chat.postEphemeral', 'chat.scheduleMessage', 'chat.update']);
 
 function textBlocks(text: string, plain: boolean): Record<string, unknown>[] {
@@ -32,7 +32,10 @@ export function attributeMessage(method: string, params: Record<string, any>): R
       throw new Error('Message blocks must be an array');
     blocks = parsed.flatMap((block) => {
       if (block.type !== 'context' || !Array.isArray(block.elements)) return [block];
-      const elements = block.elements.filter((element: any) => element.text !== MCP_ATTRIBUTION);
+      const elements = block.elements.filter(
+        (element: any) =>
+          typeof element.text !== 'string' || element.text.replaceAll('*', '') !== MCP_ATTRIBUTION.replaceAll('*', ''),
+      );
       return elements.length ? [{ ...block, elements }] : [];
     });
   } else if (typeof params.markdown_text === 'string') {
