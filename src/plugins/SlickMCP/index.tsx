@@ -3,6 +3,9 @@ import { getActiveTeam, readLocalConfig } from '../../app/slack/localConfig.ts';
 import type { ConnectionStatus } from './connection.ts';
 import * as meta from './meta.ts';
 import { AgentFeatures, rendererActions } from './renderer.ts';
+import { attributeMessage } from './attribution.ts';
+import { ToolControls } from './toolControls.tsx';
+import type { ToolAccessState } from './toolAccess.ts';
 
 export default class SlickMCP extends SlickPlugin<typeof meta.settings> {
   static readonly id = meta.id;
@@ -12,9 +15,10 @@ export default class SlickMCP extends SlickPlugin<typeof meta.settings> {
   static readonly defaultEnabled = meta.defaultEnabled;
   static readonly settings = meta.settings;
   static readonly requiredAPIs = ['redux', 'rtm'] as const;
-  static readonly liveSettings = ['port'] as const;
+  static readonly liveSettings = ['port', 'messageAttribution'] as const;
 
   private status = new this.api.Store<ConnectionStatus>({ state: 'starting', url: '', error: null });
+  private toolAccess = new this.api.Store<ToolAccessState>({ tools: [], disabled: [] });
   private refs = new Map<string, HTMLElement>();
   private snapshot = 0;
   private features = new AgentFeatures(this.api);
@@ -25,7 +29,35 @@ export default class SlickMCP extends SlickPlugin<typeof meta.settings> {
       .slick-mcp-settings p { margin: 0; line-height: 1.5; }
       .slick-mcp-settings h3 { margin: 6px 0 -8px; font-size: 15px; }
       .slick-mcp-settings code { user-select: all; }
+      .slick-mcp-tools { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+      .slick-mcp-tools h3, .slick-mcp-tools p { margin: 0; }
+      .slick-mcp-tools__toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+      .slick-mcp-tools__search { position: relative; flex: 1 1 240px; min-width: 180px; }
+      .slick-mcp-tools__search .c-input_text { width: 100%; height: 38px; margin: 0; padding: 8px 34px; border: 1px solid var(--dt_color-otl-sec, #555); border-radius: 8px; background: var(--dt_color-base-pry, transparent); color: var(--dt_color-content-pry, inherit); font: inherit; appearance: none; }
+      .slick-mcp-tools__search .c-input_text::placeholder { color: var(--dt_color-content-ter, #888); }
+      .slick-mcp-tools__search .c-input_text::-webkit-search-cancel-button { appearance: none; }
+      .slick-mcp-tools__search-icon { position: absolute; width: 18px; height: 18px; top: 10px; left: 11px; color: var(--dt_color-content-ter, #888); pointer-events: none; }
+      .slick-mcp-tools__clear { position: absolute; right: 7px; top: 5px; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 5px; background: none; color: var(--dt_color-content-sec, inherit); font-size: 22px; cursor: pointer; }
+      .slick-mcp-tools__clear:hover { background: var(--dt_color-base-sec, #222); }
+      .slick-mcp-tools__presets { display: flex; gap: 6px; flex-wrap: wrap; }
+      .slick-mcp-tools__list { display: block; flex: 0 0 auto; max-height: 420px; overflow-y: auto; overscroll-behavior-y: contain; scrollbar-gutter: stable; }
+      .slick-mcp-tools__group + .slick-mcp-tools__group { margin-top: 10px; }
+      .slick-mcp-tools__group { border: 1px solid var(--sk_foreground_low, #444); border-radius: 8px; overflow: hidden; }
+      .slick-mcp-tools__group summary { cursor: pointer; padding: 12px 14px; font-weight: 700; }
+      .slick-mcp-tools__group summary span { font-weight: 400; margin-left: 8px; color: var(--sk_foreground_max_solid, #aaa); }
+      .slick-mcp-tools__row { display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 12px 14px; border-top: 1px solid var(--sk_foreground_low, #444); cursor: pointer; }
+      .slick-mcp-tools__row > span:first-child { min-width: 0; overflow-wrap: anywhere; }
+      .slick-mcp-tools__row .c-switch { flex-shrink: 0; }
+      .slick-mcp-tools__description { display: block; margin-top: 4px; font-size: 13px; line-height: 1.4; color: var(--sk_foreground_max_solid, #aaa); }
     `);
+    this.api.settings.panel(() => <ToolControls state={this.toolAccess.use()} save={this.saveTools} />);
+    this.api.main.on('tools', (state) => this.toolAccess.set(state as ToolAccessState));
+    void this.api.main
+      .call<ToolAccessState>('tools')
+      .then((state) => {
+        if (this.api.isActive()) this.toolAccess.set(state);
+      })
+      .catch(() => {});
     this.api.main.on('status', (status) => this.status.set(status as ConnectionStatus));
     void this.api.main
       .call<ConnectionStatus>('status')
@@ -37,6 +69,11 @@ export default class SlickMCP extends SlickPlugin<typeof meta.settings> {
       });
     this.api.settings.addTab({ label: 'Slick MCP', icon: 'code', render: () => <this.Panel /> });
   }
+
+  private saveTools = async (disabled: string[]) => {
+    const state = await this.api.main.call<ToolAccessState>('setTools', disabled);
+    if (this.api.isActive()) this.toolAccess.set(state);
+  };
 
   stop() {
     this.features.stop();
@@ -69,8 +106,11 @@ export default class SlickMCP extends SlickPlugin<typeof meta.settings> {
       );
     }
     if (action === 'api') {
+      const outgoing = this.config.messageAttribution
+        ? attributeMessage(args.method, args.params ?? {})
+        : (args.params ?? {});
       const params = Object.fromEntries(
-        Object.entries(args.params ?? {})
+        Object.entries(outgoing)
           .filter(([, value]) => value !== undefined)
           .map(([key, value]) => [key, typeof value === 'string' ? value : JSON.stringify(value)]),
       );
@@ -202,6 +242,7 @@ export default class SlickMCP extends SlickPlugin<typeof meta.settings> {
 
   private Panel = () => {
     const status = this.status.use();
+    const tools = this.toolAccess.use();
     const [notice, setNotice] = React.useState('');
     const [busy, setBusy] = React.useState(false);
     const act = async (method: string, format?: string) => {
@@ -268,6 +309,7 @@ export default class SlickMCP extends SlickPlugin<typeof meta.settings> {
           </button>
         </div>
         {notice && <p role="status">{notice}</p>}
+        <ToolControls state={tools} save={this.saveTools} />
         <h3>Available to your agent</h3>
         <p>
           Search messages and files; read channels, threads, profiles, and reactions; send, schedule, edit, or delete

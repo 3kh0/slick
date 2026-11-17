@@ -4,6 +4,12 @@ import { addAdvancedTools } from './advancedTools.ts';
 import type { OperationStore } from './operations.ts';
 import { addProtocolFeatures } from './protocol.ts';
 import { addExtraTools } from './extraTools.ts';
+import type { AgentTool } from './toolAccess.ts';
+
+export type AgentToolOptions = {
+  isToolEnabled?: (name: string) => boolean;
+  onTool?: (tool: AgentTool) => void;
+};
 
 export type OperationScope = { workspace_id: string; user_id: string };
 export type AgentBackend = (
@@ -47,12 +53,16 @@ function result(value: unknown): CallToolResult {
   return { content: [{ type: 'text', text: encoded }], structuredContent: { data: value ?? null } };
 }
 
-export async function createAgentServer(backend: AgentBackend, operations?: OperationStore): Promise<McpServer> {
+export async function createAgentServer(
+  backend: AgentBackend,
+  operations?: OperationStore,
+  options: AgentToolOptions = {},
+): Promise<McpServer> {
   const server = new McpServer(
     { name: 'Slick MCP', version: '1.0.0' },
     {
       cacheHints: {
-        'tools/list': { ttlMs: 300000, cacheScope: 'private' },
+        'tools/list': { ttlMs: 0, cacheScope: 'private' },
         'prompts/list': { ttlMs: 300000, cacheScope: 'private' },
         'resources/read': { ttlMs: 0, cacheScope: 'private' },
       },
@@ -66,8 +76,9 @@ export async function createAgentServer(backend: AgentBackend, operations?: Oper
     shape: z.ZodRawShape,
     readOnly: boolean,
     run: (args: Record<string, any>, signal: AbortSignal) => Promise<unknown>,
-  ) =>
-    server.registerTool(
+  ) => {
+    options.onTool?.({ name, description, readOnly });
+    const tool = server.registerTool(
       name,
       {
         description,
@@ -114,6 +125,7 @@ export async function createAgentServer(backend: AgentBackend, operations?: Oper
               }, 5000);
         timer?.unref();
         try {
+          if (options.isToolEnabled?.(name) === false) throw new Error(`Tool disabled in SlickMCP settings: ${name}`);
           const { operation_id, ...writeParams } = args;
           const params = readOnly ? args : writeParams;
           const signal = context.mcpReq.signal;
@@ -150,6 +162,9 @@ export async function createAgentServer(backend: AgentBackend, operations?: Oper
         }
       },
     );
+    if (options.isToolEnabled?.(name) === false) tool.disable();
+    return tool;
+  };
   const api = (method: string, args: Record<string, unknown>, signal: AbortSignal) => {
     const { window_id, __scope, ...params } = args;
     return backend('api', { window_id, __scope, method, params }, signal);

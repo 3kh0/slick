@@ -10,6 +10,14 @@ The server binds only to IPv4 loopback, requires a bearer token, checks the Host
 
 Connected agents have your Slack access, including private conversations and outward actions. Tools can send or delete messages, create channels, modify settings, and use the UI. Only connect clients you trust. Existing Slack permissions and rate limits still apply. A timeout is not proof that an action failed: check Slack before retrying a write.
 
+## Tool access and message attribution
+
+Use **Exposed tools** on the plugin detail page or the Slick MCP tab to search the full tool catalog and enable individual tools. **All**, **Read-only**, and **None** are shortcuts; save your selection to apply it across every workspace and connected agent. Saving restarts the local server without changing its token. Reconnect clients that cache the catalog. Disabled tools are absent from discovery and rejected if a client tries a cached tool name. Once you customize access, tools added by future Slick updates stay off until you enable them.
+
+API, JavaScript, and desktop controls are broad tools that can perform actions covered by other tools. Turn them off too when restricting actions. These controls select MCP tools, not individual Slack API methods or page capabilities. Read-only resources remain available independently of tool selection.
+
+**Attribute agent messages** is on by default. Message posts, replies, scheduled messages, edits, and shared file comments sent through the MCP message/API tools include a small linked **Sent via SlickMCP** context footer. Existing blocks and file contents are preserved. Private file uploads are unchanged. Arbitrary page JavaScript, Redux actions, and UI interactions do not pass through the message API formatter.
+
 ## Tools
 
 The focused tools take inspiration from [Slack's official MCP server](https://docs.slack.dev/ai/slack-mcp-server/):

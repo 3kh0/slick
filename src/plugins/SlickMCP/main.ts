@@ -5,9 +5,12 @@ import { serialQueue } from '../../shared/queue.ts';
 import { connectionConfig, type ConnectionStatus } from './connection.ts';
 import { executionScript } from './execution.ts';
 import { id } from './meta.ts';
+import { toolNames, type AgentTool, type ToolAccessState } from './toolAccess.ts';
 
 let status: ConnectionStatus = { state: 'stopped', url: '', error: null };
 let token = '';
+let toolAccess: ToolAccessState | undefined;
+let configureTools: ((value: unknown) => Promise<ToolAccessState>) | undefined;
 let rotate: (() => Promise<void>) | undefined;
 
 function clients() {
@@ -48,7 +51,17 @@ export default {
     const { startMcpServer } = await import('./server.ts');
     const { downloadSlackFile, uploadSlackFile } = await import('./transfers.ts');
     const { OperationStore } = await import('./operations.ts');
+    const { createAgentServer } = await import('./tools.ts');
     const operations = await OperationStore.load(ctx.storage);
+    const catalog: AgentTool[] = [];
+    const catalogServer = await createAgentServer(async () => null, operations, {
+      onTool: (tool) => catalog.push(tool),
+    });
+    await catalogServer.close();
+    const saved = await ctx.storage.read('enabled-tools');
+    const allowed = saved ? new Set(toolNames(JSON.parse(saved), catalog)) : null;
+    let disabled = new Set(catalog.filter((tool) => allowed && !allowed.has(tool.name)).map((tool) => tool.name));
+    toolAccess = { tools: catalog, disabled: [...disabled] };
     const enqueue = serialQueue();
     const controller = new AbortController();
     let current: Awaited<ReturnType<typeof startMcpServer>> | undefined;
@@ -173,6 +186,7 @@ export default {
             });
           },
           operations,
+          { isToolEnabled: (name) => !disabled.has(name) },
         );
         status = { state: 'listening', url: current.url, error: null };
       } catch (error) {
@@ -192,6 +206,23 @@ export default {
         await renew();
         await start();
       });
+    configureTools = (value) =>
+      enqueue(async () => {
+        const next = toolNames(value, catalog);
+        if (
+          !(await ctx.storage.write(
+            'enabled-tools',
+            JSON.stringify(catalog.filter((tool) => !next.includes(tool.name)).map((tool) => tool.name)),
+          ))
+        )
+          throw new Error('Could not save tool access');
+        disabled = new Set(next);
+        toolAccess = { tools: catalog, disabled: next };
+        ctx.emit('tools', toolAccess);
+        await start();
+        return toolAccess;
+      });
+    ctx.emit('tools', toolAccess);
     let port = ctx.settings.port;
     const removeSettings = ctx.onSettingsChange((settings) => {
       if (settings.port === port) return;
@@ -204,6 +235,8 @@ export default {
       controller.abort();
       removeSettings();
       rotate = undefined;
+      configureTools = undefined;
+      toolAccess = undefined;
       await enqueue(async () => {
         await current?.close();
         current = undefined;
@@ -214,6 +247,13 @@ export default {
     };
   },
   rpc: {
+    tools() {
+      return toolAccess ?? { tools: [], disabled: [] };
+    },
+    async setTools(_ctx, [disabled]) {
+      if (!configureTools) throw new Error('Slick MCP is not running');
+      return configureTools(disabled);
+    },
     status() {
       return status;
     },

@@ -10,29 +10,39 @@ import {
 } from '@modelcontextprotocol/server';
 import { toNodeHandler } from '@modelcontextprotocol/node';
 import { OperationStore } from './operations.ts';
-import { createAgentServer, type AgentBackend } from './tools.ts';
+import { createAgentServer, type AgentBackend, type AgentToolOptions } from './tools.ts';
 
-export async function startMcpServer(port: number, token: string, backend: AgentBackend, receipts?: OperationStore) {
+export async function startMcpServer(
+  port: number,
+  token: string,
+  backend: AgentBackend,
+  receipts?: OperationStore,
+  toolOptions: AgentToolOptions = {},
+) {
   if (token.length < 32) throw new Error('MCP connection token is missing or too short');
   const operations = receipts ?? (await OperationStore.load());
   const requests = new AsyncLocalStorage<AbortSignal>();
   const lifetime = new AbortController();
   const factory = (sessionSignal?: AbortSignal) =>
-    createAgentServer((action, args, signal) => {
-      const request = requests.getStore();
-      const { __scope, ...params } = args;
-      return backend(
-        action,
-        params,
-        AbortSignal.any([
-          signal,
-          lifetime.signal,
-          ...(request ? [request] : []),
-          ...(sessionSignal ? [sessionSignal] : []),
-        ]),
-        __scope as import('./tools.ts').OperationScope | undefined,
-      );
-    }, operations);
+    createAgentServer(
+      (action, args, signal) => {
+        const request = requests.getStore();
+        const { __scope, ...params } = args;
+        return backend(
+          action,
+          params,
+          AbortSignal.any([
+            signal,
+            lifetime.signal,
+            ...(request ? [request] : []),
+            ...(sessionSignal ? [sessionSignal] : []),
+          ]),
+          __scope as import('./tools.ts').OperationScope | undefined,
+        );
+      },
+      operations,
+      toolOptions,
+    );
   const handler = createMcpHandler(() => factory(), { legacy: 'reject', maxRequestBodySize: 1024 * 1024 });
   type Session = {
     server: McpServer;

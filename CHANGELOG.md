@@ -6,6 +6,10 @@ In a PR that changes something users will notice, add a line under **Unreleased*
 
 ## Unreleased
 
+### New
+
+- SlickMCP lets you choose exposed tools and adds linked attribution to agent messages.
+
 ## Build 158
 
 ### Fixed
