@@ -581,7 +581,4 @@ jobs:
       contents: read
       pages: write
       id-token: write
-    with:
-      tag: ${{ github.ref_name }}
-      ref: ${{ needs.prepare.outputs.sha }}
     secrets: inherit

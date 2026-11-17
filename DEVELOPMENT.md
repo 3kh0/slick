@@ -204,7 +204,7 @@ The repo installers (`./install.sh`, `./install-linux.sh`, or `powershell -Execu
 
 Push a new `v<N>` tag from the commit to release. The Release workflow files its changelog entries, syncs and builds the Nix pins, and runs the checks before making a release commit and moving the tag to it. It then starts packaging from that prepared tag, so every distribution and source archive contains the same changelog and pins. No maintenance PRs need merging afterward; the preparation commit lives on the tag rather than protected `main`.
 
-The initial tag push is a release request. Fetch its final target with `git fetch origin tag v<N> --force` after preparation. Published releases are never retagged. To retry packaging, run Release on the prepared tag; to retry preparation, rerun the original tag-push workflow. Flatpak can still be dispatched separately for a backfill.
+The initial tag push is a release request. Fetch its final target with `git fetch origin tag v<N> --force` after preparation. Published releases are never retagged. To retry packaging, run Release on the prepared tag; to retry preparation, rerun the original tag-push workflow. Flatpak can still be dispatched separately by selecting a release tag under Run workflow.
 
 ## common bullshit
 

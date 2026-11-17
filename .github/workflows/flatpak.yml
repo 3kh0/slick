@@ -2,19 +2,7 @@ name: Flatpak repository
 
 on:
   workflow_call:
-    inputs:
-      tag:
-        required: true
-        type: string
-      ref:
-        required: true
-        type: string
   workflow_dispatch:
-    inputs:
-      tag:
-        description: Release tag to publish
-        required: true
-        type: string
 
 permissions:
   contents: read
@@ -35,42 +23,22 @@ jobs:
       ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
       FLATPAK_BUILD_DIR: /tmp/slick-flatpak-build
       FLATPAK_REPO: /tmp/slick-flatpak-repo
-      RELEASE_TAG: ${{ inputs.tag }}
+      RELEASE_TAG: ${{ github.ref_name }}
     steps:
-      - name: Resolve release source
-        id: source
-        env:
-          GH_TOKEN: ${{ github.token }}
-          SOURCE_SHA: ${{ inputs.ref }}
-        run: |
-          if [[ ! "$RELEASE_TAG" =~ ^v[1-9][0-9]*$ ]]; then
-            echo "release tag must be v<N>" >&2
-            exit 1
-          fi
-          sha="$(gh api "repos/$GITHUB_REPOSITORY/commits/refs/tags/$RELEASE_TAG" --jq .sha)"
-          if [[ ! "$sha" =~ ^[0-9a-f]{40}$ || ( -n "$SOURCE_SHA" && "$sha" != "$SOURCE_SHA" ) ]]; then
-            echo "release tag does not match its prepared source" >&2
-            exit 1
-          fi
-          echo "sha=$sha" >> "$GITHUB_OUTPUT"
-      - uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
-          ref: ${{ steps.source.outputs.sha }}
-      - name: Use current packaging for a backfill
-        if: github.event_name == 'workflow_dispatch' && inputs.ref == ''
-        run: git checkout "$GITHUB_SHA" -- packaging/flatpak
-      - uses: oven-sh/setup-bun@v2
-
       - name: Read build number
         shell: bash
         run: |
           set -euo pipefail
-          if [[ ! "$RELEASE_TAG" =~ ^v[1-9][0-9]*$ ]]; then
-            echo "release tag must be v<N>, got '$RELEASE_TAG'" >&2
+          if [[ "$GITHUB_REF_TYPE" != tag || ! "$RELEASE_TAG" =~ ^v[1-9][0-9]*$ ]]; then
+            echo "Run this workflow on a release tag v<N>" >&2
             exit 1
           fi
           echo "SLICK_BUILD=${RELEASE_TAG#v}" >> "$GITHUB_ENV"
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          ref: ${{ github.sha }}
+      - uses: oven-sh/setup-bun@v2
 
       - name: Install build dependencies
         run: |
