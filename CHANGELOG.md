@@ -4,9 +4,6 @@ What changed for people using Slick, newest first. Slick shows this list in the 
 
 In a PR that changes something users will notice, add a line under **Unreleased**. Don't add anything chores, CI and dependency bumps, shit that people don't care about. Use `### New` and `### Fixed`, put an entry under `### Highlights` only when it is worth letting everyone know about, since Slick opens a What's new? popup for those. Leave the `## Build N` headings alone since a bot moves entries under them after each release.
 
-## Unreleased
-
-## Highlights
 
 - SlickMCP connects local AI agents to Slack with search, messaging, and desktop controls.
 
@@ -23,6 +20,8 @@ In a PR that changes something users will notice, add a line under **Unreleased*
 - Nix packages use Slack's matching Electron version to avoid the version mismatch dialog.
 - Chat Tabs: Option+Shift+Left/Right no longer switches tabs while you're typing in a message, so it selects by word again. The shortcut and this behaviour can be changed in settings.
 - ChatTabs keeps arrow shortcuts in the composer when your draft contains only emoji.
+
+## Unreleased
 
 ## Build 156
 
