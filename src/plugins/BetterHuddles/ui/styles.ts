@@ -1,4 +1,68 @@
 export const CALL_WINDOW_CSS = `
+.sbh-invite {
+  width: min(520px, calc(100vw - 32px));
+  box-sizing: border-box;
+  max-height: calc(100vh - 32px);
+  overflow: auto;
+  padding: 24px;
+  border: 1px solid var(--sbh-control-bg);
+  border-radius: 12px;
+  background: var(--sbh-stage-bg);
+  color: var(--sbh-control-text);
+  box-shadow: 0 12px 48px #0006;
+  font: inherit;
+}
+.sbh-invite::backdrop { background: #0008; }
+.sbh-invite-heading { display: flex; align-items: start; justify-content: space-between; gap: 12px; }
+.sbh-invite h2 { margin: 0; font-size: 22px; line-height: 1.3; }
+.sbh-invite-description { opacity: .8; margin: 12px 0 16px; }
+.sbh-invite-close, .sbh-invite-chip button {
+  display: inline-flex; align-items: center; justify-content: center; flex: none;
+  border: 0; border-radius: 4px; padding: 4px; background: transparent; color: inherit; cursor: pointer;
+}
+.sbh-invite-close:hover, .sbh-invite-chip button:hover { background: var(--sbh-control-hover); }
+.sbh-invite-current { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; font-size: 13px; }
+.sbh-invite-avatar-stack { display: inline-flex; padding-right: 5px; }
+.sbh-invite-avatar-stack .sbh-invite-avatar { width: 24px; height: 24px; margin-right: -5px; border: 2px solid var(--sbh-stage-bg); }
+.sbh-invite-avatar {
+  position: relative; display: inline-flex; align-items: center; justify-content: center;
+  width: 36px; height: 36px; flex: none; border-radius: 6px; overflow: hidden; color: #fff; font-size: 12px;
+}
+.sbh-invite-avatar img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.sbh-invite-search {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 6px; padding: 6px;
+  border: 1px solid var(--dt_color-otl-pry, #888); border-radius: 6px; cursor: text;
+}
+.sbh-invite-search:focus-within { outline: 2px solid var(--dt_color-content-hgl-1, #1d9bd1); outline-offset: 1px; }
+.sbh-invite-search input {
+  flex: 1 1 140px; min-width: 80px; width: 100%; padding: 5px; border: 0; outline: none;
+  background: transparent; color: inherit; font: inherit;
+}
+.sbh-invite-chip { display: inline-flex; align-items: center; gap: 5px; max-width: 100%; border-radius: 4px; padding: 3px; background: var(--sbh-control-bg); font-size: 13px; }
+.sbh-invite-chip > span:not(.sbh-invite-avatar) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sbh-invite-chip .sbh-invite-avatar { width: 22px; height: 22px; border-radius: 3px; }
+.sbh-invite-results-heading { font-size: 13px; margin: 20px 0 6px; opacity: .8; }
+.sbh-invite-results { height: 240px; overflow-y: auto; margin: 0 -8px; }
+.sbh-invite-results > p { padding: 0 8px; opacity: .8; }
+.sbh-invite-person {
+  display: flex; width: 100%; text-align: left; align-items: center; gap: 10px;
+  padding: 8px; border: 0; border-radius: 6px; background: transparent; color: inherit; font: inherit; cursor: pointer;
+}
+.sbh-invite-person:hover, .sbh-invite-person--active { background: var(--sbh-control-hover); }
+.sbh-invite-person:disabled { cursor: default; }
+.sbh-invite-person-text { display: grid; min-width: 0; flex: 1; }
+.sbh-invite-person-text > * { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sbh-invite-person-text > span { font-size: 13px; opacity: .7; }
+.sbh-invite-person-status { font-size: 12px; opacity: .7; }
+.sbh-invite-check { width: 17px; height: 17px; flex: none; border: 1px solid var(--dt_color-otl-pry, #888); border-radius: 4px; text-align: center; line-height: 17px; }
+.sbh-invite-check--selected { background: var(--dt_color-base-inv-hgl-1, #007a5a); color: #fff; border-color: transparent; }
+.sbh-invite-feedback { min-height: 24px; margin: 12px 0; font-size: 13px; }
+.sbh-invite-feedback p { margin: 0; }
+.sbh-invite-feedback [role="alert"] { color: var(--dt_color-content-imp, #e891a4); }
+.sbh-invite-actions { display: flex; align-items: center; flex-wrap: wrap; justify-content: flex-end; gap: 8px; padding-top: 16px; border-top: 1px solid var(--sbh-control-bg); }
+.sbh-invite-copy { display: inline-flex; align-items: center; gap: 6px; margin-right: auto; padding: 6px 0; border: 0; background: transparent; color: inherit; font: inherit; font-size: 13px; cursor: pointer; }
+.sbh-invite .sbh-invite-send { background: var(--dt_color-base-inv-hgl-1, #007a5a); color: #fff; }
+.sbh-invite button:disabled { opacity: .5; cursor: default; }
 .sbh-window {
   --sbh-stage-bg: var(--dt_color-base-pry, #1a1d21);
   --sbh-tile-bg: #000000;

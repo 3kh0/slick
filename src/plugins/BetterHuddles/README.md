@@ -4,6 +4,8 @@ Slack's normal preview and confirmation screens run first, including microphone,
 
 Calls open in a separate, movable desktop window by default, with a unified macOS header. Use **Move into Slack** to dock the call, or **Open in separate window** to detach it without reconnecting. **Open huddles as** defaults to a separate window. Floating panels and minimized audio bars inside Slack are opt-in choices in that setting, or in **Layout inside Slack** during a call. These views can be dragged, and floating panels can be resized. **Pop out** always opens a separate desktop window. Closing the separate window leaves the huddle.
 
+Use **Add people** in any call layout to find people by display name or real name, select multiple people, and send invitations. The picker shows profile pictures, suggested people, current participants, and invitation feedback. Arrow keys and Enter select search results; Backspace removes the last selection when the search is empty. **Copy huddle link** copies Slack’s own shareable link. Inviting someone does not add them to the conversation.
+
 ## Audio and themes
 
 The call follows the active Slack/Slick theme. **Huddle settings** in the call controls has separate **Microphone** and **Speaker** selectors; changes apply during the call and are remembered for the next one. A disconnected saved device falls back to the system default when joining. Switching microphones preserves mute.
