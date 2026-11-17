@@ -13,6 +13,7 @@ In a PR that changes something users will notice, add a line under **Unreleased*
 ### New
 
 - New docs for AI Agents working on Slick
+- BetterMessageMenu lets you reorder, rename, hide, and group message actions, with large buttons near the cursor and optional Vim navigation.
 
 ### Fixed
 
