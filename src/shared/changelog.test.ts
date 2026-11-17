@@ -41,6 +41,12 @@ test('parses releases, groups and wrapped items, and formats back', () => {
   assert.ok(hasHighlights(log.releases));
 });
 
+test('legacy second-level group headings retain all release entries', () => {
+  const legacy = FILE.replace('### Highlights', '## Highlights');
+  assert.deepEqual(parseChangelog(legacy), parseChangelog(FILE));
+  assert.match(formatChangelog(parseChangelog(legacy)), /### Highlights/);
+});
+
 test('a release build takes everything still unreleased', () => {
   const cut = cutChangelog(parseChangelog(FILE), [], 11);
   assert.deepEqual(

@@ -12,8 +12,7 @@
 }:
 
 let
-  # Kept current by .github/workflows/nix.yml: build follows the latest GitHub
-  # release, nodeModulesHash follows bun.lock, electron follows nixpkgs' Slack.
+  # Release preparation and nix.yml sync the build, dependencies and Slack runtime.
   pins = lib.importJSON ./pins.json;
   electron' = if electronPackage != null then electronPackage else pkgs."electron_${toString pins.electron}";
   build = toString pins.build;

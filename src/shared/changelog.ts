@@ -5,7 +5,7 @@ export type Changelog = { preamble: string; releases: ChangelogRelease[] };
 export const HIGHLIGHTS = 'Highlights';
 
 const RELEASE = /^##\s+(?:Build\s+([1-9]\d*)|(Unreleased))\s*$/i;
-const GROUP = /^###\s+(.+?)\s*$/;
+const GROUP = /^(?:###\s+(.+?)|##\s+(Highlights|New|Fixed))\s*$/;
 const ITEM = /^[-*]\s+(.*)$/;
 
 export function parseChangelog(markdown: string): Changelog {
@@ -29,15 +29,15 @@ export function parseChangelog(markdown: string): Changelog {
       preamble.push(line);
       continue;
     }
-    if (/^##\s/.test(line)) {
-      release = null;
-      continue;
-    }
     const title = GROUP.exec(line);
     if (title) {
-      group = { title: title[1], items: [] };
+      group = { title: title[1] || title[2], items: [] };
       release.groups.push(group);
       item = -1;
+      continue;
+    }
+    if (/^##\s/.test(line)) {
+      release = null;
       continue;
     }
     const bullet = ITEM.exec(line);

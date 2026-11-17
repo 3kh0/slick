@@ -6,7 +6,7 @@ In a PR that changes something users will notice, add a line under **Unreleased*
 
 ## Unreleased
 
-## Highlights
+### Highlights
 
 - SlickMCP connects local AI agents to Slack with search, messaging, and desktop controls.
 
@@ -16,6 +16,8 @@ In a PR that changes something users will notice, add a line under **Unreleased*
 - BetterMessageMenu lets you reorder, rename, hide, and group message actions, with large buttons near the cursor and optional Vim navigation.
 
 ### Fixed
+
+- Slick shows the latest release notes after updating.
 
 - Slick finds Slack installed as a Flatpak, including in a custom data directory.
 - WhoReacted uses each reaction's workspace to show profile pictures when switching workspaces.

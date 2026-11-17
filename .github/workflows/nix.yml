@@ -11,12 +11,15 @@ on:
       - flake.nix
       - flake.lock
       - packaging/nix/**
+      - scripts/ci/sync-nix-pins.sh
       # The sync PR has already built these pins; merging it needs no second sync.
       - '!packaging/nix/pins.json'
-  workflow_run:
-    workflows: [Release]
-    types: [completed]
   workflow_dispatch:
+    inputs:
+      dry-run:
+        description: Validate pins without opening or updating a PR
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -28,7 +31,6 @@ concurrency:
 
 jobs:
   sync:
-    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     env:
       PINS: packaging/nix/pins.json
@@ -49,38 +51,11 @@ jobs:
           fi
           jq --argjson b "$build" '.build = $b' "$PINS" > pins.tmp && mv pins.tmp "$PINS"
 
-      # Slick runs under nixpkgs' Electron but loads Slack's native modules, so the
-      # majors must match. Slack's deb records its Electron version in lib/slack/version.
-      - name: Sync Electron with nixpkgs' Slack
-        env:
-          NIXPKGS_ALLOW_UNFREE: '1'
-        run: |
-          set -euo pipefail
-          slack="$(nix build --impure --no-link --print-out-paths \
-            --expr '(builtins.getFlake (toString ./.)).inputs.nixpkgs.legacyPackages.x86_64-linux.slack')"
-          major="$(sed 's/^v//; s/\..*//' "$slack/lib/slack/version")"
-          if [[ ! "$major" =~ ^[1-9][0-9]*$ ]]; then
-            echo "could not read Slack's Electron major from $slack/lib/slack/version" >&2
-            exit 1
-          fi
-          jq --argjson e "$major" '.electron = $e' "$PINS" > pins.tmp && mv pins.tmp "$PINS"
-
-      - name: Sync node_modules hash
-        run: |
-          set -euo pipefail
-          if nix build .#slick.nodeModules --no-link -L 2>&1 | tee build.log; then
-            exit 0
-          fi
-          got="$(grep -oP 'got:\s+\Ksha256-\S+' build.log)" || {
-            echo "node_modules failed for a reason other than a stale hash" >&2
-            exit 1
-          }
-          jq --arg h "$got" '.nodeModulesHash = $h' "$PINS" > pins.tmp && mv pins.tmp "$PINS"
-
-      - name: Build the package
-        run: nix build .#slick --no-link -L
+      - name: Sync and validate pins
+        run: bash scripts/ci/sync-nix-pins.sh "$(jq -r .build "$PINS")"
 
       - uses: peter-evans/create-pull-request@v8
+        if: inputs.dry-run != true
         with:
           author: 'github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>'
           committer: 'github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>'
