@@ -4,6 +4,18 @@
 type IconElement = ['path', { d: string }] | ['rect' | 'circle', Record<string, string>];
 
 const ICONS = {
+  link: [
+    [
+      'path',
+      {
+        d: 'M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71',
+      },
+    ],
+  ],
+  'user-plus': [
+    ['path', { d: 'M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M20 8v6M23 11h-6' }],
+    ['circle', { cx: '9', cy: '7', r: '4' }],
+  ],
   'message-square': [['path', { d: 'M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z' }]],
   mic: [
     ['path', { d: 'M12 19v3' }],

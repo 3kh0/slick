@@ -6,6 +6,7 @@ import * as meta from './meta.ts';
 import { loadPreferences, savePreferences } from './preferences.ts';
 import { readPreviewSelection, type PreviewSelection } from './preview.ts';
 import { openHuddleThread } from './huddleThread.ts';
+import { inviteHuddleMember, completeInviteSearch } from './huddleInvite.ts';
 import { callWithFallback, candidateTeams, readLocalConfigTeams, routeTeamId } from './slackApi.ts';
 import { closePreparedWindows, TAKEN_OVER_THUNKS, takeOverRequest } from './takeOver.ts';
 import { CallApp } from './ui/CallWindow.tsx';
@@ -249,6 +250,50 @@ export default class BetterHuddles extends SlickPlugin<typeof meta.settings> {
         void this.api.settings.set('layout', separate ? 'separate' : 'page');
       },
       call,
+      searchInviteMembers: async (query, channelId) => {
+        const results = await completeInviteSearch(
+          await this.api.redux.dispatchThunk('autocompleteMembers', {
+            query,
+            channelId,
+            enableBots: false,
+            enableBroadcastKeywords: false,
+            enableUserGroups: false,
+            limit: 20,
+            searcherKey: 'slick-huddle-invite',
+          }),
+        );
+        const membership = this.api.redux.getRawState()?.membership?.[channelId];
+        return results.map((member) => ({
+          ...member,
+          inChannel: membership?.[member.id]?.isKnown ? !!membership[member.id].isMember : undefined,
+        }));
+      },
+      inviteDescription: (channelId) => {
+        const channel = channels.getCachedChannel(channelId);
+        return channel?.is_private || channel?.is_group || channel?.is_im || channel?.is_mpim
+          ? 'People outside this private conversation can join the huddle, but may have restricted access to messages.'
+          : 'Invite anyone to this huddle. They’ll receive a notification to join.';
+      },
+      copyHuddleLink: async (roomId) => {
+        const current = call.state.get();
+        if (current.status !== 'connected' || current.roomId !== roomId) throw new Error('This huddle has ended.');
+        const result = await this.api.redux.dispatchThunk('getLink', {
+          channelId: current.channelId,
+          reason: 'huddle-copy-link',
+        });
+        if (call.state.get().roomId !== roomId || call.state.get().status !== 'connected')
+          throw new Error('This huddle has ended.');
+        if (typeof result?.link !== 'string' || !result.link.startsWith('https://'))
+          throw new Error('The huddle link is not available.');
+        await doc.defaultView!.navigator.clipboard.writeText(result.link);
+      },
+      inviteMember: (roomId, userId) =>
+        inviteHuddleMember({
+          getCall: call.state.get,
+          roomId,
+          userId,
+          notify: (args) => this.api.redux.dispatchThunk('notifyMember', args),
+        }),
       openThread: () =>
         openHuddleThread({
           getCall: call.state.get,

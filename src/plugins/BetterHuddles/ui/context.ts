@@ -4,6 +4,7 @@
 import type { SlackMember } from '$slick';
 import type { CallState, HuddleCall } from '../huddleCall.ts';
 import type { CallPreferences } from '../preferences.ts';
+import type { InviteMember } from '../huddleInvite.ts';
 
 export interface HuddleUiServices {
   useInlineLayout: () => 'page' | 'window' | 'minimized';
@@ -13,6 +14,10 @@ export interface HuddleUiServices {
   moveCall: (detached: boolean) => void;
   call: HuddleCall;
   openThread: () => Promise<void>;
+  searchInviteMembers: (query: string, channelId: string) => Promise<InviteMember[]>;
+  inviteDescription: (channelId: string) => string;
+  copyHuddleLink: (roomId: string) => Promise<void>;
+  inviteMember: (roomId: string, userId: string) => Promise<void>;
   /** Slick's `members.useMember` (a hook: same call order every render). */
   useMember: (userId: string) => SlackMember | undefined;
   /** "#general" / a DM partner's name for a conversation id. */
