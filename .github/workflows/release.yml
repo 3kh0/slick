@@ -5,6 +5,11 @@ on:
   push:
     tags: ['v*']
   workflow_dispatch:
+    inputs:
+      sync_published_tag:
+        description: Recover main from a published tag without retagging or packaging
+        type: string
+        default: ''
 
 permissions:
   contents: read
@@ -26,6 +31,14 @@ jobs:
       contents: write
       actions: write
     steps:
+      - name: Check main push credential
+        env:
+          RELEASE_PUSH_TOKEN: ${{ secrets.RELEASE_PUSH_TOKEN }}
+        run: |
+          if [[ -z "$RELEASE_PUSH_TOKEN" ]]; then
+            echo "RELEASE_PUSH_TOKEN is required to sync protected main and the release tag" >&2
+            exit 1
+          fi
       - name: Read build number
         id: version
         shell: bash
@@ -44,6 +57,7 @@ jobs:
         with:
           ref: ${{ github.ref }}
           fetch-depth: 0
+          token: ${{ secrets.RELEASE_PUSH_TOKEN }}
       - uses: actions/setup-node@v7
         with:
           node-version: '24'
@@ -55,7 +69,7 @@ jobs:
         run: bash scripts/ci/sync-nix-pins.sh "${{ steps.version.outputs.build }}"
       - run: bun install --frozen-lockfile
       - run: bun run check
-      - name: Commit release metadata and update tag
+      - name: Commit release metadata to main and update tag
         id: commit
         run: bash scripts/ci/commit-release.sh "$GITHUB_REF_NAME"
         env:
@@ -65,8 +79,41 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
 
+  sync-main:
+    if: github.event_name == 'workflow_dispatch' && inputs.sync_published_tag != ''
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      TAG: ${{ inputs.sync_published_tag }}
+      RELEASE_PUSH_TOKEN: ${{ secrets.RELEASE_PUSH_TOKEN }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Check recovery request
+        run: |
+          if [[ -z "$RELEASE_PUSH_TOKEN" || ! "$TAG" =~ ^v[1-9][0-9]*$ ]]; then
+            echo "A release push token and a v<N> published tag are required" >&2
+            exit 1
+          fi
+          gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" --jq .tag_name
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          token: ${{ secrets.RELEASE_PUSH_TOKEN }}
+      - name: Sync main and verify the published tag is unchanged
+        run: |
+          cp scripts/ci/commit-release.sh "$RUNNER_TEMP/commit-release.sh"
+          previous="$(git rev-parse "refs/tags/$TAG")"
+          git checkout --detach "refs/tags/$TAG"
+          bash "$RUNNER_TEMP/commit-release.sh" "$TAG"
+          git fetch --no-tags origin refs/heads/main:refs/remotes/origin/main
+          git merge-base --is-ancestor HEAD refs/remotes/origin/main
+          actual="$(git ls-remote origin "refs/tags/$TAG" | cut -f1)"
+          [[ "$actual" == "$previous" ]]
+
   prepare:
-    if: github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'workflow_dispatch' && inputs.sync_published_tag == ''
     runs-on: ubuntu-latest
     outputs:
       build: ${{ steps.version.outputs.build }}
