@@ -37,10 +37,26 @@ jobs:
       FLATPAK_REPO: /tmp/slick-flatpak-repo
       RELEASE_TAG: ${{ inputs.tag }}
     steps:
+      - name: Resolve release source
+        id: source
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_SHA: ${{ inputs.ref }}
+        run: |
+          if [[ ! "$RELEASE_TAG" =~ ^v[1-9][0-9]*$ ]]; then
+            echo "release tag must be v<N>" >&2
+            exit 1
+          fi
+          sha="$(gh api "repos/$GITHUB_REPOSITORY/commits/refs/tags/$RELEASE_TAG" --jq .sha)"
+          if [[ ! "$sha" =~ ^[0-9a-f]{40}$ || ( -n "$SOURCE_SHA" && "$sha" != "$SOURCE_SHA" ) ]]; then
+            echo "release tag does not match its prepared source" >&2
+            exit 1
+          fi
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
-          ref: ${{ inputs.ref || inputs.tag }}
+          ref: ${{ steps.source.outputs.sha }}
       - name: Use current packaging for a backfill
         if: github.event_name == 'workflow_dispatch' && inputs.ref == ''
         run: git checkout "$GITHUB_SHA" -- packaging/flatpak
