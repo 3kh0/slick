@@ -11,6 +11,10 @@ In a PR that changes something users will notice, add a line under **Unreleased*
 - NeutralPronouns can rewrite he/she pronouns and nearby verbs in messages you send.
 - SlickMCP adds tool controls, agent setup prompts, and linked message attribution.
 
+### Fixed
+
+- Slick’s settings credits include recent contributors.
+
 ## Build 158
 
 ### Fixed

@@ -813,7 +813,7 @@ const CONTRIBUTORS = [
   'SSoggyTacoMan',
   'hippogriff101',
   's-ajay-2010',
-  'code2344 ',
+  'code2344',
   'part-avocado',
   'Ghostboo124',
   'MilesWK',
@@ -834,6 +834,12 @@ const CONTRIBUTORS = [
   'Fantamomo',
   'LowPolyPhosphorus',
   'shuuji3',
+  'Devansh-awat',
+  'evan-gan',
+  'ingoau',
+  'SwiftDust',
+  'qwikster',
+  'JosTheDude',
 ];
 
 function LX({ href, children }: { href: string; children: React.ReactNode }) {
