@@ -8,7 +8,7 @@ In a PR that changes something users will notice, add a line under **Unreleased*
 
 ### New
 
-- SlickMCP lets you choose exposed tools and adds linked attribution to agent messages.
+- SlickMCP adds tool controls, agent setup prompts, and linked message attribution.
 
 ## Build 158
 

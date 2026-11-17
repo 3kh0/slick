@@ -5,6 +5,7 @@ import * as meta from './meta.ts';
 import { AgentFeatures, rendererActions } from './renderer.ts';
 import { attributeMessage } from './attribution.ts';
 import { ToolControls } from './toolControls.tsx';
+import { ConnectionControls } from './connectionControls.tsx';
 import type { ToolAccessState } from './toolAccess.ts';
 
 export default class SlickMCP extends SlickPlugin<typeof meta.settings> {
@@ -29,6 +30,13 @@ export default class SlickMCP extends SlickPlugin<typeof meta.settings> {
       .slick-mcp-settings p { margin: 0; line-height: 1.5; }
       .slick-mcp-settings h3 { margin: 6px 0 -8px; font-size: 15px; }
       .slick-mcp-settings code { user-select: all; }
+      .slick-mcp-customize, .slick-mcp-connection { display: flex; flex-direction: column; gap: 12px; }
+      .slick-mcp-customize { padding: 16px; gap: 24px; }
+      .slick-mcp-customize h3, .slick-mcp-customize p, .slick-mcp-connection h3, .slick-mcp-connection p { margin: 0; }
+      .slick-mcp-connection__status { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+      .slick-mcp-connection__status::before { content: ''; width: 8px; height: 8px; border-radius: 50%; background: var(--dt_color-content-ter, #888); }
+      .slick-mcp-connection__status[data-state="listening"]::before { background: var(--dt_color-content-positive, #2bac76); }
+      .slick-mcp-connection__status[data-state="error"]::before { background: var(--dt_color-content-negative, #e55); }
       .slick-mcp-tools { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
       .slick-mcp-tools h3, .slick-mcp-tools p { margin: 0; }
       .slick-mcp-tools__toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
@@ -50,7 +58,7 @@ export default class SlickMCP extends SlickPlugin<typeof meta.settings> {
       .slick-mcp-tools__row .c-switch { flex-shrink: 0; }
       .slick-mcp-tools__description { display: block; margin-top: 4px; font-size: 13px; line-height: 1.4; color: var(--sk_foreground_max_solid, #aaa); }
     `);
-    this.api.settings.panel(() => <ToolControls state={this.toolAccess.use()} save={this.saveTools} />);
+    this.api.settings.panel(() => <this.Customize />);
     this.api.main.on('tools', (state) => this.toolAccess.set(state as ToolAccessState));
     void this.api.main
       .call<ToolAccessState>('tools')
@@ -69,6 +77,23 @@ export default class SlickMCP extends SlickPlugin<typeof meta.settings> {
       });
     this.api.settings.addTab({ label: 'Slick MCP', icon: 'code', render: () => <this.Panel /> });
   }
+
+  private Customize = () => {
+    const status = this.status.use();
+    const tools = this.toolAccess.use();
+    return (
+      <div className="slick-mcp-customize">
+        <ConnectionControls status={status} action={this.connectionAction} />
+        <ToolControls state={tools} save={this.saveTools} />
+      </div>
+    );
+  };
+
+  private connectionAction = async (method: 'copy' | 'rotate', format?: 'json' | 'codex' | 'prompt') => {
+    const result = await this.api.main.call<ConnectionStatus | boolean>(method, ...(format ? [format] : []));
+    if (method === 'rotate') this.status.set(result as ConnectionStatus);
+    return result;
+  };
 
   private saveTools = async (disabled: string[]) => {
     const state = await this.api.main.call<ToolAccessState>('setTools', disabled);
@@ -243,24 +268,6 @@ export default class SlickMCP extends SlickPlugin<typeof meta.settings> {
   private Panel = () => {
     const status = this.status.use();
     const tools = this.toolAccess.use();
-    const [notice, setNotice] = React.useState('');
-    const [busy, setBusy] = React.useState(false);
-    const act = async (method: string, format?: string) => {
-      setBusy(true);
-      try {
-        const result = await this.api.main.call<ConnectionStatus | boolean>(method, ...(format ? [format] : []));
-        if (method === 'rotate') this.status.set(result as ConnectionStatus);
-        setNotice(
-          method === 'copy'
-            ? 'Connection configuration copied.'
-            : 'Connection token regenerated. Copy the new configuration to reconnect your agents.',
-        );
-      } catch (error) {
-        setNotice(error instanceof Error ? error.message : String(error));
-      } finally {
-        setBusy(false);
-      }
-    };
     return (
       <div className="slick-settings slick-mcp-settings">
         <h2 className="slick-settings__title">Slick MCP</h2>
@@ -272,43 +279,7 @@ export default class SlickMCP extends SlickPlugin<typeof meta.settings> {
           Connected agents can read private conversations and send or delete content as you. Only connect clients you
           trust. Turn off Slick MCP to disconnect them.
         </p>
-        <p role="status">
-          {status.state === 'listening' ? (
-            <>
-              Listening at <code>{status.url}</code>
-            </>
-          ) : (
-            (status.error ?? 'Starting the local server…')
-          )}
-        </p>
-        <p className="slick-settings__hint">
-          Copy the configuration into your agent’s MCP settings, then restart or reconnect the client. Slick must stay
-          open. The token is saved privately on this computer.
-        </p>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-          <button
-            className="c-button c-button--primary c-button--small"
-            disabled={busy || status.state !== 'listening'}
-            onClick={() => void act('copy', 'json')}
-          >
-            Copy JSON configuration
-          </button>
-          <button
-            className="c-button c-button--outline c-button--small"
-            disabled={busy || status.state !== 'listening'}
-            onClick={() => void act('copy', 'codex')}
-          >
-            Copy Codex configuration
-          </button>
-          <button
-            className="c-button c-button--outline c-button--small"
-            disabled={busy}
-            onClick={() => void act('rotate')}
-          >
-            Regenerate connection token
-          </button>
-        </div>
-        {notice && <p role="status">{notice}</p>}
+        <ConnectionControls status={status} action={this.connectionAction} />
         <ToolControls state={tools} save={this.saveTools} />
         <h3>Available to your agent</h3>
         <p>

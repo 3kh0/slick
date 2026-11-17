@@ -264,7 +264,7 @@ export default {
     },
     copy(_ctx, [format]) {
       if (status.state !== 'listening') throw new Error('Slick MCP is not listening');
-      if (format !== 'json' && format !== 'codex') throw new Error('Unknown connection format');
+      if (format !== 'json' && format !== 'codex' && format !== 'prompt') throw new Error('Unknown connection format');
       clipboard.writeText(connectionConfig(status.url, token, format));
       return true;
     },

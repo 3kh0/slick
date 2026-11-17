@@ -192,3 +192,16 @@ for (const mode of ['legacy', 'auto'] as const) {
     }
   });
 }
+
+test('agent setup prompts contain valid connection configuration and keep client setup instructions', async () => {
+  const { connectionConfig } = await import('./connection.ts');
+  const url = 'http://127.0.0.1:38465/mcp';
+  const token = 'test-token-with-"quotes"';
+  const json = connectionConfig(url, token, 'json');
+  const prompt = connectionConfig(url, token, 'prompt');
+  assert.ok(prompt.includes(json));
+  assert.equal(JSON.parse(json).mcpServers.slick.headers.Authorization, `Bearer ${token}`);
+  assert.match(prompt, /Keep the bearer token private/);
+  assert.match(prompt, /wait for my instructions/);
+  assert.match(connectionConfig(url, token, 'codex'), /\[mcp_servers.slick\]/);
+});
