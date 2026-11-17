@@ -35,6 +35,7 @@ export const PLUGINS = [
   'LocalTime',
   'MentionProfiles',
   'MessageLogger',
+  'NeutralPronouns',
   'Nicknames',
   'NoTrack',
   'NotShitMarkdown',
