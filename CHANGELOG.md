@@ -6,6 +6,10 @@ In a PR that changes something users will notice, add a line under **Unreleased*
 
 ## Unreleased
 
+### New
+
+- SlickMCP adds tool controls, agent setup prompts, and linked message attribution.
+
 ## Build 158
 
 ### Fixed

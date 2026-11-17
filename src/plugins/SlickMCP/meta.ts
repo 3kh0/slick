@@ -6,6 +6,12 @@ export const description = 'Connect local AI agents to Slack with search, messag
 export const category: PluginCategory = 'app';
 export const defaultEnabled = false;
 export const settings = {
+  messageAttribution: {
+    type: 'boolean',
+    label: 'Attribute agent messages',
+    default: true,
+    description: 'Add a linked “Sent via SlickMCP” note to messages sent through MCP message tools.',
+  },
   port: {
     type: 'number',
     label: 'Local server port',
