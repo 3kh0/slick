@@ -129,7 +129,7 @@ function releaseFixture(t: { after: (fn: () => void) => void }) {
   fs.writeFileSync(path.join(bin, 'gh'), '#!/bin/sh\nprintf "%s\\n" "${MOCK_RELEASES:-}"\n', { mode: 0o755 });
   fs.writeFileSync(
     path.join(bin, 'git'),
-    '#!/bin/sh\nif [ "$1" = push ] && [ "$2" = --atomic ] && [ -n "${RACE_MAIN:-}" ]; then\n  "$REAL_GIT" --git-dir="$REMOTE" update-ref refs/heads/main "$RACE_MAIN"\nfi\nexec "$REAL_GIT" "$@"\n',
+    '#!/bin/sh\nif [ "$1" = push ] && [ "$2" = --atomic ] && [ -n "${RACE_MAIN:-}" ]; then\n  "$REAL_GIT" --git-dir="$REMOTE" update-ref "${RACE_REF:-refs/heads/main}" "$RACE_MAIN"\nfi\nexec "$REAL_GIT" "$@"\n',
     { mode: 0o755 },
   );
   const env = {
@@ -231,4 +231,14 @@ test('branch protection rejection leaves the release tag untouched', (t) => {
   assert.notEqual(f.run().status, 0);
   assert.equal(f.ref('refs/heads/main'), main);
   assert.equal(f.ref('refs/tags/v159'), tag);
+});
+
+test('a concurrent tag change leaves main and the replacement tag untouched', (t) => {
+  const f = releaseFixture(t);
+  const original = f.ref('refs/heads/main');
+  f.prepare();
+  const result = f.run({ RACE_MAIN: original, RACE_REF: 'refs/tags/v159' });
+  assert.notEqual(result.status, 0);
+  assert.equal(f.ref('refs/heads/main'), original);
+  assert.equal(f.ref('refs/tags/v159'), original);
 });
