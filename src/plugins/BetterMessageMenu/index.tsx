@@ -115,6 +115,10 @@ export default class BetterMessageMenu extends SlickPlugin<typeof meta.settings>
       .slick-bmm-announcement { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
       .slick-bmm-handle { cursor: grab; user-select: none; touch-action: none; padding: 0 2px; color: var(--dt_color-content-sec, #9a9a9a); }
       .slick-bmm-handle:active { cursor: grabbing; }
+      .slick-bmm-label { display: flex; flex: 1; align-items: center; gap: 6px; min-width: 0; min-height: 28px; }
+      .slick-bmm-label > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .slick-bmm-rename { display: inline-flex; align-items: center; justify-content: center; flex: none; padding: 5px; border: 0; border-radius: 4px; background: transparent; color: inherit; opacity: .6; cursor: pointer; }
+      .slick-bmm-rename:hover, .slick-bmm-rename:focus-visible { opacity: 1; background: var(--dt_color-surf-pry-hover, #8882); }
       .slick-bmm-name { flex: 1; min-width: 0; padding: 4px 8px;
         border: 1px solid var(--dt_color-otl-ter); border-radius: 6px;
         background: var(--dt_color-base-pry, #fff); color: inherit; }

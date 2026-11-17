@@ -19,6 +19,88 @@ const GROUPS: { kind: Kind; title: string; hint: string }[] = [
   { kind: 'hidden', title: 'Hidden', hint: 'These actions stay hidden on every message.' },
 ];
 
+function ActionLabel({ item, rename }: { item: ItemConfig; rename: (label: string | undefined) => void }) {
+  const name = itemName(item);
+  const fallback = (item.big && BIG_LABEL[item.id]) || name;
+  const label = item.label?.trim() || fallback;
+  const [editing, setEditing] = React.useState(false);
+  const [draft, setDraft] = React.useState('');
+  const input = React.useRef<HTMLInputElement>(null);
+  const button = React.useRef<HTMLButtonElement>(null);
+  const active = React.useRef(false);
+  const restoreFocus = React.useRef(false);
+
+  React.useLayoutEffect(() => {
+    if (editing) {
+      input.current?.focus();
+      input.current?.select();
+    } else if (restoreFocus.current) {
+      restoreFocus.current = false;
+      button.current?.focus();
+    }
+  }, [editing]);
+
+  const finish = (save: boolean) => {
+    if (!active.current) return;
+    active.current = false;
+    if (save) rename(draft.trim() && draft.trim() !== fallback ? draft.trim() : undefined);
+    setEditing(false);
+  };
+
+  if (editing)
+    return (
+      <input
+        ref={input}
+        className="slick-bmm-name"
+        type="text"
+        aria-label={`Label for ${name}`}
+        value={draft}
+        placeholder={fallback}
+        onChange={(event) => setDraft(event.currentTarget.value)}
+        onBlur={() => finish(true)}
+        onKeyDown={(event) => {
+          if (event.key !== 'Enter' && event.key !== 'Escape') return;
+          event.preventDefault();
+          event.stopPropagation();
+          restoreFocus.current = true;
+          finish(event.key === 'Enter');
+        }}
+      />
+    );
+
+  return (
+    <span className="slick-bmm-label">
+      <span title={label}>{label}</span>
+      <button
+        ref={button}
+        type="button"
+        className="slick-bmm-rename"
+        aria-label={`Rename ${name}`}
+        title="Rename"
+        onClick={() => {
+          setDraft(label);
+          active.current = true;
+          setEditing(true);
+        }}
+      >
+        <svg
+          width="14"
+          height="14"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden="true"
+        >
+          <path d="m16 3 5 5M3 21l5-1L21 7a3.5 3.5 0 0 0-5-5L3 15z" />
+        </svg>
+      </button>
+    </span>
+  );
+}
+
 export function MenuEditor({ plugin }: { plugin: EditorHost }) {
   const saved = plugin.store.use();
   const [preview, setPreview] = React.useState<ItemConfig[] | null>(null);
@@ -173,14 +255,7 @@ export function MenuEditor({ plugin }: { plugin: EditorHost }) {
                           ↓
                         </button>
                       </span>
-                      <input
-                        className="slick-bmm-name"
-                        type="text"
-                        value={item.label ?? ''}
-                        placeholder={(item.big && BIG_LABEL[item.id]) || name}
-                        aria-label={`Label for ${name}`}
-                        onChange={(event) => patch(item.id, { label: event.currentTarget.value || undefined })}
-                      />
+                      <ActionLabel item={item} rename={(label) => patch(item.id, { label })} />
                       <select
                         className="slick-bmm-kind"
                         value={automatic ? 'auto' : kind}
