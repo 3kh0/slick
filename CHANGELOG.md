@@ -16,6 +16,7 @@ In a PR that changes something users will notice, add a line under **Unreleased*
 
 ### Fixed
 
+- WhoReacted uses each reaction's workspace to show profile pictures when switching workspaces.
 - BetterHuddles lets you search for people and invite them to your huddle.
 - Nix packages use Slack's matching Electron version to avoid the version mismatch dialog.
 - Chat Tabs: Option+Shift+Left/Right no longer switches tabs while you're typing in a message, so it selects by word again. The shortcut and this behaviour can be changed in settings.
