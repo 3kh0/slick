@@ -7,65 +7,66 @@ on:
 
 permissions:
   contents: read
-  issues: write
+
+concurrency:
+  group: electron-watch
+  cancel-in-progress: false
 
 jobs:
   check:
     name: Check Slack's Electron version
     runs-on: macos-26
+    outputs:
+      version_mismatch: ${{ steps.check.outputs.version_mismatch }}
+      slack_electron: ${{ steps.check.outputs.slack_electron }}
     steps:
       - uses: actions/checkout@v7
-      - name: Test version comparison
+      - name: Test runtime updates
         run: node --test scripts/ci/electron-watch.test.cjs
       - id: check
         run: node scripts/ci/electron-watch.cjs
 
-      - name: Open tracking issue
-        if: steps.check.outputs.version_mismatch == 'true'
+  update:
+    needs: check
+    if: needs.check.outputs.version_mismatch == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    env:
+      ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+      PIN: ${{ needs.check.outputs.slack_electron }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+      - uses: oven-sh/setup-bun@v2
+      - uses: cachix/install-nix-action@v31
+      - name: Update desktop and Flatpak runtimes
+        run: node scripts/ci/update-electron.cjs "$PIN"
+      - name: Sync and validate Nix pins
         env:
           GH_TOKEN: ${{ github.token }}
-          TITLE: Slack ships Electron ${{ steps.check.outputs.slack_electron }}, Slick pins ${{ steps.check.outputs.byoe_electron }}
-          SLACK_VERSION: ${{ steps.check.outputs.slack_version }}
-          SLACK_ELECTRON: ${{ steps.check.outputs.slack_electron }}
-          BYOE_ELECTRON: ${{ steps.check.outputs.byoe_electron }}
-          PIN: ${{ steps.check.outputs.suggested || steps.check.outputs.slack_electron }}
-          WORKFLOW_URL: ${{ github.server_url }}/${{ github.repository }}/blob/main/.github/workflows/electron-watch.yml
         run: |
-          set -euo pipefail
-
-          gh label create electron-mismatch --color BFD4F2 \
-            --description "Slack's bundled Electron version differs from Slick's" 2>/dev/null || true
-
-          # Track each version pair once while its issue is open; closed issues can recur.
-          existing="$(gh issue list --state open --label electron-mismatch --limit 100 --json number,title \
-            | jq -r --arg t "$TITLE" '.[] | select(.title == $t) | .number' | head -1)"
-          if [ -n "$existing" ]; then
-            echo "Issue #$existing already tracks this."
-            exit 0
-          fi
-
-          cat > body.md <<BODY
-          Slack **$SLACK_VERSION** bundles Electron **$SLACK_ELECTRON**, but \`package.json\` pins Electron **$BYOE_ELECTRON**.
-
-          The watcher tracks the full version, including minor and patch updates. A difference within the same major passes the native-module compatibility gate, but the bundled runtime should still track Slack's production version.
-
-          Different majors can fail to load Slack's native modules: Slick's boot preflight (\`src/desktop/main.ts\`) warns before loading Slack, and the Slack updater (\`src/desktop/slackUpdater.ts\`) stops staging incompatible updates. Every Slick release bakes this pin, so updating it needs a new release.
-
-          To fix:
-
-          \`\`\`sh
-          bun add --dev --exact electron@$PIN
-          \`\`\`
-
-          Then smoke-test a launch against the new Slack before tagging a release.
-
-          <sub>Opened automatically by <a href="$WORKFLOW_URL">electron-watch.yml</a>.</sub>
-          BODY
-
-          gh issue create --title "$TITLE" --label electron-mismatch --body-file body.md
-
-      - name: Fail when the bundled Electron version differs
-        if: steps.check.outputs.version_mismatch == 'true'
-        run: |
-          echo "Slack and Slick use different Electron versions." >&2
-          exit 1
+          tag="$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .tag_name)"
+          bash scripts/ci/sync-nix-pins.sh "${tag#v}"
+      - run: bun run check
+      - name: Open runtime update PR
+        uses: peter-evans/create-pull-request@v8
+        with:
+          author: 'github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>'
+          committer: 'github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>'
+          base: main
+          branch: ci/electron
+          delete-branch: true
+          add-paths: |
+            package.json
+            bun.lock
+            packaging/flatpak/dev.slick.Slick.yml
+            packaging/nix/pins.json
+          commit-message: 'fix(desktop): match Slack Electron ${{ env.PIN }}'
+          title: 'fix(desktop): match Slack Electron ${{ env.PIN }}'
+          body: ''

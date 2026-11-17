@@ -4,6 +4,9 @@ updates:
     directory: /
     schedule:
       interval: daily
+    # Electron follows Slack through electron-watch.yml.
+    ignore:
+      - dependency-name: electron
     groups:
       oxc:
         patterns: [oxfmt, oxlint]
