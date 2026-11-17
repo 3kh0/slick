@@ -12,7 +12,7 @@ type ButtonProps = { 'data-qa'?: string; children?: React.ReactNode };
 const NO_REACTORS: string[] = [];
 
 export default class WhoReacted extends SlickPlugin<typeof meta.settings> {
-  static readonly requiredAPIs = ['members'] as const;
+  static readonly requiredAPIs = ['elements'] as const;
   static readonly id = meta.id;
   static readonly pluginName = meta.pluginName;
   static readonly description = meta.description;
@@ -28,12 +28,20 @@ export default class WhoReacted extends SlickPlugin<typeof meta.settings> {
   }
 
   private readonly Avatar = ({ userId }: { userId: string }) => {
-    const profile = this.api.members.useMember(userId)?.profile;
-    // A member with no avatar_hash yet gets a URL that 404s.
-    const [broken, setBroken] = React.useState(false);
-    const url = profile?.image_24 ?? profile?.image_48;
-    if (!url || broken) return null;
-    return <img className="slick-wr__av" src={url} alt="" onError={() => setBroken(true)} />;
+    const { Avatar } = this.api.elements;
+    return (
+      <span className="slick-wr__av" aria-hidden="true">
+        <Avatar
+          userId={userId}
+          size={16}
+          isInteractive={false}
+          showCard={false}
+          showTooltip={false}
+          tabIndex={-1}
+          ariaHidden="true"
+        />
+      </span>
+    );
   };
 
   private readonly Reactors = () => {
@@ -65,9 +73,10 @@ export default class WhoReacted extends SlickPlugin<typeof meta.settings> {
         display: block;
         width: 16px;
         height: 16px;
+        flex-shrink: 0;
         margin-left: -5px;
         border-radius: 50%;
-        object-fit: cover;
+        overflow: hidden;
         /* Matched to the pill, so overlapping avatars stay separated. */
         border: 1px solid var(--dt_color-surf-pry);
         background-color: var(--dt_color-surf-pry);

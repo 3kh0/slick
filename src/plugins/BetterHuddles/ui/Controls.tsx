@@ -2,6 +2,7 @@
 
 import { useCallState, useHuddleUi } from './context.ts';
 import { Icon, type IconName } from './icons.tsx';
+import { InvitePeople } from './InvitePeople.tsx';
 
 type Tone = 'default' | 'active' | 'warning' | 'danger';
 
@@ -86,6 +87,7 @@ export function CompactControls({ onControlError }: Pick<ControlsProps, 'onContr
   return (
     <div className="sbh-controls" role="toolbar" aria-label="Huddle controls">
       <MuteButton />
+      <InvitePeople />
       <ThreadButton onControlError={onControlError} />
       <LeaveButton />
     </div>
@@ -133,6 +135,7 @@ export function Controls({ onControlError, fullscreen, onToggleFullscreen, onTog
       />
       <ControlButton label="Huddle settings" icon="settings" onClick={onToggleSettings} />
       <ThreadButton onControlError={onControlError} />
+      <InvitePeople />
       <LeaveButton />
     </div>
   );
