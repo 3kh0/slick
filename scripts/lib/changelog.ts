@@ -21,7 +21,7 @@ function git(...args: string[]): string | null {
   }
 }
 
-/** Unreleased as of each recent release tag; empty without git history (shallow CI checkouts). */
+/** Entries shipped by each recent release tag; empty without git history (shallow CI checkouts). */
 export function taggedHistory(changelog: Changelog, upTo = Infinity): TaggedUnreleased[] {
   const cutUpTo = Math.max(0, ...changelog.releases.map((r) => r.build ?? 0));
   const builds = (git('tag', '--list', 'v[0-9]*') ?? '')
@@ -32,7 +32,8 @@ export function taggedHistory(changelog: Changelog, upTo = Infinity): TaggedUnre
     .slice(-HISTORY_LIMIT);
   return builds.map((build) => {
     const text = git('show', `v${build}:CHANGELOG.md`);
-    return { build, unreleased: text ? parseChangelog(text).releases.find((r) => r.build === null) : undefined };
+    const releases = text ? parseChangelog(text).releases : [];
+    return { build, unreleased: releases.find((r) => r.build === build) ?? releases.find((r) => r.build === null) };
   });
 }
 

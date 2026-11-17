@@ -1,8 +1,10 @@
 name: Release
+run-name: ${{ github.event_name == 'push' && format('Prepare {0}', github.ref_name) || format('Release {0}', github.ref_name) }}
 
 on:
   push:
     tags: ['v*']
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -12,11 +14,17 @@ env:
   # Packaging downloads target Electron archives; no job launches node_modules/electron.
   ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
 
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
-  validate-tag:
+  stage:
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
-    outputs:
-      build: ${{ steps.version.outputs.build }}
+    permissions:
+      contents: write
+      actions: write
     steps:
       - name: Read build number
         id: version
@@ -32,12 +40,67 @@ jobs:
             exit 1
           fi
           echo "build=$build" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.ref }}
+          fetch-depth: 0
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+      - uses: oven-sh/setup-bun@v2
+      - uses: cachix/install-nix-action@v31
+      - name: File this release's changelog
+        run: bun scripts/changelog.ts cut "${{ steps.version.outputs.build }}"
+      - name: Sync and validate Nix pins
+        run: bash scripts/ci/sync-nix-pins.sh "${{ steps.version.outputs.build }}"
+      - run: bun install --frozen-lockfile
+      - run: bun run check
+      - name: Commit release metadata and update tag
+        id: commit
+        run: bash scripts/ci/commit-release.sh "$GITHUB_REF_NAME"
+        env:
+          GH_TOKEN: ${{ github.token }}
+      - name: Start release from the prepared tag
+        run: gh workflow run release.yml --ref "$GITHUB_REF_NAME"
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+  prepare:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    outputs:
+      build: ${{ steps.version.outputs.build }}
+      sha: ${{ github.sha }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+      - name: Validate prepared release
+        id: version
+        shell: bash
+        run: |
+          if [[ "$GITHUB_REF_TYPE" != tag || ! "$GITHUB_REF_NAME" =~ ^v[1-9][0-9]*$ ]]; then
+            echo "Run this workflow on a prepared v<N> tag" >&2
+            exit 1
+          fi
+          build="${GITHUB_REF_NAME#v}"
+          if (( build <= 85 )) || [[ "$(jq -r .build packaging/nix/pins.json)" != "$build" ]]; then
+            echo "Release tag and Nix build do not match" >&2
+            exit 1
+          fi
+          if ! grep -Fxq "## Build $build" CHANGELOG.md; then
+            echo "Changelog has not been prepared for $GITHUB_REF_NAME" >&2
+            exit 1
+          fi
+          echo "build=$build" >> "$GITHUB_OUTPUT"
 
   electron-compatible:
-    needs: validate-tag
+    needs: prepare
     runs-on: macos-26
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.prepare.outputs.sha }}
       - id: check
         run: node scripts/ci/electron-watch.cjs
       - name: Reject an incompatible runtime
@@ -47,7 +110,7 @@ jobs:
           exit 1
 
   build-mac:
-    needs: [validate-tag, electron-compatible]
+    needs: [prepare, electron-compatible]
     runs-on: macos-26
     permissions:
       contents: read
@@ -64,6 +127,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
+          ref: ${{ needs.prepare.outputs.sha }}
           fetch-depth: 0
       - uses: oven-sh/setup-bun@v2
       - name: Install tools
@@ -88,7 +152,7 @@ jobs:
       - name: Build release artifacts
         run: bun run build -- package --arch "${{ matrix.arch }}"
         env:
-          SLICK_BUILD: ${{ needs.validate-tag.outputs.build }}
+          SLICK_BUILD: ${{ needs.prepare.outputs.build }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
@@ -120,7 +184,7 @@ jobs:
           compression-level: 0
 
   build-win:
-    needs: [validate-tag, electron-compatible]
+    needs: [prepare, electron-compatible]
     runs-on: windows-latest
     permissions:
       contents: read
@@ -133,6 +197,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
+          ref: ${{ needs.prepare.outputs.sha }}
           fetch-depth: 0
       - uses: oven-sh/setup-bun@v2
       - name: Cache Windows dependency downloads
@@ -146,7 +211,7 @@ jobs:
       - name: Build release artifact
         run: bun run build -- package --arch "${{ matrix.arch }}"
         env:
-          SLICK_BUILD: ${{ needs.validate-tag.outputs.build }}
+          SLICK_BUILD: ${{ needs.prepare.outputs.build }}
       - name: Attest build provenance
         uses: actions/attest@v4.2.2
         with:
@@ -165,7 +230,7 @@ jobs:
           compression-level: 0
 
   build-linux:
-    needs: [validate-tag, electron-compatible]
+    needs: [prepare, electron-compatible]
     runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
     permissions:
       contents: read
@@ -178,6 +243,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
+          ref: ${{ needs.prepare.outputs.sha }}
           fetch-depth: 0
       - uses: oven-sh/setup-bun@v2
       - run: bun install --frozen-lockfile
@@ -186,7 +252,7 @@ jobs:
       - name: Build release artifacts
         run: bun run build -- package --arch "${{ matrix.arch }}"
         env:
-          SLICK_BUILD: ${{ needs.validate-tag.outputs.build }}
+          SLICK_BUILD: ${{ needs.prepare.outputs.build }}
       - name: Attest build provenance
         uses: actions/attest@v4.2.2
         with:
@@ -209,17 +275,18 @@ jobs:
           compression-level: 0
 
   release:
-    needs: [validate-tag, build-mac, build-win, build-linux]
+    needs: [prepare, build-mac, build-win, build-linux]
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@v7
         with:
+          ref: ${{ needs.prepare.outputs.sha }}
           fetch-depth: 0
       - uses: oven-sh/setup-bun@v2
       - name: Write release notes from CHANGELOG.md
-        run: bun scripts/changelog.ts notes "${{ needs.validate-tag.outputs.build }}" > "$RUNNER_TEMP/notes.md"
+        run: bun scripts/changelog.ts notes "${{ needs.prepare.outputs.build }}" > "$RUNNER_TEMP/notes.md"
       - name: Download artifacts
         uses: actions/download-artifact@v8
         with:
@@ -229,7 +296,7 @@ jobs:
       - name: Create release
         uses: softprops/action-gh-release@v3
         with:
-          name: Slick Build ${{ needs.validate-tag.outputs.build }}
+          name: Slick Build ${{ needs.prepare.outputs.build }}
           files: |
             dist/Slick-*.zip
             dist/Slick-*.dmg
@@ -241,7 +308,7 @@ jobs:
           generate_release_notes: true
 
   homebrew:
-    needs: [validate-tag, release]
+    needs: [prepare, release]
     runs-on: macos-26
     timeout-minutes: 20
     permissions:
@@ -250,12 +317,13 @@ jobs:
       group: homebrew-tap-update
       cancel-in-progress: false
     env:
-      BUILD: ${{ needs.validate-tag.outputs.build }}
+      BUILD: ${{ needs.prepare.outputs.build }}
       HOMEBREW_NO_AUTO_UPDATE: '1'
       HOMEBREW_NO_INSTALL_CLEANUP: '1'
     steps:
       - uses: actions/checkout@v7
         with:
+          ref: ${{ needs.prepare.outputs.sha }}
           persist-credentials: false
       - name: Check deploy key configuration
         env:
@@ -311,7 +379,7 @@ jobs:
 
   firefox:
     # AMO signing can take several minutes; overlap it with desktop packaging.
-    needs: [validate-tag, electron-compatible]
+    needs: [prepare, electron-compatible]
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
@@ -319,12 +387,14 @@ jobs:
       id-token: write
       attestations: write
     env:
-      BUILD: ${{ needs.validate-tag.outputs.build }}
-      SLICK_BUILD: ${{ needs.validate-tag.outputs.build }}
+      BUILD: ${{ needs.prepare.outputs.build }}
+      SLICK_BUILD: ${{ needs.prepare.outputs.build }}
       WEB_EXT_API_KEY: ${{ secrets.AMO_JWT_ISSUER }}
       WEB_EXT_API_SECRET: ${{ secrets.AMO_JWT_SECRET }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.prepare.outputs.sha }}
       - uses: oven-sh/setup-bun@v2
       - run: bun install --frozen-lockfile
         env:
@@ -403,13 +473,14 @@ jobs:
           done
 
   copr:
-    needs: [validate-tag, release]
-    if: github.event_name == 'push'
+    needs: [prepare, release]
     runs-on: ubuntu-latest
     env:
-      BUILD: ${{ needs.validate-tag.outputs.build }}
+      BUILD: ${{ needs.prepare.outputs.build }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.prepare.outputs.sha }}
       - name: Install tools
         run: |
           sudo apt-get update
@@ -445,19 +516,21 @@ jobs:
           copr-cli build echolive/slick "$srpm"
 
   chromium:
-    needs: [validate-tag, release]
+    needs: [prepare, release]
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.prepare.outputs.sha }}
       - uses: oven-sh/setup-bun@v2
       - run: bun install --frozen-lockfile
         env:
           ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
       - run: bun run build -- chromium
         env:
-          SLICK_BUILD: ${{ needs.validate-tag.outputs.build }}
+          SLICK_BUILD: ${{ needs.prepare.outputs.build }}
       - name: Attach Chromium store package
         run: |
           for attempt in 1 2 3; do
@@ -475,19 +548,21 @@ jobs:
           CWS_SERVICE_ACCOUNT: ${{ secrets.CWS_SERVICE_ACCOUNT }}
 
   userscript:
-    needs: [validate-tag, release]
+    needs: [prepare, release]
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.prepare.outputs.sha }}
       - uses: oven-sh/setup-bun@v2
       - run: bun install --frozen-lockfile
         env:
           ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
       - run: bun run userscript:build
         env:
-          SLICK_BUILD: ${{ needs.validate-tag.outputs.build }}
+          SLICK_BUILD: ${{ needs.prepare.outputs.build }}
       - name: Attach Violentmonkey userscript and update metadata
         run: |
           for attempt in 1 2 3; do
@@ -498,3 +573,15 @@ jobs:
           done
         env:
           GH_TOKEN: ${{ github.token }}
+
+  flatpak:
+    needs: [prepare, electron-compatible]
+    uses: ./.github/workflows/flatpak.yml
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    with:
+      tag: ${{ github.ref_name }}
+      ref: ${{ needs.prepare.outputs.sha }}
+    secrets: inherit

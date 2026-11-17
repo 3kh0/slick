@@ -1,5 +1,5 @@
 // `bun scripts/changelog.ts notes <build>`: release notes for a build.
-// `bun scripts/changelog.ts cut`: move entries every release tag shipped out of Unreleased.
+// `bun scripts/changelog.ts cut [build]`: move entries every release tag shipped out of Unreleased.
 
 import { writeFileSync } from 'node:fs';
 import { formatChangelog } from '../src/shared/changelog.ts';
@@ -17,8 +17,17 @@ if (command === 'notes') {
   const body = release ? formatChangelog({ preamble: '', releases: [release] }).replace(/^\s*## Build \d+\s*/, '') : '';
   process.stdout.write(body.trim() ? `${body.trim()}\n` : 'No user-facing changes in this build.\n');
 } else if (command === 'cut') {
-  writeFileSync(CHANGELOG, formatChangelog(resolvedChangelog()));
+  const build = arg === undefined ? undefined : Number(arg);
+  if (build !== undefined && (!Number.isSafeInteger(build) || build < 1)) {
+    console.error('usage: changelog.ts cut [build]');
+    process.exit(1);
+  }
+  const changelog = resolvedChangelog(build);
+  if (build !== undefined && !changelog.releases.some((r) => r.build === build)) {
+    changelog.releases.splice(1, 0, { build, groups: [] });
+  }
+  writeFileSync(CHANGELOG, formatChangelog(changelog));
 } else {
-  console.error('usage: changelog.ts notes <build> | cut');
+  console.error('usage: changelog.ts notes <build> | cut [build]');
   process.exit(1);
 }

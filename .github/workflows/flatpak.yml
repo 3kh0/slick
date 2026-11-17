@@ -1,8 +1,14 @@
 name: Flatpak repository
 
 on:
-  push:
-    tags: ['v*']
+  workflow_call:
+    inputs:
+      tag:
+        required: true
+        type: string
+      ref:
+        required: true
+        type: string
   workflow_dispatch:
     inputs:
       tag:
@@ -29,14 +35,14 @@ jobs:
       ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
       FLATPAK_BUILD_DIR: /tmp/slick-flatpak-build
       FLATPAK_REPO: /tmp/slick-flatpak-repo
-      RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+      RELEASE_TAG: ${{ inputs.tag }}
     steps:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
-          ref: ${{ inputs.tag || github.ref }}
+          ref: ${{ inputs.ref || inputs.tag }}
       - name: Use current packaging for a backfill
-        if: github.event_name == 'workflow_dispatch'
+        if: github.event_name == 'workflow_dispatch' && inputs.ref == ''
         run: git checkout "$GITHUB_SHA" -- packaging/flatpak
       - uses: oven-sh/setup-bun@v2
 
