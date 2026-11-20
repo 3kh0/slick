@@ -6,6 +6,8 @@ In a PR that changes something users will notice, add a line under **Unreleased*
 
 ## Unreleased
 
+## Build 160
+
 ### Fixed
 
 - BetterMessageMenu shows the Delete icon instead of the word "trash".
