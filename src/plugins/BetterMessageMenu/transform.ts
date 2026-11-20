@@ -19,7 +19,12 @@ function labelFor(id: string, descriptor: Descriptor, big: boolean, label?: stri
   return descriptor.name;
 }
 
-export function applyMenu(groups: ActionGroups | undefined, config: MenuConfig, placement: Placement): ActionGroups {
+export function applyMenu(
+  groups: ActionGroups | undefined,
+  config: MenuConfig,
+  placement: Placement,
+  renderIcon: (name: string) => unknown = (name) => name,
+): ActionGroups {
   if (!Array.isArray(groups)) return groups ?? [];
   const flat = groups.flat().filter((action) => action && typeof action === 'object');
   const cfg = new Map(config.order.map((item) => [item.id, item]));
@@ -71,7 +76,7 @@ export function applyMenu(groups: ActionGroups | undefined, config: MenuConfig, 
   const bigGroup = taken.map(({ id, action }, index) => ({
     ...action,
     name: labelFor(id, action, true, cfg.get(id)?.label),
-    icon: action.icon ?? BIG_ICON[id],
+    icon: action.icon ?? (BIG_ICON[id] && renderIcon(BIG_ICON[id])),
     className: [action.className, BIG_ACTION_CLASS, `${BIG_ACTION_CLASS}-n${counts[index]}`].filter(Boolean).join(' '),
   }));
   const main: Descriptor[] = [];
