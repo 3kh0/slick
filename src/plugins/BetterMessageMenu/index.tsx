@@ -25,7 +25,7 @@ type ConfigStore = { get(): MenuConfig; set(value: MenuConfig): void; use(): Men
 const STORAGE_KEY = 'menu';
 
 export default class BetterMessageMenu extends SlickPlugin<typeof meta.settings> implements EditorHost {
-  static readonly requiredAPIs = ['redux', 'menu'] as const;
+  static readonly requiredAPIs = ['redux', 'menu', 'elements'] as const;
   static readonly id = meta.id;
   static readonly pluginName = meta.pluginName;
   static readonly description = meta.description;
@@ -195,7 +195,9 @@ export default class BetterMessageMenu extends SlickPlugin<typeof meta.settings>
           const discovered = discoverActions(current, actions);
           if (discovered !== current) this.update(discovered);
         });
-      const next = applyMenu(actions, config, this.placement(props.targetBounds, height));
+      const next = applyMenu(actions, config, this.placement(props.targetBounds, height), (name) => (
+        <this.api.elements.SvgIcon name={name} size={20} />
+      ));
       const renderMenuItem = (args: any) => {
         const rendered = props.renderMenuItem?.(args);
         if (
