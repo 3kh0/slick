@@ -1,0 +1,23 @@
+{
+  "name": "Liquid Glass",
+  "description": "A calmer Liquid Glass: blur only on floating surfaces, text stays sharp and nothing moves",
+  "mode": "dark",
+  "vars": {
+    "--sk_highlight": "150,180,230",
+    "--sk_highlight_accent": "150,180,230",
+    "--sk_highlight_hover": "180,200,240"
+  },
+  "css": [
+    ".p-theme_background{background:radial-gradient(ellipse at 15% 0%,rgba(90,120,190,0.22),transparent 55%),#14161d !important;}",
+    ".p-theme_background:after{background:transparent !important;backdrop-filter:none !important;}",
+    "html,body{background:#14161d !important;}",
+    ".p-view_contents--sidebar,.p-tab_rail,.p-ia4_top_nav,.p-view_header,.p-workspace__header{background:rgba(255,255,255,0.035) !important;border-color:rgba(255,255,255,0.08) !important;}",
+    ".c-menu,.c-popover__content,[role=menu],[role=dialog],[role=listbox],.ReactModal__Content,.c-toast,.p-context_bar_v2{background:linear-gradient(170deg,rgba(255,255,255,0.09),rgba(255,255,255,0.02)),rgba(24,26,36,0.72) !important;backdrop-filter:blur(24px) saturate(160%) !important;-webkit-backdrop-filter:blur(24px) saturate(160%) !important;border:1px solid rgba(255,255,255,0.12) !important;border-radius:14px !important;box-shadow:inset 0 1px 0 rgba(255,255,255,0.14),0 10px 30px rgba(0,0,0,0.3) !important;}",
+    ".p-message_input__input_container_unstyled,.c-wysiwyg_container--theme_dark,.c-search__input,[data-qa=search_input]{background:rgba(255,255,255,0.05) !important;border:1px solid rgba(255,255,255,0.1) !important;border-radius:12px !important;}",
+    ".p-channel_sidebar__channel--selected,.p-channel_sidebar__link--selected,.p-channel_sidebar__channel[aria-current=page],.p-channel_sidebar__link[aria-current=page]{background:rgba(255,255,255,0.1) !important;box-shadow:inset 0 1px 0 rgba(255,255,255,0.1) !important;border-radius:8px !important;}",
+    ".p-channel_sidebar__channel:hover,.p-channel_sidebar__link:hover{background:rgba(255,255,255,0.05) !important;border-radius:8px !important;}",
+    ".c-message_kit__background--hovered:not(.c-message_kit__background--highlight),.c-message:hover:not(.c-message--highlight){background:rgba(255,255,255,0.04) !important;}",
+    ".c-button--primary,.c-icon_button--primary{background:rgba(120,150,230,0.85) !important;color:#ffffff !important;border-radius:999px !important;box-shadow:inset 0 1px 0 rgba(255,255,255,0.25) !important;}",
+    "@media (prefers-reduced-transparency: reduce){.c-menu,.c-popover__content,[role=menu],[role=dialog],.ReactModal__Content,.c-toast{backdrop-filter:none !important;-webkit-backdrop-filter:none !important;background:#1d2029 !important;}}"
+  ]
+}
