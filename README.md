@@ -167,6 +167,7 @@ Prefer to write your own CSS instead? Open the CSS editor in Slick Preferences (
 - [Electron](https://www.electronjs.org/) for the runtime and APIs.
 - [@ImShyMike](https://github.com/ImShyMike) for advice on breaking into Slack.
 - [Vencord](https://github.com/vencord) for plugin inspiration.
+- [Frogvictory](https://frogvictory.pt/) for sponsoring MacOS signing and notarization.
 - Claude for cleaning up the code and generally being a good assistant.
 
 ## Legal
