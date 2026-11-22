@@ -47,8 +47,7 @@ function optionsData(bundled: Record<string, ThemeJson>): Plugin {
 }
 
 function builtinThemesPlugin(bundled: Record<string, ThemeJson>): Plugin {
-  const serialized = JSON.stringify(bundled);
-  const contents = `let cached; export default () => (cached ??= JSON.parse(${JSON.stringify(serialized)}));`;
+  const contents = JSON.stringify(bundled);
   return {
     name: 'slick-builtin-themes',
     setup(builder) {
@@ -59,7 +58,7 @@ function builtinThemesPlugin(bundled: Record<string, ThemeJson>): Plugin {
       builder.onLoad({ filter: /.*/, namespace: 'slick-themes' }, () => ({
         contents,
         resolveDir: ROOT,
-        loader: 'js',
+        loader: 'text',
       }));
     },
   };

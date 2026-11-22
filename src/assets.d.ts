@@ -14,8 +14,8 @@ declare module 'slick:background-plugins' {
 }
 
 declare module 'slick:builtin-themes' {
-  const themes: () => Record<string, import('./shared/themes.ts').ThemeJson>;
-  export default themes;
+  const json: string;
+  export default json;
 }
 
 declare module 'slick:monaco-workers' {
