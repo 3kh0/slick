@@ -20,8 +20,24 @@ accountDiagnostic('preload.start');
 
 const RECOVERY_KEY = 'slick:preload-recovery';
 
-function runtimeLoaderScript(appUrl: string): string {
-  return `;(function(u){function fail(){try{delete globalThis[Symbol.for('slick.earlyCore')];}catch{}try{globalThis.SlickBridge&&globalThis.SlickBridge.claim();}catch{}console.error('[slick] failed to load '+u+'; Slack will run unmodified');}function attach(){var t=document.head||document.documentElement;if(!t)return false;var s=document.createElement('script');s.id='slick-app';s.async=true;s.src=u;s.onerror=fail;t.appendChild(s);return true;}if(!attach()){var mo=new MutationObserver(function(){if(attach())mo.disconnect();});mo.observe(document,{childList:true,subtree:true});}})(${JSON.stringify(appUrl)});`;
+function attachRuntimeScript(appUrl: string, onFail: () => void): void {
+  const attach = () => {
+    const target = document.head || document.documentElement;
+    if (!target) return false;
+    const script = document.createElement('script');
+    script.id = 'slick-app';
+    script.async = true;
+    script.src = appUrl;
+    script.addEventListener('error', onFail, { once: true });
+    target.appendChild(script);
+    return true;
+  };
+  if (!attach()) {
+    const observer = new MutationObserver(() => {
+      if (attach()) observer.disconnect();
+    });
+    observer.observe(document, { childList: true, subtree: true });
+  }
 }
 
 function runClientPreload() {
@@ -70,7 +86,8 @@ function runClientPreload() {
     boot?.paths && typeof boot.paths === 'object' && !Array.isArray(boot.paths)
       ? (boot.paths as Record<string, string>)
       : {};
-  const appUrl = typeof boot?.appUrl === 'string' && boot.appUrl ? boot.appUrl : 'slick://app/slick.js';
+  const appUrl =
+    typeof boot?.appUrl === 'string' && boot.appUrl.startsWith('slick://app/') ? boot.appUrl : 'slick://app/slick.js';
 
   const call = (method: string, args: unknown[] = []) => ipcRenderer.invoke('slick:rpc', method, args);
 
@@ -167,9 +184,21 @@ function runClientPreload() {
     },
   });
 
-  void Promise.resolve(webFrame.executeJavaScript(`${earlyCode}\n${runtimeLoaderScript(appUrl)}`)).then(
-    () => accountDiagnostic('preload.ready'),
+  const failRuntime = () => {
+    claimed = true;
+    void Promise.resolve(webFrame.executeJavaScript("delete globalThis[Symbol.for('slick.earlyCore')]")).catch(
+      () => {},
+    );
+    console.error(`[slick] failed to load ${appUrl}; Slack will run unmodified`);
+  };
+
+  void Promise.resolve(webFrame.executeJavaScript(earlyCode)).then(
+    () => {
+      attachRuntimeScript(appUrl, failRuntime);
+      accountDiagnostic('preload.ready');
+    },
     (error: unknown) => {
+      claimed = true;
       accountDiagnostic('preload.failed');
       console.error('[slick] failed to execute early loader; Slack will run unmodified:', error);
     },

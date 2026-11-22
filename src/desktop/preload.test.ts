@@ -21,12 +21,23 @@ type FixtureOptions = {
   recoveryFlag?: string;
   executeRejects?: boolean;
   earlyCode?: string;
+  deferredDom?: boolean;
+};
+
+type MockScript = {
+  tagName: string;
+  id: string;
+  async: boolean;
+  src: string;
+  errorListeners: Array<() => void>;
+  addEventListener(type: string, listener: () => void): void;
 };
 
 function fixture(opts: FixtureOptions = {}) {
   const executed: string[] = [];
   const lifecycle: string[] = [];
   const writes: string[] = [];
+  const scripts: MockScript[] = [];
   const rpcCalls: Array<[string, string, unknown[]]> = [];
   const local = new Map<string, string>();
   const recovery = new Map<string, string>();
@@ -34,6 +45,15 @@ function fixture(opts: FixtureOptions = {}) {
 
   let signInHooked = 0;
   let exposed: { claim(): SlickBridge | null } | undefined;
+  let observerDisconnected = false;
+  let triggerMutation: (() => void) | undefined;
+  let head = opts.deferredDom
+    ? null
+    : {
+        appendChild(el: MockScript) {
+          scripts.push(el);
+        },
+      };
   let readySettled!: Promise<void>;
   let resolveReady!: () => void;
   let rejectReady!: (err: unknown) => void;
@@ -130,7 +150,33 @@ function fixture(opts: FixtureOptions = {}) {
       removeItem: (key: string) => recovery.delete(key),
       setItem: (key: string, value: string) => recovery.set(key, value),
     },
+    MutationObserver: class {
+      constructor(cb: () => void) {
+        triggerMutation = cb;
+      }
+      observe() {}
+      disconnect() {
+        observerDisconnected = true;
+      }
+    },
     document: {
+      get head() {
+        return head;
+      },
+      documentElement: null,
+      createElement(tag: string): MockScript {
+        const listeners: Array<() => void> = [];
+        return {
+          tagName: tag,
+          id: '',
+          async: false,
+          src: '',
+          errorListeners: listeners,
+          addEventListener(type: string, listener: () => void) {
+            if (type === 'error') listeners.push(listener);
+          },
+        };
+      },
       open() {},
       close() {},
       write(v: string) {
@@ -143,11 +189,21 @@ function fixture(opts: FixtureOptions = {}) {
     executed,
     lifecycle,
     writes,
+    scripts,
     rpcCalls,
     recovery,
     ready: readySettled,
     signInHooked: () => signInHooked,
     exposed: () => exposed,
+    observerDisconnected: () => observerDisconnected,
+    mountHead() {
+      head = {
+        appendChild(el: MockScript) {
+          scripts.push(el);
+        },
+      };
+      triggerMutation?.();
+    },
     flush: () => Promise.all(evalQueue),
   };
 }
@@ -162,10 +218,12 @@ test('exposes one-shot bridge synchronously before running early code and inject
   const readyIdx = f.lifecycle.indexOf('slick:account-diagnostic:preload.ready');
   assert.ok(exposeIdx > -1 && execIdx > exposeIdx && readyIdx > execIdx);
 
-  assert.equal(f.executed.length, 1);
-  assert.match(f.executed[0], /window\.__early = 1;/);
-  assert.match(f.executed[0], /slick:\/\/app\/slick\.js\?v=1/);
-  assert.doesNotMatch(f.executed[0], /setAttribute\(['"]onerror['"]/);
+  assert.deepEqual(f.executed, ['window.__early = 1;']);
+  assert.equal(f.scripts.length, 1);
+  assert.equal(f.scripts[0].id, 'slick-app');
+  assert.equal(f.scripts[0].async, true);
+  assert.equal(f.scripts[0].src, 'slick://app/slick.js?v=1');
+  assert.equal(f.scripts[0].errorListeners.length, 1);
 
   const bridge = f.exposed()!.claim()!;
   assert.equal(bridge.loader, 'electron');
@@ -184,6 +242,7 @@ test('recovery flag clears itself and leaves Slack completely unmodified', async
   assert.equal(f.recovery.has('slick:preload-recovery'), false);
   assert.equal(f.exposed(), undefined);
   assert.equal(f.executed.length, 0);
+  assert.equal(f.scripts.length, 0);
   assert.equal(f.lifecycle.includes('sendSync:slick:get-boot-sync'), false);
 });
 
@@ -205,7 +264,15 @@ test('failed or invalid boot snapshots stay fail-closed without suppressing defa
     await f.ready;
     const bridge = f.exposed()!.claim()!;
     assert.equal(bridge.initialSettings, undefined);
-    assert.match(f.executed[0], /slick:\/\/app\/slick\.js/);
+    assert.equal(f.scripts[0]?.src, 'slick://app/slick.js');
+  }
+
+  for (const badUrl of ['', 'https://evil.example/x.js', 'javascript:alert(1)']) {
+    const f = fixture({
+      boot: { paths: {}, safeMode: false, initialSettings: '{}', appUrl: badUrl },
+    });
+    await f.ready;
+    assert.equal(f.scripts[0]?.src, 'slick://app/slick.js');
   }
 
   const throwsBoot = fixture({ bootThrows: true });
@@ -223,10 +290,36 @@ test('failed or invalid boot snapshots stay fail-closed without suppressing defa
   assert.equal(safeBridge.initialSettings, '{broken');
 });
 
+test('deferred DOM waits for MutationObserver before attaching runtime script', async () => {
+  const f = fixture({ deferredDom: true });
+  await f.ready;
+  assert.equal(f.scripts.length, 0);
+  assert.equal(f.observerDisconnected(), false);
+
+  f.mountHead();
+  assert.equal(f.scripts.length, 1);
+  assert.equal(f.scripts[0].src, 'slick://app/slick.js?v=1');
+  assert.equal(f.observerDisconnected(), true);
+});
+
+test('runtime script load error deletes earlyCore and keeps SlickBridge unclaimable', async () => {
+  const f = fixture();
+  await f.ready;
+  assert.equal(f.scripts.length, 1);
+
+  f.scripts[0].errorListeners[0]();
+  await f.flush();
+
+  assert.equal(f.exposed()!.claim(), null);
+  assert.equal(f.executed[1], "delete globalThis[Symbol.for('slick.earlyCore')]");
+});
+
 test('early execution failure reports preload.failed without blanking or reloading the page', async () => {
   const f = fixture({ executeRejects: true });
   await assert.rejects(f.ready, /Preload failed/);
   assert.equal(f.writes.length, 0);
+  assert.equal(f.scripts.length, 0);
+  assert.equal(f.exposed()!.claim(), null);
 });
 
 test('non-client slack.com pages install the cookie sign-in button only', () => {
