@@ -1,5 +1,6 @@
 import { earlyCore } from './coreClaim.ts';
 
+delete (globalThis as Record<PropertyKey, unknown>)[Symbol.for('slick.snappyLate')];
 const bridge = earlyCore?.claimed;
 if (bridge) {
   void Promise.all([

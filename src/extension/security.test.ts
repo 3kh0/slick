@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { allowedSender, createBackground, toolbarIconPath } from './background.ts';
-import { SETTINGS_KEY } from './storage.ts';
+import { SETTINGS_KEY, THEME_CSS_KEY } from './storage.ts';
 import { installBridge, oneShot } from './bridge-setup.ts';
 import { validRequest, validResponse, MAX_TEXT } from './rpc.ts';
 import type { ExtensionBrowser } from './rpc.ts';
@@ -167,4 +167,113 @@ test('a settings write reaches background halves before storage.onChanged does',
     value: true,
   });
   assert.deepEqual(await call(), { ok: true, value: '"ok"' });
+});
+
+test('background keeps cached theme CSS and dynamic snappy-boot script in sync', async () => {
+  const data: Record<string, unknown> = {
+    [SETTINGS_KEY]: JSON.stringify({
+      theme: 'mocha',
+      plugins: { Snappy: { enabled: true, optimizeStateTracking: true } },
+    }),
+  };
+  let registered: Record<string, unknown>[] = [];
+  const api = {
+    runtime: { id: 'slick@test', getURL: (path: string) => 'moz-extension://own/' + path },
+    storage: {
+      local: {
+        get: async (key: string) => (key in data ? { [key]: data[key] } : {}),
+        set: async (items: Record<string, unknown>) => void Object.assign(data, items),
+        remove: async (key: string) => void delete data[key],
+      },
+      onChanged: { addListener() {} },
+    },
+    tabs: {},
+    scripting: {
+      getRegisteredContentScripts: async () => registered.map((s) => ({ id: s.id })),
+      registerContentScripts: async (scripts: Record<string, unknown>[]) => {
+        registered.push(...scripts);
+      },
+      unregisterContentScripts: async ({ ids }: { ids: string[] }) => {
+        registered = registered.filter((s) => !ids.includes(String(s.id)));
+      },
+    },
+  } as unknown as ExtensionBrowser;
+
+  const themes = () => ({ mocha: { name: 'Mocha', mode: 'dark' as const, vars: { '--bg': '#1e1e2e' } } });
+  const dispatch = createBackground(api, [], {} as never, undefined, themes);
+  await new Promise((resolve) => setTimeout(resolve, 10));
+
+  assert.deepEqual(data[THEME_CSS_KEY], {
+    css: ':root,html,body,.sk-client-theme--dark,.sk-client-theme--light{--bg:#1e1e2e !important}\n',
+    mode: 'dark',
+  });
+  assert.equal(registered.length, 1);
+  assert.equal(registered[0].id, 'snappy-boot');
+  assert.deepEqual(registered[0].js, ['snappy-boot.js']);
+  assert.equal(registered[0].world, 'MAIN');
+  assert.equal(registered[0].runAt, 'document_start');
+
+  const sender = { id: 'slick@test', url: 'moz-extension://own/options.html' };
+  const prior = (await dispatch({ method: 'readSettings', args: [] }, sender)) as { value: string };
+  const next = JSON.stringify({
+    theme: '',
+    plugins: { Snappy: { enabled: true, optimizeStateTracking: false } },
+  });
+  assert.deepEqual(await dispatch({ method: 'compareAndSwapSettings', args: [prior.value, next] }, sender), {
+    ok: true,
+    value: true,
+  });
+  assert.equal(THEME_CSS_KEY in data, false);
+  assert.equal(registered.length, 0);
+});
+
+test('installBridge transfers one MessageChannel port and closes it on final pagehide', async () => {
+  const posts: { message: unknown; transfer?: unknown[] }[] = [];
+  const listeners = new Map<string, (ev: unknown) => void>();
+  const port1Sent: unknown[] = [];
+  const port1Handlers: ((ev: { data: unknown }) => void)[] = [];
+  let port1Closed = false;
+  let port1Started = false;
+  const fakePort1 = {
+    addEventListener: (_type: string, cb: (ev: { data: unknown }) => void) => port1Handlers.push(cb),
+    start: () => {
+      port1Started = true;
+    },
+    postMessage: (m: unknown) => port1Sent.push(m),
+    close: () => {
+      port1Closed = true;
+    },
+  };
+  const fakePort2 = {};
+  const target = {
+    location: { origin: 'https://app.slack.com', pathname: '/client/T' },
+    sessionStorage: { getItem: () => null },
+    MessageChannel: function FakeMessageChannel() {
+      return { port1: fakePort1, port2: fakePort2 };
+    },
+    addEventListener: (name: string, cb: (ev: unknown) => void) => listeners.set(name, cb),
+    postMessage: (message: unknown, _origin: string, transfer?: unknown[]) => posts.push({ message, transfer }),
+  } as unknown as Window & typeof globalThis;
+  Object.defineProperty(target, 'top', { value: target });
+
+  installBridge(target);
+  assert.equal(port1Started, true);
+  assert.equal(posts.length, 1);
+  assert.equal(posts[0].transfer?.[0], fakePort2);
+
+  const bridge = (
+    target as unknown as { SlickBridge: { claim(): import('../app/bridge.ts').SlickBridge } }
+  ).SlickBridge.claim();
+  const pending = bridge.readSettings();
+  assert.equal(port1Sent.length, 1);
+  const req = port1Sent[0] as { id: string };
+  for (const cb of port1Handlers) {
+    cb({
+      data: { channel: 'slick:firefox:v1', kind: 'response', id: req.id, response: { ok: true, value: '{}' } },
+    });
+  }
+  assert.equal(await pending, '{}');
+
+  listeners.get('pagehide')!({ persisted: false });
+  assert.equal(port1Closed, true);
 });

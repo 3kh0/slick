@@ -1,10 +1,17 @@
-import { validMethodResponse, validRequest } from './rpc.ts';
+import { MAX_TEXT, record, validMethodResponse, validRequest } from './rpc.ts';
 import type { ExtensionBrowser, Response, Sender } from './rpc.ts';
 import { createMainHost, type BackgroundPlugin } from './mainHost.ts';
-import { SETTINGS_KEY, createStorage } from './storage.ts';
+import { DEFAULT_SETTINGS, SETTINGS_KEY, THEME_CSS_KEY, createStorage } from './storage.ts';
 import { indexedDbBackend, type BlobBackend } from './blobs.ts';
 import { createAccountService, AccountError, type AccountBrowser } from './accounts.ts';
 import { USER_PLUGINS_KEY, installedPlugins, syncUserScripts, userScripts } from './userPlugins.ts';
+import { resolveThemeCss, type ThemeJson } from '../shared/themes.ts';
+import { resolveSettings } from '../shared/settings.ts';
+import {
+  id as snappyId,
+  defaultEnabled as snappyDefaultEnabled,
+  settings as snappySettings,
+} from '../plugins/Snappy/meta.ts';
 
 export const TOOLBAR_ICONS = { black: 'icons/black.svg', white: 'icons/white.svg' } as const;
 
@@ -57,17 +64,70 @@ const parse = (text: unknown) => {
   }
 };
 
+function wantSnappyBoot(parsed: unknown): boolean {
+  if (!record(parsed) || parsed.enabled === false) return false;
+  if (parsed.enabled !== undefined && typeof parsed.enabled !== 'boolean') return false;
+  if (parsed.plugins !== undefined && !record(parsed.plugins)) return false;
+  const plugin = record(parsed.plugins) ? parsed.plugins[snappyId] : undefined;
+  if (plugin !== undefined && !record(plugin)) return false;
+  if (plugin?.enabled !== undefined && typeof plugin.enabled !== 'boolean') return false;
+  const resolved = resolveSettings(snappySettings, snappyDefaultEnabled, plugin);
+  return resolved.enabled && resolved.optimizeStateTracking === true;
+}
+
 export function createBackground(
   api: ExtensionBrowser,
   plugins: BackgroundPlugin[] = [],
   blobs?: BlobBackend,
   accountService?: ReturnType<typeof createAccountService>,
+  getBuiltinThemes: () => Record<string, ThemeJson> = () => ({}),
 ) {
   const storage = createStorage(api.storage.local, blobs ?? indexedDbBackend());
   const host = createMainHost(api.storage.local, api.declarativeNetRequest, plugins);
   const accounts = accountService ?? createAccountService(api as AccountBrowser);
   if ((api as AccountBrowser).cookies) void accounts.recover().catch(() => {});
   let lastAccountOpen = 0;
+  let themeSync = Promise.resolve();
+  const syncThemeCache = (parsed: unknown) => {
+    const raw = resolveThemeCss(parsed, getBuiltinThemes());
+    const next = raw && raw.css.length <= MAX_TEXT ? raw : null;
+    themeSync = themeSync
+      .then(async () => {
+        const current = (await api.storage.local.get(THEME_CSS_KEY))[THEME_CSS_KEY];
+        const cur = record(current) && typeof current.css === 'string' ? current : null;
+        if (cur?.css === next?.css && cur?.mode === next?.mode) return;
+        if (next) await api.storage.local.set({ [THEME_CSS_KEY]: next });
+        else await api.storage.local.remove?.(THEME_CSS_KEY);
+      })
+      .catch((error) => console.error('[slick] could not sync theme cache:', error));
+    return themeSync;
+  };
+  let snappySync = Promise.resolve();
+  const syncSnappy = (parsed: unknown) => {
+    const scripting = api.scripting;
+    if (!scripting?.getRegisteredContentScripts || !scripting.registerContentScripts) return snappySync;
+    const want = wantSnappyBoot(parsed);
+    snappySync = snappySync
+      .then(async () => {
+        const existing = await scripting.getRegisteredContentScripts!({ ids: ['snappy-boot'] }).catch(() => []);
+        if (want && !existing.length) {
+          await scripting.registerContentScripts!([
+            {
+              id: 'snappy-boot',
+              matches: ['https://app.slack.com/client', 'https://app.slack.com/client/*'],
+              js: ['snappy-boot.js'],
+              runAt: 'document_start',
+              world: 'MAIN',
+              persistAcrossSessions: true,
+            },
+          ]);
+        } else if (!want && existing.length && scripting.unregisterContentScripts) {
+          await scripting.unregisterContentScripts({ ids: ['snappy-boot'] });
+        }
+      })
+      .catch((error) => console.error('[slick] could not sync snappy-boot script:', error));
+    return snappySync;
+  };
   const exemptionsKey = 'slick:extension:exempt-tabs';
   const exemptions = new Set<number>();
   // Settings arrive before any rules, so a suspended page's rules are replaced, not doubled.
@@ -84,7 +144,12 @@ export function createBackground(
         }
     })
     .then(() => storage.dispatch({ method: 'readSettings', args: [] }))
-    .then((r) => (r.ok ? host.update(parse(r.value)) : undefined));
+    .then((r) => {
+      const parsed = r.ok ? parse(r.value) : null;
+      void syncThemeCache(parsed);
+      void syncSnappy(parsed);
+      return r.ok ? host.update(parsed) : undefined;
+    });
   let modesReady: Promise<unknown> = hostReady;
   const setMode = (tabId: number, exempt: boolean) => {
     const next = modesReady.then(async () => {
@@ -123,8 +188,11 @@ export function createBackground(
   api.storage.onChanged.addListener((changes, area) => {
     if (area === 'local' && USER_PLUGINS_KEY in changes) sync();
     if (area !== 'local' || !(SETTINGS_KEY in changes)) return;
+    const parsed = parse(changes[SETTINGS_KEY].newValue ?? DEFAULT_SETTINGS);
     applyIcon(changes[SETTINGS_KEY].newValue);
-    void hostReady.then(() => host.update(parse(changes[SETTINGS_KEY].newValue)));
+    void syncThemeCache(parsed);
+    void syncSnappy(parsed);
+    void hostReady.then(() => host.update(parsed));
   });
   return async (message: unknown, sender: Sender): Promise<Response> => {
     if (!allowedSender(sender, api.runtime.id, api.runtime.getURL('')) || !validRequest(message))
@@ -203,8 +271,11 @@ export function createBackground(
     }
     const response = await storage.dispatch(message);
     // The page starts plugins once this resolves, before storage.onChanged arrives.
-    if (response.ok && response.value === true && settingsWrites.has(message.method))
-      void hostReady.then(() => host.update(parse(message.args.at(-1))));
+    if (response.ok && response.value === true && settingsWrites.has(message.method)) {
+      const next = parse(message.args.at(-1));
+      void hostReady.then(() => host.update(next));
+      await Promise.all([syncThemeCache(next), syncSnappy(next)]);
+    }
     return response;
   };
 }

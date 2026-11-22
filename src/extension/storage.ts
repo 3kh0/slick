@@ -5,6 +5,7 @@ import type { Request, Response, StorageArea } from './rpc.ts';
 
 export const SETTINGS_KEY = 'slick:firefox:settings';
 export const CSS_KEY = 'slick:firefox:css';
+export const THEME_CSS_KEY = 'slick:firefox:theme-css';
 // Plugins are opt-in individually. No global off: Slack's Preferences tab has no
 // global switch, so a plugin enabled there would silently never start.
 export const DEFAULT_SETTINGS = JSON.stringify({

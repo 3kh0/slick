@@ -17,6 +17,7 @@ const archives = await Promise.all(
     const scripts = manifest.content_scripts.flatMap((entry: { js: string[] }) => entry.js);
     for (const file of [
       ...scripts,
+      'snappy-boot.js',
       'background.js',
       'options.html',
       'options.css',
@@ -52,6 +53,9 @@ const archives = await Promise.all(
     return { entries, manifest };
   }),
 );
-assert.deepEqual(archives[0].entries['page.js'], archives[1].entries['page.js']);
+for (const file of ['early.js', 'runtime.js', 'snappy-boot.js']) {
+  assert.ok(archives[0].entries[file]?.length, `missing ${file}`);
+  assert.deepEqual(archives[0].entries[file], archives[1].entries[file]);
+}
 assert.deepEqual(archives[0].manifest.content_scripts, archives[1].manifest.content_scripts);
 console.log('PASS: Firefox and Chromium ship identical page/plugin code and injection declarations');

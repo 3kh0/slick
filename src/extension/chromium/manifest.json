@@ -19,9 +19,15 @@
     },
     {
       "matches": ["https://app.slack.com/client", "https://app.slack.com/client/*"],
-      "js": ["page.js"],
+      "js": ["early.js"],
       "world": "MAIN",
       "run_at": "document_start"
+    },
+    {
+      "matches": ["https://app.slack.com/client", "https://app.slack.com/client/*"],
+      "js": ["runtime.js"],
+      "world": "MAIN",
+      "run_at": "document_end"
     }
   ],
   "action": {

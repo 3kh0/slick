@@ -13,6 +13,11 @@ declare module 'slick:background-plugins' {
   export default plugins;
 }
 
+declare module 'slick:builtin-themes' {
+  const themes: () => Record<string, import('./shared/themes.ts').ThemeJson>;
+  export default themes;
+}
+
 declare module 'slick:monaco-workers' {
   export const cssWorker: string;
   export const editorWorker: string;

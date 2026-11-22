@@ -8,7 +8,8 @@ In a PR that changes something users will notice, add a line under **Unreleased*
 
 ### New
 
-- Slick loads faster on desktop without reloading Slack's page.
+- Slick loads faster on desktop and in browser extensions without reloading or flashing unstyled themes.
+- Snappy can enable its faster navigation optimizations in the browser extension after restarting.
 
 ### Fixed
 

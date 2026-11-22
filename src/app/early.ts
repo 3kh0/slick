@@ -51,6 +51,16 @@ export type EarlyCore = typeof core & { claimed: bridge.SlickBridge };
       webpack.CHUNK_GLOBALS.some((n) => !!g[n]),
     );
     webpack.installWebpackHooks({ allowExisting: false });
+    if (c.loader === 'extension' && !c.safeMode && !g[snappyBoot.SNAPPY_OPT_IN]) {
+      Object.defineProperty(g, snappyBoot.SNAPPY_LATE, {
+        value: () => {
+          delete g[snappyBoot.SNAPPY_LATE];
+          if (webpack.stats().modules > 0) return;
+          snappyBoot.installStateTrackingOptimization(c, false);
+        },
+        configurable: true,
+      });
+    }
     webpack.exposeDebugGlobals();
     react.exposeDebugGlobals();
     redux.exposeDebugGlobals();
