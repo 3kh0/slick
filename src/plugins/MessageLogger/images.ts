@@ -15,20 +15,26 @@ const MAX_DOWNLOAD_BYTES = 2 * 1024 * 1024;
 const MAX_ARCHIVED = 128;
 const MAX_RECENT = 64;
 const RASTER = /^image\/(png|jpeg|gif|webp)$/i;
+const SLACK_FILE_HOSTS = ['files.slack.com', 'files-origin.slack.com', 'files.slack-edge.com'];
+
+export function isSlackFileUrl(value: unknown): value is string {
+  if (typeof value !== 'string') return false;
+  try {
+    const url = new URL(value);
+    return (
+      url.protocol === 'https:' &&
+      !url.username &&
+      !url.password &&
+      !url.port &&
+      SLACK_FILE_HOSTS.includes(url.hostname)
+    );
+  } catch {
+    return false;
+  }
+}
 
 function urls(values: unknown[]): string[] {
-  return [
-    ...new Set(
-      values.filter((value): value is string => {
-        if (typeof value !== 'string') return false;
-        try {
-          return new URL(value).protocol === 'https:';
-        } catch {
-          return false;
-        }
-      }),
-    ),
-  ];
+  return [...new Set(values.filter(isSlackFileUrl))];
 }
 
 /** Prefer a Slack preview: originals can be huge, and private URLs need session cookies. */
@@ -72,6 +78,7 @@ function dataURL(blob: Blob): Promise<string> {
 }
 
 export async function downloadImage(url: string, signal: AbortSignal): Promise<string | null> {
+  if (!isSlackFileUrl(url)) return null;
   const response = await fetch(url, {
     credentials: 'include',
     signal: AbortSignal.any([signal, AbortSignal.timeout(10_000)]),
