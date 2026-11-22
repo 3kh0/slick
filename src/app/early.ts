@@ -71,6 +71,14 @@ export type EarlyCore = typeof core & { claimed: bridge.SlickBridge };
     console.error('[slick] failed to install interception; Slack will run unmodified:', e);
     return;
   }
-  Object.defineProperty(g, Symbol.for('slick.earlyCore'), { value: { ...core, claimed: c }, configurable: true });
+  const key = Symbol.for('slick.earlyCore');
+  const handoff = { ...core, claimed: c };
+  Object.defineProperty(g, key, {
+    configurable: true,
+    get() {
+      delete g[key];
+      return handoff;
+    },
+  });
   console.log(`[slick] ${v} running before Slack — preconditions passed`);
 })();

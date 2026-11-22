@@ -33,7 +33,6 @@ export function privilegedSchemes(): Electron.CustomScheme[] {
 let bundleCandidates: string[] = [];
 
 export function appUrl(): string {
-  if (process.env.SLICK_APP_URL) return process.env.SLICK_APP_URL;
   for (const bundle of bundleCandidates) {
     try {
       return `slick://app/slick.js?v=${Math.trunc(statSync(bundle).mtimeMs)}`;

@@ -6,10 +6,13 @@ In a PR that changes something users will notice, add a line under **Unreleased*
 
 ## Unreleased
 
+### Highlights
+
+- Slick is now powered by a new loader that is faster and more reliable, and delivers better performance in the browser.
+
 ### New
 
-- Slick loads faster on desktop and in browser extensions without reloading or flashing unstyled themes.
-- Snappy can enable its faster navigation optimizations in the browser extension after restarting.
+- Snappy's Faster navigation setting now works in browsers.
 
 ### Fixed
 

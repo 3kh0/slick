@@ -8,7 +8,7 @@ import {
   validRequest,
   validResponse,
 } from './rpc.ts';
-import { CSS_KEY, DEFAULT_SETTINGS, SETTINGS_KEY, THEME_CSS_KEY } from './storage.ts';
+import { CSS_KEY, DEFAULT_SETTINGS, HAS_EXEMPT_KEY, SETTINGS_KEY, THEME_CSS_KEY } from './storage.ts';
 import type { ExtensionBrowser, Request } from './rpc.ts';
 
 const EXEMPT_KEY = 'slick:firefox:exempt';
@@ -48,12 +48,7 @@ export function installRelay(api: ExtensionBrowser, window: Window) {
   } catch {
     wasExempt = true;
   }
-  if (mode !== 'normal') {
-    try {
-      window.sessionStorage.setItem(EXEMPT_KEY, '1');
-    } catch {}
-    void send({ method: 'tabMode', args: [mode] }).catch(() => {});
-  } else if (wasExempt) {
+  const reportNormal = () =>
     void send({ method: 'tabMode', args: ['normal'] }).then(
       (response) => {
         if (validResponse(response) && response.ok) {
@@ -64,12 +59,20 @@ export function installRelay(api: ExtensionBrowser, window: Window) {
       },
       () => {},
     );
-  }
+  if (mode !== 'normal') {
+    try {
+      window.sessionStorage.setItem(EXEMPT_KEY, '1');
+    } catch {}
+    void send({ method: 'tabMode', args: [mode] }).catch(() => {});
+  } else if (wasExempt) reportNormal();
   if (mode === 'bypass') return;
   let closed = false;
   let port: MessagePort | null = null;
+  let windowMode = false;
+  const earlyChanges = new Map<string, unknown>();
   const generations = { settings: 0, css: 0 };
   const bootPrefetch = { settings: true, css: true };
+  const prePaintStopped = { settings: false, css: false };
   const inflight = new Set<string>();
   const prePaintCleanups = new Map<'css' | 'settings', (() => void)[]>();
   const trackPrePaint = (slot: 'css' | 'settings', cleanup: () => void) => {
@@ -85,11 +88,17 @@ export function installRelay(api: ExtensionBrowser, window: Window) {
       prePaintCleanups.delete(key);
     }
   };
+  const stopPrePaint = (slot: 'css' | 'settings') => {
+    prePaintStopped[slot] = true;
+    clearPrePaint(slot);
+  };
+  const prePainting = (slot: 'css' | 'settings') =>
+    !closed && !bypassed() && generations[slot] === 0 && !prePaintStopped[slot];
   const readPrefetch = (): Promise<Record<string, unknown> | null> | null => {
     try {
       const local = api.storage?.local;
       if (typeof local?.get !== 'function') return null;
-      return Promise.resolve(local.get([SETTINGS_KEY, CSS_KEY, THEME_CSS_KEY])).then(
+      return Promise.resolve(local.get([SETTINGS_KEY, CSS_KEY, THEME_CSS_KEY, HAS_EXEMPT_KEY])).then(
         (items) => (record(items) ? items : null),
         () => null,
       );
@@ -98,15 +107,19 @@ export function installRelay(api: ExtensionBrowser, window: Window) {
     }
   };
   const prefetch = readPrefetch();
+  if (mode === 'normal' && !wasExempt) {
+    if (!prefetch) reportNormal();
+    else void prefetch.then((items) => (!items || items[HAS_EXEMPT_KEY] === true) && reportNormal());
+  }
   if (mode === 'normal' && prefetch && window.document && typeof window.document.createElement === 'function') {
     const doc = window.document;
     const MO =
       (window as Window & { MutationObserver?: typeof MutationObserver }).MutationObserver ??
       globalThis.MutationObserver;
     const attachStyle = (slot: 'css' | 'settings', key: string, cssText: string) => {
-      if (closed || bypassed() || generations[slot] !== 0 || !cssText) return;
+      if (!prePainting(slot) || !cssText) return;
       const mount = () => {
-        if (closed || bypassed() || generations[slot] !== 0) return true;
+        if (!prePainting(slot)) return true;
         const target = doc.head || doc.documentElement;
         if (!target) return false;
         if (!doc.querySelector(`style[data-slick-style="${key}"]`)) {
@@ -128,7 +141,7 @@ export function installRelay(api: ExtensionBrowser, window: Window) {
     void prefetch.then((items) => {
       if (!items || closed || bypassed()) return;
       const userCss = items[CSS_KEY];
-      if (typeof userCss === 'string' && userCss && userCss.length <= MAX_TEXT && generations.css === 0)
+      if (typeof userCss === 'string' && userCss && userCss.length <= MAX_TEXT && prePainting('css'))
         attachStyle('css', 'user', userCss);
       const rawTheme = items[THEME_CSS_KEY];
       if (
@@ -136,7 +149,7 @@ export function installRelay(api: ExtensionBrowser, window: Window) {
         typeof rawTheme.css === 'string' &&
         rawTheme.css &&
         rawTheme.css.length <= MAX_TEXT &&
-        generations.settings === 0
+        prePainting('settings')
       ) {
         const themeCss = rawTheme.css;
         const themeMode = rawTheme.mode === 'dark' || rawTheme.mode === 'light' ? rawTheme.mode : null;
@@ -144,7 +157,7 @@ export function installRelay(api: ExtensionBrowser, window: Window) {
           attachStyle('settings', 'theme', themeCss);
         } else {
           const waitBody = () => {
-            if (closed || bypassed() || generations.settings !== 0) return true;
+            if (!prePainting('settings')) return true;
             if (!doc.body) return false;
             if (doc.body.classList.contains(`sk-client-theme--${themeMode}`)) {
               attachStyle('settings', 'theme', themeCss);
@@ -157,7 +170,7 @@ export function installRelay(api: ExtensionBrowser, window: Window) {
                 bo.disconnect();
               };
               const bo = new MO(() => {
-                if (closed || bypassed() || generations.settings !== 0) {
+                if (!prePainting('settings')) {
                   stop();
                   return;
                 }
@@ -186,7 +199,14 @@ export function installRelay(api: ExtensionBrowser, window: Window) {
   const post = (message: unknown) => {
     if (closed || bypassed()) return;
     if (port) port.postMessage(message);
+    else if (windowMode) window.postMessage(message, location.origin);
+    else if (record(message) && message.kind === 'change') earlyChanges.set(String(message.event), message);
     else window.postMessage(message, location.origin);
+  };
+  const flushEarlyChanges = () => {
+    const pending = [...earlyChanges.values()];
+    earlyChanges.clear();
+    for (const message of pending) post(message);
   };
   const handleRequest = (m: unknown) => {
     if (closed || bypassed() || !record(m) || m.channel !== CHANNEL || m.kind !== 'request' || !validId(m.id)) return;
@@ -212,9 +232,10 @@ export function installRelay(api: ExtensionBrowser, window: Window) {
       bootPrefetch.css = false;
       generations.css++;
       clearPrePaint('css');
-    } else if ((m.method === 'readSettings' || m.method === 'readUserCss') && prefetch) {
+    } else if (m.method === 'readSettings' || m.method === 'readUserCss') {
       const slot = m.method === 'readSettings' ? 'settings' : 'css';
-      if (bootPrefetch[slot]) {
+      stopPrePaint(slot);
+      if (prefetch && bootPrefetch[slot]) {
         bootPrefetch[slot] = false;
         const gen = generations[slot];
         void prefetch.then((items) => {
@@ -256,10 +277,17 @@ export function installRelay(api: ExtensionBrowser, window: Window) {
         port = event.ports[0];
         port.addEventListener('message', (ev: MessageEvent) => handleRequest(ev.data));
         port.start();
+        flushEarlyChanges();
       }
       return;
     }
-    if (!port) handleRequest(m);
+    if (!port) {
+      if (!windowMode) {
+        windowMode = true;
+        flushEarlyChanges();
+      }
+      handleRequest(m);
+    }
   });
   api.storage.onChanged.addListener((changes, area) => {
     if (area !== 'local') return;

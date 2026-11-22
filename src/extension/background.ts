@@ -1,7 +1,7 @@
 import { MAX_TEXT, record, validMethodResponse, validRequest } from './rpc.ts';
 import type { ExtensionBrowser, Response, Sender } from './rpc.ts';
 import { createMainHost, type BackgroundPlugin } from './mainHost.ts';
-import { DEFAULT_SETTINGS, SETTINGS_KEY, THEME_CSS_KEY, createStorage } from './storage.ts';
+import { DEFAULT_SETTINGS, HAS_EXEMPT_KEY, SETTINGS_KEY, THEME_CSS_KEY, createStorage } from './storage.ts';
 import { indexedDbBackend, type BlobBackend } from './blobs.ts';
 import { createAccountService, AccountError, type AccountBrowser } from './accounts.ts';
 import { USER_PLUGINS_KEY, installedPlugins, syncUserScripts, userScripts } from './userPlugins.ts';
@@ -130,6 +130,16 @@ export function createBackground(
   };
   const exemptionsKey = 'slick:extension:exempt-tabs';
   const exemptions = new Set<number>();
+  let publishedExempt: boolean | undefined;
+  const publishExemptions = async () => {
+    const next = exemptions.size > 0;
+    try {
+      publishedExempt ??= (await api.storage.local.get(HAS_EXEMPT_KEY))[HAS_EXEMPT_KEY] === true;
+      if (publishedExempt === next) return;
+      await api.storage.local.set({ [HAS_EXEMPT_KEY]: next });
+      publishedExempt = next;
+    } catch {}
+  };
   // Settings arrive before any rules, so a suspended page's rules are replaced, not doubled.
   const hostReady = host
     .reset()
@@ -142,13 +152,15 @@ export function createBackground(
             await host.setExempt(tabId, true);
           }
         }
+      await publishExemptions();
     })
     .then(() => storage.dispatch({ method: 'readSettings', args: [] }))
     .then((r) => {
-      const parsed = r.ok ? parse(r.value) : null;
+      if (!r.ok) return;
+      const parsed = parse(r.value);
       void syncThemeCache(parsed);
       void syncSnappy(parsed);
-      return r.ok ? host.update(parsed) : undefined;
+      return host.update(parsed);
     });
   let modesReady: Promise<unknown> = hostReady;
   const setMode = (tabId: number, exempt: boolean) => {
@@ -156,6 +168,7 @@ export function createBackground(
       if (exempt) exemptions.add(tabId);
       else exemptions.delete(tabId);
       await api.storage.session?.set({ [exemptionsKey]: [...exemptions] });
+      await publishExemptions();
       await host.setExempt(tabId, exempt);
     });
     modesReady = next.catch(() => {});

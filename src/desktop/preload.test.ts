@@ -17,6 +17,7 @@ type Opts = {
   boot?: unknown;
   bootThrows?: boolean;
   recovery?: string;
+  handoff?: unknown;
   executeRejects?: boolean;
   earlyCode?: string;
   deferredDom?: boolean;
@@ -35,6 +36,7 @@ function fixture(o: Opts = {}) {
   const executed: string[] = [];
   const lifecycle: string[] = [];
   const writes: string[] = [];
+  const stored = new Map<string, string>();
   const scripts: ScriptEl[] = [];
   const rec = new Map(o.recovery === undefined ? [] : [['slick:preload-recovery', o.recovery]]);
   let signInHooked = 0;
@@ -51,7 +53,7 @@ function fixture(o: Opts = {}) {
     invoke: () => Promise.resolve('{}'),
     sendSync(ch: string) {
       lifecycle.push(`sendSync:${ch}`);
-      if (ch === 'slick:account-handoff') return null;
+      if (ch === 'slick:account-handoff') return o.handoff ?? null;
       if (ch === 'slick:get-boot-sync') {
         if (o.bootThrows) throw new Error('boot sync unavailable');
         return o.boot === undefined
@@ -103,7 +105,7 @@ function fixture(o: Opts = {}) {
     },
     console,
     URL,
-    localStorage: { setItem() {}, getItem: () => null },
+    localStorage: { setItem: (k: string, v: string) => void stored.set(k, v), getItem: () => null },
     location: {
       hostname: o.hostname ?? 'app.slack.com',
       pathname: o.pathname ?? '/client/T/C',
@@ -149,6 +151,7 @@ function fixture(o: Opts = {}) {
     executed,
     lifecycle,
     writes,
+    stored,
     scripts,
     rec,
     ready,
@@ -199,6 +202,14 @@ test('recovery flag clears itself and leaves Slack completely unmodified', async
   assert.equal(f.lifecycle.includes('sendSync:slick:get-boot-sync'), false);
 });
 
+test('a pending account handoff is applied even on a recovery pass', async () => {
+  const f = fixture({ recovery: '1', handoff: { team: 'T1' } });
+  await f.flush();
+  assert.equal(f.stored.get('pending'), JSON.stringify({ team: 'T1' }));
+  assert.equal(f.lifecycle.includes('slick:account-diagnostic:preload.handoff-applied'), true);
+  assert.equal(f.exposed(), undefined);
+});
+
 test('failed or invalid boot snapshots stay fail-closed without suppressing defaults silently', async () => {
   for (const invalid of [null, undefined, 'false', {}, 0]) {
     const f = fixture({
@@ -213,12 +224,12 @@ test('failed or invalid boot snapshots stay fail-closed without suppressing defa
     const f = fixture({ boot: { paths: {}, safeMode: false, initialSettings: invalid, appUrl: '' } });
     await f.ready;
     assert.equal(f.exposed()!.claim()!.initialSettings, undefined);
-    assert.equal(f.scripts[0]?.src, 'slick://app/slick.js');
+    assert.match(f.scripts[0]?.src ?? '', /^slick:\/\/app\/slick\.js\?v=\d+$/);
   }
   for (const badUrl of ['', 'https://evil.example/x.js', 'javascript:alert(1)']) {
     const f = fixture({ boot: { paths: {}, safeMode: false, initialSettings: '{}', appUrl: badUrl } });
     await f.ready;
-    assert.equal(f.scripts[0]?.src, 'slick://app/slick.js');
+    assert.match(f.scripts[0]?.src ?? '', /^slick:\/\/app\/slick\.js\?v=\d+$/);
   }
   const throwsBoot = fixture({ bootThrows: true });
   await throwsBoot.ready;

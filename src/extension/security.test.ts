@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { allowedSender, createBackground, toolbarIconPath } from './background.ts';
-import { SETTINGS_KEY, THEME_CSS_KEY } from './storage.ts';
+import { HAS_EXEMPT_KEY, SETTINGS_KEY, THEME_CSS_KEY } from './storage.ts';
 import { installBridge, oneShot } from './bridge-setup.ts';
 import { validRequest, validResponse, MAX_TEXT } from './rpc.ts';
 import type { ExtensionBrowser } from './rpc.ts';
@@ -225,6 +225,58 @@ test('background keeps cached theme CSS and dynamic snappy-boot script in sync',
   });
   assert.equal(THEME_CSS_KEY in data, false);
   assert.equal(registered.length, 0);
+});
+
+test('a failed settings read at startup leaves the theme cache and snappy-boot alone', async () => {
+  const cached = { css: ':root{--bg:#000}', mode: 'dark' };
+  const data: Record<string, unknown> = { [THEME_CSS_KEY]: cached };
+  let registered: Record<string, unknown>[] = [{ id: 'snappy-boot' }];
+  const api = {
+    runtime: { id: 'slick@test', getURL: (path: string) => 'moz-extension://own/' + path },
+    storage: {
+      local: {
+        get: async (key: string) => {
+          if (key === SETTINGS_KEY) throw new Error('storage busy');
+          return key in data ? { [key]: data[key] } : {};
+        },
+        set: async (items: Record<string, unknown>) => void Object.assign(data, items),
+        remove: async (key: string) => void delete data[key],
+      },
+      onChanged: { addListener() {} },
+    },
+    tabs: {},
+    scripting: {
+      getRegisteredContentScripts: async () => registered,
+      registerContentScripts: async () => {},
+      unregisterContentScripts: async () => void (registered = []),
+    },
+  } as unknown as ExtensionBrowser;
+  createBackground(api, [], {} as never);
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  assert.deepEqual(data[THEME_CSS_KEY], cached);
+  assert.equal(registered.length, 1);
+});
+
+test('background publishes whether any tab is exempt so relays can skip waking it', async () => {
+  const data: Record<string, unknown> = {};
+  const api = {
+    runtime: { id: 'slick@test', getURL: (path: string) => 'moz-extension://own/' + path },
+    storage: {
+      local: {
+        get: async (key: string) => (key in data ? { [key]: data[key] } : {}),
+        set: async (items: Record<string, unknown>) => void Object.assign(data, items),
+        remove: async (key: string) => void delete data[key],
+      },
+      onChanged: { addListener() {} },
+    },
+    tabs: {},
+  } as unknown as ExtensionBrowser;
+  const dispatch = createBackground(api, [], {} as never);
+  const page = { id: 'slick@test', frameId: 0, tab: { id: 7 }, url: 'https://app.slack.com/client/T/C' };
+  await dispatch({ method: 'tabMode', args: ['safe'] }, page);
+  assert.equal(data[HAS_EXEMPT_KEY], true);
+  await dispatch({ method: 'tabMode', args: ['normal'] }, page);
+  assert.equal(data[HAS_EXEMPT_KEY], false);
 });
 
 test('installBridge transfers one MessageChannel port and closes it on final pagehide', async () => {

@@ -3,11 +3,13 @@ import { test } from 'node:test';
 import { installRelay } from './content.ts';
 import { CHANNEL } from './rpc.ts';
 import type { ExtensionBrowser } from './rpc.ts';
-import { CSS_KEY, SETTINGS_KEY, THEME_CSS_KEY } from './storage.ts';
+import { CSS_KEY, HAS_EXEMPT_KEY, SETTINGS_KEY, THEME_CSS_KEY } from './storage.ts';
 
 function flush() {
   return new Promise((resolve) => setTimeout(resolve, 0));
 }
+
+const NORMAL_REPORT = { method: 'tabMode', args: ['normal'] };
 
 function relayTarget(storageState: Record<string, string> = {}) {
   const listeners = new Map<string, (event: unknown) => void>();
@@ -45,8 +47,7 @@ test('isolated relay rejects foreign source/origin, malformed messages and runti
     storage: { onChanged: { addListener: () => {} } },
   } as unknown as ExtensionBrowser;
   installRelay(api, target);
-  // Normal loads with no prior exemption skip tabMode to avoid waking the service worker.
-  assert.equal(calls.length, 0);
+  assert.deepEqual(calls.splice(0), [NORMAL_REPORT]);
   const data = { channel: CHANNEL, kind: 'request', id: 'test-1', method: 'readSettings', args: [] };
   const event = { source: target, origin: target.location.origin, data };
   const receive = listeners.get('message')!;
@@ -100,13 +101,14 @@ test('invalidated Chromium context handles synchronous throws on startup, reques
   ]);
   assert.doesNotThrow(() => listeners.get('pageshow')!({ persisted: true }));
   await Promise.resolve();
-  assert.equal(calls, 3);
+  assert.equal(calls, 4);
   assert.equal(posts.length, 1);
 });
 
 test('smart tabMode reports safe/bypass exemptions and clears them once normal resumes', async () => {
   const session: Record<string, string> = { 'slick:firefox:safe-mode': '1' };
   const calls: unknown[] = [];
+  let local: Record<string, unknown> = {};
   const api = {
     runtime: {
       sendMessage: async (m: unknown) => {
@@ -114,7 +116,7 @@ test('smart tabMode reports safe/bypass exemptions and clears them once normal r
         return { ok: true, value: true };
       },
     },
-    storage: { onChanged: { addListener() {} } },
+    storage: { local: { get: async () => local }, onChanged: { addListener() {} } },
   } as unknown as ExtensionBrowser;
 
   installRelay(api, relayTarget(session).target);
@@ -130,6 +132,11 @@ test('smart tabMode reports safe/bypass exemptions and clears them once normal r
   installRelay(api, relayTarget(session).target);
   await flush();
   assert.equal(calls.length, 0);
+
+  local = { [HAS_EXEMPT_KEY]: true };
+  installRelay(api, relayTarget(session).target);
+  await flush();
+  assert.deepEqual(calls.splice(0), [NORMAL_REPORT]);
 });
 
 test('storage.local boot prefetch serves initial reads once and invalidates on writes or changes', async () => {
@@ -288,6 +295,7 @@ test('MessageChannel startup port is one-shot, handles requests/changes, and clo
   } as unknown as ExtensionBrowser;
 
   installRelay(api, target);
+  assert.deepEqual(calls.splice(0), [NORMAL_REPORT]);
 
   function fakePort() {
     const sent: unknown[] = [];
@@ -347,4 +355,69 @@ test('MessageChannel startup port is one-shot, handles requests/changes, and clo
 
   listeners.get('pagehide')!({ persisted: false });
   assert.equal(port1.closed, true);
+});
+
+test('pre-paint stops once the runtime reads settings, so a late body flip cannot inject a stale theme', async () => {
+  const styles = new Map<string, unknown>();
+  const bodyClasses = new Set<string>();
+  const observers: (() => void)[] = [];
+  const doc = {
+    head: { appendChild: (el: { dataset: Record<string, string> }) => styles.set(el.dataset.slickStyle, el) },
+    body: { classList: { contains: (cls: string) => bodyClasses.has(cls) } },
+    createElement: () => ({ dataset: {} as Record<string, string>, textContent: '' }),
+    querySelector: () => null,
+  };
+  class FakeObserver {
+    constructor(cb: () => void) {
+      observers.push(cb);
+    }
+    observe() {}
+    disconnect() {}
+  }
+  const { target, listeners } = relayTarget();
+  Object.assign(target, { document: doc, MutationObserver: FakeObserver });
+  const api = {
+    runtime: { sendMessage: async () => ({ ok: true, value: true }) },
+    storage: {
+      local: { get: async () => ({ [THEME_CSS_KEY]: { css: ':root{--bg:#000}', mode: 'dark' } }) },
+      onChanged: { addListener() {} },
+    },
+  } as unknown as ExtensionBrowser;
+
+  installRelay(api, target);
+  await flush();
+  listeners.get('message')!({
+    source: target,
+    origin: target.location.origin,
+    data: { channel: CHANNEL, kind: 'request', id: 'boot', method: 'readSettings', args: [] },
+  });
+  bodyClasses.add('sk-client-theme--dark');
+  for (const cb of observers) cb();
+  assert.equal(styles.has('theme'), false);
+});
+
+test('changes that arrive before the bridge port are delivered through the port', async () => {
+  const { target, listeners, posts } = relayTarget();
+  let onChanged!: (changes: Record<string, { newValue?: unknown }>, area: string) => void;
+  const api = {
+    runtime: { sendMessage: async () => ({ ok: true, value: true }) },
+    storage: {
+      local: { get: async () => ({}) },
+      onChanged: { addListener: (cb: typeof onChanged) => (onChanged = cb) },
+    },
+  } as unknown as ExtensionBrowser;
+  installRelay(api, target);
+  onChanged({ [SETTINGS_KEY]: { newValue: '{"a":1}' } }, 'local');
+  onChanged({ [SETTINGS_KEY]: { newValue: '{"a":2}' } }, 'local');
+  assert.equal(posts.length, 0);
+  const sent: unknown[] = [];
+  const port = { addEventListener() {}, start() {}, postMessage: (m: unknown) => sent.push(m), close() {} };
+  listeners.get('message')!({
+    source: target,
+    origin: target.location.origin,
+    data: { channel: CHANNEL, kind: 'port' },
+    ports: [port],
+  });
+  assert.deepEqual(sent, [{ channel: CHANNEL, kind: 'change', event: 'settings', value: '{"a":2}' }]);
+  assert.equal(posts.length, 0);
 });

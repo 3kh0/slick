@@ -31,16 +31,6 @@ function attachRuntimeScript(appUrl: string, onFail: () => void): void {
 }
 
 function runClientPreload() {
-  let recovering = false;
-  try {
-    recovering = sessionStorage.getItem('slick:preload-recovery') === '1';
-    sessionStorage.removeItem('slick:preload-recovery');
-  } catch {}
-  if (recovering) {
-    console.warn('[slick] recovering from a failed boot; Slack will load unmodified');
-    return;
-  }
-
   const pending = ipcRenderer.sendSync('slick:account-handoff');
   if (pending) {
     try {
@@ -58,6 +48,16 @@ function runClientPreload() {
     }
   }
 
+  let recovering = false;
+  try {
+    recovering = sessionStorage.getItem('slick:preload-recovery') === '1';
+    sessionStorage.removeItem('slick:preload-recovery');
+  } catch {}
+  if (recovering) {
+    console.warn('[slick] recovering from a failed boot; Slack will load unmodified');
+    return;
+  }
+
   let boot: Record<string, unknown> | undefined;
   try {
     boot = ipcRenderer.sendSync('slick:get-boot-sync') as Record<string, unknown> | undefined;
@@ -71,13 +71,14 @@ function runClientPreload() {
       ? (boot.paths as Record<string, string>)
       : {};
   const appUrl =
-    typeof boot?.appUrl === 'string' && boot.appUrl.startsWith('slick://app/') ? boot.appUrl : 'slick://app/slick.js';
+    typeof boot?.appUrl === 'string' && boot.appUrl.startsWith('slick://app/')
+      ? boot.appUrl
+      : `slick://app/slick.js?v=${Date.now()}`;
 
   const call = (method: string, args: unknown[] = []) => ipcRenderer.invoke('slick:rpc', method, args);
 
   // contextBridge globals are non-configurable, so the API can't be hidden from
-  // Slack's scripts. Instead it's a one-shot claim: early.js runs first and
-  // takes it; every later caller gets null.
+  // Slack's scripts. Instead it's a one-shot claim: early.js runs first and takes it, then hands it to slick.js through a read-once global.
   const api = {
     loader: 'electron' as const,
     loaderVersion: typeof __SLICK_VERSION__ === 'string' ? __SLICK_VERSION__ : 'dev',
