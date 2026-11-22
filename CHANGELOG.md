@@ -6,6 +6,10 @@ In a PR that changes something users will notice, add a line under **Unreleased*
 
 ## Unreleased
 
+### Fixed
+
+- MessageLogger only saves image previews hosted by Slack, so a message can no longer reveal your connection to external hosts.
+
 ## Build 160
 
 ### Fixed
