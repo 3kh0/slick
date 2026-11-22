@@ -2,7 +2,8 @@ import { ICONS, type ImportResult } from './icons.ts';
 
 export type IconGridHost = {
   selection: { use(): string };
-  loadPreviews(): Promise<Record<string, string> | null>;
+  appearance: { use(): string };
+  loadPreviews(appearance: string): Promise<Record<string, string> | null>;
   loadCustomPreview(): Promise<string | null>;
   choose(icon: string): Promise<void>;
   upload(): Promise<ImportResult>;
@@ -124,10 +125,11 @@ function RemoveMenu({ x, y, onRemove, dismiss }: { x: number; y: number; onRemov
 
 export function IconGrid({ host }: { host: IconGridHost }) {
   const icon = host.selection.use();
+  const appearance = host.appearance.use();
   const [revision, setRevision] = React.useState(0);
   const [menu, setMenu] = React.useState<{ x: number; y: number } | null>(null);
   const [error, setError] = React.useState('');
-  const previews = useLoaded(() => host.loadPreviews(), null);
+  const previews = useLoaded(() => host.loadPreviews(appearance), appearance);
   const customPreview = useLoaded(() => host.loadCustomPreview(), revision);
 
   const upload = async () => {

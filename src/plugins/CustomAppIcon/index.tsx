@@ -14,22 +14,25 @@ export default class CustomAppIcon extends SlickPlugin<typeof meta.settings> imp
   static readonly authors = meta.authors;
   static readonly defaultEnabled = meta.defaultEnabled;
   static readonly settings = meta.settings;
-  static readonly liveSettings = ['icon'];
+  static readonly liveSettings = ['icon', 'appearance'];
 
   selection!: IconStore;
+  appearance!: IconStore;
 
   start() {
     this.selection = new this.api.Store(String(this.config.icon));
+    this.appearance = new this.api.Store(String(this.config.appearance));
     this.api.setStyle(STYLE);
     this.api.settings.panel(() => <IconGrid host={this} />);
   }
 
   onSettingsChange() {
     this.selection.set(String(this.config.icon));
+    this.appearance.set(String(this.config.appearance));
   }
 
-  loadPreviews() {
-    return this.call<Record<string, string>>('previews');
+  loadPreviews(appearance: string) {
+    return this.call<Record<string, string>>('previews', appearance);
   }
 
   loadCustomPreview() {
@@ -51,9 +54,9 @@ export default class CustomAppIcon extends SlickPlugin<typeof meta.settings> imp
     return (await this.call<boolean>('removeCustom')) ?? false;
   }
 
-  private async call<T>(method: string): Promise<T | null> {
+  private async call<T>(method: string, ...args: unknown[]): Promise<T | null> {
     try {
-      return await this.api.main.call<T>(method);
+      return await this.api.main.call<T>(method, ...args);
     } catch (error) {
       this.log(`${method} failed`, error);
       return null;

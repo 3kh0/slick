@@ -16,4 +16,15 @@ export const settings = {
     options: [...ICONS.map((icon) => ({ value: icon.id, label: icon.label })), { value: 'custom', label: 'Custom' }],
     hidden: true,
   },
+  appearance: {
+    type: 'select',
+    label: 'Appearance',
+    description: 'System follows the icon style in macOS Appearance settings.',
+    default: 'system',
+    options: [
+      { value: 'system', label: 'System' },
+      { value: 'light', label: 'Light' },
+      { value: 'dark', label: 'Dark' },
+    ],
+  },
 } as const satisfies SettingsSchema;

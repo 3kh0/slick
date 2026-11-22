@@ -25,10 +25,6 @@ export function defaultAppIcon(): Electron.NativeImage | null {
   return defaultIcon;
 }
 
-export function defaultIconPreview(): Electron.NativeImage {
-  return defaultAppIcon() ?? nativeImage.createFromDataURL(tile);
-}
-
 export function applyAppIcon(image: Electron.NativeImage | null): void {
   if (process.platform === 'darwin') app.dock?.setIcon(image as Electron.NativeImage);
   else for (const window of BrowserWindow.getAllWindows()) applyWindowIcon(window, image);
