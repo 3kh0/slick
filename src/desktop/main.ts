@@ -246,7 +246,7 @@ function startSlack(asar: string) {
 
   // Packaged builds carry the icon in the bundle, exe or .desktop entry; a bare Electron binary shows Electron's.
   if (!app.isPackaged) app.on('browser-window-created', (_event, window) => applyWindowIcon(window, defaultAppIcon()));
-  applyPatches(asar, path.join(__dirname, 'preload.js'), slickResourcesPath, windowCreated, interceptAccountSignIn);
+  applyPatches(asar, slickResourcesPath, windowCreated, interceptAccountSignIn);
   setupBridge();
   setupPluginRpc();
 
@@ -278,7 +278,10 @@ function startSlack(asar: string) {
   }
 
   app.whenReady().then(async () => {
-    setupSession(codeBuild ? [__dirname, slickResourcesPath] : [slickResourcesPath, __dirname]);
+    setupSession(
+      codeBuild ? [__dirname, slickResourcesPath] : [slickResourcesPath, __dirname],
+      path.join(__dirname, 'preload.js'),
+    );
     try {
       pruneCode(readShell(slickResourcesPath));
     } catch (error) {

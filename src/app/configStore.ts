@@ -3,7 +3,7 @@
 
 import { type PluginSettings, resolveSettings, type SettingsSchema } from '../shared/settings.ts';
 import type { SlickBridge } from './bridge.ts';
-import { importedThemes, isThemeJson, type ThemeJson } from '../shared/themes.ts';
+import { RENAMED_THEMES, importedThemes, isThemeJson, type ThemeJson } from '../shared/themes.ts';
 import {
   appWideReason,
   workspaceAllowed,
@@ -24,9 +24,6 @@ export type StoredConfig = {
 };
 
 type SchemaEntry = { schema: SettingsSchema; defaultEnabled: boolean };
-
-// Themes that were replaced, so a saved pick keeps working.
-const RENAMED_THEMES: Record<string, string> = { ultraviolet: 'catppuccin-mocha' };
 
 export class ConfigStore {
   private stored: StoredConfig = {};

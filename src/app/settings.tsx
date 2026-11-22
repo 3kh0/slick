@@ -11,7 +11,7 @@ import type { PluginManager } from './pluginManager.ts';
 import { patchComponent, reactReady } from './slack/react.tsx';
 import { dispatchThunk } from './slack/redux.ts';
 import { Store } from './store.ts';
-import type { ThemeJson } from './theme.ts';
+import { builtinThemes, type ThemeJson } from './theme.ts';
 import { parseThemeJson } from '../shared/themes.ts';
 import { currentWorkspaceId, knownWorkspaces } from './workspaces.ts';
 import { ReleaseLinks, ReleaseTimeline, UpdatePanel } from './whatsNew.tsx';
@@ -2005,7 +2005,8 @@ function ThemesPanel({ config, bridge }: { config: ConfigStore; bridge: SlickBri
   const picker = React.useRef<HTMLInputElement>(null);
   const [status, setStatus] = React.useState('');
   const [importing, setImporting] = React.useState(false);
-  const known = new Set(['', 'custom', ...Object.keys(__SLICK_THEMES__), ...Object.keys(config.importedThemes)]);
+  const themes = builtinThemes();
+  const known = new Set(['', 'custom', ...Object.keys(themes), ...Object.keys(config.importedThemes)]);
   const current = known.has(config.theme) ? config.theme : '';
   const select = (theme: string) => queueConfigWrite(config, () => config.setTheme(theme));
   const remove = async (id: string) =>
@@ -2052,7 +2053,7 @@ function ThemesPanel({ config, bridge }: { config: ConfigStore; bridge: SlickBri
             selected={current === ''}
             onSelect={() => select('')}
           />
-          {Object.entries(__SLICK_THEMES__).map(([id, theme]) => (
+          {Object.entries(themes).map(([id, theme]) => (
             <ThemeCard
               key={id}
               name={theme.name || id}

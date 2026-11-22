@@ -5,11 +5,15 @@ import { resolveSettings } from '../../shared/settings.ts';
 import * as meta from './meta.ts';
 import { createNativeStateGatePatcher } from './stateDescriptors.ts';
 
+export const SNAPPY_OPT_IN = Symbol.for('slick.snappyOptIn');
+export const SNAPPY_LATE = Symbol.for('slick.snappyLate');
+
 type BootContext = Pick<SlickBridge, 'loader' | 'safeMode' | 'initialSettings'>;
 
 /** Native consumers capture these gates during module initialization. */
 export function shouldOptimizeStateTracking(bridge: BootContext, slackAlreadyLoaded: boolean): boolean {
   if (bridge.safeMode || slackAlreadyLoaded) return false;
+  if (bridge.loader === 'extension') return (globalThis as Record<PropertyKey, unknown>)[SNAPPY_OPT_IN] === true;
   if (bridge.loader !== 'electron' && bridge.loader !== 'userscript') return false;
   if (typeof bridge.initialSettings !== 'string') return false;
   try {

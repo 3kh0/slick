@@ -83,7 +83,6 @@ export function broadcast(channel: string, ...args: unknown[]) {
 }
 
 const methods: Record<string, (args: any[]) => unknown> = {
-  readBootSettings: () => readBootSettings(),
   readSettings: () => readFile(SETTINGS_FILE, '{}'),
   writeSettings: async ([text]) => {
     const value = String(text ?? '');
@@ -136,16 +135,15 @@ export function setupUpdaterBridge(updater: Updater) {
 }
 
 export function setupBridge() {
-  ipcMain.handle('slick:get-app-url', () => appUrl());
-
-  ipcMain.handle('slick:get-paths', () => ({
-    config: configDir(),
-    profile: profileDir(),
-    settings: settingsDir(),
-  }));
-
-  // --safe-mode boots Slick's runtime with no plugins, for a bad plugin release.
-  ipcMain.handle('slick:get-safe-mode', () => safeMode());
+  ipcMain.on('slick:get-boot-sync', (e) => {
+    e.returnValue = {
+      paths: { config: configDir(), profile: profileDir(), settings: settingsDir() },
+      // --safe-mode boots Slick's runtime with no plugins, for a bad plugin release.
+      safeMode: safeMode(),
+      initialSettings: isSlackClient(e.senderFrame) ? readBootSettings() : undefined,
+      appUrl: appUrl(),
+    };
+  });
 
   ipcMain.handle('slick:rpc', (event, method: string, args: unknown[]) => {
     if (!isSlackClient(event.senderFrame)) throw new Error('[slick] rejected sender');

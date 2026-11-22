@@ -6,8 +6,13 @@ In a PR that changes something users will notice, add a line under **Unreleased*
 
 ## Unreleased
 
+### Highlights
+
+- Slick is now powered by a new loader that is faster and more reliable, and delivers better performance in the browser.
+
 ### New
 
+- Snappy's Faster navigation setting now works in browsers.
 - CustomAppIcon lets you swap Slick's dock and taskbar icon for a built-in design or your own image.
 
 ### Fixed

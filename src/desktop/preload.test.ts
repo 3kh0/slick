@@ -5,334 +5,277 @@ import { runInNewContext } from 'node:vm';
 import { transformSync } from 'esbuild';
 import type { SlickBridge } from '../app/bridge.ts';
 
-// Exercise the real preload's async ordering without launching Electron.
 const preload = transformSync(readFileSync(new URL('./preload.ts', import.meta.url), 'utf8'), {
   loader: 'ts',
   format: 'cjs',
   target: 'es2022',
 }).code;
 
-function deferred<T>() {
-  let resolve!: (value: T) => void;
-  let reject!: (reason: unknown) => void;
-  const promise = new Promise<T>((yes, no) => {
-    resolve = yes;
-    reject = no;
-  });
-  return { promise, resolve, reject };
-}
+type Opts = {
+  hostname?: string;
+  pathname?: string;
+  boot?: unknown;
+  bootThrows?: boolean;
+  recovery?: string;
+  handoff?: unknown;
+  executeRejects?: boolean;
+  earlyCode?: string;
+  deferredDom?: boolean;
+};
 
-function fixture(initial: Promise<unknown>, safeMode: unknown = false, originalPreload = 'void 0') {
-  const html = deferred<unknown>();
-  const parsed = deferred<void>();
-  const ready = deferred<void>();
-  const calls: string[] = [];
-  const writes: string[] = [];
+type ScriptEl = {
+  tagName: string;
+  id: string;
+  async: boolean;
+  src: string;
+  errorListeners: Array<() => void>;
+  addEventListener: (t: string, f: () => void) => void;
+};
+
+function fixture(o: Opts = {}) {
+  const executed: string[] = [];
   const lifecycle: string[] = [];
-  const exposedValues = new Map<string, unknown>();
-  const events: string[] = [];
-  const listenerTarget = (name: string) => ({
-    addEventListener(type: string) {
-      events.push(`${name}:${type}`);
-    },
-  });
-  const recovery = new Map<string, string>();
-  let reloads = 0;
-  const timers = new Map<number, { callback: () => void; delay: number }>();
-  let nextTimer = 0;
+  const writes: string[] = [];
+  const stored = new Map<string, string>();
+  const scripts: ScriptEl[] = [];
+  const rec = new Map(o.recovery === undefined ? [] : [['slick:preload-recovery', o.recovery]]);
+  let signInHooked = 0;
   let exposed: { claim(): SlickBridge | null } | undefined;
-  let liveSettings = '{}';
+  let disconnected = false;
+  let trigger: (() => void) | undefined;
+  let head = o.deferredDom ? null : { appendChild: (el: ScriptEl) => void scripts.push(el) };
+  let done!: () => void;
+  let fail!: (e: unknown) => void;
+  const ready = new Promise<void>((res, rej) => ((done = res), (fail = rej)));
+  const evalQueue: Promise<void>[] = [];
+
   const ipc = {
-    invoke(channel: string, method?: string) {
-      calls.push(method ? `${channel}:${method}` : channel);
-      if (channel === 'slick:get-original-preload') return Promise.resolve(originalPreload);
-      if (channel === 'slick:get-app-url') return Promise.resolve('slick://app/slick.js');
-      if (channel === 'slick:get-paths') return Promise.resolve({});
-      if (channel === 'slick:get-safe-mode') return Promise.resolve(safeMode);
-      if (channel === 'slick:rpc' && method === 'readBootSettings') return initial;
-      if (channel === 'slick:rpc' && method === 'readSettings') return Promise.resolve(liveSettings);
-      throw new Error(`Unexpected preload request: ${channel}:${method}`);
+    invoke: () => Promise.resolve('{}'),
+    sendSync(ch: string) {
+      lifecycle.push(`sendSync:${ch}`);
+      if (ch === 'slick:account-handoff') return o.handoff ?? null;
+      if (ch === 'slick:get-boot-sync') {
+        if (o.bootThrows) throw new Error('boot sync unavailable');
+        return o.boot === undefined
+          ? {
+              paths: { settings: '/tmp/s' },
+              safeMode: false,
+              initialSettings: '{}',
+              appUrl: 'slick://app/slick.js?v=1',
+            }
+          : o.boot;
+      }
+      throw new Error(`Unexpected sendSync: ${ch}`);
     },
-    sendSync: () => null,
-    send(_channel: string, event: string) {
-      lifecycle.push(event);
-      if (event === 'preload.ready') ready.resolve();
-      if (event === 'preload.failed') ready.reject(new Error('Preload failed'));
+    send(ch: string, ev?: string) {
+      lifecycle.push(ev ? `${ch}:${ev}` : ch);
+      if (ev === 'preload.ready') done();
+      if (ev === 'preload.failed') fail(new Error('Preload failed'));
     },
     on() {},
     removeListener() {},
   };
-  const originalScript = {
-    src: 'https://app.slack.com/native.js',
-    textContent: '',
-    getAttribute: () => null,
-    remove() {},
-  };
-  const replacement = {
-    head: { appendChild() {} },
-    body: {},
-    documentElement: { outerHTML: '<html>replacement</html>' },
-    querySelector: () => originalScript,
-    querySelectorAll: (selector: string) => (selector === 'script' ? [originalScript] : []),
-    createElement: () => ({ setAttribute() {} }),
-  };
-  const exports = {};
+
   runInNewContext(preload, {
     require(id: string) {
-      if (id === 'electron')
+      if (id === 'slick:early') return { __esModule: true, default: o.earlyCode ?? '/*early*/' };
+      if (id === 'electron') {
         return {
           ipcRenderer: ipc,
           contextBridge: {
-            exposeInMainWorld(name: string, value: typeof exposed) {
-              lifecycle.push(`expose:${name}`);
-              exposedValues.set(name, value);
-              if (name === 'SlickBridge') exposed = value;
+            exposeInMainWorld: (n: string, v: typeof exposed) => (
+              lifecycle.push(`expose:${n}`),
+              n === 'SlickBridge' && (exposed = v)
+            ),
+          },
+          webFrame: {
+            executeJavaScript(code: string) {
+              lifecycle.push('webFrame.executeJavaScript');
+              executed.push(code);
+              const p = o.executeRejects ? Promise.reject(new Error('exec failed')) : Promise.resolve(undefined);
+              evalQueue.push(p.catch(() => {}));
+              return p;
             },
           },
         };
+      }
       if (id.endsWith('/accounts.ts')) return { applyPendingAccountSwitch() {}, PENDING_ACCOUNT_SWITCH_KEY: 'pending' };
-      if (id.endsWith('/signInButton.ts')) return { installCookieSignInButton() {} };
+      if (id.endsWith('/signInButton.ts')) return { installCookieSignInButton: () => void signInHooked++ };
       throw new Error(`Unexpected preload import: ${id}`);
     },
     console,
-    process: { argv: [] },
-    module: { exports },
-    exports,
-    arguments: ['preload-argument'],
     URL,
-    setTimeout(callback: () => void, delay: number) {
-      const id = ++nextTimer;
-      timers.set(id, { callback, delay });
-      return id;
-    },
-    clearTimeout(id: number) {
-      timers.delete(id);
-    },
+    localStorage: { setItem: (k: string, v: string) => void stored.set(k, v), getItem: () => null },
     location: {
-      hostname: 'app.slack.com',
-      pathname: '/client/T/C',
+      hostname: o.hostname ?? 'app.slack.com',
+      pathname: o.pathname ?? '/client/T/C',
       href: 'https://app.slack.com/client/T/C',
-      origin: 'https://app.slack.com',
-      reload() {
-        reloads++;
-      },
     },
     sessionStorage: {
-      getItem: (key: string) => recovery.get(key) ?? null,
-      removeItem: (key: string) => recovery.delete(key),
-      setItem: (key: string, value: string) => recovery.set(key, value),
+      getItem: (k: string) => rec.get(k) ?? null,
+      removeItem: (k: string) => rec.delete(k),
+      setItem: (k: string, v: string) => rec.set(k, v),
     },
-    window: listenerTarget('window'),
-    document: {
-      ...listenerTarget('document'),
-      open() {
-        events.push('open');
-      },
-      close() {},
-      write(value: string) {
-        events.push('write');
-        writes.push(value);
-      },
-    },
-    fetch() {
-      calls.push('fetch');
-      return html.promise;
-    },
-    DOMParser: class {
-      parseFromString() {
-        parsed.resolve();
-        return replacement;
+    MutationObserver: class {
+      constructor(cb: () => void) {
+        trigger = cb;
       }
+      observe() {}
+      disconnect() {
+        disconnected = true;
+      }
+    },
+    document: {
+      get head() {
+        return head;
+      },
+      documentElement: null,
+      createElement(tagName: string): ScriptEl {
+        const errorListeners: Array<() => void> = [];
+        return {
+          tagName,
+          id: '',
+          async: false,
+          src: '',
+          errorListeners,
+          addEventListener: (t, f) => t === 'error' && errorListeners.push(f),
+        };
+      },
+      open() {},
+      close() {},
+      write: (v: string) => void writes.push(v),
     },
   });
+
   return {
-    calls,
-    events,
-    writes,
+    executed,
     lifecycle,
-    exposedValues,
-    recovery,
-    reloads: () => reloads,
-    parsed: parsed.promise,
-    ready: ready.promise,
+    writes,
+    stored,
+    scripts,
+    rec,
+    ready,
+    signInHooked: () => signInHooked,
     exposed: () => exposed,
-    pendingTimers: () => timers.size,
-    expireSettingsRead() {
-      assert.equal(timers.size, 1);
-      for (const [id, timer] of timers) {
-        assert.equal(timer.delay, 500);
-        timers.delete(id);
-        timer.callback();
-      }
+    disconnected: () => disconnected,
+    mountHead() {
+      head = { appendChild: (el: ScriptEl) => void scripts.push(el) };
+      trigger?.();
     },
-    setLiveSettings(text: string) {
-      liveSettings = text;
-    },
-    resolveHtml() {
-      html.resolve({
-        ok: true,
-        url: 'https://app.slack.com/client/T/C',
-        headers: { get: () => 'text/html', has: () => false },
-        text: async () => '<html><head><script src="native.js"></script></head><body></body></html>',
-      });
-    },
+    flush: () => Promise.all(evalQueue),
   };
 }
 
-test('original preload retains its bindings and runs before the bridge is exposed', async () => {
-  const f = fixture(
-    Promise.resolve('{}'),
-    false,
-    `require('electron').contextBridge.exposeInMainWorld('OriginalPreload', {
-      processAvailable: Array.isArray(process.argv),
-      sharedExports: module.exports === exports,
-      sameThis: this === globalThis,
-      argument: arguments[0],
-    });`,
+test('exposes one-shot bridge synchronously before running early code and injecting runtime script', async () => {
+  const f = fixture({ earlyCode: 'window.__early = 1;' });
+  await f.ready;
+  assert.equal(f.writes.length, 0);
+  const [e, x, r] = ['expose:SlickBridge', 'webFrame.executeJavaScript', 'slick:account-diagnostic:preload.ready'].map(
+    (s) => f.lifecycle.indexOf(s),
   );
-  f.resolveHtml();
-  await f.ready;
-  const original = f.exposedValues.get('OriginalPreload') as Record<string, unknown>;
-  assert.equal(original.processAvailable, true);
-  assert.equal(original.sharedExports, true);
-  assert.equal(original.sameThis, true);
-  assert.equal(original.argument, 'preload-argument');
-  assert.ok(f.lifecycle.indexOf('expose:OriginalPreload') < f.lifecycle.indexOf('preload.original-ready'));
-  assert.ok(f.lifecycle.indexOf('preload.original-ready') < f.lifecycle.indexOf('expose:SlickBridge'));
-  assert.equal(f.writes.length, 2);
-});
-
-test('listeners the original preload adds survive the rebuild', async () => {
-  const f = fixture(
-    Promise.resolve('{}'),
-    false,
-    `window.addEventListener('focus', () => {}); document.addEventListener('visibilitychange', () => {});`,
+  assert.ok(e > -1 && x > e && r > x);
+  assert.deepEqual(f.executed, ['window.__early = 1;']);
+  assert.equal(f.scripts.length, 1);
+  assert.deepEqual(
+    { id: f.scripts[0].id, async: f.scripts[0].async, src: f.scripts[0].src, errs: f.scripts[0].errorListeners.length },
+    { id: 'slick-app', async: true, src: 'slick://app/slick.js?v=1', errs: 1 },
   );
-  f.resolveHtml();
-  await f.ready;
-  assert.deepEqual(f.events, [
-    'open',
-    'write',
-    'window:focus',
-    'document:visibilitychange',
-    'open',
-    'window:focus',
-    'document:visibilitychange',
-    'write',
-  ]);
-});
 
-test('an original preload failure still reloads stock Slack before exposing the bridge', async () => {
-  const f = fixture(Promise.resolve('{}'), false, 'throw new Error("original preload failed")');
-  await assert.rejects(f.ready, /Preload failed/);
-  assert.equal(f.exposed(), undefined);
-  assert.equal(f.writes.length, 1);
-  assert.equal(f.recovery.get('slick:preload-recovery'), '1');
-  assert.equal(f.reloads(), 1);
-});
-
-test('preload starts settings beside HTML and exposes the snapshot before committing Slack', async () => {
-  const settings = deferred<unknown>();
-  const f = fixture(settings.promise);
-  assert.ok(f.calls.includes('fetch'));
-  assert.ok(f.calls.includes('slick:rpc:readBootSettings'));
-  assert.equal(f.calls.includes('slick:rpc:readSettings'), false);
-  f.resolveHtml();
-  await f.parsed;
-  await new Promise<void>((resolve) => setImmediate(resolve));
-  assert.equal(f.exposed(), undefined, 'the bridge cannot be claimed before boot settings settle');
-  assert.equal(f.writes.length, 1, 'only the initial blank document has been written');
-  const snapshot = '{"enabled":false}';
-  settings.resolve(snapshot);
-  await f.ready;
-  const bridge = f.exposed()!.claim()!;
-  assert.equal(bridge.initialSettings, snapshot);
-  assert.equal(f.pendingTimers(), 0);
-  assert.equal(f.writes.length, 2);
+  const b = f.exposed()!.claim()!;
+  assert.equal(b.loader, 'electron');
+  assert.equal(b.safeMode, false);
+  assert.equal(b.initialSettings, '{}');
   assert.equal(f.exposed()!.claim(), null);
-  f.setLiveSettings('{"enabled":true}');
-  assert.equal(await bridge.readSettings(), '{"enabled":true}');
-  assert.ok(f.calls.includes('slick:rpc:readSettings'));
-  assert.equal(bridge.initialSettings, snapshot);
+
+  await b.evaluateUserPlugin!('(globalThis.__slickPlugins ??= []).push(() => class {})');
+  assert.equal(f.executed.length, 2);
+  assert.match(f.executed[1], /__slickPlugins/);
 });
 
-test('failed or non-string boot reads allow Slack to load without an enabled-default snapshot', async () => {
+test('recovery flag clears itself and leaves Slack completely unmodified', async () => {
+  const f = fixture({ recovery: '1' });
+  await f.flush();
+  assert.equal(f.rec.has('slick:preload-recovery'), false);
+  assert.equal(f.exposed(), undefined);
+  assert.equal(f.executed.length, 0);
+  assert.equal(f.scripts.length, 0);
+  assert.equal(f.lifecycle.includes('sendSync:slick:get-boot-sync'), false);
+});
+
+test('a pending account handoff is applied even on a recovery pass', async () => {
+  const f = fixture({ recovery: '1', handoff: { team: 'T1' } });
+  await f.flush();
+  assert.equal(f.stored.get('pending'), JSON.stringify({ team: 'T1' }));
+  assert.equal(f.lifecycle.includes('slick:account-diagnostic:preload.handoff-applied'), true);
+  assert.equal(f.exposed(), undefined);
+});
+
+test('failed or invalid boot snapshots stay fail-closed without suppressing defaults silently', async () => {
+  for (const invalid of [null, undefined, 'false', {}, 0]) {
+    const f = fixture({
+      boot: { paths: {}, safeMode: invalid, initialSettings: '{"enabled":true}', appUrl: 'slick://app/slick.js' },
+    });
+    await f.ready;
+    const b = f.exposed()!.claim()!;
+    assert.equal(b.safeMode, false);
+    assert.equal(b.initialSettings, undefined);
+  }
   for (const invalid of [null, false, {}, undefined]) {
-    const f = fixture(Promise.resolve(invalid));
-    f.resolveHtml();
+    const f = fixture({ boot: { paths: {}, safeMode: false, initialSettings: invalid, appUrl: '' } });
     await f.ready;
     assert.equal(f.exposed()!.claim()!.initialSettings, undefined);
-    assert.equal(f.writes.length, 2);
-    assert.equal(f.pendingTimers(), 0);
+    assert.match(f.scripts[0]?.src ?? '', /^slick:\/\/app\/slick\.js\?v=\d+$/);
   }
-  const settings = deferred<unknown>();
-  const f = fixture(settings.promise);
-  settings.reject(new Error('Settings unavailable'));
-  f.resolveHtml();
-  await f.ready;
-  assert.equal(f.exposed()!.claim()!.initialSettings, undefined);
-  assert.equal(f.pendingTimers(), 0);
-});
-
-test('a stalled optional settings read times out from request start and late results stay ignored', async () => {
-  const settings = deferred<unknown>();
-  const f = fixture(settings.promise);
-  // The timeout is already running while the HTML response is still pending.
-  f.expireSettingsRead();
-  f.resolveHtml();
-  await f.ready;
-  const bridge = f.exposed()!.claim()!;
-  assert.equal(bridge.initialSettings, undefined);
-  assert.equal(f.writes.length, 2, 'Slack still loads after the optional read expires');
-  settings.resolve('{"plugins":{"Snappy":{"optimizeStateTracking":true}}}');
-  await new Promise<void>((resolve) => setImmediate(resolve));
-  assert.equal(bridge.initialSettings, undefined);
-  assert.equal(f.pendingTimers(), 0);
-
-  const rejected = deferred<unknown>();
-  const failed = fixture(rejected.promise);
-  failed.resolveHtml();
-  await failed.parsed;
-  failed.expireSettingsRead();
-  await failed.ready;
-  rejected.reject(new Error('Late settings failure'));
-  await new Promise<void>((resolve) => setImmediate(resolve));
-  assert.equal(failed.exposed()!.claim()!.initialSettings, undefined);
-  assert.equal(failed.pendingTimers(), 0);
-});
-
-test('safe mode and malformed settings reach the strict boot policy without rewriting preferences', async () => {
-  const invalid = '{broken';
-  const f = fixture(Promise.resolve(invalid), true);
-  f.resolveHtml();
-  await f.ready;
-  const bridge = f.exposed()!.claim()!;
-  assert.equal(bridge.safeMode, true);
-  assert.equal(bridge.initialSettings, invalid);
-  assert.equal(
-    f.calls.some((call) => call.endsWith(':writeSettings')),
-    false,
-  );
-});
-
-test('failed or invalid safe-mode reads suppress boot settings without changing the bridge fallback', async () => {
-  for (const invalid of [undefined, null, 'false', 0, {}]) {
-    const f = fixture(Promise.resolve('{}'), Promise.resolve(invalid));
-    f.resolveHtml();
+  for (const badUrl of ['', 'https://evil.example/x.js', 'javascript:alert(1)']) {
+    const f = fixture({ boot: { paths: {}, safeMode: false, initialSettings: '{}', appUrl: badUrl } });
     await f.ready;
-    const bridge = f.exposed()!.claim()!;
-    assert.equal(bridge.safeMode, false);
-    assert.equal(bridge.initialSettings, undefined);
-    assert.equal(f.calls.filter((call) => call === 'slick:get-safe-mode').length, 1);
-    assert.equal(f.writes.length, 2);
+    assert.match(f.scripts[0]?.src ?? '', /^slick:\/\/app\/slick\.js\?v=\d+$/);
   }
-  const mode = deferred<unknown>();
-  const f = fixture(Promise.resolve('{}'), mode.promise);
-  mode.reject(new Error('Recovery mode unavailable'));
-  f.resolveHtml();
+  const throwsBoot = fixture({ bootThrows: true });
+  await throwsBoot.ready;
+  const tb = throwsBoot.exposed()!.claim()!;
+  assert.equal(tb.safeMode, false);
+  assert.equal(tb.initialSettings, undefined);
+
+  const safeMalformed = fixture({
+    boot: { paths: {}, safeMode: true, initialSettings: '{broken', appUrl: 'slick://app/slick.js' },
+  });
+  await safeMalformed.ready;
+  const sb = safeMalformed.exposed()!.claim()!;
+  assert.equal(sb.safeMode, true);
+  assert.equal(sb.initialSettings, '{broken');
+});
+
+test('deferred DOM waits for MutationObserver before attaching runtime script', async () => {
+  const f = fixture({ deferredDom: true });
   await f.ready;
-  const bridge = f.exposed()!.claim()!;
-  assert.equal(bridge.safeMode, false);
-  assert.equal(bridge.initialSettings, undefined);
-  assert.equal(f.calls.filter((call) => call === 'slick:get-safe-mode').length, 1);
+  assert.equal(f.scripts.length, 0);
+  assert.equal(f.disconnected(), false);
+  f.mountHead();
+  assert.equal(f.scripts[0]?.src, 'slick://app/slick.js?v=1');
+  assert.equal(f.disconnected(), true);
+});
+
+test('runtime script load error deletes earlyCore and keeps SlickBridge unclaimable', async () => {
+  const f = fixture();
+  await f.ready;
+  f.scripts[0].errorListeners[0]();
+  await f.flush();
+  assert.equal(f.exposed()!.claim(), null);
+  assert.equal(f.executed[1], "delete globalThis[Symbol.for('slick.earlyCore')]");
+});
+
+test('early execution failure reports preload.failed without blanking or reloading the page', async () => {
+  const f = fixture({ executeRejects: true });
+  await assert.rejects(f.ready, /Preload failed/);
+  assert.equal(f.writes.length, 0);
+  assert.equal(f.scripts.length, 0);
+  assert.equal(f.exposed()!.claim(), null);
+});
+
+test('non-client slack.com pages install the cookie sign-in button only', () => {
+  const f = fixture({ hostname: 'myteam.slack.com', pathname: '/signin' });
+  assert.equal(f.signInHooked(), 1);
+  assert.equal(f.exposed(), undefined);
+  assert.equal(f.executed.length, 0);
 });

@@ -1,17 +1,18 @@
 // Shared, fully embedded MV3 build. Firefox signing and store submission are separate.
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { build, type Plugin } from 'esbuild';
 import { zipSync } from 'fflate';
 import { existsSync } from 'node:fs';
 import { BACKGROUND_PLUGINS, EXTENSION_PLUGINS } from '../../src/extension/plugins.ts';
+import type { ThemeJson } from '../../src/shared/themes.ts';
 import { PLUGINS, ROOT } from '../lib/paths.ts';
 import { versions } from '../lib/versions.ts';
-import { buildApp, bundleThemes } from './app.ts';
+import { buildApp, buildEarly, bundleThemes, sharedCoreShimPlugin } from './app.ts';
 
-async function optionsData(): Promise<Plugin> {
+function optionsData(bundled: Record<string, ThemeJson>): Plugin {
   const color = (value: unknown) => (typeof value === 'string' ? value : null);
-  const themes = Object.entries(await bundleThemes()).map(([id, theme]) => ({
+  const themes = Object.entries(bundled).map(([id, theme]) => ({
     id,
     name: theme.name || id,
     background: color(theme.vars?.['--dt_color-base-pry']),
@@ -19,10 +20,11 @@ async function optionsData(): Promise<Plugin> {
   }));
   const contents = [
     ...EXTENSION_PLUGINS.map((id, i) => `import * as m${i} from ${JSON.stringify(path.join(PLUGINS, id, 'meta.ts'))};`),
+    'const _b = "browserSettings", _s = "settings";',
     'export const plugins = [',
     ...EXTENSION_PLUGINS.map(
       (id, i) =>
-        `  { id: ${JSON.stringify(id)}, name: m${i}.pluginName, description: m${i}.description, settings: m${i}.settings ?? {} },`,
+        `  { id: ${JSON.stringify(id)}, name: m${i}.pluginName, description: m${i}.description, settings: (m${i} as Record<string, unknown>)[_b] ?? (m${i} as Record<string, unknown>)[_s] ?? {} },`,
     ),
     '];',
     `export const themes = ${JSON.stringify(themes)};`,
@@ -39,6 +41,24 @@ async function optionsData(): Promise<Plugin> {
         contents,
         resolveDir: ROOT,
         loader: 'ts',
+      }));
+    },
+  };
+}
+
+function builtinThemesPlugin(bundled: Record<string, ThemeJson>): Plugin {
+  const contents = JSON.stringify(bundled);
+  return {
+    name: 'slick-builtin-themes',
+    setup(builder) {
+      builder.onResolve({ filter: /^slick:builtin-themes$/ }, () => ({
+        path: 'builtin-themes',
+        namespace: 'slick-themes',
+      }));
+      builder.onLoad({ filter: /.*/, namespace: 'slick-themes' }, () => ({
+        contents,
+        resolveDir: ROOT,
+        loader: 'text',
       }));
     },
   };
@@ -80,12 +100,30 @@ export async function buildExtension({
   const source = path.join(ROOT, 'src/extension');
   const out = path.join(ROOT, `dist/extension/${browser}`);
   await mkdir(out, { recursive: true });
-  await buildApp({
-    debug,
-    targetLoader: 'extension',
-    entryPoint: 'src/extension/page.ts',
-    outFile: path.join(out, 'page.js'),
-  });
+  await rm(path.join(out, 'page.js'), { force: true });
+  const themes = await bundleThemes();
+  const [early, , snappy] = await Promise.all([
+    buildEarly({ debug, targetLoader: 'extension', entryPoint: 'src/extension/page.ts', themes }),
+    buildApp({
+      debug,
+      targetLoader: 'extension',
+      entryPoint: 'src/app/runtime.ts',
+      outFile: path.join(out, 'runtime.js'),
+      extraPlugins: [sharedCoreShimPlugin],
+      themes,
+      sourceUrl: 'runtime.js',
+    }),
+    build({
+      entryPoints: [path.join(source, 'snappy-boot.ts')],
+      bundle: true,
+      write: false,
+      platform: 'browser',
+      format: 'iife',
+      target: 'es2022',
+      minify: !debug,
+      sourcemap: debug ? 'inline' : false,
+    }),
+  ]);
   const manifest = JSON.parse(await readFile(path.join(source, `${browser}/manifest.json`), 'utf8'));
   // Keep the manifest numeric even for local builds whose app version has a git suffix.
   manifest.version = `2.0.${versions.build}`;
@@ -97,9 +135,12 @@ export async function buildExtension({
   }
   const entries: Record<string, Uint8Array> = {
     'manifest.json': Buffer.from(`${JSON.stringify(manifest, null, 2)}\n`),
-    'page.js': await readFile(path.join(out, 'page.js')),
+    'early.js': Buffer.from(early.code),
+    'runtime.js': await readFile(path.join(out, 'runtime.js')),
+    'snappy-boot.js': snappy.outputFiles[0].contents,
   };
-  const dataPlugin = await optionsData();
+  const dataPlugin = optionsData(themes);
+  const themesPlugin = builtinThemesPlugin(themes);
   const hostPlugin = backgroundPlugins();
   for (const [name, entry] of [
     ['background', 'background-entry.ts'],
@@ -109,7 +150,7 @@ export async function buildExtension({
   ] as const) {
     const result = await build({
       entryPoints: [path.join(source, entry)],
-      plugins: [dataPlugin, hostPlugin],
+      plugins: [dataPlugin, themesPlugin, hostPlugin],
       bundle: true,
       write: false,
       platform: 'browser',

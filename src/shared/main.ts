@@ -24,6 +24,7 @@ export type Capability =
 export type ProtocolPrivileges = {
   standard?: boolean;
   secure?: boolean;
+  bypassCSP?: boolean;
   supportFetchAPI?: boolean;
   corsEnabled?: boolean;
   stream?: boolean;

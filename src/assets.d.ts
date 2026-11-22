@@ -3,9 +3,19 @@ declare module 'slick:plugins' {
   export default plugins;
 }
 
+declare module 'slick:early' {
+  const code: string;
+  export default code;
+}
+
 declare module 'slick:background-plugins' {
   const plugins: import('./extension/mainHost.ts').BackgroundPlugin[];
   export default plugins;
+}
+
+declare module 'slick:builtin-themes' {
+  const json: string;
+  export default json;
 }
 
 declare module 'slick:monaco-workers' {

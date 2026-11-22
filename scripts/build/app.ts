@@ -37,6 +37,8 @@ export type BuildAppOptions = RendererRegistryOptions & {
   debug?: boolean;
   hot?: boolean;
   extraPlugins?: Plugin[];
+  themes?: Record<string, ThemeJson>;
+  sourceUrl?: string;
   /** Paths are resolved relative to the repository root. */
   entryPoint?: string;
   outFile?: string;
@@ -45,8 +47,9 @@ export type BuildAppOptions = RendererRegistryOptions & {
 export async function pageBuildOptions({
   debug = false,
   targetLoader = 'electron',
-}: Pick<BuildAppOptions, 'debug' | 'targetLoader'>) {
-  const themes = await bundleThemes();
+  themes,
+}: Pick<BuildAppOptions, 'debug' | 'targetLoader' | 'themes'>) {
+  const bundled = themes ?? (await bundleThemes());
   return {
     absWorkingDir: ROOT,
     bundle: true,
@@ -61,7 +64,7 @@ export async function pageBuildOptions({
     define: {
       __SLICK_VERSION__: JSON.stringify(versions.version),
       __SLICK_BUILD__: JSON.stringify(versions.build),
-      __SLICK_THEMES__: JSON.stringify(themes),
+      __SLICK_THEMES__: JSON.stringify(JSON.stringify(bundled)),
       __SLICK_CHANGELOG__: JSON.stringify(bundledChangelog(Number(process.env.SLICK_BUILD) || undefined)),
       __SLICK_LOADER__: JSON.stringify(targetLoader),
       // Page bundle: reaching for Node globals is a bug, so fail loudly.
@@ -81,10 +84,76 @@ export async function writePage(file: string, code: string, label: string, url: 
   console.log(`[build:${label}] ${path.basename(file)}  ${(Buffer.byteLength(code) / 1024).toFixed(1)} KB`);
 }
 
+export async function buildEarly({
+  debug = false,
+  hot = false,
+  targetLoader = 'electron',
+  entryPoint = `${APP}/early.ts`,
+  themes,
+}: Pick<BuildAppOptions, 'debug' | 'hot' | 'targetLoader' | 'entryPoint' | 'themes'> = {}) {
+  const { outputFiles, metafile } = await build({
+    ...(await pageBuildOptions({ debug, targetLoader, themes })),
+    entryPoints: [entryPoint],
+    metafile: true,
+    plugins: [...pagePlugins, ...(hot ? [hostModules] : [])],
+  });
+  const code = `${outputFiles[0].text}\n//# sourceURL=${SOURCE_ORIGIN}early.js\n`;
+  console.log(`[build:early] early.js  ${(Buffer.byteLength(code) / 1024).toFixed(1)} KB`);
+  return { code, metafile };
+}
+
+export const buildDesktopEarly = (o: Pick<BuildAppOptions, 'debug' | 'hot'> = {}) =>
+  buildEarly({ ...o, targetLoader: 'electron', entryPoint: `${APP}/early.ts` });
+
+const CORE_MODULES: Record<string, string> = {
+  bridge: 'src/app/bridge.ts',
+  accounts: 'src/app/api/accounts.ts',
+  snappyBoot: 'src/plugins/Snappy/boot.ts',
+  webpack: 'src/app/slack/webpack.ts',
+  react: 'src/app/slack/react.tsx',
+  redux: 'src/app/slack/redux.ts',
+  rtm: 'src/app/slack/rtm.ts',
+  resize: 'src/app/api/resize.ts',
+  childWindows: 'src/app/slack/childWindows.ts',
+  css: 'src/app/api/css.ts',
+  store: 'src/app/store.ts',
+};
+
+const SHIM_SKIP = Symbol('slick-core-shim-skip');
+const coreClaimPath = path.join(APP, 'coreClaim.ts');
+
+export const sharedCoreShimPlugin: Plugin = {
+  name: 'slick-shared-core-shim',
+  setup(builder) {
+    const byPath = new Map(Object.entries(CORE_MODULES).map(([id, file]) => [path.resolve(ROOT, file), id]));
+    builder.onResolve({ filter: /.*/ }, async (a) => {
+      if (a.pluginData === SHIM_SKIP || path.resolve(a.importer) === path.resolve(coreClaimPath)) return;
+      const r = await builder.resolve(a.path, {
+        kind: a.kind,
+        importer: a.importer,
+        resolveDir: a.resolveDir,
+        pluginData: SHIM_SKIP,
+      });
+      const id = !r.errors.length && r.namespace === 'file' ? byPath.get(path.resolve(r.path)) : undefined;
+      return id ? { path: id, namespace: 'slick-core-shim' } : undefined;
+    });
+    builder.onLoad({ filter: /.*/, namespace: 'slick-core-shim' }, (a) => ({
+      contents: `module.exports = require(${JSON.stringify(coreClaimPath)}).earlyCore?.[${JSON.stringify(a.path)}] ?? {};`,
+      resolveDir: APP,
+      loader: 'js',
+    }));
+  },
+};
+
+export const buildDesktopRuntime = (o: Pick<BuildAppOptions, 'debug' | 'hot'> = {}) =>
+  buildApp({ ...o, targetLoader: 'electron', entryPoint: `${APP}/runtime.ts`, extraPlugins: [sharedCoreShimPlugin] });
+
 export async function buildApp({
   debug = false,
   hot = false,
   extraPlugins = [],
+  themes,
+  sourceUrl = 'slick.js',
   entryPoint = `${APP}/main.ts`,
   outFile = SLICK_JS,
   targetLoader = 'electron',
@@ -92,7 +161,7 @@ export async function buildApp({
 }: BuildAppOptions = {}) {
   const output = path.resolve(ROOT, outFile);
   const { outputFiles, metafile } = await build({
-    ...(await pageBuildOptions({ debug, targetLoader })),
+    ...(await pageBuildOptions({ debug, targetLoader, themes })),
     entryPoints: [entryPoint],
     metafile: true,
     plugins: [
@@ -102,6 +171,6 @@ export async function buildApp({
       ...extraPlugins,
     ],
   });
-  await writePage(output, outputFiles[0].text, 'app', 'slick.js');
+  await writePage(output, outputFiles[0].text, 'app', sourceUrl);
   return { output, metafile };
 }
