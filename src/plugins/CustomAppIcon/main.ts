@@ -1,3 +1,4 @@
+import path from 'node:path';
 import type { SlickMainPlugin } from '$slick';
 import { app, nativeImage } from 'electron';
 import {
@@ -10,23 +11,53 @@ import {
 } from '../../desktop/appIcon.ts';
 import { ICONS, type ImportResult } from './icons.ts';
 import inverted from './icons/inverted.png';
-import molten from './icons/molten.png';
 import prideInverted from './icons/pride-inverted.png';
 import pride from './icons/pride.png';
 import { id } from './meta.ts';
 
-const IMAGES: Record<string, string> = { inverted, pride, 'pride-inverted': prideInverted, molten };
+const IMAGES: Record<string, string> = { inverted, pride, 'pride-inverted': prideInverted };
 const CUSTOM_KEY = 'custom';
 const CUSTOM_SIZE = 1024;
 const PREVIEW_SIZE = 128;
+const LINUX_SLACK_ICONS = [
+  '/usr/share/pixmaps/slack.png',
+  '/usr/share/icons/hicolor/512x512/apps/slack.png',
+  '/usr/share/icons/hicolor/256x256/apps/slack.png',
+];
 
 let current: Electron.NativeImage | null = null;
 let custom: Electron.NativeImage | null = null;
+let slack: Promise<Electron.NativeImage | null> | null = null;
+let slackIcon: Electron.NativeImage | null = null;
 let builtInPreviews: Record<string, string> | null = null;
 let refresh: (() => void) | null = null;
 
 function builtIn(key: string): Electron.NativeImage | null {
+  if (key === 'slack') return slackIcon;
   return Object.hasOwn(IMAGES, key) ? nativeImage.createFromDataURL(IMAGES[key]) : null;
+}
+
+// Read from the installed Slack (process.resourcesPath is Slack's here), so Slick never ships Slack's logo.
+async function loadSlackIcon(): Promise<Electron.NativeImage | null> {
+  const resources = process.resourcesPath;
+  const thumbnails =
+    process.platform === 'darwin'
+      ? [path.join(resources, 'electron.icns')]
+      : process.platform === 'win32'
+        ? [path.join(resources, '..', 'slack.exe')]
+        : [];
+  for (const file of thumbnails) {
+    try {
+      const image = await nativeImage.createThumbnailFromPath(file, { width: CUSTOM_SIZE, height: CUSTOM_SIZE });
+      if (!image.isEmpty()) return image;
+    } catch {}
+  }
+  if (process.platform !== 'linux') return null;
+  for (const file of LINUX_SLACK_ICONS) {
+    const image = nativeImage.createFromPath(file);
+    if (!image.isEmpty()) return image;
+  }
+  return null;
 }
 
 function decode(dataUrl: string | null): Electron.NativeImage | null {
@@ -39,6 +70,7 @@ export default {
   capabilities: ['dialog'],
   async ready(ctx) {
     custom = decode(await ctx.storage.read(CUSTOM_KEY));
+    slackIcon = await (slack ??= loadSlackIcon());
     refresh = () => {
       const icon = String(ctx.settings.icon);
       const image = icon === 'custom' ? custom : builtIn(icon);
@@ -59,9 +91,13 @@ export default {
     };
   },
   rpc: {
-    previews() {
+    async previews() {
+      slackIcon = await (slack ??= loadSlackIcon());
       builtInPreviews ??= Object.fromEntries(
-        ICONS.map((icon) => [icon.id, fitIcon(builtIn(icon.id) ?? defaultIconPreview(), PREVIEW_SIZE).toDataURL()]),
+        ICONS.flatMap((icon) => {
+          const image = icon.id === 'slick' ? defaultIconPreview() : builtIn(icon.id);
+          return image ? [[icon.id, fitIcon(image, PREVIEW_SIZE).toDataURL()]] : [];
+        }),
       );
       return builtInPreviews;
     },

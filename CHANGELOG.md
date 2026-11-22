@@ -13,7 +13,7 @@ In a PR that changes something users will notice, add a line under **Unreleased*
 ### New
 
 - Snappy's Faster navigation setting now works in browsers.
-- CustomAppIcon lets you swap Slick's dock and taskbar icon for a built-in design or your own image.
+- CustomAppIcon lets you swap Slick's dock and taskbar icon for a built-in design, Slack's own icon, or your own image.
 
 ### Fixed
 

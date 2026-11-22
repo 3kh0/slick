@@ -145,7 +145,7 @@ export function IconGrid({ host }: { host: IconGridHost }) {
   return (
     <>
       <div role="radiogroup" aria-label="App icon" className="slick-app-icons">
-        {ICONS.map(({ id, label, author }) => (
+        {ICONS.filter(({ id }) => id !== 'slack' || previews?.slack).map(({ id, label, author }) => (
           <Tile
             key={id}
             checked={icon === id}
