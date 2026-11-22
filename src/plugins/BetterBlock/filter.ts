@@ -15,6 +15,9 @@ export const hidesMessage = (message: Data | undefined, blocked: Blocked): boole
     isBlocked(message.bot_profile?.user_id, blocked) ||
     isBlocked(message.delegate_sender_user_id, blocked));
 
+export const storedOrProp = <T extends Data>(stored: T | undefined, message: T | undefined): T | undefined =>
+  stored && stored.isNonExistent !== true ? stored : (message ?? stored);
+
 export function keep<T>(items: T[], predicate: (item: T) => boolean): T[] {
   const next = items.filter(predicate);
   return next.length === items.length ? items : next;

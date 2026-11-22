@@ -14,10 +14,22 @@ import {
   hidesMessage,
   hidesSuggestion,
   projectSuggestions,
+  storedOrProp,
   threadReplies,
+  type Data,
 } from './filter.ts';
 
 const blocked = new Set(['UBLOCKED']);
+
+test('forwarded messages keep their own files when the store only has an unreadable stub', () => {
+  const forwarded: Data = { type: 'message', channel: 'D1', ts: '1.0', user: 'U1', files: ['F1'], attachments: [] };
+  const stub: Data = { channel: 'D1', ts: '1.0', id: 'D1-1.0', isNonExistent: true, files: undefined };
+  assert.equal(storedOrProp(stub, forwarded), forwarded);
+  assert.equal(storedOrProp(stub, undefined), stub);
+  const live: Data = { channel: 'D1', ts: '1.0', user: 'U1', files: ['F1'], text: 'newer' };
+  assert.equal(storedOrProp(live, forwarded), live);
+  assert.equal(storedOrProp(undefined, forwarded), forwarded);
+});
 
 test('typing removes keys, including inherited entries, so native selectors never dereference undefined', () => {
   const inherited = { blocked: { channelId: 'C1', memberId: 'UBLOCKED', threadTs: '1' } };

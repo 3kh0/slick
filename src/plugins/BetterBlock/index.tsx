@@ -16,6 +16,7 @@ import {
   keep,
   projectSuggestions,
   record,
+  storedOrProp,
   threadReplies,
   type Data,
 } from './filter.ts';
@@ -235,9 +236,9 @@ export default class BetterBlock extends SlickPlugin<typeof meta.settings> {
   // connect() retains projected props; re-read so unblocking restores their contents.
   private currentMessage(message: SlackMessage | undefined, channelId?: string): SlackMessage | undefined {
     const channel = message?.channel ?? channelId;
-    return (
-      (channel && message?.ts ? this.api.redux.getStore()?.getState()?.messages?.[channel]?.[message.ts] : undefined) ??
-      message
+    return storedOrProp(
+      channel && message?.ts ? this.api.redux.getStore()?.getState()?.messages?.[channel]?.[message.ts] : undefined,
+      message,
     );
   }
 

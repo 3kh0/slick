@@ -8,6 +8,7 @@ In a PR that changes something users will notice, add a line under **Unreleased*
 
 ### Fixed
 
+- BetterBlock no longer hides videos and files in messages forwarded from conversations you can't see.
 - MessageLogger only saves image previews hosted by Slack, so a message can no longer reveal your connection to external hosts.
 
 ## Build 160
