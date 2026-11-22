@@ -6,6 +6,10 @@ In a PR that changes something users will notice, add a line under **Unreleased*
 
 ## Unreleased
 
+### New
+
+- CustomAppIcon lets you swap Slick's dock and taskbar icon for a built-in design or your own image.
+
 ### Fixed
 
 - BetterBlock no longer hides videos and files in messages forwarded from conversations you can't see.

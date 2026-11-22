@@ -1242,7 +1242,7 @@ function PluginDetail({
   }
 
   const values = config.settingsFor(info.id);
-  const entries = Object.entries(info.settings);
+  const entries = Object.entries(info.settings).filter(([, setting]) => !setting.hidden);
   const problem = pluginProblem(info, config);
   const statusId = `slick-plugin-detail-status-${info.id}`;
   const category = categoryOf(info);

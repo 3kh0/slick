@@ -17,6 +17,7 @@ export const PLUGINS = [
   'ClearURLs',
   'Click2Load',
   'CopyReacted',
+  'CustomAppIcon',
   'CustomFonts',
   'CustomNameRecording',
   'CustomSlackbot',

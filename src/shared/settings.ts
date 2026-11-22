@@ -22,7 +22,10 @@ export type SelectOption = { value: string; label: string };
 
 export type ScheduleRule = { days: number[]; start: string; end: string; status: string };
 
-export type Setting =
+export type Setting = {
+  /** Left out of the generated rows, for a setting the plugin edits from its own panel. */
+  hidden?: boolean;
+} & (
   | { type: 'boolean'; label: string; description?: string; default: boolean; restartRequired?: boolean }
   | {
       type: 'number';
@@ -58,7 +61,8 @@ export type Setting =
       description?: string;
       default: ScheduleRule[];
       statuses: SelectOption[];
-    };
+    }
+);
 
 /** `enabled` is reserved: it is activation, not a setting, and is never declared. */
 export type SettingsSchema = Record<string, Setting>;
