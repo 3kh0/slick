@@ -1,6 +1,4 @@
-// Serves the deferred slick.js runtime over slick:// via C++ protocol.registerSource
-// (off-main-thread, code-cached, bypassing Slack's <meta> CSP) and serves the
-// standalone CSS editor over slick-editor://. SLICK_APP_URL is a dev override.
+// Serves slick.js over slick:// (registerSource) and the CSS editor over slick-editor://.
 
 import { existsSync, mkdirSync, statSync } from 'node:fs';
 import path from 'node:path';
@@ -54,7 +52,6 @@ const MONACO_TYPES: Record<string, string> = {
 };
 
 const notFound = () => new Response('Not found', { status: 404 });
-const js = (body: string) => new Response(body, { headers: { 'Content-Type': 'application/javascript' } });
 
 /**
  * `dirs` are searched in order: Slick's own resources (captured before patch.ts
@@ -87,7 +84,9 @@ export function setupSession(dirs: string[], preloadPath?: string) {
   } else {
     session.defaultSession.protocol.handle(SLICK_SCHEME, () => {
       console.error(`[slick] slick.js not found in any of: ${candidates.join(', ')}`);
-      return js('console.error("[slick] bundle not found")');
+      return new Response('console.error("[slick] bundle not found")', {
+        headers: { 'Content-Type': 'application/javascript' },
+      });
     });
   }
 

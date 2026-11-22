@@ -1,9 +1,4 @@
-// Registered via session.registerPreloadScript so Slack's native preload keeps
-// running untouched with its V8 code cache. Before any page script runs:
-//   1. handle account handoffs / recovery opt-out
-//   2. read boot snapshot synchronously via slick:get-boot-sync
-//   3. expose one-shot SlickBridge (including CSP-safe evaluateUserPlugin)
-//   4. execute early.ts (~34 KB) and inject async <script src="slick://app/slick.js">
+// Registered via registerPreloadScript; keeps Slack's native preload intact.
 
 import earlyCode from 'slick:early';
 import { applyPendingAccountSwitch, PENDING_ACCOUNT_SWITCH_KEY } from '../app/api/accounts.ts';
@@ -18,33 +13,28 @@ const accountDiagnostic = (event: string) => {
 };
 accountDiagnostic('preload.start');
 
-const RECOVERY_KEY = 'slick:preload-recovery';
-
 function attachRuntimeScript(appUrl: string, onFail: () => void): void {
   const attach = () => {
-    const target = document.head || document.documentElement;
-    if (!target) return false;
-    const script = document.createElement('script');
-    script.id = 'slick-app';
-    script.async = true;
-    script.src = appUrl;
-    script.addEventListener('error', onFail, { once: true });
-    target.appendChild(script);
+    const t = document.head || document.documentElement;
+    if (!t) return false;
+    const s = document.createElement('script');
+    s.id = 'slick-app';
+    s.async = true;
+    s.src = appUrl;
+    s.addEventListener('error', onFail, { once: true });
+    t.appendChild(s);
     return true;
   };
-  if (!attach()) {
-    const observer = new MutationObserver(() => {
-      if (attach()) observer.disconnect();
-    });
-    observer.observe(document, { childList: true, subtree: true });
-  }
+  if (attach()) return;
+  const mo = new MutationObserver(() => attach() && mo.disconnect());
+  mo.observe(document, { childList: true, subtree: true });
 }
 
 function runClientPreload() {
   let recovering = false;
   try {
-    recovering = sessionStorage.getItem(RECOVERY_KEY) === '1';
-    sessionStorage.removeItem(RECOVERY_KEY);
+    recovering = sessionStorage.getItem('slick:preload-recovery') === '1';
+    sessionStorage.removeItem('slick:preload-recovery');
   } catch {}
   if (recovering) {
     console.warn('[slick] recovering from a failed boot; Slack will load unmodified');
@@ -68,15 +58,9 @@ function runClientPreload() {
     }
   }
 
-  type BootSnapshot = {
-    paths?: unknown;
-    safeMode?: unknown;
-    initialSettings?: unknown;
-    appUrl?: unknown;
-  };
-  let boot: BootSnapshot | undefined;
+  let boot: Record<string, unknown> | undefined;
   try {
-    boot = ipcRenderer.sendSync('slick:get-boot-sync') as BootSnapshot | undefined;
+    boot = ipcRenderer.sendSync('slick:get-boot-sync') as Record<string, unknown> | undefined;
   } catch {}
 
   const safeMode = typeof boot?.safeMode === 'boolean' ? boot.safeMode : undefined;
@@ -197,17 +181,15 @@ function runClientPreload() {
       attachRuntimeScript(appUrl, failRuntime);
       accountDiagnostic('preload.ready');
     },
-    (error: unknown) => {
+    (err: unknown) => {
       claimed = true;
       accountDiagnostic('preload.failed');
-      console.error('[slick] failed to execute early loader; Slack will run unmodified:', error);
+      console.error('[slick] failed to execute early loader; Slack will run unmodified:', err);
     },
   );
 }
 
-const isClientPage = location.hostname === 'app.slack.com' && /^\/client(\/|$)/.test(location.pathname);
-
-if (isClientPage) {
+if (location.hostname === 'app.slack.com' && /^\/client(\/|$)/.test(location.pathname)) {
   runClientPreload();
 } else if (location.hostname === 'slack.com' || location.hostname.endsWith('.slack.com')) {
   installCookieSignInButton(document, () => ipcRenderer.send('slick:open-cookie-login'));

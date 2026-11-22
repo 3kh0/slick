@@ -366,28 +366,27 @@ test('user plugins use bridge.evaluateUserPlugin when provided and serialize con
   const f = await fixture();
   await f.manager.reconcile();
   const seen: string[] = [];
-  let inFlight = 0;
-  let maxInFlight = 0;
+  let active = 0;
+  let max = 0;
   f.bridge.evaluateUserPlugin = async (code: string) => {
-    inFlight++;
-    maxInFlight = Math.max(maxInFlight, inFlight);
+    max = Math.max(max, ++active);
     seen.push(code);
-    await new Promise((resolve) => setTimeout(resolve, 10));
+    await new Promise((r) => setTimeout(r, 10));
     try {
       runInContext(code, f.context);
     } finally {
-      inFlight--;
+      active--;
     }
   };
   await Promise.all([
     f.manager.installUserPlugin(userPlugin('First', 1)),
     f.manager.installUserPlugin(userPlugin('Second', 2)),
   ]);
-  assert.equal(maxInFlight, 1);
+  assert.equal(max, 1);
   assert.equal(seen.length, 2);
 
   const reloaded = new f.context.Host.PluginManager(f.bridge, f.config);
   await reloaded.loadUserPlugins();
   assert.equal(seen.length, 4);
-  assert.deepEqual(Array.from(reloaded.info(), (info: any) => info.id).toSorted(), ['First', 'Second']);
+  assert.deepEqual(Array.from(reloaded.info(), (i: any) => i.id).toSorted(), ['First', 'Second']);
 });

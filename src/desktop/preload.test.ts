@@ -5,158 +5,122 @@ import { runInNewContext } from 'node:vm';
 import { transformSync } from 'esbuild';
 import type { SlickBridge } from '../app/bridge.ts';
 
-// Exercise the real preload's sync boot ordering without launching Electron.
 const preload = transformSync(readFileSync(new URL('./preload.ts', import.meta.url), 'utf8'), {
   loader: 'ts',
   format: 'cjs',
   target: 'es2022',
 }).code;
 
-type FixtureOptions = {
+type Opts = {
   hostname?: string;
   pathname?: string;
   boot?: unknown;
   bootThrows?: boolean;
-  handoff?: unknown;
-  recoveryFlag?: string;
+  recovery?: string;
   executeRejects?: boolean;
   earlyCode?: string;
   deferredDom?: boolean;
 };
 
-type MockScript = {
+type ScriptEl = {
   tagName: string;
   id: string;
   async: boolean;
   src: string;
   errorListeners: Array<() => void>;
-  addEventListener(type: string, listener: () => void): void;
+  addEventListener: (t: string, f: () => void) => void;
 };
 
-function fixture(opts: FixtureOptions = {}) {
+function fixture(o: Opts = {}) {
   const executed: string[] = [];
   const lifecycle: string[] = [];
   const writes: string[] = [];
-  const scripts: MockScript[] = [];
-  const rpcCalls: Array<[string, string, unknown[]]> = [];
-  const local = new Map<string, string>();
-  const recovery = new Map<string, string>();
-  if (opts.recoveryFlag !== undefined) recovery.set('slick:preload-recovery', opts.recoveryFlag);
-
+  const scripts: ScriptEl[] = [];
+  const rec = new Map(o.recovery === undefined ? [] : [['slick:preload-recovery', o.recovery]]);
   let signInHooked = 0;
   let exposed: { claim(): SlickBridge | null } | undefined;
-  let observerDisconnected = false;
-  let triggerMutation: (() => void) | undefined;
-  let head = opts.deferredDom
-    ? null
-    : {
-        appendChild(el: MockScript) {
-          scripts.push(el);
-        },
-      };
-  let readySettled!: Promise<void>;
-  let resolveReady!: () => void;
-  let rejectReady!: (err: unknown) => void;
-  readySettled = new Promise<void>((res, rej) => {
-    resolveReady = res;
-    rejectReady = rej;
-  });
+  let disconnected = false;
+  let trigger: (() => void) | undefined;
+  let head = o.deferredDom ? null : { appendChild: (el: ScriptEl) => void scripts.push(el) };
+  let done!: () => void;
+  let fail!: (e: unknown) => void;
+  const ready = new Promise<void>((res, rej) => ((done = res), (fail = rej)));
+  const evalQueue: Promise<void>[] = [];
 
   const ipc = {
-    invoke(channel: string, method?: string, args: unknown[] = []) {
-      rpcCalls.push([channel, method ?? '', args]);
-      return Promise.resolve('{}');
-    },
-    sendSync(channel: string) {
-      lifecycle.push(`sendSync:${channel}`);
-      if (channel === 'slick:account-handoff') return opts.handoff ?? null;
-      if (channel === 'slick:get-boot-sync') {
-        if (opts.bootThrows) throw new Error('boot sync unavailable');
-        return opts.boot === undefined
+    invoke: () => Promise.resolve('{}'),
+    sendSync(ch: string) {
+      lifecycle.push(`sendSync:${ch}`);
+      if (ch === 'slick:account-handoff') return null;
+      if (ch === 'slick:get-boot-sync') {
+        if (o.bootThrows) throw new Error('boot sync unavailable');
+        return o.boot === undefined
           ? {
               paths: { settings: '/tmp/s' },
               safeMode: false,
               initialSettings: '{}',
               appUrl: 'slick://app/slick.js?v=1',
             }
-          : opts.boot;
+          : o.boot;
       }
-      throw new Error(`Unexpected sendSync: ${channel}`);
+      throw new Error(`Unexpected sendSync: ${ch}`);
     },
-    send(channel: string, event?: string) {
-      lifecycle.push(event ? `${channel}:${event}` : channel);
-      if (event === 'preload.ready') resolveReady();
-      if (event === 'preload.failed') rejectReady(new Error('Preload failed'));
+    send(ch: string, ev?: string) {
+      lifecycle.push(ev ? `${ch}:${ev}` : ch);
+      if (ev === 'preload.ready') done();
+      if (ev === 'preload.failed') fail(new Error('Preload failed'));
     },
     on() {},
     removeListener() {},
   };
 
-  const evalQueue: Promise<void>[] = [];
-
   runInNewContext(preload, {
     require(id: string) {
-      if (id === 'slick:early') return { __esModule: true, default: opts.earlyCode ?? '/*early*/' };
+      if (id === 'slick:early') return { __esModule: true, default: o.earlyCode ?? '/*early*/' };
       if (id === 'electron') {
         return {
           ipcRenderer: ipc,
           contextBridge: {
-            exposeInMainWorld(name: string, value: typeof exposed) {
-              lifecycle.push(`expose:${name}`);
-              if (name === 'SlickBridge') exposed = value;
-            },
+            exposeInMainWorld: (n: string, v: typeof exposed) => (
+              lifecycle.push(`expose:${n}`),
+              n === 'SlickBridge' && (exposed = v)
+            ),
           },
           webFrame: {
             executeJavaScript(code: string) {
               lifecycle.push('webFrame.executeJavaScript');
               executed.push(code);
-              const p = opts.executeRejects ? Promise.reject(new Error('exec failed')) : Promise.resolve(undefined);
+              const p = o.executeRejects ? Promise.reject(new Error('exec failed')) : Promise.resolve(undefined);
               evalQueue.push(p.catch(() => {}));
               return p;
             },
           },
         };
       }
-      if (id.endsWith('/accounts.ts')) {
-        return {
-          applyPendingAccountSwitch() {
-            lifecycle.push('applyPendingAccountSwitch');
-          },
-          PENDING_ACCOUNT_SWITCH_KEY: 'pending',
-        };
-      }
-      if (id.endsWith('/signInButton.ts')) {
-        return {
-          installCookieSignInButton() {
-            signInHooked++;
-          },
-        };
-      }
+      if (id.endsWith('/accounts.ts')) return { applyPendingAccountSwitch() {}, PENDING_ACCOUNT_SWITCH_KEY: 'pending' };
+      if (id.endsWith('/signInButton.ts')) return { installCookieSignInButton: () => void signInHooked++ };
       throw new Error(`Unexpected preload import: ${id}`);
     },
     console,
     URL,
-    localStorage: {
-      setItem: (k: string, v: string) => local.set(k, v),
-      getItem: (k: string) => local.get(k) ?? null,
-    },
+    localStorage: { setItem() {}, getItem: () => null },
     location: {
-      hostname: opts.hostname ?? 'app.slack.com',
-      pathname: opts.pathname ?? '/client/T/C',
+      hostname: o.hostname ?? 'app.slack.com',
+      pathname: o.pathname ?? '/client/T/C',
       href: 'https://app.slack.com/client/T/C',
     },
     sessionStorage: {
-      getItem: (key: string) => recovery.get(key) ?? null,
-      removeItem: (key: string) => recovery.delete(key),
-      setItem: (key: string, value: string) => recovery.set(key, value),
+      getItem: (k: string) => rec.get(k) ?? null,
+      removeItem: (k: string) => rec.delete(k),
+      setItem: (k: string, v: string) => rec.set(k, v),
     },
     MutationObserver: class {
       constructor(cb: () => void) {
-        triggerMutation = cb;
+        trigger = cb;
       }
       observe() {}
       disconnect() {
-        observerDisconnected = true;
+        disconnected = true;
       }
     },
     document: {
@@ -164,24 +128,20 @@ function fixture(opts: FixtureOptions = {}) {
         return head;
       },
       documentElement: null,
-      createElement(tag: string): MockScript {
-        const listeners: Array<() => void> = [];
+      createElement(tagName: string): ScriptEl {
+        const errorListeners: Array<() => void> = [];
         return {
-          tagName: tag,
+          tagName,
           id: '',
           async: false,
           src: '',
-          errorListeners: listeners,
-          addEventListener(type: string, listener: () => void) {
-            if (type === 'error') listeners.push(listener);
-          },
+          errorListeners,
+          addEventListener: (t, f) => t === 'error' && errorListeners.push(f),
         };
       },
       open() {},
       close() {},
-      write(v: string) {
-        writes.push(v);
-      },
+      write: (v: string) => void writes.push(v),
     },
   });
 
@@ -190,19 +150,14 @@ function fixture(opts: FixtureOptions = {}) {
     lifecycle,
     writes,
     scripts,
-    rpcCalls,
-    recovery,
-    ready: readySettled,
+    rec,
+    ready,
     signInHooked: () => signInHooked,
     exposed: () => exposed,
-    observerDisconnected: () => observerDisconnected,
+    disconnected: () => disconnected,
     mountHead() {
-      head = {
-        appendChild(el: MockScript) {
-          scripts.push(el);
-        },
-      };
-      triggerMutation?.();
+      head = { appendChild: (el: ScriptEl) => void scripts.push(el) };
+      trigger?.();
     },
     flush: () => Promise.all(evalQueue),
   };
@@ -211,35 +166,33 @@ function fixture(opts: FixtureOptions = {}) {
 test('exposes one-shot bridge synchronously before running early code and injecting runtime script', async () => {
   const f = fixture({ earlyCode: 'window.__early = 1;' });
   await f.ready;
-
-  assert.equal(f.writes.length, 0, 'document must not be rebuilt');
-  const exposeIdx = f.lifecycle.indexOf('expose:SlickBridge');
-  const execIdx = f.lifecycle.indexOf('webFrame.executeJavaScript');
-  const readyIdx = f.lifecycle.indexOf('slick:account-diagnostic:preload.ready');
-  assert.ok(exposeIdx > -1 && execIdx > exposeIdx && readyIdx > execIdx);
-
+  assert.equal(f.writes.length, 0);
+  const [e, x, r] = ['expose:SlickBridge', 'webFrame.executeJavaScript', 'slick:account-diagnostic:preload.ready'].map(
+    (s) => f.lifecycle.indexOf(s),
+  );
+  assert.ok(e > -1 && x > e && r > x);
   assert.deepEqual(f.executed, ['window.__early = 1;']);
   assert.equal(f.scripts.length, 1);
-  assert.equal(f.scripts[0].id, 'slick-app');
-  assert.equal(f.scripts[0].async, true);
-  assert.equal(f.scripts[0].src, 'slick://app/slick.js?v=1');
-  assert.equal(f.scripts[0].errorListeners.length, 1);
+  assert.deepEqual(
+    { id: f.scripts[0].id, async: f.scripts[0].async, src: f.scripts[0].src, errs: f.scripts[0].errorListeners.length },
+    { id: 'slick-app', async: true, src: 'slick://app/slick.js?v=1', errs: 1 },
+  );
 
-  const bridge = f.exposed()!.claim()!;
-  assert.equal(bridge.loader, 'electron');
-  assert.equal(bridge.safeMode, false);
-  assert.equal(bridge.initialSettings, '{}');
+  const b = f.exposed()!.claim()!;
+  assert.equal(b.loader, 'electron');
+  assert.equal(b.safeMode, false);
+  assert.equal(b.initialSettings, '{}');
   assert.equal(f.exposed()!.claim(), null);
 
-  await bridge.evaluateUserPlugin!('(globalThis.__slickPlugins ??= []).push(() => class {})');
+  await b.evaluateUserPlugin!('(globalThis.__slickPlugins ??= []).push(() => class {})');
   assert.equal(f.executed.length, 2);
   assert.match(f.executed[1], /__slickPlugins/);
 });
 
 test('recovery flag clears itself and leaves Slack completely unmodified', async () => {
-  const f = fixture({ recoveryFlag: '1' });
+  const f = fixture({ recovery: '1' });
   await f.flush();
-  assert.equal(f.recovery.has('slick:preload-recovery'), false);
+  assert.equal(f.rec.has('slick:preload-recovery'), false);
   assert.equal(f.exposed(), undefined);
   assert.equal(f.executed.length, 0);
   assert.equal(f.scripts.length, 0);
@@ -252,64 +205,51 @@ test('failed or invalid boot snapshots stay fail-closed without suppressing defa
       boot: { paths: {}, safeMode: invalid, initialSettings: '{"enabled":true}', appUrl: 'slick://app/slick.js' },
     });
     await f.ready;
-    const bridge = f.exposed()!.claim()!;
-    assert.equal(bridge.safeMode, false);
-    assert.equal(bridge.initialSettings, undefined);
+    const b = f.exposed()!.claim()!;
+    assert.equal(b.safeMode, false);
+    assert.equal(b.initialSettings, undefined);
   }
-
-  for (const invalidSettings of [null, false, {}, undefined]) {
-    const f = fixture({
-      boot: { paths: {}, safeMode: false, initialSettings: invalidSettings, appUrl: '' },
-    });
+  for (const invalid of [null, false, {}, undefined]) {
+    const f = fixture({ boot: { paths: {}, safeMode: false, initialSettings: invalid, appUrl: '' } });
     await f.ready;
-    const bridge = f.exposed()!.claim()!;
-    assert.equal(bridge.initialSettings, undefined);
+    assert.equal(f.exposed()!.claim()!.initialSettings, undefined);
     assert.equal(f.scripts[0]?.src, 'slick://app/slick.js');
   }
-
   for (const badUrl of ['', 'https://evil.example/x.js', 'javascript:alert(1)']) {
-    const f = fixture({
-      boot: { paths: {}, safeMode: false, initialSettings: '{}', appUrl: badUrl },
-    });
+    const f = fixture({ boot: { paths: {}, safeMode: false, initialSettings: '{}', appUrl: badUrl } });
     await f.ready;
     assert.equal(f.scripts[0]?.src, 'slick://app/slick.js');
   }
-
   const throwsBoot = fixture({ bootThrows: true });
   await throwsBoot.ready;
-  const throwsBridge = throwsBoot.exposed()!.claim()!;
-  assert.equal(throwsBridge.safeMode, false);
-  assert.equal(throwsBridge.initialSettings, undefined);
+  const tb = throwsBoot.exposed()!.claim()!;
+  assert.equal(tb.safeMode, false);
+  assert.equal(tb.initialSettings, undefined);
 
-  const safeModeMalformed = fixture({
+  const safeMalformed = fixture({
     boot: { paths: {}, safeMode: true, initialSettings: '{broken', appUrl: 'slick://app/slick.js' },
   });
-  await safeModeMalformed.ready;
-  const safeBridge = safeModeMalformed.exposed()!.claim()!;
-  assert.equal(safeBridge.safeMode, true);
-  assert.equal(safeBridge.initialSettings, '{broken');
+  await safeMalformed.ready;
+  const sb = safeMalformed.exposed()!.claim()!;
+  assert.equal(sb.safeMode, true);
+  assert.equal(sb.initialSettings, '{broken');
 });
 
 test('deferred DOM waits for MutationObserver before attaching runtime script', async () => {
   const f = fixture({ deferredDom: true });
   await f.ready;
   assert.equal(f.scripts.length, 0);
-  assert.equal(f.observerDisconnected(), false);
-
+  assert.equal(f.disconnected(), false);
   f.mountHead();
-  assert.equal(f.scripts.length, 1);
-  assert.equal(f.scripts[0].src, 'slick://app/slick.js?v=1');
-  assert.equal(f.observerDisconnected(), true);
+  assert.equal(f.scripts[0]?.src, 'slick://app/slick.js?v=1');
+  assert.equal(f.disconnected(), true);
 });
 
 test('runtime script load error deletes earlyCore and keeps SlickBridge unclaimable', async () => {
   const f = fixture();
   await f.ready;
-  assert.equal(f.scripts.length, 1);
-
   f.scripts[0].errorListeners[0]();
   await f.flush();
-
   assert.equal(f.exposed()!.claim(), null);
   assert.equal(f.executed[1], "delete globalThis[Symbol.for('slick.earlyCore')]");
 });

@@ -8,7 +8,7 @@ import { configDir, profileDir, settingsDir } from './paths.js';
 import { setupBlobRpc, updateSettings } from './pluginHost.js';
 import type { Updater } from './updater.js';
 import { appUrl } from './session.js';
-import { readBootSettingsSync, readStoredSettings } from './settingsFile.js';
+import { readBootSettings, readStoredSettings } from './settingsFile.js';
 import { createCssEditor } from './windows/cssEditor.js';
 
 const SETTINGS_FILE = 'settings.json';
@@ -135,17 +135,12 @@ export function setupUpdaterBridge(updater: Updater) {
 }
 
 export function setupBridge() {
-  ipcMain.on('slick:get-boot-sync', (event) => {
-    const client = isSlackClient(event.senderFrame);
-    event.returnValue = {
-      paths: {
-        config: configDir(),
-        profile: profileDir(),
-        settings: settingsDir(),
-      },
+  ipcMain.on('slick:get-boot-sync', (e) => {
+    e.returnValue = {
+      paths: { config: configDir(), profile: profileDir(), settings: settingsDir() },
       // --safe-mode boots Slick's runtime with no plugins, for a bad plugin release.
       safeMode: safeMode(),
-      initialSettings: client ? readBootSettingsSync() : undefined,
+      initialSettings: isSlackClient(e.senderFrame) ? readBootSettings() : undefined,
       appUrl: appUrl(),
     };
   });

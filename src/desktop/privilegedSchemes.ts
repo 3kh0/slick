@@ -1,23 +1,12 @@
-type SchemeRegistry = {
-  registerSchemesAsPrivileged(customSchemes: Electron.CustomScheme[]): void;
-};
-
-// Electron only honors the final pre-ready registerSchemesAsPrivileged flags
-// for privileges like secure, bypassCSP, corsEnabled, and supportFetchAPI, so
-// Slack and Sentry's later calls drop Slick's unless we merge them here.
-export function installSchemeMerger(proto: SchemeRegistry): void {
-  const register = proto.registerSchemesAsPrivileged.bind(proto);
-  const merged = new Map<string, Electron.CustomScheme>();
-
+// Merge pre-ready calls so Slack/Sentry don't drop Slick's scheme flags.
+export function installSchemeMerger(proto: { registerSchemesAsPrivileged(s: Electron.CustomScheme[]): void }): void {
+  const reg = proto.registerSchemesAsPrivileged.bind(proto);
+  const map = new Map<string, Electron.CustomScheme>();
   proto.registerSchemesAsPrivileged = (list: Electron.CustomScheme[] = []) => {
-    for (const item of list) {
-      if (!item?.scheme) continue;
-      const prev = merged.get(item.scheme);
-      merged.set(item.scheme, {
-        scheme: item.scheme,
-        privileges: { ...prev?.privileges, ...item.privileges },
-      });
+    for (const s of list) {
+      if (!s?.scheme) continue;
+      map.set(s.scheme, { scheme: s.scheme, privileges: { ...map.get(s.scheme)?.privileges, ...s.privileges } });
     }
-    register([...merged.values()]);
+    reg([...map.values()]);
   };
 }

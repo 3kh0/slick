@@ -23,29 +23,14 @@ export function readSettingsText(): string {
 
 // Boot-time optimizations must distinguish a first launch from unreadable saved
 // preferences: a read failure could otherwise bypass a saved disable switch.
-function bootErrorFallback(error: unknown): string | undefined {
-  return (error as NodeJS.ErrnoException)?.code === 'ENOENT' ? '{}' : undefined;
-}
-
-export async function readBootSettings(
-  file = path.join(settingsDir(), SETTINGS_FILE),
-  read: (file: string, encoding: 'utf8') => Promise<string> = fs.promises.readFile,
-): Promise<string | undefined> {
-  try {
-    return await read(file, 'utf8');
-  } catch (error) {
-    return bootErrorFallback(error);
-  }
-}
-
-export function readBootSettingsSync(
+export function readBootSettings(
   file = path.join(settingsDir(), SETTINGS_FILE),
   read: (file: string, encoding: 'utf8') => string = fs.readFileSync,
 ): string | undefined {
   try {
     return read(file, 'utf8');
   } catch (error) {
-    return bootErrorFallback(error);
+    return (error as NodeJS.ErrnoException)?.code === 'ENOENT' ? '{}' : undefined;
   }
 }
 

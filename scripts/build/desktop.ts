@@ -74,9 +74,9 @@ export async function buildDesktop({ debug = false, hot = false } = {}) {
 
   const earlyPlugin = {
     name: 'slick-early-code',
-    setup(builder: import('esbuild').PluginBuild) {
-      builder.onResolve({ filter: /^slick:early$/ }, () => ({ path: 'slick:early', namespace: 'slick-early' }));
-      builder.onLoad({ filter: /.*/, namespace: 'slick-early' }, () => ({
+    setup(b: import('esbuild').PluginBuild) {
+      b.onResolve({ filter: /^slick:early$/ }, () => ({ path: 'slick:early', namespace: 'slick-early' }));
+      b.onLoad({ filter: /.*/, namespace: 'slick-early' }, () => ({
         contents: `export default ${JSON.stringify(early.code)};`,
         loader: 'js',
       }));

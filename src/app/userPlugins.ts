@@ -18,28 +18,28 @@ function pluginFrom(factory: Factory): SlickPluginConstructor {
   return PluginClass;
 }
 
-let evaluateQueue: Promise<unknown> = Promise.resolve();
+let evalQueue: Promise<unknown> = Promise.resolve();
 
 export function evaluatePlugin(code: string, run?: (code: string) => Promise<void>): Promise<SlickPluginConstructor> {
   // Compiled out of web builds, whose store reviews reject string evaluation.
   if (__SLICK_LOADER__ !== 'electron') return Promise.reject(new Error('user plugins need the desktop app'));
-  const task = evaluateQueue
+  const next = evalQueue
     .catch(() => {})
     .then(async () => {
-      const queue = global.__slickPlugins;
+      const q = global.__slickPlugins;
       const found: Factory[] = [];
       global.__slickPlugins = found;
       try {
         if (run) await run(code);
         else new Function(code)();
       } finally {
-        global.__slickPlugins = queue;
+        global.__slickPlugins = q;
       }
       if (found.length !== 1 || typeof found[0] !== 'function') throw new Error('That file is not a Slick plugin.');
       return pluginFrom(found[0]);
     });
-  evaluateQueue = task;
-  return task;
+  evalQueue = next;
+  return next;
 }
 
 /** Takes the plugins queued before boot, then each one queued after. */

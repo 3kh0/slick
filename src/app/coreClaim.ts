@@ -1,5 +1,6 @@
-import { EARLY_CORE_SYMBOL, type EarlyCore } from './earlyCore.ts';
+import type { EarlyCore } from './early.ts';
 
-const global = globalThis as Record<PropertyKey, unknown>;
-export const earlyCore = global[EARLY_CORE_SYMBOL] as EarlyCore | undefined;
-delete global[EARLY_CORE_SYMBOL];
+const g = globalThis as Record<PropertyKey, unknown>;
+const k = Symbol.for('slick.earlyCore');
+export const earlyCore = g[k] as EarlyCore | undefined;
+delete g[k];
