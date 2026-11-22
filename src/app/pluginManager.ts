@@ -438,7 +438,7 @@ export class PluginManager {
     this.autoUpdate = autoUpdate !== 'off';
     for (const [key, code] of Object.entries(stored)) {
       try {
-        const PluginClass = evaluatePlugin(code);
+        const PluginClass = await evaluatePlugin(code, this.bridge.evaluateUserPlugin);
         if (PluginClass.id !== key) throw new Error(`stored as ${key} but declares ${String(PluginClass.id)}`);
         this.register(PluginClass, true);
       } catch (error) {
@@ -458,7 +458,7 @@ export class PluginManager {
 
   /** Installs or updates a user plugin and returns its name. */
   async installUserPlugin(code: string, source?: string, expectedId?: string): Promise<string> {
-    const PluginClass = evaluatePlugin(code);
+    const PluginClass = await evaluatePlugin(code, this.bridge.evaluateUserPlugin);
     const id = this.validId(PluginClass);
     if (!id) throw new Error('That file is not a Slick plugin.');
     if (expectedId && id !== expectedId) throw new Error(`the file now declares ${id}, not ${expectedId}`);

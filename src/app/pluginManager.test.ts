@@ -104,6 +104,7 @@ async function fixture() {
     onSettingsChange: () => () => {},
     onUserCssChange: () => () => {},
     blobStore,
+    evaluateUserPlugin: undefined as ((code: string) => Promise<void>) | undefined,
     plugin: () => ({ call: async () => {}, on: () => () => {} }),
   };
   const { ConfigStore, PluginManager, SlickPlugin } = context.Host;
@@ -359,4 +360,34 @@ test('plugins that web user scripts queue before or after boot are registered an
       ['Late', true, true],
     ],
   );
+});
+
+test('user plugins use bridge.evaluateUserPlugin when provided and serialize concurrent loads', async () => {
+  const f = await fixture();
+  await f.manager.reconcile();
+  const seen: string[] = [];
+  let inFlight = 0;
+  let maxInFlight = 0;
+  f.bridge.evaluateUserPlugin = async (code: string) => {
+    inFlight++;
+    maxInFlight = Math.max(maxInFlight, inFlight);
+    seen.push(code);
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    try {
+      runInContext(code, f.context);
+    } finally {
+      inFlight--;
+    }
+  };
+  await Promise.all([
+    f.manager.installUserPlugin(userPlugin('First', 1)),
+    f.manager.installUserPlugin(userPlugin('Second', 2)),
+  ]);
+  assert.equal(maxInFlight, 1);
+  assert.equal(seen.length, 2);
+
+  const reloaded = new f.context.Host.PluginManager(f.bridge, f.config);
+  await reloaded.loadUserPlugins();
+  assert.equal(seen.length, 4);
+  assert.deepEqual(Array.from(reloaded.info(), (info: any) => info.id).toSorted(), ['First', 'Second']);
 });

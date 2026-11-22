@@ -81,6 +81,70 @@ export async function writePage(file: string, code: string, label: string, url: 
   console.log(`[build:${label}] ${path.basename(file)}  ${(Buffer.byteLength(code) / 1024).toFixed(1)} KB`);
 }
 
+export async function buildDesktopEarly({ debug = false, hot = false }: Pick<BuildAppOptions, 'debug' | 'hot'> = {}) {
+  const { outputFiles, metafile } = await build({
+    ...(await pageBuildOptions({ debug, targetLoader: 'electron' })),
+    entryPoints: [`${APP}/early.ts`],
+    metafile: true,
+    plugins: [...pagePlugins, ...(hot ? [hostModules] : [])],
+  });
+  const code = `${outputFiles[0].text}\n//# sourceURL=${SOURCE_ORIGIN}early.js\n`;
+  console.log(`[build:early] early.js  ${(Buffer.byteLength(code) / 1024).toFixed(1)} KB`);
+  return { code, metafile };
+}
+
+const DESKTOP_CORE_MODULES = [
+  { id: 'bridge', file: 'src/app/bridge.ts' },
+  { id: 'accounts', file: 'src/app/api/accounts.ts' },
+  { id: 'snappyBoot', file: 'src/plugins/Snappy/boot.ts' },
+  { id: 'webpack', file: 'src/app/slack/webpack.ts' },
+  { id: 'react', file: 'src/app/slack/react.tsx' },
+  { id: 'redux', file: 'src/app/slack/redux.ts' },
+  { id: 'rtm', file: 'src/app/slack/rtm.ts' },
+  { id: 'resize', file: 'src/app/api/resize.ts' },
+  { id: 'childWindows', file: 'src/app/slack/childWindows.ts' },
+  { id: 'css', file: 'src/app/api/css.ts' },
+  { id: 'store', file: 'src/app/store.ts' },
+] as const;
+
+const SHIM_SKIP = Symbol('slick-core-shim-skip');
+const coreClaimPath = path.join(APP, 'coreClaim.ts');
+
+export const sharedCoreShimPlugin: Plugin = {
+  name: 'slick-shared-core-shim',
+  setup(builder) {
+    const byAbs = new Map(DESKTOP_CORE_MODULES.map((m) => [path.resolve(ROOT, m.file), m.id]));
+    builder.onResolve({ filter: /.*/ }, async (args) => {
+      if (args.pluginData === SHIM_SKIP || path.resolve(args.importer) === path.resolve(coreClaimPath)) return;
+      const resolved = await builder.resolve(args.path, {
+        kind: args.kind,
+        importer: args.importer,
+        resolveDir: args.resolveDir,
+        pluginData: SHIM_SKIP,
+      });
+      if (resolved.errors.length || resolved.namespace !== 'file') return;
+      const id = byAbs.get(path.resolve(resolved.path));
+      if (!id) return;
+      return { path: id, namespace: 'slick-core-shim' };
+    });
+    builder.onLoad({ filter: /.*/, namespace: 'slick-core-shim' }, (args) => ({
+      contents: `module.exports = require(${JSON.stringify(coreClaimPath)}).earlyCore?.[${JSON.stringify(args.path)}] ?? {};`,
+      resolveDir: APP,
+      loader: 'js',
+    }));
+  },
+};
+
+export async function buildDesktopRuntime({ debug = false, hot = false }: Pick<BuildAppOptions, 'debug' | 'hot'> = {}) {
+  return buildApp({
+    debug,
+    hot,
+    targetLoader: 'electron',
+    entryPoint: `${APP}/runtime.ts`,
+    extraPlugins: [sharedCoreShimPlugin],
+  });
+}
+
 export async function buildApp({
   debug = false,
   hot = false,

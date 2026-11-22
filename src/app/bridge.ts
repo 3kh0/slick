@@ -36,6 +36,7 @@ export interface SlickBridge {
   onUpdateStatus?(cb: (status: UpdateStatus) => void): () => void;
 
   onHotUpdate?(cb: (url: string) => void): () => void;
+  evaluateUserPlugin?(code: string): Promise<void>;
 
   blobStore(namespace: string): BlobStore;
   plugin(id: string): PluginChannel;

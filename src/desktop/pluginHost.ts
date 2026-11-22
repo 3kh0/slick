@@ -215,7 +215,7 @@ function createCtx(plugin: SlickMainPlugin, entry: () => Registered): MainCtx {
       register(scheme: string, privileges: ProtocolPrivileges, handler) {
         need('protocol');
         if (booted) throw new Error(`[slick] ${id}: protocols must be declared during boot`);
-        protocol.registerSchemesAsPrivileged([{ scheme, privileges }]);
+        protocol.registerSchemesAsPrivileged([{ scheme, privileges: { bypassCSP: true, ...privileges } }]);
         entry().protocols.push({ scheme, privileges, handler });
       },
     },

@@ -1,19 +1,16 @@
-// Replaces Slack's preload (patch.ts swaps it) and rebuilds the document so
-// slick.js runs before any Slack script. Order is load-bearing:
-//   1. blank the document synchronously, before the parser runs Slack's scripts
-//   2. eval Slack's original preload so its exposeInMainWorld calls land first
-//   3. fetch and validate a replacement document
-//   4. expose SlickBridge
-//   5. commit it, CSP meta removed, with slick.js ahead of Slack's scripts
-//
-// Step 1 can't wait for step 3: the parser keeps going during any await, and if
-// Slack's bundle loads before slick.js every hook is too late. A failure after
-// step 1 leaves a blank window, so those paths reload via `abandon`.
+// Registered via session.registerPreloadScript so Slack's native preload keeps
+// running untouched with its V8 code cache. Before any page script runs:
+//   1. handle account handoffs / recovery opt-out
+//   2. read boot snapshot synchronously via slick:get-boot-sync
+//   3. expose one-shot SlickBridge (including CSP-safe evaluateUserPlugin)
+//   4. execute early.ts (~34 KB) and inject async <script src="slick://app/slick.js">
 
+import earlyCode from 'slick:early';
 import { applyPendingAccountSwitch, PENDING_ACCOUNT_SWITCH_KEY } from '../app/api/accounts.ts';
 import { installCookieSignInButton } from './signInButton.ts';
 
-const { contextBridge, ipcRenderer } = require('electron');
+const { contextBridge, ipcRenderer, webFrame } = require('electron');
+
 const accountDiagnostic = (event: string) => {
   try {
     ipcRenderer.send('slick:account-diagnostic', event);
@@ -21,10 +18,23 @@ const accountDiagnostic = (event: string) => {
 };
 accountDiagnostic('preload.start');
 
-// Started in parallel: all of it blocks the rebuild and Slack's first paint.
-const preloadKey = process.argv.find((arg: string) => arg.startsWith('--slick-preload-key='))?.slice(20) ?? '';
-const originalPreloadPromise = ipcRenderer.invoke('slick:get-original-preload', preloadKey) as Promise<string | null>;
-if (location.hostname === 'app.slack.com' && /^\/client(\/|$)/.test(location.pathname)) {
+const RECOVERY_KEY = 'slick:preload-recovery';
+
+function runtimeLoaderScript(appUrl: string): string {
+  return `;(function(u){function fail(){try{delete globalThis[Symbol.for('slick.earlyCore')];}catch{}try{globalThis.SlickBridge&&globalThis.SlickBridge.claim();}catch{}console.error('[slick] failed to load '+u+'; Slack will run unmodified');}function attach(){var t=document.head||document.documentElement;if(!t)return false;var s=document.createElement('script');s.id='slick-app';s.async=true;s.src=u;s.onerror=fail;t.appendChild(s);return true;}if(!attach()){var mo=new MutationObserver(function(){if(attach())mo.disconnect();});mo.observe(document,{childList:true,subtree:true});}})(${JSON.stringify(appUrl)});`;
+}
+
+function runClientPreload() {
+  let recovering = false;
+  try {
+    recovering = sessionStorage.getItem(RECOVERY_KEY) === '1';
+    sessionStorage.removeItem(RECOVERY_KEY);
+  } catch {}
+  if (recovering) {
+    console.warn('[slick] recovering from a failed boot; Slack will load unmodified');
+    return;
+  }
+
   const pending = ipcRenderer.sendSync('slick:account-handoff');
   if (pending) {
     try {
@@ -41,159 +51,39 @@ if (location.hostname === 'app.slack.com' && /^\/client(\/|$)/.test(location.pat
       throw new Error('Account handoff could not be applied safely.');
     }
   }
-}
-const isClientPage = location.hostname === 'app.slack.com' && /\/client(\/|$)/.test(location.pathname);
-const originalResponsePromise = isClientPage ? fetch(location.href) : Promise.resolve(null);
-const appUrlPromise = ipcRenderer.invoke('slick:get-app-url') as Promise<string>;
-const pathsPromise = ipcRenderer.invoke('slick:get-paths') as Promise<Record<string, string>>;
-const safeModePromise = (ipcRenderer.invoke('slick:get-safe-mode') as Promise<unknown>).then(
-  (value) => (typeof value === 'boolean' ? value : undefined),
-  () => undefined,
-);
-const call = (method: string, args: unknown[] = []) => ipcRenderer.invoke('slick:rpc', method, args);
-// Capture fresh settings alongside the HTML request, before Slick or Slack can
-// initialize. This optional read must neither block Slack indefinitely nor turn
-// an unavailable snapshot into enabled defaults.
-const initialSettingsPromise = isClientPage
-  ? new Promise<string | undefined>((resolve) => {
-      let settled = false;
-      const finish = (text?: unknown) => {
-        if (settled) return;
-        settled = true;
-        clearTimeout(timer);
-        resolve(typeof text === 'string' ? text : undefined);
-      };
-      const timer = setTimeout(() => finish(), 500);
-      try {
-        call('readBootSettings').then(finish, () => finish());
-      } catch {
-        finish();
-      }
-    })
-  : Promise.resolve(undefined);
 
-// Set before a recovery reload; that pass loads stock Slack instead of looping.
-const RECOVERY_KEY = 'slick:preload-recovery';
-let recovering = false;
-try {
-  recovering = sessionStorage.getItem(RECOVERY_KEY) === '1';
-  sessionStorage.removeItem(RECOVERY_KEY);
-} catch {}
-
-const rebuilding = isClientPage && !recovering;
-if (recovering) console.warn('[slick] recovering from a failed document rebuild; Slack will load unmodified');
-
-if (rebuilding) {
-  document.open();
-  document.write('<!DOCTYPE html>');
-  document.close();
-}
-
-/** The document is already blank, so reload into stock Slack rather than return. */
-function abandon(message: string, error: unknown): void {
-  accountDiagnostic('preload.failed');
-  console.error(`[slick] ${message}`, error);
-  if (!rebuilding) return;
+  type BootSnapshot = {
+    paths?: unknown;
+    safeMode?: unknown;
+    initialSettings?: unknown;
+    appUrl?: unknown;
+  };
+  let boot: BootSnapshot | undefined;
   try {
-    sessionStorage.setItem(RECOVERY_KEY, '1');
+    boot = ipcRenderer.sendSync('slick:get-boot-sync') as BootSnapshot | undefined;
   } catch {}
-  location.reload();
-}
 
-// Keep direct eval out of the bridge's closure: it would retain the temporary
-// parsed document and script list for the window's lifetime. An arrow preserves
-// the preload's lexical this/arguments and access to require and other globals.
-const evaluateOriginalPreload = (source: string): void => {
-  // biome-ignore lint/security/noGlobalEval: the preload we displaced has to run
-  // oxlint-disable-next-line no-eval
-  eval(source);
-};
+  const safeMode = typeof boot?.safeMode === 'boolean' ? boot.safeMode : undefined;
+  const initialSettings =
+    safeMode === undefined || typeof boot?.initialSettings !== 'string' ? undefined : boot.initialSettings;
+  const paths =
+    boot?.paths && typeof boot.paths === 'object' && !Array.isArray(boot.paths)
+      ? (boot.paths as Record<string, string>)
+      : {};
+  const appUrl = typeof boot?.appUrl === 'string' && boot.appUrl ? boot.appUrl : 'slick://app/slick.js';
 
-// document.open() erases every listener on the window and document, including
-// the ones Slack's preload registers (e.g. system light/dark tracking). Record
-// them while it runs so the final rebuild can put them back.
-type RecordedListener = [EventTarget, Parameters<EventTarget['addEventListener']>];
-const originalPreloadListeners: RecordedListener[] = [];
-function recordListeners<T>(run: () => T): T {
-  const targets: EventTarget[] = [window, document];
-  const originals = targets.map((target) => target.addEventListener);
-  targets.forEach((target) => {
-    const add = target.addEventListener;
-    target.addEventListener = function (this: EventTarget, ...args: Parameters<EventTarget['addEventListener']>) {
-      originalPreloadListeners.push([target, args]);
-      return add.apply(this, args);
-    } as typeof target.addEventListener;
-  });
-  try {
-    return run();
-  } finally {
-    targets.forEach((target, i) => {
-      target.addEventListener = originals[i];
-    });
-  }
-}
-
-void (async () => {
-  try {
-    const originalPreload = await originalPreloadPromise;
-    if (!originalPreload) throw new Error('Slack preload source is unavailable');
-    recordListeners(() => evaluateOriginalPreload(originalPreload));
-    accountDiagnostic('preload.original-ready');
-    if (!isClientPage && (location.hostname === 'slack.com' || location.hostname.endsWith('.slack.com'))) {
-      installCookieSignInButton(document, () => ipcRenderer.send('slick:open-cookie-login'));
-    }
-  } catch (error) {
-    return abandon('failed to evaluate Slack preload:', error);
-  }
-
-  if (!rebuilding) return;
-
-  let doc: Document;
-  try {
-    const response = await originalResponsePromise;
-    if (!response) throw new Error('not a Slack client page');
-    const responseUrl = new URL(response.url);
-    const contentType = response.headers.get('content-type') ?? '';
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    if (
-      responseUrl.origin !== location.origin ||
-      !/\/client(\/|$)/.test(responseUrl.pathname) ||
-      !/^text\/html(?:;|$)/i.test(contentType)
-    ) {
-      throw new Error(`unexpected response (${response.url}, ${contentType || 'no content type'})`);
-    }
-    // A CSP header survives document.write and could block slick:.
-    if (response.headers.has('content-security-policy')) {
-      throw new Error('response contains a Content-Security-Policy header');
-    }
-
-    const html = await response.text();
-    doc = new DOMParser().parseFromString(html, 'text/html');
-    if (!doc.head || !doc.body || !doc.querySelector('script')) throw new Error('response is not a usable client page');
-  } catch (error) {
-    return abandon('could not prepare replacement HTML:', error);
-  }
-
-  let appUrl: string;
-  try {
-    appUrl = await appUrlPromise;
-  } catch {
-    appUrl = 'slick://app/slick.js';
-  }
+  const call = (method: string, args: unknown[] = []) => ipcRenderer.invoke('slick:rpc', method, args);
 
   // contextBridge globals are non-configurable, so the API can't be hidden from
-  // Slack's scripts. Instead it's a one-shot claim: slick.js runs first and
+  // Slack's scripts. Instead it's a one-shot claim: early.js runs first and
   // takes it; every later caller gets null.
-  const safeMode = await safeModePromise;
   const api = {
     loader: 'electron' as const,
     loaderVersion: typeof __SLICK_VERSION__ === 'string' ? __SLICK_VERSION__ : 'dev',
     bridgeVersion: 1,
-    paths: await pathsPromise.catch(() => ({})),
+    paths,
     safeMode: safeMode ?? false,
-    // Keep the normal bridge fallback, but do not enable boot optimizations
-    // unless the recovery-mode decision was read successfully.
-    initialSettings: safeMode === undefined ? undefined : await initialSettingsPromise,
+    initialSettings,
 
     readSettings: () => call('readSettings'),
     writeSettings: (text: string) => call('writeSettings', [text]),
@@ -233,6 +123,9 @@ void (async () => {
 
     openFile: (title: string, accept?: string) => call('openFile', [title, accept]),
     openCssEditor: () => call('openCssEditor'),
+
+    evaluateUserPlugin: (code: string) =>
+      Promise.resolve(webFrame.executeJavaScript(String(code))).then(() => undefined),
 
     // The id is a convention, not a trust boundary; main enforces enablement.
     plugin: (id: string) => ({
@@ -274,39 +167,19 @@ void (async () => {
     },
   });
 
-  for (const meta of doc.querySelectorAll('meta[http-equiv="Content-Security-Policy"]')) meta.remove();
-
-  const scripts = Array.from(doc.querySelectorAll('script')).map((script) => ({
-    src: (script as HTMLScriptElement).src,
-    textContent: script.textContent,
-    type: script.getAttribute('type'),
-  }));
-  for (const script of doc.querySelectorAll('script')) script.remove();
-
-  const slick = doc.createElement('script');
-  slick.id = 'slick-app';
-  slick.src = appUrl;
-  slick.setAttribute(
-    'onerror',
-    `globalThis.SlickBridge&&globalThis.SlickBridge.claim();console.error('[slick] failed to load ${appUrl}; Slack will run unmodified')`,
+  void Promise.resolve(webFrame.executeJavaScript(`${earlyCode}\n${runtimeLoaderScript(appUrl)}`)).then(
+    () => accountDiagnostic('preload.ready'),
+    (error: unknown) => {
+      accountDiagnostic('preload.failed');
+      console.error('[slick] failed to execute early loader; Slack will run unmodified:', error);
+    },
   );
-  doc.head.appendChild(slick);
+}
 
-  for (const { src, textContent, type } of scripts) {
-    const script = doc.createElement('script');
-    if (type) script.type = type;
-    if (src) script.src = src;
-    else if (textContent) script.textContent = textContent;
-    doc.head.appendChild(script);
-  }
+const isClientPage = location.hostname === 'app.slack.com' && /^\/client(\/|$)/.test(location.pathname);
 
-  try {
-    document.open();
-    for (const [target, args] of originalPreloadListeners) target.addEventListener(...args);
-    document.write(`<!DOCTYPE html>${doc.documentElement.outerHTML}`);
-    document.close();
-    accountDiagnostic('preload.ready');
-  } catch (error) {
-    abandon('failed to commit replacement HTML:', error);
-  }
-})();
+if (isClientPage) {
+  runClientPreload();
+} else if (location.hostname === 'slack.com' || location.hostname.endsWith('.slack.com')) {
+  installCookieSignInButton(document, () => ipcRenderer.send('slick:open-cookie-login'));
+}

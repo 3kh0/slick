@@ -243,7 +243,7 @@ function startSlack(asar: string) {
   if (stored) updateSettings(stored);
   bootMainPlugins();
 
-  applyPatches(asar, path.join(__dirname, 'preload.js'), slickResourcesPath, windowCreated, interceptAccountSignIn);
+  applyPatches(asar, slickResourcesPath, windowCreated, interceptAccountSignIn);
   setupBridge();
   setupPluginRpc();
 
@@ -275,7 +275,10 @@ function startSlack(asar: string) {
   }
 
   app.whenReady().then(async () => {
-    setupSession(codeBuild ? [__dirname, slickResourcesPath] : [slickResourcesPath, __dirname]);
+    setupSession(
+      codeBuild ? [__dirname, slickResourcesPath] : [slickResourcesPath, __dirname],
+      path.join(__dirname, 'preload.js'),
+    );
     try {
       pruneCode(readShell(slickResourcesPath));
     } catch (error) {

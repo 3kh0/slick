@@ -8,7 +8,7 @@ import { configDir, profileDir, settingsDir } from './paths.js';
 import { setupBlobRpc, updateSettings } from './pluginHost.js';
 import type { Updater } from './updater.js';
 import { appUrl } from './session.js';
-import { readBootSettings, readStoredSettings } from './settingsFile.js';
+import { readBootSettingsSync, readStoredSettings } from './settingsFile.js';
 import { createCssEditor } from './windows/cssEditor.js';
 
 const SETTINGS_FILE = 'settings.json';
@@ -83,7 +83,6 @@ export function broadcast(channel: string, ...args: unknown[]) {
 }
 
 const methods: Record<string, (args: any[]) => unknown> = {
-  readBootSettings: () => readBootSettings(),
   readSettings: () => readFile(SETTINGS_FILE, '{}'),
   writeSettings: async ([text]) => {
     const value = String(text ?? '');
@@ -136,16 +135,20 @@ export function setupUpdaterBridge(updater: Updater) {
 }
 
 export function setupBridge() {
-  ipcMain.handle('slick:get-app-url', () => appUrl());
-
-  ipcMain.handle('slick:get-paths', () => ({
-    config: configDir(),
-    profile: profileDir(),
-    settings: settingsDir(),
-  }));
-
-  // --safe-mode boots Slick's runtime with no plugins, for a bad plugin release.
-  ipcMain.handle('slick:get-safe-mode', () => safeMode());
+  ipcMain.on('slick:get-boot-sync', (event) => {
+    const client = isSlackClient(event.senderFrame);
+    event.returnValue = {
+      paths: {
+        config: configDir(),
+        profile: profileDir(),
+        settings: settingsDir(),
+      },
+      // --safe-mode boots Slick's runtime with no plugins, for a bad plugin release.
+      safeMode: safeMode(),
+      initialSettings: client ? readBootSettingsSync() : undefined,
+      appUrl: appUrl(),
+    };
+  });
 
   ipcMain.handle('slick:rpc', (event, method: string, args: unknown[]) => {
     if (!isSlackClient(event.senderFrame)) throw new Error('[slick] rejected sender');

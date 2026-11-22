@@ -6,6 +6,10 @@ In a PR that changes something users will notice, add a line under **Unreleased*
 
 ## Unreleased
 
+### New
+
+- Slick loads faster on desktop without reloading Slack's page.
+
 ### Fixed
 
 - BetterBlock no longer hides videos and files in messages forwarded from conversations you can't see.
