@@ -27,32 +27,46 @@ export function installBridge(target: Window & typeof globalThis) {
     return;
   } // Fail closed when the bypass preference cannot be read.
   if ('SlickBridge' in target) return;
-  const client = createClient((m) => target.postMessage(m, target.location.origin));
   const settings = new Set<(text: string) => void>();
   const css = new Set<(text: string) => void>();
-  target.addEventListener('message', (event) => {
-    if (event.source !== target || event.origin !== target.location.origin) return;
-    client.receive(event.data);
-    const m: unknown = event.data;
+  const handleIncoming = (data: unknown) => {
+    client.receive(data);
     if (
-      !record(m) ||
-      m.channel !== CHANNEL ||
-      m.kind !== 'change' ||
-      typeof m.value !== 'string' ||
-      m.value.length > MAX_TEXT
+      !record(data) ||
+      data.channel !== CHANNEL ||
+      data.kind !== 'change' ||
+      typeof data.value !== 'string' ||
+      data.value.length > MAX_TEXT
     )
       return;
-    const listeners = m.event === 'settings' ? settings : m.event === 'css' ? css : [];
+    const listeners = data.event === 'settings' ? settings : data.event === 'css' ? css : [];
     for (const notify of listeners) {
       try {
-        notify(m.value);
+        notify(data.value);
       } catch {}
     }
-  });
+  };
+  const mc = typeof target.MessageChannel === 'function' ? new target.MessageChannel() : null;
+  const client = createClient(
+    mc ? (m) => mc.port1.postMessage(m) : (m) => target.postMessage(m, target.location.origin),
+  );
+  if (mc) {
+    mc.port1.addEventListener('message', (event) => handleIncoming(event.data));
+    mc.port1.start();
+    target.postMessage({ channel: CHANNEL, kind: 'port' }, target.location.origin, [mc.port2]);
+  } else {
+    target.addEventListener('message', (event) => {
+      if (event.source !== target || event.origin !== target.location.origin) return;
+      handleIncoming(event.data);
+    });
+  }
   // A bfcache page keeps its bridge and pending requests. The isolated relay
   // resyncs settings/CSS on persisted pageshow; a real unload closes the client.
   target.addEventListener('pagehide', (event) => {
-    if (!event.persisted) client.disconnect();
+    if (!event.persisted) {
+      client.disconnect();
+      mc?.port1.close();
+    }
   });
   const denied = () => Promise.reject(new Error('Unavailable in the browser extension MVP'));
   const bridge: SlickBridge = {

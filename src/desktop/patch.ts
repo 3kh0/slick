@@ -5,18 +5,19 @@
 import { EventEmitter } from 'node:events';
 import { createRequire } from 'node:module';
 import path from 'node:path';
-import { app, ipcMain, Menu, MenuItem, shell } from 'electron';
+import { app, Menu, MenuItem, shell } from 'electron';
 import { profileDir } from './paths.js';
 import { trayDir, wrapTray } from './trayIcons.js';
 import { wrapMacNotifications } from './macNotificationSounds.js';
-import { createPreloadSources } from './preloadSources.ts';
 import { relabelAppMenu } from './menuLabels.ts';
 import { popupOptions } from './popupOptions.ts';
 import { claimFlatpakScheme } from './flatpakHandler.ts';
+import { installSchemeMerger } from './privilegedSchemes.ts';
 
 const cjsRequire = createRequire(import.meta.url);
 const NodeModule = cjsRequire('module') as any;
 const electronCjs = cjsRequire('electron') as Record<string, any>;
+installSchemeMerger(electronCjs.protocol);
 
 // `overrides` shadow real exports without mutating the electron module.
 const overrides: Record<string, any> = {};
@@ -108,7 +109,6 @@ function injectSlickMenu(items: AnyItem[]) {
 
 export function applyPatches(
   slackAsarPath: string,
-  slickPreloadPath: string,
   slickResources: string,
   onWindow?: (window: Electron.BrowserWindow) => void,
   onSignIn?: (contents: Electron.WebContents, url: string) => boolean,
@@ -146,45 +146,11 @@ export function applyPatches(
     });
   }
 
-  // Our preload evals Slack's original (see preload.ts).
-  const originalPreloads = createPreloadSources();
-  ipcMain.handle('slick:get-original-preload', (_event, key: string) => originalPreloads.get(key));
-
-  /**
-   * Swap Slack's preload for ours, keeping its source fetchable by key. If it
-   * can't be read, Slack's stays: ours would strand the renderer without
-   * Slack's desktop API.
-   */
-  function substitutePreload(webPreferences: any = {}): { webPreferences: any; preloadKey: string } {
-    const slackPreload: string | undefined = webPreferences?.preload;
-    let preloadKey = '';
-    if (slackPreload) {
-      try {
-        preloadKey = originalPreloads.register(slackPreload);
-      } catch (error) {
-        console.error('[slick] could not read Slack preload:', error);
-      }
-    }
-    return {
-      preloadKey,
-      webPreferences: {
-        ...webPreferences,
-        preload: preloadKey ? slickPreloadPath : slackPreload,
-        additionalArguments: preloadKey
-          ? [...(webPreferences?.additionalArguments ?? []), `--slick-preload-key=${preloadKey}`]
-          : webPreferences?.additionalArguments,
-        devTools: true,
-      },
-    };
-  }
-
   const OrigBrowserWindow = electronCjs.BrowserWindow;
   overrides.BrowserWindow = new Proxy(OrigBrowserWindow, {
     construct(Target: any, [opts = {}]: any[]) {
       if (opts.transparent) return new Target(opts);
-      const { webPreferences, preloadKey } = substitutePreload(opts.webPreferences);
-      const window = new Target({ ...opts, webPreferences });
-      if (preloadKey) window.once('closed', () => originalPreloads.release(preloadKey));
+      const window = new Target({ ...opts, webPreferences: { ...opts.webPreferences, devTools: true } });
       try {
         onWindow?.(window);
       } catch (error) {
@@ -196,7 +162,7 @@ export function applyPatches(
 
   // window.open windows (pop-outs, in-app browser, ctrl/cmd-clicks) bypass the
   // proxy above: Electron builds them from `overrideBrowserWindowOptions`
-  // internally. Without this they run stock Slack with no bridge or theme.
+  // internally. Track their creation so main plugins hook them too.
   app.on('web-contents-created', (_event, contents) => {
     const originalSetter = contents.setWindowOpenHandler.bind(contents);
     contents.setWindowOpenHandler = (handler: (details: Electron.HandlerDetails) => any) =>
@@ -213,24 +179,20 @@ export function applyPatches(
         // Leave overlays (huddle drawing, Slackbot Mini) exactly as Slack builds them.
         if (result?.action !== 'allow' || result.overrideBrowserWindowOptions?.transparent) return result;
 
-        const { webPreferences, preloadKey } = substitutePreload(result.overrideBrowserWindowOptions?.webPreferences);
-        if (preloadKey) {
-          // The next window this contents creates is the one just allowed.
-          contents.once('did-create-window', (window: Electron.BrowserWindow) => {
-            window.once('closed', () => originalPreloads.release(preloadKey));
-            try {
-              onWindow?.(window);
-            } catch (error) {
-              console.error('[slick] window hook failed:', error);
-            }
-          });
-        }
+        // The next window this contents creates is the one just allowed.
+        contents.once('did-create-window', (window: Electron.BrowserWindow) => {
+          try {
+            onWindow?.(window);
+          } catch (error) {
+            console.error('[slick] window hook failed:', error);
+          }
+        });
         return {
           ...result,
           overrideBrowserWindowOptions: {
             ...result.overrideBrowserWindowOptions,
             ...popupOptions(details, process.platform),
-            webPreferences,
+            webPreferences: { ...result.overrideBrowserWindowOptions?.webPreferences, devTools: true },
           },
         };
       });

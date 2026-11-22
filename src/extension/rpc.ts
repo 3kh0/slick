@@ -159,6 +159,19 @@ export type StorageArea = {
   set(items: Record<string, unknown>): Promise<void>;
   remove(keys: string | string[]): Promise<void>;
 };
+export type RegisteredContentScript = {
+  id: string;
+  matches?: string[];
+  js?: string[];
+  runAt?: 'document_start' | 'document_end' | 'document_idle';
+  world?: 'ISOLATED' | 'MAIN';
+  persistAcrossSessions?: boolean;
+};
+export type ExtensionScripting = {
+  getRegisteredContentScripts?(filter?: { ids?: string[] }): Promise<{ id: string }[]>;
+  registerContentScripts?(scripts: RegisteredContentScript[]): Promise<void>;
+  unregisterContentScripts?(filter?: { ids?: string[] }): Promise<void>;
+};
 export type ExtensionBrowser = {
   runtime: {
     id: string;
@@ -177,6 +190,7 @@ export type ExtensionBrowser = {
     onRemoved?: { addListener(cb: (tabId: number) => void): void };
   };
   declarativeNetRequest?: Dnr;
+  scripting?: ExtensionScripting;
   userScripts?: UserScripts;
   permissions?: {
     contains(permissions: { permissions?: string[]; origins?: string[] }): Promise<boolean>;

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { themeToCss } from './theme.ts';
-import { importedThemes, parseThemeJson } from '../shared/themes.ts';
+import { importedThemes, parseThemeJson, resolveThemeCss } from '../shared/themes.ts';
 import { readFileSync } from 'node:fs';
 
 const selector = ':root,html,body,.sk-client-theme--dark,.sk-client-theme--light';
@@ -77,4 +77,24 @@ test('theme imports support filename fallback and ignore invalid saved entries',
     'imported:one': theme,
   });
   assert.deepEqual(importedThemes(null), {});
+});
+
+test('resolveThemeCss handles built-in, renamed, imported, custom, and invalid themes', () => {
+  const builtin = {
+    'catppuccin-mocha': { mode: 'dark' as const, vars: { '--bg': '#1e1e2e' } },
+    nord: { css: 'body{background:#2e3440}' },
+  };
+  assert.deepEqual(resolveThemeCss({ theme: 'ultraviolet' }, builtin), {
+    css: `${selector}{--bg:#1e1e2e !important}\n`,
+    mode: 'dark',
+  });
+  assert.deepEqual(resolveThemeCss({ theme: 'nord' }, builtin), { css: 'body{background:#2e3440}' });
+  assert.deepEqual(
+    resolveThemeCss({ theme: 'imported:custom', importedThemes: { 'imported:custom': { css: 'body{}' } } }, builtin),
+    { css: 'body{}' },
+  );
+  assert.equal(resolveThemeCss({ theme: 'custom' }, builtin), null);
+  assert.equal(resolveThemeCss({ theme: '' }, builtin), null);
+  assert.equal(resolveThemeCss({ theme: 'missing' }, builtin), null);
+  assert.equal(resolveThemeCss(null, builtin), null);
 });

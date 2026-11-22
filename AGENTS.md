@@ -30,7 +30,7 @@ This file covers what those don't: the Slack internals that bite, how to drive t
 | Path               | What it is                                                                                                                                  |
 | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------- |
 | `src/app/`         | Page code (`slick.js`) shared by every target: plugin manager, Slack discovery (`slack/`), plugin APIs (`api/`), settings UI                |
-| `src/desktop/`     | Electron main and preload. The preload rebuilds Slack's document and loads `slick://app/slick.js?v=<mtime>`                                 |
+| `src/desktop/`     | Electron main and the session preload, which runs `early.js` before Slack's first script, then loads `slick://app/slick.js?v=<mtime>`       |
 | `src/extension/`   | MV3 extension: MAIN-world page script, isolated relay (`content.ts`), background (`background.ts`, `mainHost.ts`, `blobs.ts`), options page |
 | `src/userscript/`  | Violentmonkey build: GM-backed bridge, storage and network                                                                                  |
 | `src/plugins/<Id>` | `meta.ts`, `index.ts(x)`, optional `main.ts` (Electron) and `browser.ts` (web)                                                              |

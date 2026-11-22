@@ -56,5 +56,3 @@ export const settings = {
 
 // A page extension cannot change the browser process or Slack's Crashpad.
 export const { ignoreGpuBlocklist: _gpu, disableCrashReporter: _crash, ...browserSettings } = settings;
-// Extensions cannot synchronously read preferences before Slack initializes.
-export const { optimizeStateTracking: _state, ...extensionSettings } = browserSettings;

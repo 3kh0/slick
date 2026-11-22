@@ -48,12 +48,25 @@ export function onDocument(cb: (doc: Document) => void): () => void {
   return () => void documentListeners.delete(cb);
 }
 
+function findExisting(doc: Document, key?: string): HTMLStyleElement | null {
+  if (key === undefined || typeof doc.querySelector !== 'function') return null;
+  const safe =
+    typeof CSS !== 'undefined' && typeof CSS.escape === 'function' ? CSS.escape(key) : key.replace(/["\\]/g, '\\$&');
+  return doc.querySelector<HTMLStyleElement>(`style[data-slick-style="${safe}"]`);
+}
+
 function render(sheet: Sheet, doc: Document) {
   let element = sheet.elements.get(doc);
   if (!element) {
-    element = doc.createElement('style');
-    element.dataset.slickStyle = sheet.key ?? '';
-    doc.head.appendChild(element);
+    const existing = findExisting(doc, sheet.key);
+    if (existing) {
+      element = existing;
+      if (doc.head && (element.parentNode !== doc.head || element.nextElementSibling)) doc.head.appendChild(element);
+    } else {
+      element = doc.createElement('style');
+      element.dataset.slickStyle = sheet.key ?? '';
+      doc.head.appendChild(element);
+    }
     sheet.elements.set(doc, element);
   }
   // Re-setting identical text still re-parses the sheet and invalidates style.
@@ -78,6 +91,7 @@ export function setStyle(css: string | null, key?: string): () => void {
 
   if (css === null) {
     if (sheet) drop(sheet);
+    else if (key !== undefined) for (const doc of liveDocuments()) findExisting(doc, key)?.remove();
     return () => {};
   }
 

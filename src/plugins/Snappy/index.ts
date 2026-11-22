@@ -33,8 +33,7 @@ export default class Snappy extends SlickPlugin<typeof meta.settings> {
   static readonly description = meta.description;
   static readonly category = meta.category;
   static readonly defaultEnabled = meta.defaultEnabled;
-  static readonly settings =
-    loader === 'extension' ? meta.extensionSettings : browserLoader ? meta.browserSettings : meta.settings;
+  static readonly settings = browserLoader ? meta.browserSettings : meta.settings;
   static readonly liveSettings = ['disableSpellcheck'];
   // Chromium switches are read once at process start, so these cannot apply live.
   static readonly relaunchSettings = browserLoader ? [] : ['ignoreGpuBlocklist', 'disableCrashReporter'];
