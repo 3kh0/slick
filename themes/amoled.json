@@ -12,6 +12,7 @@
     "--dt_color-base-inv-pry": "#000000",
     "--dt_color-ctr-pry": "#000000",
     "--dt_color-ctr-sec": "#000000",
+    "--dt_color-theme-surf-inv-sec": "#000000",
     "--sk_primary_background": "0,0,0"
   },
   "css": [

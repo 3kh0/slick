@@ -6,6 +6,10 @@ In a PR that changes something users will notice, add a line under **Unreleased*
 
 ## Unreleased
 
+### Fixed
+
+- AMOLED keeps the conversation sidebar true black.
+
 ## Build 161
 
 ### Highlights
