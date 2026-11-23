@@ -4,7 +4,7 @@ import { modalReady } from './api/modal.tsx';
 import type { SlickBridge } from './bridge.ts';
 import type { ConfigStore } from './configStore.ts';
 import type { PluginManager } from './pluginManager.ts';
-import type { UpdateStatus } from './updateStatus.ts';
+import type { UpdateCheck, UpdateStatus } from './updateStatus.ts';
 
 const RELEASES_URL = 'https://github.com/3kh0/slick/releases';
 const COLLAPSED_ITEMS = 4;
@@ -380,6 +380,8 @@ export function UpdatePanel({
 }: Plugins & { bridge: SlickBridge; Button: React.ComponentType<any> }) {
   useStyles();
   const status = useUpdateStatus(bridge);
+  const [checking, setChecking] = React.useState(false);
+  const [check, setCheck] = React.useState<UpdateCheck | null>(null);
   const build = __SLICK_BUILD__;
   const state = bridge.getUpdateStatus ? (status?.state ?? 'idle') : 'idle';
   const coming = newerThan(status?.notes ?? [], build, __SLICK_CHANGELOG__);
@@ -390,13 +392,21 @@ export function UpdatePanel({
       : '';
   const updatesBy = bridge.loader === 'extension' ? 'your browser' : 'your userscript manager';
   const views: Record<UpdateStatus['state'], PanelView> = {
-    idle: {
-      title: "You're up to date",
-      sub: bridge.getUpdateStatus
-        ? `Build ${build || 'dev'} is the newest. Slick checks for updates every few hours.`
-        : `Build ${build || 'dev'}. Updates arrive automatically through ${updatesBy}.`,
-      icon: 'check',
-    },
+    idle:
+      check?.state === 'error' || check?.state === 'unsupported'
+        ? { title: "Couldn't check for updates", sub: check.message, action: 'Try again', icon: 'alert' }
+        : {
+            title: "You're up to date",
+            sub: checking
+              ? 'Checking for updates…'
+              : check
+                ? `Build ${build} is the newest. Checked just now.`
+                : bridge.getUpdateStatus
+                  ? `Build ${build || 'dev'}. Slick checks for updates every few hours.`
+                  : `Build ${build || 'dev'}. Updates arrive automatically through ${updatesBy}.`,
+            action: bridge.checkForUpdates ? 'Check for updates' : undefined,
+            icon: 'check',
+          },
     available: {
       title: `Build ${status?.latestBuild} is ready for you`,
       sub: [size, coming.length ? "Here's what you get" : ''].filter(Boolean).join(' · '),
@@ -418,9 +428,21 @@ export function UpdatePanel({
     },
   };
   const view = views[state];
+  const act = async () => {
+    if (state !== 'idle') return bridge.activateUpdate?.();
+    setChecking(true);
+    setCheck(null);
+    try {
+      setCheck((await bridge.checkForUpdates?.()) ?? null);
+    } catch (error) {
+      setCheck({ state: 'error', message: String((error as Error)?.message ?? error) });
+    } finally {
+      setChecking(false);
+    }
+  };
   const pending = state === 'available' || state === 'downloading' || state === 'ready';
   return (
-    <div className="slick-wn slick-wn__update" data-state={state}>
+    <div className="slick-wn slick-wn__update" data-state={view.icon === 'alert' ? 'error' : state}>
       <div className="slick-wn__update-head">
         <span className="slick-wn__update-icon">
           <Icon name={view.icon} size={20} />
@@ -431,7 +453,12 @@ export function UpdatePanel({
         </div>
         {view.action && (
           <div className="slick-wn__update-action">
-            <Button type="primary" size="small" onClick={() => void bridge.activateUpdate?.().catch(console.error)}>
+            <Button
+              type={state === 'idle' ? 'outline' : 'primary'}
+              size="small"
+              disabled={checking}
+              onClick={() => void act().catch(console.error)}
+            >
               {view.action}
             </Button>
           </div>

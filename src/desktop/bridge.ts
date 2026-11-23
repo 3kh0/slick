@@ -132,6 +132,7 @@ const methods: Record<string, (args: any[]) => unknown> = {
 export function setupUpdaterBridge(updater: Updater) {
   methods.getUpdateStatus = () => updater.getStatus();
   methods.activateUpdate = () => updater.activate();
+  methods.checkForUpdates = () => updater.manualCheckForUpdates({ quiet: true });
 }
 
 export function setupBridge() {
