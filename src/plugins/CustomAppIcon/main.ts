@@ -2,7 +2,7 @@ import path from 'node:path';
 import type { SlickMainPlugin } from '$slick';
 import { app, nativeImage, nativeTheme, systemPreferences } from 'electron';
 import { applyAppIcon, applyWindowIcon, defaultAppIcon, fitIcon, platformIcon } from '../../desktop/appIcon.ts';
-import { ICONS, type ImportResult } from './icons.ts';
+import { activeIcon, ICONS, type ImportResult, type Theme, type ThemeState } from './icons.ts';
 import darkFlat from './icons/dark-flat.png';
 import dark from './icons/dark.png';
 import light from './icons/light.png';
@@ -11,8 +11,6 @@ import prideLight from './icons/pride-light.png';
 import tileDark from './icons/tile-dark.png';
 import { id } from './meta.ts';
 
-type Theme = 'light' | 'dark';
-
 // Each inverted design is the opposite of its partner, so all four stay distinct in either theme.
 const IMAGES: Record<string, Record<Theme, string>> = {
   slick: { light, dark },
@@ -20,16 +18,8 @@ const IMAGES: Record<string, Record<Theme, string>> = {
   pride: { light: prideLight, dark: prideDark },
   'pride-inverted': { light: prideDark, dark: prideLight },
 };
-const PARTNERS: Record<string, string> = {
-  slick: 'inverted',
-  inverted: 'slick',
-  slack: 'slack-inverted',
-  'slack-inverted': 'slack',
-  pride: 'pride-inverted',
-  'pride-inverted': 'pride',
-};
-// Auto mode ignores the icon style and uses each design's light look, so normal is a light tile and inverted a dark one.
-const AUTO_BASE: Record<string, string> = {
+// Auto mode ignores macOS icon style and shows each design's canonical light/dark look.
+const CANONICAL: Record<string, string> = {
   slick: light,
   inverted: darkFlat,
   pride: prideLight,
@@ -58,6 +48,11 @@ function systemTheme(): Theme {
   return 'light';
 }
 
+const themeState = (): ThemeState => ({
+  dark: nativeTheme.shouldUseDarkColors,
+  theme: systemTheme(),
+});
+
 const themeFor = (appearance: unknown): Theme =>
   appearance === 'light' || appearance === 'dark' ? appearance : systemTheme();
 
@@ -82,34 +77,55 @@ async function slackLight(): Promise<Electron.NativeImage | null> {
   return null;
 }
 
-// Lifts Slack's logo off its white tile onto Slick's dark one, for a dark Slack icon the system won't render.
+// Lifts Slack's logo off its white tile onto Slick's dark one, or centers a bare Windows/Linux icon on it.
 function onDarkTile(logo: Electron.NativeImage): Electron.NativeImage {
   const base = nativeImage.createFromDataURL(tileDark);
   const { width, height } = base.getSize();
   const out = base.toBitmap();
-  const src = logo.resize({ width, height, quality: 'best' }).toBitmap();
-  const lo = Math.floor(width * 0.2);
-  const hi = Math.ceil(width * 0.8);
-  for (let y = lo; y < hi; y++) {
-    for (let x = lo; x < hi; x++) {
-      const i = (y * width + x) * 4;
-      const ink = 1 - Math.min(src[i], src[i + 1], src[i + 2]) / 255;
-      const m = (Math.min(1, Math.max(0, (ink - 0.12) * 2.6)) * src[i + 3]) / 255;
-      for (let c = 0; c < 3; c++) out[i + c] = Math.round(out[i + c] * (1 - m) + src[i + c] * m);
+  if (process.platform === 'darwin') {
+    const src = logo.resize({ width, height, quality: 'best' }).toBitmap();
+    const lo = Math.floor(width * 0.2);
+    const hi = Math.ceil(width * 0.8);
+    for (let y = lo; y < hi; y++) {
+      for (let x = lo; x < hi; x++) {
+        const i = (y * width + x) * 4;
+        const ink = 1 - Math.min(src[i], src[i + 1], src[i + 2]) / 255;
+        const m = (Math.min(1, Math.max(0, (ink - 0.12) * 2.6)) * src[i + 3]) / 255;
+        for (let c = 0; c < 3; c++) out[i + c] = Math.round(out[i + c] * (1 - m) + src[i + c] * m);
+      }
+    }
+    return nativeImage.createFromBitmap(out, { width, height });
+  }
+  const size = Math.round(width * 0.58);
+  const offset = Math.round((width - size) / 2);
+  const src = logo.resize({ width: size, height: size, quality: 'best' }).toBitmap();
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const si = (y * size + x) * 4;
+      const di = ((y + offset) * width + (x + offset)) * 4;
+      const m = src[si + 3] / 255;
+      for (let c = 0; c < 3; c++) out[di + c] = Math.round(out[di + c] * (1 - m) + src[si + c] * m);
     }
   }
   return nativeImage.createFromBitmap(out, { width, height });
 }
 
+function slackInverted(): Promise<Electron.NativeImage | null> {
+  let icon = slackIcons.get('inverted');
+  if (!icon) {
+    icon = slackFor('light').then((logo) => (logo ? onDarkTile(logo) : null));
+    slackIcons.set('inverted', icon);
+  }
+  return icon;
+}
+
 async function slackDark(): Promise<Electron.NativeImage | null> {
-  if (process.platform !== 'darwin') return slackFor('light');
-  // The bundle's thumbnail is the system's own rendering, so it is only the dark one while macOS uses dark icons.
-  if (systemTheme() === 'dark') {
+  if (process.platform === 'darwin' && systemTheme() === 'dark') {
+    // The bundle's thumbnail is the system's own rendering, so it is only the dark one while macOS uses dark icons.
     const native = await thumbnail(path.resolve(process.resourcesPath, '..', '..'));
     if (native) return native;
   }
-  const lightIcon = await slackFor('light');
-  return lightIcon && onDarkTile(lightIcon);
+  return slackInverted();
 }
 
 function slackFor(theme: Theme): Promise<Electron.NativeImage | null> {
@@ -120,32 +136,29 @@ function slackFor(theme: Theme): Promise<Electron.NativeImage | null> {
 }
 
 function slackInvertedFor(theme: Theme): Promise<Electron.NativeImage | null> {
-  if (theme === 'dark') return slackFor('light');
-  let icon = slackIcons.get('inverted');
-  if (!icon) {
-    icon = slackFor('light').then((logo) => (logo ? onDarkTile(logo) : null));
-    slackIcons.set('inverted', icon);
-  }
-  return icon;
+  return theme === 'dark' ? slackFor('light') : slackInverted();
 }
 
-function builtIn(key: string, theme: Theme): Electron.NativeImage | null {
-  return Object.hasOwn(IMAGES, key) ? nativeImage.createFromDataURL(IMAGES[key][theme]) : null;
+function canonicalImage(key: string): Promise<Electron.NativeImage | null> {
+  if (key === 'slack') return slackFor('light');
+  if (key === 'slack-inverted') return slackInverted();
+  return Promise.resolve(Object.hasOwn(CANONICAL, key) ? nativeImage.createFromDataURL(CANONICAL[key]) : null);
 }
 
-async function autoIcon(key: string): Promise<Electron.NativeImage | null> {
-  const design = nativeTheme.shouldUseDarkColors ? PARTNERS[key] : key;
-  if (design === 'slack') return slackFor('light');
-  if (design === 'slack-inverted') return slackInvertedFor('light');
-  return nativeImage.createFromDataURL(AUTO_BASE[design]);
+function themedImage(key: string, theme: Theme): Promise<Electron.NativeImage | null> {
+  if (key === 'slack') return slackFor(theme);
+  if (key === 'slack-inverted') return slackInvertedFor(theme);
+  return Promise.resolve(Object.hasOwn(IMAGES, key) ? nativeImage.createFromDataURL(IMAGES[key][theme]) : null);
 }
 
 async function iconFor(key: string, appearance: unknown, auto: unknown): Promise<Electron.NativeImage | null> {
-  if (auto === true && Object.hasOwn(PARTNERS, key)) return autoIcon(key);
-  const theme = themeFor(appearance);
-  if (key === 'slack') return slackFor(theme);
-  if (key === 'slack-inverted') return slackInvertedFor(theme);
-  return builtIn(key, theme);
+  if (auto === true) return canonicalImage(activeIcon(key, true, nativeTheme.shouldUseDarkColors));
+  return themedImage(key, themeFor(appearance));
+}
+
+async function previewFor(key: string, appearance: unknown, auto: unknown): Promise<Electron.NativeImage | null> {
+  if (auto === true) return canonicalImage(key);
+  return themedImage(key, themeFor(appearance));
 }
 
 function decode(dataUrl: string | null): Electron.NativeImage | null {
@@ -160,6 +173,7 @@ export default {
     custom = decode(await ctx.storage.read(CUSTOM_KEY));
     let generation = 0;
     let shown = '';
+    let lastTheme = `${nativeTheme.shouldUseDarkColors}:${systemTheme()}`;
     const describe = () => {
       const icon = String(ctx.settings.icon);
       const appearance = ctx.settings.appearance;
@@ -189,6 +203,12 @@ export default {
     const onWindow = (_event: Electron.Event, window: Electron.BrowserWindow) => applyWindowIcon(window, current);
     // The icon style has no change event; appearance changes and returning to Slick cover switching it in Settings.
     const onTheme = () => {
+      const next = themeState();
+      const nextTheme = `${next.dark}:${next.theme}`;
+      if (nextTheme !== lastTheme) {
+        lastTheme = nextTheme;
+        ctx.emit('theme-changed', next);
+      }
       if (describe().key !== shown) refresh?.();
     };
     app.on('browser-window-created', onWindow);
@@ -206,10 +226,13 @@ export default {
     };
   },
   rpc: {
+    themeState() {
+      return themeState();
+    },
     async previews(_ctx, [appearance, auto]) {
       const entries = await Promise.all(
         ICONS.map(async (icon) => {
-          const image = await iconFor(icon.id, appearance, auto);
+          const image = await previewFor(icon.id, appearance, auto);
           return image ? [[icon.id, fitIcon(image, PREVIEW_SIZE).toDataURL()] as const] : [];
         }),
       );

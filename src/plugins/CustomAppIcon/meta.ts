@@ -29,8 +29,9 @@ export const settings = {
   },
   autoInvert: {
     type: 'boolean',
-    label: 'Inverted icons in dark mode',
-    description: 'Uses each icon’s inverted design while your system is in dark mode. Overrides Appearance.',
+    label: 'Auto-switch inverted icons',
+    description:
+      'Use the normal icon in light mode and the inverted icon in dark mode, following your system theme. Overrides Appearance.',
     default: false,
   },
 } as const satisfies SettingsSchema;
