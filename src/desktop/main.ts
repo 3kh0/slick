@@ -19,6 +19,7 @@ import {
   accountNavigation,
 } from './pluginHost.js';
 import { watchHotUpdates } from './hot.js';
+import { applyAppIcon, applyWindowIcon, defaultAppIcon } from './appIcon.js';
 import { refreshInstalledIcons } from './iconRefresh.js';
 import { readStoredSettings, watchSettings } from './settingsFile.js';
 import { applyPatches, setMenuHandlers } from './patch.js';
@@ -243,6 +244,8 @@ function startSlack(asar: string) {
   if (stored) updateSettings(stored);
   bootMainPlugins();
 
+  // Packaged builds carry the icon in the bundle, exe or .desktop entry; a bare Electron binary shows Electron's.
+  if (!app.isPackaged) app.on('browser-window-created', (_event, window) => applyWindowIcon(window, defaultAppIcon()));
   applyPatches(asar, slickResourcesPath, windowCreated, interceptAccountSignIn);
   setupBridge();
   setupPluginRpc();
@@ -286,6 +289,7 @@ function startSlack(asar: string) {
     }
     if (process.env.SLICK_HOT) watchHotUpdates(path.join(__dirname, 'hot'));
     void refreshInstalledIcons(slickResourcesPath, app.isPackaged);
+    if (!app.isPackaged) applyAppIcon(defaultAppIcon());
     await readyMainPlugins();
     watchSettings((text, settings) => {
       updateSettings(settings);

@@ -102,7 +102,7 @@ export async function buildDesktop({ debug = false, hot = false } = {}) {
       minify: !debug,
       sourcemap: debug ? 'inline' : false,
       external: ['electron'],
-      loader: { '.woff2': 'dataurl' },
+      loader: { '.png': 'dataurl', '.woff2': 'dataurl' },
       plugins: entry === 'preload.ts' ? [earlyPlugin, slickSharedAlias] : [slickSharedAlias],
       define,
       metafile: true,

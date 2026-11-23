@@ -173,7 +173,7 @@ Supported types, defined in [`shared/settings.ts`](../shared/settings.ts):
 | `names`    | Map of Slack user IDs to names. See [Nicknames](Nicknames/meta.ts).                                               |
 | `schedule` | Rules with `days`, `start`, `end`, and `status`, plus `statuses` choices. See [OfficeHours](OfficeHours/meta.ts). |
 
-All settings have a `label` and can have a `description`. To save a value from your own UI, use `await this.api.settings.set('selectionColor', '#00aa88')`. Mutating `this.config` directly doesn't persist anything.
+All settings have a `label` and can have a `description`. Set `hidden: true` to leave one out of the generated rows when your own [panel](#custom-plugin-settings-and-message-actions) edits it. To save a value from your own UI, use `await this.api.settings.set('selectionColor', '#00aa88')`. Mutating `this.config` directly doesn't persist anything.
 
 By default, saving a setting restarts the plugin. For live updates to the selection-color example, add these members and move the CSS call into `applyStyle()`:
 

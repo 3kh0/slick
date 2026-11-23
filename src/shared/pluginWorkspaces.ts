@@ -5,6 +5,7 @@ export const WORKSPACE_ID = /^[TE][A-Z0-9]+$/;
 const APP_WIDE: Record<string, string> = {
   AccountSwitcher: 'Account switching manages the shared Slack session.',
   Click2Load: 'Embed blocking applies to the shared Slack session.',
+  CustomAppIcon: 'The dock and taskbar icon belongs to the whole app.',
   CustomSounds: 'Native notification sounds apply to the whole app.',
   NoTrack: 'Network tracking protection applies to the shared Slack session.',
   QuietSpotify: 'Embedded audio controls apply to the whole app.',

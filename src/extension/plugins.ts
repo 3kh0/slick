@@ -4,6 +4,7 @@ import { PLUGINS } from '../plugins/names.generated.ts';
 // halves need no api.fetch and fit their blob quota (see LARGE_STORAGE_PLUGINS);
 // privileged halves run in the background (see BACKGROUND_PLUGINS).
 export const WEB_EXCLUDED = [
+  'CustomAppIcon', // Sets the Electron dock and window icons.
   'QuietSpotify', // main.ts injects into cross-origin Spotify frames through Electron
   'SlickMCP', // Local agent connections require the desktop process.
 ] as const;
