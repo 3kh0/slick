@@ -27,7 +27,7 @@ async function bundledExports(specifier: string, sandbox: Record<string, unknown
     define: { process: 'undefined' },
     logLevel: 'silent',
   });
-  const context = vm.createContext({ console, ...sandbox });
+  const context = vm.createContext({ console, TextDecoder, TextEncoder, ...sandbox });
   vm.runInContext(result.outputFiles[0].text, context);
   return context.result;
 }
