@@ -6,6 +6,8 @@ In a PR that changes something users will notice, add a line under **Unreleased*
 
 ## Unreleased
 
+## Build 162
+
 ### New
 
 - Slick's settings now have a Check for updates button, so you can look for a new build without restarting.
