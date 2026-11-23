@@ -6,6 +6,7 @@ import {
   adjacentTab,
   currentThread,
   currentTab,
+  headerView,
   dragScrollSpeed,
   threadTabForMessage,
   moveTab,
@@ -158,6 +159,23 @@ test('full-page thread tabs remain selected when Slack removes the channel from 
   };
   assert.deepEqual(currentTab('/client/E1', state), { channel: 'C1', thread: '1770000000.123456' });
   assert.deepEqual(currentTab('/client/E1/D1', {}), { channel: 'D1' });
+});
+
+test('canvas and other channel header tabs keep their channel tab selected', () => {
+  const canvas = {
+    id: 'Qp:F1',
+    viewType: 'Canvas',
+    params: { entityId: 'Qp:F1', parentTab: 'C1', tabId: 'Ct1' },
+  };
+  const state = { window: { main: { activeTab: 'home' } }, view: Object.create({ 'v2::main::home::primary': canvas }) };
+  assert.deepEqual(currentTab('/client/E1', state), { channel: 'C1' });
+  assert.equal(headerView(canvas), canvas);
+  assert.equal(
+    headerView({ id: 'C1', viewType: 'Channel', params: { parentTab: 'C1', tabId: 'files' } })?.params.tabId,
+    'files',
+  );
+  assert.equal(headerView({ id: 'Qp:F1', viewType: 'Canvas', params: { parentTab: 'home', tabId: 'Ct1' } }), undefined);
+  assert.equal(headerView({ id: 'thread', viewType: 'Thread', params: { parentTab: 'C1', tabId: 'C1' } }), undefined);
 });
 
 test('ordinary side-pane threads keep the channel selected unless automatic thread tabs are enabled', () => {

@@ -1,4 +1,5 @@
 export type ChatTab = { channel: string; thread?: string };
+export type HeaderView = { id: string; viewType: string; params: { parentTab: string; tabId: string } };
 export const MAX_TABS = 50;
 const channelPattern = /^[CDG][A-Z0-9]+$/;
 const threadPattern = /^\d{10,}\.\d{6}$/;
@@ -94,15 +95,27 @@ export function splitProps(tab: ChatTab) {
     : { id: tab.channel, viewType: 'Channel' };
 }
 
-export function currentTab(path: string, state: any, includeSecondary = false): ChatTab | null {
+export function headerView(view: any): HeaderView | undefined {
+  if (view?.viewType === 'Thread' || typeof view?.id !== 'string' || typeof view.viewType !== 'string') return;
+  const { parentTab, tabId } = view.params ?? {};
+  if (typeof parentTab === 'string' && channelPattern.test(parentTab) && typeof tabId === 'string') return view;
+}
+
+export function primaryView(state: any): unknown {
   const active = state?.window?.main?.activeTab;
-  const primary = typeof active === 'string' ? state.view?.[`v2::main::${active}::primary`] : undefined;
+  return typeof active === 'string' ? state.view?.[`v2::main::${active}::primary`] : undefined;
+}
+
+export function currentTab(path: string, state: any, includeSecondary = false): ChatTab | null {
+  const primary: any = primaryView(state);
   if (primary?.viewType === 'Thread') {
     const match = /^([CDG][A-Z0-9]+)-(\d{10,}\.\d{6})$/.exec(primary.params?.threadId ?? '');
     if (match) return { channel: match[1]!, thread: match[2]! };
   }
-  const routed =
-    primary?.viewType === 'Channel' && channelPattern.test(primary.id)
+  const parent = headerView(primary)?.params.parentTab;
+  const routed = parent
+    ? { channel: parent }
+    : primary?.viewType === 'Channel' && channelPattern.test(primary.id)
       ? { channel: primary.id as string }
       : readTab(path);
   if (!routed) return null;
