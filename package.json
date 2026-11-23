@@ -28,7 +28,7 @@
   "dependencies": {
     "@modelcontextprotocol/node": "^2.1.2",
     "@modelcontextprotocol/server": "^2.4.0",
-    "amazon-chime-sdk-js": "^3.32.0",
+    "amazon-chime-sdk-js": "^3.33.0",
     "diff": "^9.0.0",
     "tar-stream": "^3.2.2",
     "xz-decompress": "^0.2.3",
