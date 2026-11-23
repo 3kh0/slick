@@ -38,6 +38,7 @@ import { prepareLinuxArm64Natives, prepareWindowsNatives } from './windowsNative
 import { downloadLinuxArm64Slack } from './linuxArm64Slack.js';
 import { createCookieLogin } from './windows/cookieLogin.js';
 import { loginWithCookies } from './cookieLogin.js';
+import { allowMediaKeys } from './mediaKeys.js';
 import { focusClientWindow, openSettings } from './openSettings.js';
 import { configDir } from './paths.js';
 import { markCodeHealthy, readShell } from './codeBoot.ts';
@@ -306,6 +307,7 @@ function startSlack(asar: string) {
 
   try {
     cjsRequire(asar);
+    allowMediaKeys(app.commandLine);
   } catch (error) {
     console.error('[slick] failed to load Slack:', error);
     app.whenReady().then(() => {

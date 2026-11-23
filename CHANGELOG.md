@@ -6,6 +6,10 @@ In a PR that changes something users will notice, add a line under **Unreleased*
 
 ## Unreleased
 
+### Fixed
+
+- Media keys and your system's media controls now work in the desktop app, for Slack's own clips and for plugins that show what's playing.
+
 ## Build 161
 
 ### Highlights
