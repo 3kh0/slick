@@ -6,6 +6,10 @@ In a PR that changes something users will notice, add a line under **Unreleased*
 
 ## Unreleased
 
+### New
+
+- CustomAppIcon can switch between its normal and inverted icons when your system switches between light and dark.
+
 ### Fixed
 
 - UserPronouns shows pronouns on channel messages again.

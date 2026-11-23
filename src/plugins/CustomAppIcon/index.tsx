@@ -3,7 +3,7 @@ import { IconGrid, type IconGridHost } from './IconGrid.tsx';
 import type { ImportResult } from './icons.ts';
 import * as meta from './meta.ts';
 
-type IconStore = { get(): string; set(value: string): void; use(): string };
+type IconStore<T = string> = { get(): T; set(value: T): void; use(): T };
 
 export default class CustomAppIcon extends SlickPlugin<typeof meta.settings> implements IconGridHost {
   static readonly requiredAPIs = [] as const;
@@ -14,14 +14,16 @@ export default class CustomAppIcon extends SlickPlugin<typeof meta.settings> imp
   static readonly authors = meta.authors;
   static readonly defaultEnabled = meta.defaultEnabled;
   static readonly settings = meta.settings;
-  static readonly liveSettings = ['icon', 'appearance'];
+  static readonly liveSettings = ['icon', 'appearance', 'autoInvert'];
 
   selection!: IconStore;
   appearance!: IconStore;
+  autoInvert!: IconStore<boolean>;
 
   start() {
     this.selection = new this.api.Store(String(this.config.icon));
     this.appearance = new this.api.Store(String(this.config.appearance));
+    this.autoInvert = new this.api.Store(this.config.autoInvert === true);
     this.api.setStyle(STYLE);
     this.api.settings.panel(() => <IconGrid host={this} />);
   }
@@ -29,10 +31,11 @@ export default class CustomAppIcon extends SlickPlugin<typeof meta.settings> imp
   onSettingsChange() {
     this.selection.set(String(this.config.icon));
     this.appearance.set(String(this.config.appearance));
+    this.autoInvert.set(this.config.autoInvert === true);
   }
 
-  loadPreviews(appearance: string) {
-    return this.call<Record<string, string>>('previews', appearance);
+  loadPreviews(appearance: string, auto: boolean) {
+    return this.call<Record<string, string>>('previews', appearance, auto);
   }
 
   loadCustomPreview() {

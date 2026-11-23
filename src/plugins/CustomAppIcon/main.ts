@@ -20,6 +20,21 @@ const IMAGES: Record<string, Record<Theme, string>> = {
   pride: { light: prideLight, dark: prideDark },
   'pride-inverted': { light: prideDark, dark: prideLight },
 };
+const PARTNERS: Record<string, string> = {
+  slick: 'inverted',
+  inverted: 'slick',
+  slack: 'slack-inverted',
+  'slack-inverted': 'slack',
+  pride: 'pride-inverted',
+  'pride-inverted': 'pride',
+};
+// Auto mode ignores the icon style and uses each design's light look, so normal is a light tile and inverted a dark one.
+const AUTO_BASE: Record<string, string> = {
+  slick: light,
+  inverted: darkFlat,
+  pride: prideLight,
+  'pride-inverted': prideDark,
+};
 const CUSTOM_KEY = 'custom';
 const CUSTOM_SIZE = 1024;
 const PREVIEW_SIZE = 128;
@@ -104,13 +119,33 @@ function slackFor(theme: Theme): Promise<Electron.NativeImage | null> {
   return icon;
 }
 
+function slackInvertedFor(theme: Theme): Promise<Electron.NativeImage | null> {
+  if (theme === 'dark') return slackFor('light');
+  let icon = slackIcons.get('inverted');
+  if (!icon) {
+    icon = slackFor('light').then((logo) => (logo ? onDarkTile(logo) : null));
+    slackIcons.set('inverted', icon);
+  }
+  return icon;
+}
+
 function builtIn(key: string, theme: Theme): Electron.NativeImage | null {
   return Object.hasOwn(IMAGES, key) ? nativeImage.createFromDataURL(IMAGES[key][theme]) : null;
 }
 
-async function iconFor(key: string, appearance: unknown): Promise<Electron.NativeImage | null> {
+async function autoIcon(key: string): Promise<Electron.NativeImage | null> {
+  const design = nativeTheme.shouldUseDarkColors ? PARTNERS[key] : key;
+  if (design === 'slack') return slackFor('light');
+  if (design === 'slack-inverted') return slackInvertedFor('light');
+  return nativeImage.createFromDataURL(AUTO_BASE[design]);
+}
+
+async function iconFor(key: string, appearance: unknown, auto: unknown): Promise<Electron.NativeImage | null> {
+  if (auto === true && Object.hasOwn(PARTNERS, key)) return autoIcon(key);
   const theme = themeFor(appearance);
-  return key === 'slack' ? slackFor(theme) : builtIn(key, theme);
+  if (key === 'slack') return slackFor(theme);
+  if (key === 'slack-inverted') return slackInvertedFor(theme);
+  return builtIn(key, theme);
 }
 
 function decode(dataUrl: string | null): Electron.NativeImage | null {
@@ -125,18 +160,23 @@ export default {
     custom = decode(await ctx.storage.read(CUSTOM_KEY));
     let generation = 0;
     let shown = '';
-    refresh = () => {
+    const describe = () => {
       const icon = String(ctx.settings.icon);
       const appearance = ctx.settings.appearance;
-      const key = `${icon}:${themeFor(appearance)}`;
+      const auto = ctx.settings.autoInvert === true;
+      const theme = auto ? (nativeTheme.shouldUseDarkColors ? 'auto-dark' : 'auto-light') : themeFor(appearance);
+      return { icon, appearance, auto, key: `${icon}:${theme}` };
+    };
+    refresh = () => {
+      const { icon, appearance, auto, key } = describe();
       const run = ++generation;
       // The app's own icon already follows the system style, including Clear and Tinted.
       const pick =
         icon === 'custom'
           ? Promise.resolve(custom)
-          : icon === 'slick' && appearance === 'system'
+          : icon === 'slick' && appearance === 'system' && !auto
             ? Promise.resolve(null)
-            : iconFor(icon, appearance);
+            : iconFor(icon, appearance, auto);
       void pick.then((image) => {
         if (run !== generation) return;
         shown = key;
@@ -149,7 +189,7 @@ export default {
     const onWindow = (_event: Electron.Event, window: Electron.BrowserWindow) => applyWindowIcon(window, current);
     // The icon style has no change event; appearance changes and returning to Slick cover switching it in Settings.
     const onTheme = () => {
-      if (`${String(ctx.settings.icon)}:${themeFor(ctx.settings.appearance)}` !== shown) refresh?.();
+      if (describe().key !== shown) refresh?.();
     };
     app.on('browser-window-created', onWindow);
     app.on('browser-window-focus', onTheme);
@@ -166,10 +206,10 @@ export default {
     };
   },
   rpc: {
-    async previews(_ctx, [appearance]) {
+    async previews(_ctx, [appearance, auto]) {
       const entries = await Promise.all(
         ICONS.map(async (icon) => {
-          const image = await iconFor(icon.id, appearance);
+          const image = await iconFor(icon.id, appearance, auto);
           return image ? [[icon.id, fitIcon(image, PREVIEW_SIZE).toDataURL()] as const] : [];
         }),
       );

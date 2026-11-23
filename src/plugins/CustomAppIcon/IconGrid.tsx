@@ -3,12 +3,15 @@ import { ICONS, type ImportResult } from './icons.ts';
 export type IconGridHost = {
   selection: { use(): string };
   appearance: { use(): string };
-  loadPreviews(appearance: string): Promise<Record<string, string> | null>;
+  autoInvert: { use(): boolean };
+  loadPreviews(appearance: string, auto: boolean): Promise<Record<string, string> | null>;
   loadCustomPreview(): Promise<string | null>;
   choose(icon: string): Promise<void>;
   upload(): Promise<ImportResult>;
   removeCustom(): Promise<boolean>;
 };
+
+const SLACK_ICONS = new Set(['slack', 'slack-inverted']);
 
 const UPLOAD_ERRORS: Partial<Record<ImportResult, string>> = {
   unreadable: 'That file isn’t a PNG or JPEG image.',
@@ -126,10 +129,11 @@ function RemoveMenu({ x, y, onRemove, dismiss }: { x: number; y: number; onRemov
 export function IconGrid({ host }: { host: IconGridHost }) {
   const icon = host.selection.use();
   const appearance = host.appearance.use();
+  const autoInvert = host.autoInvert.use();
   const [revision, setRevision] = React.useState(0);
   const [menu, setMenu] = React.useState<{ x: number; y: number } | null>(null);
   const [error, setError] = React.useState('');
-  const previews = useLoaded(() => host.loadPreviews(appearance), appearance);
+  const previews = useLoaded(() => host.loadPreviews(appearance, autoInvert), `${appearance}:${autoInvert}`);
   const customPreview = useLoaded(() => host.loadCustomPreview(), revision);
 
   const upload = async () => {
@@ -147,7 +151,7 @@ export function IconGrid({ host }: { host: IconGridHost }) {
   return (
     <>
       <div role="radiogroup" aria-label="App icon" className="slick-app-icons">
-        {ICONS.filter(({ id }) => id !== 'slack' || previews?.slack).map(({ id, label, author }) => (
+        {ICONS.filter(({ id }) => !SLACK_ICONS.has(id) || previews?.[id]).map(({ id, label, author }) => (
           <Tile
             key={id}
             checked={icon === id}
