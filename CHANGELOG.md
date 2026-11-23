@@ -14,6 +14,7 @@ In a PR that changes something users will notice, add a line under **Unreleased*
 
 - AMOLED keeps the conversation sidebar true black.
 - Media keys and your system's media controls now work in the desktop app, for Slack's own clips and for plugins that show what's playing.
+- ChatTabs now returns to the canvas, files or pins you had open in a channel instead of its messages.
 
 ## Build 161
 

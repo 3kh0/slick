@@ -7,7 +7,9 @@ import {
   adjacentTab,
   currentTab,
   dragScrollSpeed,
+  headerView,
   moveTab,
+  primaryView,
   restoreTabs,
   tabKey,
   tabUri,
@@ -15,6 +17,7 @@ import {
   threadTabForMessage,
   visitTab,
   type ChatTab,
+  type HeaderView,
 } from './tabs.ts';
 import * as meta from './meta.ts';
 import { addTabMenuItem, THREAD_TAB_ACTION } from './menu.ts';
@@ -58,6 +61,7 @@ export default class ChatTabs extends SlickPlugin<typeof meta.settings> {
   private active = new this.api.Store(false);
   private settingsVersion = new this.api.Store(0);
   private writes = Promise.resolve();
+  private headerViews = new Map<string, HeaderView>();
 
   start() {
     this.active.set(true);
@@ -218,6 +222,7 @@ export default class ChatTabs extends SlickPlugin<typeof meta.settings> {
     this.pickerOpen.set(false);
     this.draggedTab.set(null);
     this.active.set(false);
+    this.headerViews.clear();
   }
 
   onSettingsChange() {
@@ -429,6 +434,7 @@ export default class ChatTabs extends SlickPlugin<typeof meta.settings> {
       const tab = currentTab(route, state, this.config.autoThreadTabs || !!savedThread);
       return tab ? tabKey(tab) : undefined;
     });
+    const primary = this.api.redux.useReduxState(primaryView);
     const [channel, thread] = activeKey?.split(':') ?? [];
     const current = channel ? { channel, ...(thread ? { thread } : {}) } : null;
     const tabs = saved?.scope === scope ? saved.tabs : [];
@@ -564,6 +570,15 @@ export default class ChatTabs extends SlickPlugin<typeof meta.settings> {
       if (activeKey && tabs.some((tab) => tabKey(tab) === activeKey)) selected.current = activeKey;
     }, [activeKey, tabs]);
 
+    React.useEffect(() => {
+      const tabbed = new Set(tabs.filter((tab) => !tab.thread).map((tab) => tab.channel));
+      for (const id of this.headerViews.keys()) if (!tabbed.has(id)) this.headerViews.delete(id);
+      const view = headerView(primary);
+      if (!view || !tabbed.has(view.params.parentTab)) return;
+      if (view.params.tabId === 'channel') this.headerViews.delete(view.params.parentTab);
+      else this.headerViews.set(view.params.parentTab, view);
+    }, [primary, tabs]);
+
     React.useLayoutEffect(() => {
       const layout = layoutRef.current;
       if (!layout) return;
@@ -596,20 +611,22 @@ export default class ChatTabs extends SlickPlugin<typeof meta.settings> {
       this.splitError.set('');
       try {
         const besideChannel = !!tab.thread && this.config.threadView === 'channel';
-        const before = this.api.redux.getStore()?.getState();
-        const primary = before?.view?.[`v2::main::${before?.window?.main?.activeTab}::primary`];
-        const sameChannel = !tab.thread && primary?.viewType === 'Channel' && primary.id === tab.channel;
+        const here = currentTab('', this.api.redux.getStore()?.getState());
+        const sameChannel = !tab.thread && here?.channel === tab.channel && !here.thread;
+        const remembered = tab.thread ? undefined : this.headerViews.get(tab.channel);
         const result = sameChannel
           ? true
-          : tab.thread && !besideChannel
-            ? await this.api.redux.dispatchThunk('navigate', {
-                ...splitProps(tab),
-                options: { forceRenderInPrimary: true, forceBackStack: true },
-              })
-            : await this.api.redux.dispatchThunk('handleDeepLink', {
-                uri: tabUri(teamId, tab),
-                dangerouslyOverrideRouting: true,
-              });
+          : remembered
+            ? await this.api.redux.dispatchThunk('navigate', { ...remembered, params: { ...remembered.params } })
+            : tab.thread && !besideChannel
+              ? await this.api.redux.dispatchThunk('navigate', {
+                  ...splitProps(tab),
+                  options: { forceRenderInPrimary: true, forceBackStack: true },
+                })
+              : await this.api.redux.dispatchThunk('handleDeepLink', {
+                  uri: tabUri(teamId, tab),
+                  dangerouslyOverrideRouting: true,
+                });
         if (result === false) {
           const destination = currentTab(
             location.pathname + location.search,
