@@ -6,6 +6,10 @@ In a PR that changes something users will notice, add a line under **Unreleased*
 
 ## Unreleased
 
+### New
+
+- Slick's settings now have a Check for updates button, so you can look for a new build without restarting.
+
 ### Fixed
 
 - AMOLED keeps the conversation sidebar true black.

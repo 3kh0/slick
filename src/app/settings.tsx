@@ -1392,7 +1392,7 @@ function InstallPlugin({ manager }: { manager: PluginManager }) {
           </elements.Button>
         </Field>
       </Card>
-      <Card title="Updates">
+      <Card title="Plugin updates">
         <Field label="Update URL-installed plugins automatically">
           <Switch
             checked={manager.autoUpdatesEnabled}
@@ -1402,7 +1402,7 @@ function InstallPlugin({ manager }: { manager: PluginManager }) {
         </Field>
         <Field label="Check now" description="Fetch the latest version of every plugin installed from a URL.">
           <elements.Button type="outline" disabled={installing} onClick={() => void checkUpdates()}>
-            Check for updates
+            Check for plugin updates
           </elements.Button>
         </Field>
       </Card>

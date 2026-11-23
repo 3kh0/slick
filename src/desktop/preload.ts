@@ -111,6 +111,7 @@ function runClientPreload() {
 
     getUpdateStatus: () => call('getUpdateStatus'),
     activateUpdate: () => call('activateUpdate'),
+    checkForUpdates: () => call('checkForUpdates'),
     onUpdateStatus(cb: (status: unknown) => void) {
       const handler = (_: unknown, status: unknown) => cb(status);
       ipcRenderer.on('slick:update-status', handler);

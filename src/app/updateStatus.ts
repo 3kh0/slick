@@ -11,3 +11,5 @@ export type UpdateStatus = {
   size?: number;
   notes?: ChangelogRelease[];
 };
+
+export type UpdateCheck = { state: 'unsupported' | 'error' | 'latest' | 'available'; message: string };
