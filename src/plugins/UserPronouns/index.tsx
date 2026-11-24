@@ -83,21 +83,27 @@ export default class UserPronouns extends SlickPlugin<typeof meta.settings> {
     `);
 
     // Channels: one component is handed both the sender and the timestamp.
-    this.api.patchComponent<BroadcastPreambleProps>('BaseBroadcastPreamble', (Original) => (props) => {
-      if (!isPerson(props.msg)) return <Original {...props} />;
+    // Slack flips between these two names across builds.
+    for (const name of ['BroadcastPreamble', 'BaseBroadcastPreamble']) {
+      this.api.patchComponent<BroadcastPreambleProps>(name, (Original) => (props) => {
+        if (!isPerson(props.msg)) return <Original {...props} />;
 
-      const children = React.Children.toArray(props.children);
-      const timestamp = children.findIndex(isTimestamp);
-      const anchor = timestamp === -1 ? children.findIndex(isSender) : timestamp;
-      if (anchor === -1) return <Original {...props} />;
+        const children = React.Children.toArray(props.children);
+        if (children.some((child) => React.isValidElement(child) && child.type === this.Pronouns)) {
+          return <Original {...props} />;
+        }
+        const timestamp = children.findIndex(isTimestamp);
+        const anchor = timestamp === -1 ? children.findIndex(isSender) : timestamp;
+        if (anchor === -1) return <Original {...props} />;
 
-      children.splice(
-        anchor + 1,
-        0,
-        <this.Pronouns key="slick-pronouns" userId={props.msg.user} bulleted={timestamp !== -1} />,
-      );
-      return <Original {...props}>{children}</Original>;
-    });
+        children.splice(
+          anchor + 1,
+          0,
+          <this.Pronouns key="slick-pronouns" userId={props.msg.user} bulleted={timestamp !== -1} />,
+        );
+        return <Original {...props}>{children}</Original>;
+      });
+    }
 
     // The thread-pane counterpart, which ends on a <br> we have to move past.
     this.api.patchComponent<ThreadHeaderProps>('ThreadSenderAndTimestampGeneric', (Original) => (props) => {
