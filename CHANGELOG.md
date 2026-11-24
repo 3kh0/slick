@@ -6,6 +6,10 @@ In a PR that changes something users will notice, add a line under **Unreleased*
 
 ## Unreleased
 
+### Fixed
+
+- UserPronouns shows pronouns on channel messages again.
+
 ## Build 162
 
 ### New
