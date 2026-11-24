@@ -1,11 +1,10 @@
-import { ICON_PAIRS, iconLabel, ICONS, pairFor, SLACK_ICONS, type ImportResult, type ThemeState } from './icons.ts';
+import { ICONS, type ImportResult, SLACK_ICONS, type Theme } from './icons.ts';
 
 export type IconGridHost = {
   selection: { use(): string };
   appearance: { use(): string };
-  autoInvert: { use(): boolean };
-  theme: { use(): ThemeState };
-  loadPreviews(appearance: string, auto: boolean): Promise<Record<string, string> | null>;
+  theme: { use(): Theme };
+  loadPreviews(appearance: string): Promise<Record<string, string> | null>;
   loadCustomPreview(): Promise<string | null>;
   choose(icon: string): Promise<void>;
   upload(): Promise<ImportResult>;
@@ -30,35 +29,23 @@ function useLoaded<T>(load: () => Promise<T | null>, key: unknown): T | null | u
   return value;
 }
 
-const iconImage = (src: string | null | undefined, extraClass = '') =>
+const iconImage = (src: string | null | undefined) =>
   src ? (
-    <img className={`slick-app-icons__image${extraClass}`} src={src} alt="" />
+    <img className="slick-app-icons__image" src={src} alt="" />
   ) : (
-    <span className={`slick-app-icons__placeholder${extraClass}`} aria-hidden="true" />
+    <span className="slick-app-icons__placeholder" aria-hidden="true" />
   );
-
-const pairPreview = (
-  lightSrc: string | null | undefined,
-  darkSrc: string | null | undefined,
-  checked: boolean,
-  systemDark: boolean,
-) => (
-  <span className="slick-app-icons__pair">
-    {iconImage(lightSrc, checked && systemDark ? ' slick-app-icons__pair-icon--dim' : '')}
-    {iconImage(darkSrc, checked && !systemDark ? ' slick-app-icons__pair-icon--dim' : '')}
-  </span>
-);
 
 function Tile({
   checked,
-  preview,
+  image,
   label,
   detail,
   onSelect,
   onMenu,
 }: {
   checked: boolean;
-  preview: React.ReactNode;
+  image: string | null | undefined;
   label: string;
   detail: string;
   onSelect: () => void;
@@ -88,7 +75,7 @@ function Tile({
         })
       }
     >
-      {preview}
+      {iconImage(image)}
       <span className="slick-app-icons__label">{label}</span>
       <span className="slick-app-icons__detail">{detail}</span>
     </button>
@@ -140,23 +127,15 @@ function RemoveMenu({ x, y, onRemove, dismiss }: { x: number; y: number; onRemov
 export function IconGrid({ host }: { host: IconGridHost }) {
   const icon = host.selection.use();
   const appearance = host.appearance.use();
-  const autoInvert = host.autoInvert.use();
   const theme = host.theme.use();
   const [revision, setRevision] = React.useState(0);
   const [menu, setMenu] = React.useState<{ x: number; y: number } | null>(null);
   const [error, setError] = React.useState('');
-  const previewKey = autoInvert ? 'auto' : appearance === 'system' ? `system:${theme.theme}` : appearance;
-  const previews = useLoaded(() => host.loadPreviews(appearance, autoInvert), previewKey);
+  const previews = useLoaded(
+    () => host.loadPreviews(appearance),
+    appearance === 'system' ? `system:${theme}` : appearance,
+  );
   const customPreview = useLoaded(() => host.loadCustomPreview(), revision);
-
-  const selectedPair = autoInvert ? pairFor(icon) : null;
-  const summary = !autoInvert
-    ? null
-    : selectedPair
-      ? `System is in ${theme.dark ? 'dark' : 'light'} mode — using ${iconLabel(theme.dark ? selectedPair.dark : selectedPair.light)}. Switches to ${iconLabel(theme.dark ? selectedPair.light : selectedPair.dark)} in ${theme.dark ? 'light' : 'dark'} mode.`
-      : icon === 'custom'
-        ? 'Custom icons stay the same in light and dark mode.'
-        : null;
 
   const upload = async () => {
     const result = await host.upload();
@@ -172,39 +151,21 @@ export function IconGrid({ host }: { host: IconGridHost }) {
 
   return (
     <>
-      <div
-        role="radiogroup"
-        aria-label="App icon"
-        className={autoInvert ? 'slick-app-icons slick-app-icons--pairs' : 'slick-app-icons'}
-      >
-        {autoInvert
-          ? ICON_PAIRS.filter(({ light }) => !SLACK_ICONS.has(light) || previews?.[light]).map((pair) => {
-              const checked = selectedPair?.id === pair.id;
-              return (
-                <Tile
-                  key={pair.id}
-                  checked={checked}
-                  preview={pairPreview(previews?.[pair.light], previews?.[pair.dark], checked, theme.dark)}
-                  label={pair.label}
-                  detail={`by ${pair.author}`}
-                  onSelect={() => void host.choose(pair.id)}
-                />
-              );
-            })
-          : ICONS.filter(({ id }) => !SLACK_ICONS.has(id) || previews?.[id]).map(({ id, label, author }) => (
-              <Tile
-                key={id}
-                checked={icon === id}
-                preview={iconImage(previews?.[id])}
-                label={label}
-                detail={`by ${author}`}
-                onSelect={() => void host.choose(id)}
-              />
-            ))}
+      <div role="radiogroup" aria-label="App icon" className="slick-app-icons">
+        {ICONS.filter(({ id }) => !SLACK_ICONS.has(id) || previews?.[id]).map(({ id, label, author }) => (
+          <Tile
+            key={id}
+            checked={icon === id}
+            image={previews?.[id]}
+            label={label}
+            detail={`by ${author}`}
+            onSelect={() => void host.choose(id)}
+          />
+        ))}
         {customPreview && (
           <Tile
             checked={icon === 'custom'}
-            preview={iconImage(customPreview)}
+            image={customPreview}
             label="Custom"
             detail="Right-click to remove"
             onSelect={() => void host.choose('custom')}
@@ -219,7 +180,6 @@ export function IconGrid({ host }: { host: IconGridHost }) {
           <span className="slick-app-icons__detail">PNG or JPEG</span>
         </button>
       </div>
-      {summary && <p className="slick-app-icons__summary">{summary}</p>}
       {error && (
         <p className="slick-app-icons__status" role="alert">
           {error}

@@ -19,19 +19,12 @@ export const settings = {
   appearance: {
     type: 'select',
     label: 'Appearance',
-    description: 'System follows the icon style in macOS Appearance settings.',
+    description: 'System follows your icon style on macOS, and light or dark mode on Windows and Linux.',
     default: 'system',
     options: [
       { value: 'system', label: 'System' },
       { value: 'light', label: 'Light' },
       { value: 'dark', label: 'Dark' },
     ],
-  },
-  autoInvert: {
-    type: 'boolean',
-    label: 'Auto-switch inverted icons',
-    description:
-      'Use the normal icon in light mode and the inverted icon in dark mode, following your system theme. Overrides Appearance.',
-    default: false,
   },
 } as const satisfies SettingsSchema;

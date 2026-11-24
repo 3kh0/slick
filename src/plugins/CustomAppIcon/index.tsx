@@ -1,9 +1,9 @@
 import { SlickPlugin } from '$slick';
 import { IconGrid, type IconGridHost } from './IconGrid.tsx';
-import type { ImportResult, ThemeState } from './icons.ts';
+import type { ImportResult, Theme } from './icons.ts';
 import * as meta from './meta.ts';
 
-type IconStore<T = string> = { get(): T; set(value: T): void; use(): T };
+type Store<T> = { get(): T; set(value: T): void; use(): T };
 
 export default class CustomAppIcon extends SlickPlugin<typeof meta.settings> implements IconGridHost {
   static readonly requiredAPIs = [] as const;
@@ -14,24 +14,19 @@ export default class CustomAppIcon extends SlickPlugin<typeof meta.settings> imp
   static readonly authors = meta.authors;
   static readonly defaultEnabled = meta.defaultEnabled;
   static readonly settings = meta.settings;
-  static readonly liveSettings = ['icon', 'appearance', 'autoInvert'];
+  static readonly liveSettings = ['icon', 'appearance'];
 
-  selection!: IconStore;
-  appearance!: IconStore;
-  autoInvert!: IconStore<boolean>;
-  theme!: IconStore<ThemeState>;
+  selection!: Store<string>;
+  appearance!: Store<string>;
+  theme!: Store<Theme>;
 
   start() {
     this.selection = new this.api.Store(String(this.config.icon));
     this.appearance = new this.api.Store(String(this.config.appearance));
-    this.autoInvert = new this.api.Store(this.config.autoInvert === true);
-    this.theme = new this.api.Store<ThemeState>({
-      dark: matchMedia('(prefers-color-scheme: dark)').matches,
-      theme: 'light',
-    });
-    this.api.main.on('theme-changed', (state) => this.theme.set(state as ThemeState));
-    void this.call<ThemeState>('themeState').then((state) => {
-      if (state && this.api.isActive()) this.theme.set(state);
+    this.theme = new this.api.Store<Theme>('light');
+    this.api.main.on('theme-changed', (theme) => this.theme.set(theme as Theme));
+    void this.call<Theme>('theme').then((theme) => {
+      if (theme && this.api.isActive()) this.theme.set(theme);
     });
     this.api.setStyle(STYLE);
     this.api.settings.panel(() => <IconGrid host={this} />);
@@ -40,11 +35,10 @@ export default class CustomAppIcon extends SlickPlugin<typeof meta.settings> imp
   onSettingsChange() {
     this.selection.set(String(this.config.icon));
     this.appearance.set(String(this.config.appearance));
-    this.autoInvert.set(this.config.autoInvert === true);
   }
 
-  loadPreviews(appearance: string, auto: boolean) {
-    return this.call<Record<string, string>>('previews', appearance, auto);
+  loadPreviews(appearance: string) {
+    return this.call<Record<string, string>>('previews', appearance);
   }
 
   loadCustomPreview() {
@@ -62,7 +56,7 @@ export default class CustomAppIcon extends SlickPlugin<typeof meta.settings> imp
   }
 
   async removeCustom(): Promise<boolean> {
-    if (this.config.icon === 'custom') await this.api.settings.set('icon', 'slick');
+    if (this.config.icon === 'custom') await this.choose('slick');
     return (await this.call<boolean>('removeCustom')) ?? false;
   }
 
@@ -78,7 +72,6 @@ export default class CustomAppIcon extends SlickPlugin<typeof meta.settings> imp
 
 const STYLE = `
 .slick-app-icons { display: grid; grid-template-columns: repeat(auto-fill, minmax(112px, 1fr)); gap: 12px; padding: 12px; }
-.slick-app-icons--pairs { grid-template-columns: repeat(auto-fill, minmax(156px, 1fr)); }
 .slick-app-icons__tile {
   display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 12px 8px;
   border: 1px solid var(--dt_color-otl-ter); border-radius: 12px; background: transparent; color: inherit;
@@ -86,18 +79,13 @@ const STYLE = `
 }
 .slick-app-icons__tile:hover { background: var(--dt_color-base-pry-hover); }
 .slick-app-icons__tile[aria-checked="true"] { border-color: var(--dt_color-otl-hgl-1); box-shadow: 0 0 0 1px var(--dt_color-otl-hgl-1); }
-.slick-app-icons__pair { display: flex; align-items: center; justify-content: center; gap: 8px; height: 64px; }
 .slick-app-icons__image { width: 64px; height: 64px; object-fit: contain; }
 .slick-app-icons__placeholder {
   display: grid; place-items: center; width: 64px; height: 64px; border-radius: 14px;
   border: 1px dashed var(--dt_color-otl-sec); color: var(--dt_color-content-sec); font-size: 28px;
 }
-.slick-app-icons__pair .slick-app-icons__image,
-.slick-app-icons__pair .slick-app-icons__placeholder { width: 52px; height: 52px; }
-.slick-app-icons__pair-icon--dim { opacity: 0.45; }
 .slick-app-icons__label { font-weight: 700; color: var(--dt_color-content-pry); }
 .slick-app-icons__detail { font-size: 12px; color: var(--dt_color-content-sec); }
-.slick-app-icons__summary { margin: 0 12px 12px; font-size: 13px; color: var(--dt_color-content-sec); }
 .slick-app-icons__status { margin: 0 12px 12px; color: var(--dt_color-content-destructive); }
 .slick-app-icons__menu {
   position: fixed; inset: unset; margin: 0; min-width: 180px; padding: 4px; border: 1px solid var(--dt_color-otl-ter);
