@@ -62,7 +62,7 @@ jobs:
         with:
           node-version: '24'
       - uses: oven-sh/setup-bun@v2
-      - uses: cachix/install-nix-action@v31
+      - uses: cachix/install-nix-action@v32
       - name: File this release's changelog
         run: bun scripts/changelog.ts cut "${{ steps.version.outputs.build }}"
       - name: Sync and validate Nix pins

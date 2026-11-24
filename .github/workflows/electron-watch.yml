@@ -44,7 +44,7 @@ jobs:
         with:
           node-version: '24'
       - uses: oven-sh/setup-bun@v2
-      - uses: cachix/install-nix-action@v31
+      - uses: cachix/install-nix-action@v32
       - name: Update desktop and Flatpak runtimes
         run: node scripts/ci/update-electron.cjs "$PIN"
       - name: Sync and validate Nix pins
