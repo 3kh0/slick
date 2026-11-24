@@ -1,9 +1,9 @@
 import { SlickPlugin } from '$slick';
 import { IconGrid, type IconGridHost } from './IconGrid.tsx';
-import type { ImportResult } from './icons.ts';
+import type { ImportResult, Theme } from './icons.ts';
 import * as meta from './meta.ts';
 
-type IconStore = { get(): string; set(value: string): void; use(): string };
+type Store<T> = { get(): T; set(value: T): void; use(): T };
 
 export default class CustomAppIcon extends SlickPlugin<typeof meta.settings> implements IconGridHost {
   static readonly requiredAPIs = [] as const;
@@ -16,12 +16,18 @@ export default class CustomAppIcon extends SlickPlugin<typeof meta.settings> imp
   static readonly settings = meta.settings;
   static readonly liveSettings = ['icon', 'appearance'];
 
-  selection!: IconStore;
-  appearance!: IconStore;
+  selection!: Store<string>;
+  appearance!: Store<string>;
+  theme!: Store<Theme>;
 
   start() {
     this.selection = new this.api.Store(String(this.config.icon));
     this.appearance = new this.api.Store(String(this.config.appearance));
+    this.theme = new this.api.Store<Theme>('light');
+    this.api.main.on('theme-changed', (theme) => this.theme.set(theme as Theme));
+    void this.call<Theme>('theme').then((theme) => {
+      if (theme && this.api.isActive()) this.theme.set(theme);
+    });
     this.api.setStyle(STYLE);
     this.api.settings.panel(() => <IconGrid host={this} />);
   }

@@ -1,8 +1,9 @@
-import { ICONS, type ImportResult } from './icons.ts';
+import { ICONS, type ImportResult, SLACK_ICONS, type Theme } from './icons.ts';
 
 export type IconGridHost = {
   selection: { use(): string };
   appearance: { use(): string };
+  theme: { use(): Theme };
   loadPreviews(appearance: string): Promise<Record<string, string> | null>;
   loadCustomPreview(): Promise<string | null>;
   choose(icon: string): Promise<void>;
@@ -126,10 +127,14 @@ function RemoveMenu({ x, y, onRemove, dismiss }: { x: number; y: number; onRemov
 export function IconGrid({ host }: { host: IconGridHost }) {
   const icon = host.selection.use();
   const appearance = host.appearance.use();
+  const theme = host.theme.use();
   const [revision, setRevision] = React.useState(0);
   const [menu, setMenu] = React.useState<{ x: number; y: number } | null>(null);
   const [error, setError] = React.useState('');
-  const previews = useLoaded(() => host.loadPreviews(appearance), appearance);
+  const previews = useLoaded(
+    () => host.loadPreviews(appearance),
+    appearance === 'system' ? `system:${theme}` : appearance,
+  );
   const customPreview = useLoaded(() => host.loadCustomPreview(), revision);
 
   const upload = async () => {
@@ -147,7 +152,7 @@ export function IconGrid({ host }: { host: IconGridHost }) {
   return (
     <>
       <div role="radiogroup" aria-label="App icon" className="slick-app-icons">
-        {ICONS.filter(({ id }) => id !== 'slack' || previews?.slack).map(({ id, label, author }) => (
+        {ICONS.filter(({ id }) => !SLACK_ICONS.has(id) || previews?.[id]).map(({ id, label, author }) => (
           <Tile
             key={id}
             checked={icon === id}

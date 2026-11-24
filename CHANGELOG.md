@@ -6,8 +6,14 @@ In a PR that changes something users will notice, add a line under **Unreleased*
 
 ## Unreleased
 
+### New
+
+- CustomAppIcon adds a Slack Inverted icon.
+- CustomAppIcon's System appearance now switches between light and dark icons on Windows and Linux.
+
 ### Fixed
 
+- CustomAppIcon's System appearance follows macOS light and dark mode instead of Slack's theme.
 - UserPronouns shows pronouns on channel messages again.
 
 ## Build 162

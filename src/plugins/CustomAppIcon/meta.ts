@@ -19,7 +19,7 @@ export const settings = {
   appearance: {
     type: 'select',
     label: 'Appearance',
-    description: 'System follows the icon style in macOS Appearance settings.',
+    description: 'System follows your icon style on macOS, and light or dark mode on Windows and Linux.',
     default: 'system',
     options: [
       { value: 'system', label: 'System' },
