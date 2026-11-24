@@ -39,17 +39,26 @@ let custom: Electron.NativeImage | null = null;
 const slackIcons = new Map<string, Promise<Electron.NativeImage | null>>();
 let refresh: (() => void) | null = null;
 
+// Slack overrides nativeTheme.themeSource when "Sync with OS" is off, so read the OS theme directly.
+function systemDark(): boolean {
+  if (process.platform === 'darwin') {
+    return (systemPreferences.getUserDefault('AppleInterfaceStyle', 'string') ?? '').toLowerCase() === 'dark';
+  }
+  if (process.platform === 'win32') return nativeTheme.shouldUseDarkColorsForSystemIntegratedUI;
+  return nativeTheme.shouldUseDarkColors;
+}
+
 // macOS 26 "Icon & widget style": RegularDark, ClearAutomatic, TintedLight and so on.
 function systemTheme(): Theme {
   if (process.platform !== 'darwin') return 'light';
   const style = systemPreferences.getUserDefault('AppleIconAppearanceTheme', 'string') ?? '';
   if (style.endsWith('Dark')) return 'dark';
-  if (style.endsWith('Automatic')) return nativeTheme.shouldUseDarkColors ? 'dark' : 'light';
+  if (style.endsWith('Automatic')) return systemDark() ? 'dark' : 'light';
   return 'light';
 }
 
 const themeState = (): ThemeState => ({
-  dark: nativeTheme.shouldUseDarkColors,
+  dark: systemDark(),
   theme: systemTheme(),
 });
 
@@ -152,7 +161,7 @@ function themedImage(key: string, theme: Theme): Promise<Electron.NativeImage | 
 }
 
 async function iconFor(key: string, appearance: unknown, auto: unknown): Promise<Electron.NativeImage | null> {
-  if (auto === true) return canonicalImage(activeIcon(key, true, nativeTheme.shouldUseDarkColors));
+  if (auto === true) return canonicalImage(activeIcon(key, true, systemDark()));
   return themedImage(key, themeFor(appearance));
 }
 
@@ -173,12 +182,12 @@ export default {
     custom = decode(await ctx.storage.read(CUSTOM_KEY));
     let generation = 0;
     let shown = '';
-    let lastTheme = `${nativeTheme.shouldUseDarkColors}:${systemTheme()}`;
+    let lastTheme = `${systemDark()}:${systemTheme()}`;
     const describe = () => {
       const icon = String(ctx.settings.icon);
       const appearance = ctx.settings.appearance;
       const auto = ctx.settings.autoInvert === true;
-      const theme = auto ? (nativeTheme.shouldUseDarkColors ? 'auto-dark' : 'auto-light') : themeFor(appearance);
+      const theme = auto ? (systemDark() ? 'auto-dark' : 'auto-light') : themeFor(appearance);
       return { icon, appearance, auto, key: `${icon}:${theme}` };
     };
     refresh = () => {
@@ -211,6 +220,19 @@ export default {
       }
       if (describe().key !== shown) refresh?.();
     };
+    let themeTimer: ReturnType<typeof setTimeout> | null = null;
+    const onDarwinTheme = () => {
+      onTheme();
+      if (themeTimer) clearTimeout(themeTimer);
+      themeTimer = setTimeout(() => {
+        themeTimer = null;
+        onTheme();
+      }, 100);
+    };
+    const darwinThemeSub =
+      process.platform === 'darwin'
+        ? systemPreferences.subscribeNotification('AppleInterfaceThemeChangedNotification', onDarwinTheme)
+        : null;
     app.on('browser-window-created', onWindow);
     app.on('browser-window-focus', onTheme);
     nativeTheme.on('updated', onTheme);
@@ -218,6 +240,8 @@ export default {
       app.off('browser-window-created', onWindow);
       app.off('browser-window-focus', onTheme);
       nativeTheme.off('updated', onTheme);
+      if (darwinThemeSub !== null) systemPreferences.unsubscribeNotification(darwinThemeSub);
+      if (themeTimer) clearTimeout(themeTimer);
       unsubscribe();
       refresh = null;
       current = null;
