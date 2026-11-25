@@ -114,6 +114,7 @@ export default class MessageLogger extends SlickPlugin<typeof meta.settings> {
   static readonly liveSettings = [
     'deletedStyle',
     'editDisplay',
+    'collapseEdits',
     'retentionDays',
     'ignoreEditsFrom',
     'allowBotEditsFrom',
@@ -132,8 +133,10 @@ export default class MessageLogger extends SlickPlugin<typeof meta.settings> {
   private rowTimer: ReturnType<typeof setTimeout> | null = null;
   private seenRow = false;
   private images: ImageArchive | null = null;
+  private readonly expanded = new Set<string>();
 
   private readonly EditContext = React.createContext<{
+    id: string;
     ts: string;
     edits: Edit[];
     blocks: boolean;
@@ -590,6 +593,8 @@ export default class MessageLogger extends SlickPlugin<typeof meta.settings> {
       .slick-ml-edit-removed { color: #f27b9f; background: rgba(224, 30, 90, .25); text-decoration: line-through; }
       .slick-ml-edit-added { color: #75d9a5; background: rgba(46, 160, 100, .25); }
       .slick-ml-edited-marker { margin-left: 4px; font-size: .85em; opacity: .72; }
+      button.slick-ml-edited-marker { padding: 0; border: 0; background: none; color: inherit; font: inherit; font-size: .85em; cursor: pointer; }
+      button.slick-ml-edited-marker:hover, button.slick-ml-edited-marker:focus-visible { opacity: 1; text-decoration: underline; }
       .slick-ml-images { display: flex; flex-wrap: wrap; gap: 8px; padding: 4px 0; }
       .slick-ml-image { display: block; max-width: 100%; width: fit-content; }
       .slick-ml-image img { display: block; max-width: min(360px, 100%); max-height: 300px; object-fit: contain; filter: grayscale(1); }
@@ -655,7 +660,7 @@ export default class MessageLogger extends SlickPlugin<typeof meta.settings> {
         return React.createElement(
           React.Fragment,
           null,
-          edit.edits.length ? this.editHistory(edit.edits) : null,
+          edit.edits.length ? React.createElement(this.EditHistory, { id: edit.id, edits: edit.edits }) : null,
           React.createElement(Original, props),
         );
       });
@@ -721,6 +726,7 @@ export default class MessageLogger extends SlickPlugin<typeof meta.settings> {
       this.EditContext.Provider,
       {
         value: {
+          id: this.key(entry.channel, entry.ts),
           ts: msg.ts,
           edits,
           blocks: Array.isArray(msg.blocks) && msg.blocks.length > 0,
@@ -767,35 +773,57 @@ export default class MessageLogger extends SlickPlugin<typeof meta.settings> {
     this.api.redux.refresh();
   }
 
-  private editHistory(edits: Edit[]) {
+  private readonly EditHistory = ({ id, edits }: { id: string; edits: Edit[] }) => {
     const React = this.api.react;
-    const diff = this.config.editDisplay !== 'original';
+    const [expanded, setExpanded] = React.useState(() => this.expanded.has(id));
+    const toggle = (event: { stopPropagation(): void }) => {
+      event.stopPropagation();
+      if (expanded) this.expanded.delete(id);
+      else this.expanded.add(id);
+      setExpanded(!expanded);
+    };
+    const marker = (label: string, onClick?: typeof toggle) =>
+      React.createElement(
+        onClick ? 'button' : 'span',
+        onClick
+          ? { type: 'button', className: 'slick-ml-edited-marker', onClick, 'aria-expanded': expanded }
+          : { className: 'slick-ml-edited-marker' },
+        label,
+      );
+    const collapsible = this.config.collapseEdits && edits.length > 1;
+    const lines = collapsible && !expanded ? [{ oldText: edits[0]!.oldText, newText: edits.at(-1)!.newText }] : edits;
     return React.createElement(
       'span',
       { className: 'slick-ml-edited-original' },
-      edits.map((edit, index) =>
+      lines.map((edit, index) =>
         React.createElement(
           'span',
           { className: 'slick-ml-edited-original-line', key: index },
-          diff
-            ? (
-                diffWordsWithSpace(edit.oldText, edit.newText, { maxEditLength: 500 }) ?? [
-                  { value: edit.oldText, removed: true },
-                  { value: edit.newText, added: true },
-                ]
-              ).map((part, i) =>
-                React.createElement(
-                  'span',
-                  {
-                    key: i,
-                    className: part.added ? 'slick-ml-edit-added' : part.removed ? 'slick-ml-edit-removed' : undefined,
-                  },
-                  part.value,
-                ),
-              )
-            : React.createElement('s', null, edit.oldText || '(empty message)'),
-          React.createElement('span', { className: 'slick-ml-edited-marker' }, '(edited)'),
+          this.editLine(edit),
+          collapsible && !expanded ? marker(`(${edits.length} edits)`, toggle) : marker('(edited)'),
+          collapsible && expanded && index === lines.length - 1 ? marker('(collapse)', toggle) : null,
         ),
+      ),
+    );
+  };
+
+  private editLine(edit: Pick<Edit, 'oldText' | 'newText'>) {
+    const React = this.api.react;
+    if (this.config.editDisplay === 'original')
+      return React.createElement('s', null, edit.oldText || '(empty message)');
+    return (
+      diffWordsWithSpace(edit.oldText, edit.newText, { maxEditLength: 500 }) ?? [
+        { value: edit.oldText, removed: true },
+        { value: edit.newText, added: true },
+      ]
+    ).map((part, i) =>
+      React.createElement(
+        'span',
+        {
+          key: i,
+          className: part.added ? 'slick-ml-edit-added' : part.removed ? 'slick-ml-edit-removed' : undefined,
+        },
+        part.value,
       ),
     );
   }

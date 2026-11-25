@@ -42,6 +42,12 @@ export const settings = {
       { value: 'original', label: 'Strikethrough original' },
     ],
   },
+  collapseEdits: {
+    type: 'boolean',
+    label: 'Collapse edit history',
+    description: 'Show one change from the original for messages edited more than once. Click it to see every edit.',
+    default: true,
+  },
   ignoreSelf: {
     type: 'boolean',
     label: 'Ignore self',
