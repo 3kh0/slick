@@ -10,6 +10,7 @@ In a PR that changes something users will notice, add a line under **Unreleased*
 
 - CustomAppIcon adds a Slack Inverted icon.
 - CustomAppIcon's System appearance now switches between light and dark icons on Windows and Linux.
+- MessageLogger collapses messages edited more than once into one change you can click to expand.
 
 ### Fixed
 
