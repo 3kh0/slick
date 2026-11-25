@@ -118,25 +118,31 @@ export default class LocalTime extends SlickPlugin<typeof meta.settings> {
   }
 
   private patchMessages() {
-    this.api.patchComponent<BroadcastPreambleProps>('BaseBroadcastPreamble', (Original) => (props) => {
-      if (!isPerson(props.msg)) return <Original {...props} />;
+    // Slack flips between these two names across builds.
+    for (const name of ['BroadcastPreamble', 'BaseBroadcastPreamble']) {
+      this.api.patchComponent<BroadcastPreambleProps>(name, (Original) => (props) => {
+        if (!isPerson(props.msg)) return <Original {...props} />;
 
-      const children = React.Children.toArray(props.children);
-      const timestamp = children.findIndex(isTimestamp);
-      const anchor = timestamp === -1 ? children.findIndex(isSender) : timestamp;
-      if (anchor === -1) return <Original {...props} />;
+        const children = React.Children.toArray(props.children);
+        if (children.some((child) => React.isValidElement(child) && child.type === this.Clock)) {
+          return <Original {...props} />;
+        }
+        const timestamp = children.findIndex(isTimestamp);
+        const anchor = timestamp === -1 ? children.findIndex(isSender) : timestamp;
+        if (anchor === -1) return <Original {...props} />;
 
-      children.splice(
-        anchor + 1,
-        0,
-        <this.Clock
-          key="slick-local-time"
-          userId={props.msg.user}
-          className={`slick-local-time${timestamp !== -1 ? ' slick-local-time--bulleted' : ''}`}
-        />,
-      );
-      return <Original {...props}>{children}</Original>;
-    });
+        children.splice(
+          anchor + 1,
+          0,
+          <this.Clock
+            key="slick-local-time"
+            userId={props.msg.user}
+            className={`slick-local-time${timestamp !== -1 ? ' slick-local-time--bulleted' : ''}`}
+          />,
+        );
+        return <Original {...props}>{children}</Original>;
+      });
+    }
 
     this.api.patchComponent<ThreadHeaderProps>('ThreadSenderAndTimestampGeneric', (Original) => (props) => {
       if (props.adjacent || props.visible === false || !isPerson(props.msg)) return <Original {...props} />;
