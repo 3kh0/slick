@@ -2,11 +2,14 @@ import { SlickPlugin } from '$slick';
 import { IconGrid, type IconGridHost } from './IconGrid.tsx';
 import type { ImportResult, Theme } from './icons.ts';
 import * as meta from './meta.ts';
+import * as webTarget from './web.tsx';
 
 type Store<T> = { get(): T; set(value: T): void; use(): T };
 
+const CUSTOM_KEY = 'custom';
+
 export default class CustomAppIcon extends SlickPlugin<typeof meta.settings> implements IconGridHost {
-  static readonly requiredAPIs = [] as const;
+  static readonly requiredAPIs = ['redux'] as const;
   static readonly id = meta.id;
   static readonly pluginName = meta.pluginName;
   static readonly description = meta.description;
@@ -19,17 +22,50 @@ export default class CustomAppIcon extends SlickPlugin<typeof meta.settings> imp
   selection!: Store<string>;
   appearance!: Store<string>;
   theme!: Store<Theme>;
+  custom!: Store<string | null>;
+  web: typeof webTarget | null = null;
 
   start() {
+    const web = (this.web = this.api.loader === 'electron' ? null : webTarget);
     this.selection = new this.api.Store(String(this.config.icon));
     this.appearance = new this.api.Store(String(this.config.appearance));
-    this.theme = new this.api.Store<Theme>('light');
-    this.api.main.on('theme-changed', (theme) => this.theme.set(theme as Theme));
-    void this.call<Theme>('theme').then((theme) => {
-      if (theme && this.api.isActive()) this.theme.set(theme);
-    });
+    this.theme = new this.api.Store<Theme>(web ? web.browserTheme() : 'light');
+    if (web) this.startWeb(web);
+    else {
+      this.api.main.on('theme-changed', (theme) => this.theme.set(theme as Theme));
+      void this.call<Theme>('theme').then((theme) => {
+        if (theme && this.api.isActive()) this.theme.set(theme);
+      });
+    }
     this.api.setStyle(STYLE);
     this.api.settings.panel(() => <IconGrid host={this} />);
+  }
+
+  stop() {
+    this.web?.clearBadges();
+  }
+
+  private startWeb(tab: typeof webTarget) {
+    this.custom = new this.api.Store<string | null>(null);
+    void this.loadCustom().then((image) => this.api.isActive() && this.custom.set(image));
+    tab.onBrowserTheme((theme) => this.theme.set(theme), this.api.signal);
+    const state = tab.faviconState(this.api.getExport);
+    this.api.patchComponent<{ href?: string }>('Favicon', (Original) => (props) => {
+      const icon = this.selection.use();
+      const theme = this.themeFor(this.appearance.use(), this.theme.use());
+      const custom = this.custom.use();
+      const source = icon === 'custom' ? custom : tab.TAB_ICONS[tab.TAB_ALIASES[icon] ?? icon]?.[theme];
+      const href = tab.useTabIcon(source, this.api.redux.useReduxState(state));
+      return <Original {...props} href={href ?? props.href} />;
+    });
+  }
+
+  private themeFor(appearance: string, theme: Theme): Theme {
+    return appearance === 'light' || appearance === 'dark' ? appearance : theme;
+  }
+
+  private loadCustom() {
+    return this.api.storage.get<string | null>(CUSTOM_KEY, null);
   }
 
   onSettingsChange() {
@@ -38,11 +74,16 @@ export default class CustomAppIcon extends SlickPlugin<typeof meta.settings> imp
   }
 
   loadPreviews(appearance: string) {
-    return this.call<Record<string, string>>('previews', appearance);
+    const web = this.web;
+    if (!web) return this.call<Record<string, string>>('previews', appearance);
+    const theme = this.themeFor(appearance, this.theme.get());
+    return Promise.resolve(
+      Object.fromEntries(Object.entries(web.TAB_ICONS).map(([id, images]) => [id, images[theme]])),
+    );
   }
 
   loadCustomPreview() {
-    return this.call<string | null>('customPreview');
+    return this.web ? this.loadCustom() : this.call<string | null>('customPreview');
   }
 
   async choose(icon: string) {
@@ -50,14 +91,28 @@ export default class CustomAppIcon extends SlickPlugin<typeof meta.settings> imp
   }
 
   async upload(): Promise<ImportResult> {
-    const result = (await this.call<ImportResult>('importCustom')) ?? 'failed';
+    const web = this.web;
+    const result = web
+      ? await this.importWeb(web, web.pickImage())
+      : ((await this.call<ImportResult>('importCustom')) ?? 'failed');
     if (result === 'saved' && this.api.isActive()) await this.choose('custom');
     return result;
   }
 
   async removeCustom(): Promise<boolean> {
     if (this.config.icon === 'custom') await this.choose('slick');
-    return (await this.call<boolean>('removeCustom')) ?? false;
+    if (!this.web) return (await this.call<boolean>('removeCustom')) ?? false;
+    if (!(await this.api.storage.delete(CUSTOM_KEY))) return false;
+    this.custom.set(null);
+    return true;
+  }
+
+  private async importWeb(tab: typeof webTarget, file: Promise<File | null>): Promise<ImportResult> {
+    const { result, image } = await tab.importImage(await file);
+    if (!image) return result;
+    if (!(await this.api.storage.set(CUSTOM_KEY, image))) return 'failed';
+    this.custom.set(image);
+    return result;
   }
 
   private async call<T>(method: string, ...args: unknown[]): Promise<T | null> {
