@@ -6,6 +6,10 @@ In a PR that changes something users will notice, add a line under **Unreleased*
 
 ## Unreleased
 
+### New
+
+- CustomAppIcon now works in the browser extension and userscript, where it changes the tab icon.
+
 ## Build 163
 
 ### New

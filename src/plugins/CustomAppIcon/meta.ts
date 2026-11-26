@@ -3,7 +3,7 @@ import { ICONS } from './icons.ts';
 
 export const id = 'CustomAppIcon';
 export const pluginName = 'Custom App Icon';
-export const description = 'Swap the Slick dock and taskbar icon for a built-in design or your own image.';
+export const description = 'Swap the Slick dock, taskbar or browser tab icon for a built-in design or your own image.';
 export const category: PluginCategory = 'appearance';
 export const authors = 'JosTheDude';
 export const defaultEnabled = false;
@@ -19,7 +19,7 @@ export const settings = {
   appearance: {
     type: 'select',
     label: 'Appearance',
-    description: 'System follows your icon style on macOS, and light or dark mode on Windows and Linux.',
+    description: 'System follows your icon style on macOS, and light or dark mode everywhere else.',
     default: 'system',
     options: [
       { value: 'system', label: 'System' },
