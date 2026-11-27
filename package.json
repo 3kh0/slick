@@ -45,8 +45,8 @@
     "esbuild": "^0.28.2",
     "fflate": "^0.8.3",
     "monaco-editor": "0.57.0",
-    "oxfmt": "^0.79.0",
-    "oxlint": "^1.94.0",
+    "oxfmt": "^0.80.0",
+    "oxlint": "^1.95.0",
     "typescript": "^7.0.2",
     "web-ext": "^10.8.0"
   }
