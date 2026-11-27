@@ -30,7 +30,7 @@
     "@modelcontextprotocol/server": "^2.4.0",
     "amazon-chime-sdk-js": "^3.33.0",
     "diff": "^9.0.0",
-    "tar-stream": "^3.2.2",
+    "tar-stream": "^3.3.0",
     "xz-decompress": "^0.2.3",
     "zod": "^4.6.7"
   },
